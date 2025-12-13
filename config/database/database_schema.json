@@ -6,7 +6,11 @@
         "main_exchange": {
             "type": "string",
             "minLength": 1
+        },
+        "database_path": {
+            "type": "string",
+            "minLength": 1
         }
     },
-    "required": ["main_exchange"]
+    "required": ["main_exchange", "database_path"]
 }
