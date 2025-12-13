@@ -39,5 +39,22 @@ struct OHLCV {
  *    - Historical analytics (multi-pair)
  **************************************************************************************/
 struct OHLCVData {
-    std::map<std::string, std::map<int, OHLCV>> data;
+    std::map<std::string, std::map<unsigned int, OHLCV>> data;
 };
+
+
+struct BarData{
+    // OHLCV
+    double open;
+    double high;
+    double low;
+    double close;
+    double volume;
+
+    unsigned int barNumber = 0;
+};
+
+using Timestamp =  int;
+using Coin = std::string;
+using CoinBarMap = std::map<Coin, BarData>;
+using EnrichedData =  std::map<Timestamp, CoinBarMap>;

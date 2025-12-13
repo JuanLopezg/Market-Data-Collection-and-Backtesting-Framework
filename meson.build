@@ -56,3 +56,4 @@ global_deps = {
 # ------------------------------
 subdir('lib')
 subdir('database')
+subdir('signalizer')

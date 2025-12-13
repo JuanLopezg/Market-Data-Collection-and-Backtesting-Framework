@@ -186,3 +186,55 @@ long toUnixMillis(int yyyymmdd)
 
     return static_cast<long>(std::mktime(&tm)) * 1000L;
 }
+
+
+unsigned int previousDay(unsigned int yyyymmdd) {
+    int year  = yyyymmdd / 10000;
+    int month = (yyyymmdd / 100) % 100;
+    int day   = yyyymmdd % 100;
+
+    std::chrono::year_month_day ymd{
+        std::chrono::year{year},
+        std::chrono::month{static_cast<unsigned>(month)},
+        std::chrono::day{static_cast<unsigned>(day)}
+    };
+
+    if (!ymd.ok()) {
+        throw std::invalid_argument("Invalid YYYYMMDD date");
+    }
+
+    std::chrono::sys_days prev = std::chrono::sys_days{ymd} - std::chrono::days{1};
+    std::chrono::year_month_day prevYmd{prev};
+
+    return static_cast<unsigned int>(
+        int(prevYmd.year()) * 10000 +
+        unsigned(prevYmd.month()) * 100 +
+        unsigned(prevYmd.day())
+    );
+}
+
+
+unsigned int nextDay(unsigned int yyyymmdd) {
+    int year  = yyyymmdd / 10000;
+    int month = (yyyymmdd / 100) % 100;
+    int day   = yyyymmdd % 100;
+
+    std::chrono::year_month_day ymd{
+        std::chrono::year{year},
+        std::chrono::month{static_cast<unsigned>(month)},
+        std::chrono::day{static_cast<unsigned>(day)}
+    };
+
+    if (!ymd.ok()) {
+        throw std::invalid_argument("Invalid YYYYMMDD date");
+    }
+
+    std::chrono::sys_days next = std::chrono::sys_days{ymd} + std::chrono::days{1};
+    std::chrono::year_month_day nextYmd{next};
+
+    return static_cast<unsigned int>(
+        int(nextYmd.year()) * 10000 +
+        unsigned(nextYmd.month()) * 100 +
+        unsigned(nextYmd.day())
+    );
+}

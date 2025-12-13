@@ -10,13 +10,17 @@ subdir('types')
 subdir('utils')
 subdir('database')
 subdir('data')
+subdir('backtest')
+subdir('strategy')
 
 # ---- Include directories for all submodules ----
 include_dir = include_directories(
     'types',
     'utils',
     'database',
-    'data'
+    'data',
+    'backtest',
+    'strategy'
 )
 
 # ---- Aggregate all sources from submodules ----
@@ -25,6 +29,8 @@ lib_sources += types_sources
 lib_sources += utils_sources
 lib_sources += database_sources
 lib_sources += data_sources
+lib_sources += backtest_sources
+lib_sources += strategy_sources
 
 # ---- Create the library ----
 libalgolib = library(

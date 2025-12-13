@@ -72,3 +72,18 @@ int toYYYYMMDD(std::chrono::year_month_day ymd);
  * Return  : long - Unix timestamp (ms since 1970-01-01 00:00:00 UTC).
  **************************************************************************************/
 long toUnixMillis(int yyyymmdd);
+
+/**************************************************************************************
+ * Purpose : Given a compact date (YYYYMMDD), computes the previous calendar day.
+ * Args    : yyyymmdd - Date encoded as YYYYMMDD (e.g., 20240118).
+ * Return  : unsigned int - Previous day encoded as YYYYMMDD.
+ **************************************************************************************/
+unsigned int previousDay(unsigned int yyyymmdd);
+
+/**************************************************************************************
+ * Purpose : Given a compact date (YYYYMMDD), computes the next calendar day.
+ * Args    : yyyymmdd - Date encoded as YYYYMMDD (e.g., 20240118).
+ * Return  : unsigned int - Next day encoded as YYYYMMDD.
+ **************************************************************************************/
+unsigned int nextDay(unsigned int yyyymmdd);
+
