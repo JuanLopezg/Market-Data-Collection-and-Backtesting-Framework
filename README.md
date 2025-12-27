@@ -25,8 +25,8 @@ The project is roughly split into two parts:
 - `database/`  
   Handles data ingestion, scheduling, and storage  
 
-- `src/`  
-  Contains the backtesting engine, strategies, portfolio logic, and shared utilities  
+- `lib/`  
+  Contains the backtesting libraries, strategies, portfolio logic, and shared utilities  
 
 Some things may look duplicated (like `database/` existing in two places), but one is the standalone data service and the other is the database access layer used by the backtester.  
 
