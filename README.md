@@ -45,17 +45,11 @@ Main components include:
 
 The main entry point is:  database_main.cpp  
 
-
-Logs are written to:  
-
-- `database.log`  
-- `database_roll.log`  
-
 ---
 
 ## Backtesting and research  
 
-Everything related to strategy testing lives under `src/`.  
+Everything related to strategy testing lives under `lib/`.  
 
 ### Backtest  
 
@@ -94,8 +88,6 @@ Everything related to strategy testing lives under `src/`.
   - Configuration handling  
   - Logging  
   - Scheduler interfaces  
-
-This is mostly plumbing, but it keeps components separated and reusable.  
 
 ---
 
