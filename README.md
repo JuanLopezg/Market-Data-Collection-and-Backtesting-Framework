@@ -6,8 +6,6 @@ It is mainly used to maintain a local historical dataset and to test trading str
 The core idea is simple:  
 every day at **00:00 UTC**, the system downloads **daily OHLCV data** for the **top 50 cryptocurrencies by volume from Binance**, stores it locally, and makes it available for backtesting.  
 
-This is research infrastructure, not a polished trading product.  
-
 ---
 
 ## What this project does  
