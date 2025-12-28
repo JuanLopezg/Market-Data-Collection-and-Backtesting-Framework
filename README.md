@@ -1,6 +1,6 @@
-# ALGO TRADING  
+# Market Data Collection and Backtesting Framework
 
-ALGO TRADING is a C++ crypto trading research project focused on market data collection and strategy backtesting.  
+Market Data Collection and Backtesting Framework is a C++ crypto trading research project focused on market data collection and strategy backtesting .  
 It is mainly used to maintain a local historical dataset and to test trading strategies on top of it.  
 
 The core idea is simple:  
