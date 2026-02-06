@@ -1,17 +1,5 @@
 #include "portfolio.h"
 
-
-int directionToMultiplier(Direction& dir){
-    if(dir == 0){
-        return 1;
-    }
-    if(dir == 1){
-        return -1;
-    }
-    
-    return 0
-}
-
 void Portfolio::updatePortfolio(std::vector<Trade>& current_trades){
     double floatingPNL = 0;
     double balance = this->current_balance_;
@@ -22,7 +10,7 @@ void Portfolio::updatePortfolio(std::vector<Trade>& current_trades){
         if (trade.exited_) { // trades just closed
             if(!trade.isSimulated_){
                 trades_history_[trade.trade_id_] = trade;
-                balance += (trade.size_*(trade.exit_-trade.entry_)*directionToMultiplier(trade.direction_) - trade.commission_);
+                balance += (trade.pnl_ - trade.commission_);
             }else{
                 this->nSimulated_ ++;
             }

@@ -2,14 +2,11 @@
 
 #include <vector>
 #include "data_types.h"  
-#include "portafolio.h"
+#include "portfolio.h"
+#include <algorithm>
 
 enum class Ranking{Volume, Return, None};
 using RankedBars = std::vector<std::reference_wrapper<const std::pair<const Coin, BarData>>>;
-
-
-TradeID last_trade_id_ = 0;
-
 
 class Strategy {
 public:
@@ -49,12 +46,13 @@ public:
 
 
 protected:
-    Strategy(Portafolio& portafolio, unsigned int maxPosOpen, Ranking ranking, double commissionEntryPctg, double commissionExitPctg): maxPosOpen_(maxPosOpen), ranking_(ranking),
-            commissionEntryPctg_(commissionEntryPctg), commissionExitPctg_(commissionExitPctg), portafolio_(portafolio)   {}
+    Strategy(Portfolio& portfolio, unsigned int maxPosOpen, Ranking ranking, double commissionEntryPctg, double commissionExitPctg): maxPosOpen_(maxPosOpen), ranking_(ranking),
+            commissionEntryPctg_(commissionEntryPctg), commissionExitPctg_(commissionExitPctg), portfolio_(portfolio)   {}
 
     unsigned int maxPosOpen_;
     Ranking ranking_;
     double commissionEntryPctg_;
     double commissionExitPctg_;
-    Portafolio& portafolio_
+    Portfolio& portfolio_;
+    TradeID last_trade_id_ = 0;
 };

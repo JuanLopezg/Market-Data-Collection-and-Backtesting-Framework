@@ -1,14 +1,15 @@
-#include <map>
 #include <string>
+#include <map>
 #include<vector>
 
-using TradeID = unsigned int;
-using Timestamp =  int;
-using Coin = std::string;
-using CoinBarMap = std::map<Coin, BarData>;
-using EnrichedData =  std::map<Timestamp, CoinBarMap>;
-enum class Direction {Long,Short,Flat};
+#pragma once
 
+using Balance = double;
+using Equity = double;
+using TradeID = unsigned int;
+using Timestamp =  unsigned int;
+using Coin = std::string;
+enum class Direction {Long,Short,Flat};
 
 struct OHLCV {
     double open;
@@ -17,7 +18,6 @@ struct OHLCV {
     double close;
     double volume;
 };
-
 
 struct OHLCVData {
     std::map<std::string, std::map<unsigned int, OHLCV>> data;
@@ -49,10 +49,16 @@ struct Trade{
     double    entry_         = 0.0;
     double    exit_          = 0.0;
     double    size_          = 0.0;
+    double    pnl_           = 0.0;
     double    sl_            = 0.0;
     bool      isSimulated_   = true;
     bool      exited_        = false;
     double    slReference_    =0.0; // highest high or lowest low achieved usually for trailling sl
 };
+
+using CoinBarMap = std::map<Coin, BarData>;
+using EnrichedData =  std::map<Timestamp, CoinBarMap>;
+
+int directionToMultiplier(Direction& dir);
 
 bool hasOpenTrade(const std::vector<Trade>& trades,const Coin& coin);

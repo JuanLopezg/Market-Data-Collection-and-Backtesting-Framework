@@ -1,11 +1,12 @@
 #include "strategy.h"
 #include <algorithm>
 #include "time_utils.h"
+#include "logger.h"
 
 
 class StrategyHighBreakout : public Strategy {
 public:
-    StrategyHighBreakout(Portafolio& portafolio, double commissionEntryPctg, double commissionExitPctg): Strategy(portafolio, 10, Ranking::Volume, commissionEntryPctg,  commissionExitPctg) {} 
+    StrategyHighBreakout(Portfolio& portfolio, double commissionEntryPctg, double commissionExitPctg): Strategy(portfolio, 10, Ranking::Volume, commissionEntryPctg,  commissionExitPctg) {} 
 
     inline unsigned int processSignal(std::vector<Trade>& current_trades, Coin& coin, const BarData& bar, Timestamp& ts){
         if(bar.close > bar.high_20d && bar.barNumber > 20){
@@ -15,16 +16,17 @@ public:
             newTrade.commission_ += this->commissionEntryPctg_;
             newTrade.coin_ = coin;
             newTrade.direction_ = Direction::Long;
-            newTrade.currentPrice = bar.close;
+            newTrade.current_price_ = bar.close;
             newTrade.entry_ = bar.close;
-            newTrade.size_ = 0.05 * this->portafolio_.GetCurrentBalance() / bar.close;
+            newTrade.size_ = 0.05 * this->portfolio_.GetCurrentBalance() / bar.close;
             newTrade.sl_ = bar.close - 3*bar.atr_14d;
-            newTrade.slReference = bar.close;
-
+            newTrade.slReference_ = bar.close;
 
             current_trades.emplace_back(newTrade);
+            return 1;
         }
 
+        return 0;
     }
 
 
@@ -49,6 +51,8 @@ public:
 
             // Update current price (example: close price)
             trade.current_price_ = bar.close;
+            trade.end_ = nextDay(ts); // data is given at closing of each day
+            trade.pnl_ = (trade.size_*(trade.current_price_-trade.entry_)*directionToMultiplier(trade.direction_));
 
             if (trade.direction_ == Direction::Long) {
                 if(ts == trade.start_){
@@ -58,7 +62,6 @@ public:
                 }
                 if (bar.low <= trade.sl_) {
                     trade.exit_   = trade.sl_;
-                    trade.end_    = nextDay(ts); // data is given at closing of each day
                     trade.exited_ = true;
                     trade.commission_ += this->commissionExitPctg_;
                     continue;
@@ -81,11 +84,11 @@ public:
     };
 
     inline void calculateSignals(std::vector<Trade>& current_trades, const CoinBarMap& bars, Timestamp ts) override {
-        unsigned int nOpenTrades = processOpenTrades();
+        unsigned int nOpenTrades = processOpenTrades(current_trades, bars, ts);
 
         if(nOpenTrades < this->maxPosOpen_){
 
-            RankedBars Rbars = rank(bars, this->ranking_);
+            RankedBars rbars = rank(bars, this->ranking_);
 
             unsigned int counter = 0;
             unsigned int universeVolume = 20;
@@ -98,11 +101,11 @@ public:
                 
                 const auto& [coin, bar] = wrapped.get();
 
-                if(hasOpenTrade(coin))
+                if(hasOpenTrade(current_trades, coin))
                     continue;
 
                 // ---- ENTRY LOGIC ----
-                processSignal(current_trades, coin, bar, ts);
+                nOpenTrades += processSignal(current_trades, coin, bar, ts);
             }
 
 

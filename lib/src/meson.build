@@ -4,6 +4,7 @@ json_schema_validator_dep  = global_deps['json_schema_validator_dep']
 log4cpp_dep                 = global_deps['log4cpp_dep']
 boost_dep                  = global_deps['boost_dep']
 fmt_dep                   = global_deps['fmt_dep']
+sqlite3_dep                = global_deps['sqlite3_dep']
 
 # ---- Bring in subdirectories ----
 subdir('types')
@@ -46,7 +47,8 @@ libalgolib = library(
         fmt_dep,
         nlohmann_json_dep,
         json_schema_validator_dep,
-        boost_dep
+        boost_dep,
+        sqlite3_dep
     ]
 )
 
@@ -59,6 +61,7 @@ libalgolib_dep = declare_dependency(
         fmt_dep,
         nlohmann_json_dep,
         json_schema_validator_dep,
-        boost_dep
+        boost_dep,
+        sqlite3_dep
     ]
 )
