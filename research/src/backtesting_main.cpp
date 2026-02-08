@@ -21,16 +21,18 @@ int main(int argc, char** argv) {
     unsigned int maxPosOpen = 10;
     double riskPerTrade = 0.1;
     std::unique_ptr<Ranker> ranker = std::make_unique<VolumeRanker>();
-    double commissionEntryPctg = feeMaker;
-    double commissionExitPctg = feeTaker;
+    double commissionEntryFactor = feeMaker;
+    double commissionExitFactor = feeTaker;
+    unsigned int maxRankingPosition = 20;
 
     strategies.push_back(
         std::make_unique<StrategyHighBreakout>(
             maxPosOpen,
             riskPerTrade,
             std::move(ranker),
-            commissionEntryPctg,
-            commissionExitPctg
+            commissionEntryFactor,
+            commissionExitFactor,
+            maxRankingPosition
         )
     );
 

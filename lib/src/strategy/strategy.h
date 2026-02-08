@@ -2,105 +2,237 @@
 
 #include <memory>
 #include <vector>
+#include <algorithm>
+
 #include "data_types.h"
 #include "ranker.h"
-#include <algorithm>
+#include "logger.h"
 
 
 /**************************************************************************************
  * Type    : Strategy
- * Purpose : Abstract base class defining trading strategy behavior
+ * Purpose : Abstract base class defining generic trading strategy behavior
  *
- * Strategy represents a trading algorithm capable of generating trading signals
- * based on enriched market data. Concrete strategy implementations must override
- * the signal generation logic.
+ * Strategy implements the common execution flow shared by all trading strategies:
+ *  - updating existing trades
+ *  - ranking the tradable universe
+ *  - evaluating entry conditions
+ *  - creating new trades
+ *
+ * Concrete strategies must provide only:
+ *  - entry conditions
+ *  - trade construction logic
+ *  - per-bar trade update logic
+ *
+ * This design minimizes duplication and makes new strategies easy to implement.
  **************************************************************************************/
 class Strategy {
 public:
     virtual ~Strategy() = default;
 
     /**********************************************************************************
-     * Purpose : Calculate trading signals for the current timestamp
+     * Purpose : Execute strategy logic for a single timestamp
      *
-     * This method is invoked once per timestamp and allows the strategy to:
-     *  - open new trades
-     *  - update existing trades
-     *  - apply entry/exit logic based on market conditions
+     * This method is FINAL and defines the invariant execution pipeline:
      *
-     * Args    :
-     *   bars               - market data for all coins at the current timestamp
-     *   ts                 - current timestamp
-     *   last_trade_id      - reference to the global trade identifier counter
-     *   current_trades     - reference to currently open trades (modifiable)
-     *   strategy_allocation- capital allocated to this strategy
+     *  1. Update all currently open trades (PnL, exits, stop-loss, etc.)
+     *  2. Count active (non-simulated) open positions
+     *  3. Rank the trading universe using the configured Ranker
+     *  4. Attempt new trade entries until limits are reached
      *
-     * Return  : None
+     * Concrete strategies customize behavior by overriding:
+     *  - shouldEnter()
+     *  - buildTrade()
+     *  - onBar()
+     *
+     * Args :
+     *   bars                - market data for all coins at the current timestamp
+     *   ts                  - current timestamp
+     *   last_trade_id       - reference to the global trade identifier counter
+     *   current_trades      - reference to currently open trades (modifiable)
+     *   strategy_allocation - capital allocated to this strategy
+     *
+     * Return : None
      **********************************************************************************/
-    virtual void calculateSignals(
+    void calculateSignals(
         const CoinBarMap& bars,
         Timestamp ts,
         unsigned int& last_trade_id,
         std::vector<Trade>& current_trades,
         double strategy_allocation
-    ) = 0;
+    ) 
+    {
+        // ---------------------------------------------------------------------
+        // 1. Update open trades
+        // ---------------------------------------------------------------------
+        unsigned int openCount = 0;
+
+        for (auto& trade : current_trades) {
+            if (trade.exited_) {
+                LG_ERROR("Received a closed trade");
+                continue;
+            }
+
+            // Ensure market data exists for this coin
+            auto it = bars.find(trade.coin_);
+            if (it == bars.end()) {
+                LG_ERROR("No data for coin {}", trade.coin_);
+                continue;
+            }
+
+            // Delegate per-bar trade logic to the strategy
+            onBar(trade, it->second, ts);
+
+            // Count only real (non-simulated) open trades
+            if (!trade.exited_ && !trade.isSimulated_) {
+                ++openCount;
+            }
+        }
+
+        // Stop early if position limit already reached
+        if (openCount >= maxPosOpen_)
+            return;
+
+        // ---------------------------------------------------------------------
+        // 2. Rank trading universe
+        // ---------------------------------------------------------------------
+        RankedBars ranked = ranker_->rank(bars);
+
+        // ---------------------------------------------------------------------
+        // 3. Attempt new entries
+        // ---------------------------------------------------------------------
+        unsigned int rankingPosition = 0;
+
+        for (const auto& wrapped : ranked) {
+
+            if (openCount >= maxPosOpen_ ||
+                ++rankingPosition > maxRankingPosition_)
+                break;
+
+            const auto& [coin, bar] = wrapped.get();
+
+            // Skip coins with an existing open trade
+            if (hasOpenTrade(current_trades, coin))
+                continue;
+
+            // Strategy-specific entry condition
+            if (!shouldEnter(coin, bar, current_trades))
+                continue;
+
+            // Build and register new trade
+            Trade t = buildTrade(
+                coin,
+                bar,
+                ts,
+                last_trade_id,
+                strategy_allocation
+            );
+
+            current_trades.emplace_back(std::move(t));
+            ++openCount;
+        }
+    }
+
 
 protected:
     /**************************************************************************************
      * Purpose : Construct a strategy with shared configuration parameters
      *
-     * Args    : name                - human-readable strategy name
-     *           maxPosOpen          - maximum number of simultaneous open positions
-     *           riskPerTradePctg    - fraction of allocated capital risked per trade
-     *           ranker              - ranking algorithm used to order tradable instruments
-     *           commissionEntryPctg - commission percentage applied on trade entry
-     *           commissionExitPctg  - commission percentage applied on trade exit
+     * Args :
+     *   name                 - human-readable strategy name
+     *   maxPosOpen           - maximum number of simultaneous open positions
+     *   riskPerTradePctg     - fraction of allocated capital risked per trade
+     *   ranker               - ranking algorithm used to order tradable instruments
+     *   commissionEntryFactor  - commission factor applied on trade entry
+     *   commissionExitFactor - commission factor applied on trade exit
+     *   maxRankingPosition   - maximum ranking depth considered for entries
      *
-     * Notes   : This constructor is protected as Strategy is an abstract base class
-     *           and cannot be instantiated directly.
+     * Notes :
+     *   This constructor is protected because Strategy is an abstract base class
+     *   and must not be instantiated directly.
      **************************************************************************************/
     Strategy(std::string name,
              unsigned int maxPosOpen,
              double riskPerTradePctg,
              std::unique_ptr<Ranker> ranker,
-             double commissionEntryPctg,
-             double commissionExitPctg)
+             double commissionEntryFactor,
+             double commissionExitFactor,
+             unsigned int maxRankingPosition)
         : strategy_name_(std::move(name)),
           maxPosOpen_(maxPosOpen),
           riskPerTrade_(riskPerTradePctg),
           ranker_(std::move(ranker)),
-          commissionEntryPctg_(commissionEntryPctg),
-          commissionExitPctg_(commissionExitPctg)
+          commissionEntryFactor_(commissionEntryFactor),
+          commissionExitFactor_(commissionExitFactor),
+          maxRankingPosition_(maxRankingPosition)
     {}
 
+
     /**************************************************************************************
-     * Purpose : Check whether a coin already has an open trade
+     * Purpose : Check whether a coin already has an open (non-exited) trade
      *
-     * Args    : trades - collection of current open trades
-     *           coin   - coin to check
+     * Args :
+     *   trades - collection of current open trades
+     *   coin   - coin to check
      *
-     * Return  : true if a non-exited trade exists for the given coin, false otherwise
+     * Return :
+     *   true if a non-exited trade exists for the given coin, false otherwise
      **************************************************************************************/
-    bool hasOpenTrade(const std::vector<Trade>& trades, const Coin& coin) const {
+    bool hasOpenTrade(const std::vector<Trade>& trades,
+                      const Coin& coin) const
+    {
         return std::any_of(trades.begin(), trades.end(),
             [&](const Trade& t) {
                 return !t.exited_ && t.coin_ == coin;
             });
     }
 
+
 protected:
-    // Strategy metadata
-    std::string strategy_name_;
+    /**************************************************************************************
+     * Purpose : Strategy-specific entry condition
+     *
+     * Determines whether a new trade should be opened for a given coin.
+     **************************************************************************************/
+    virtual bool shouldEnter(
+        const Coin& coin,
+        const BarData& bar,
+        const std::vector<Trade>& current_trades
+    ) const = 0;
 
-    // Maximum number of concurrent open positions
-    unsigned int maxPosOpen_;
+    /**************************************************************************************
+     * Purpose : Construct a new trade instance upon entry
+     **************************************************************************************/
+    virtual Trade buildTrade(
+        const Coin& coin,
+        const BarData& bar,
+        Timestamp ts,
+        unsigned int& last_trade_id,
+        double strategy_allocation
+    ) const = 0;
 
-    // Fraction of allocated capital risked per trade
-    double riskPerTrade_;
+    /**************************************************************************************
+     * Purpose : Update an open trade for the current bar
+     *
+     * Handles PnL updates, stop-loss logic, exits, and trailing logic.
+     **************************************************************************************/
+    virtual void onBar(
+        Trade& trade,
+        const BarData& bar,
+        Timestamp ts
+    ) const = 0;
 
-    // Ranking algorithm used by the strategy
-    std::unique_ptr<Ranker> ranker_;
 
-    // Commission percentages applied on trade entry and exit
-    double commissionEntryPctg_;
-    double commissionExitPctg_;
+protected:
+    // ------------------------------------------------------------------
+    // Shared strategy configuration
+    // ------------------------------------------------------------------
+
+    std::string strategy_name_;           // Human-readable strategy name
+    unsigned int maxPosOpen_;             // Maximum concurrent open positions
+    double riskPerTrade_;                 // Fraction of capital risked per trade
+    std::unique_ptr<Ranker> ranker_;      // Universe ranking algorithm
+    unsigned int maxRankingPosition_;     // Max ranking depth for entries
+    double commissionEntryFactor_;        // Entry commission factor
+    double commissionExitFactor_;         // Exit commission factor
 };

@@ -32,11 +32,11 @@ private:
     // Monotonically increasing trade identifier
     unsigned int last_trade_id_;
 
-    // Commission percentage for limit orders
-    double commission_limit_pctg_;
+    // Commission factor applied to  limit orders
+    double commission_limit_factor_;
 
-    // Commission percentage for market orders
-    double commission_market_pctg_;
+    // Commission factor applied to market orders
+    double commission_market_factor_;
 
     // Time series of balance and equity snapshots
     std::vector<std::pair<Balance, Equity>> balance_equity_historic_;
@@ -48,13 +48,13 @@ public:
     /**************************************************************************************
      * Purpose : Construct and initialize the backtest execution context
      *
-     * Args    : marketData            - enriched historical market data
-     *           strategies            - collection of strategy objects (ownership transferred)
-     *           initialBalance        - starting account balance
-     *           initialEquity         - starting account equity
-     *           lastTradeId           - last used trade identifier (for resume support)
-     *           commissionLimitPctg   - limit order commission percentage (0.0 - 100.0)
-     *           commissionMarketPctg  - market order commission percentage (0.0 - 100.0)
+     * Args    : marketData              - enriched historical market data
+     *           strategies              - collection of strategy objects (ownership transferred)
+     *           initialBalance          - starting account balance
+     *           initialEquity           - starting account equity
+     *           lastTradeId             - last used trade identifier (for resume support)
+     *           commissionLimitFactor   - limit order commission factor
+     *           commissionMarketFactor  - market order commission factor
      *
      * Notes   : Each strategy is wrapped into a StrategyInstance and assigned an equal
      *           portfolio weight. Ownership of strategy objects is transferred to the
@@ -65,21 +65,21 @@ public:
                              double initialBalance,
                              double initialEquity,
                              unsigned int lastTradeId = 0,
-                             double commissionLimitPctg = 0.0,
-                             double commissionMarketPctg = 0.0)
+                             double commissionLimitFactor = 0.0,
+                             double commissionMarketFactor = 0.0)
         : market_data_(marketData),
           current_balance_(initialBalance),
           current_equity_(initialEquity),
           last_trade_id_(lastTradeId),
-          commission_limit_pctg_(commissionLimitPctg),
-          commission_market_pctg_(commissionMarketPctg)
+          commission_limit_factor_(commissionLimitFactor),
+          commission_market_factor_(commissionMarketFactor)
     {
         assert(!marketData.empty());
         assert(!strategies.empty());
         assert(initialBalance > 0);
         assert(initialEquity > 0);
-        assert(commissionLimitPctg  >= 0.0 && commissionLimitPctg  <= 100.0);
-        assert(commissionMarketPctg >= 0.0 && commissionMarketPctg <= 100.0);
+        assert(commissionLimitFactor  >= 0.0 && commissionLimitFactor  <= 100.0);
+        assert(commissionMarketFactor >= 0.0 && commissionMarketFactor <= 100.0);
 
         const double weight = 1.0 / strategies.size();
 
@@ -171,20 +171,20 @@ public:
     }
 
     /**************************************************************************************
-     * Purpose : Access the limit order commission percentage
+     * Purpose : Access the limit order commission factor
      * Args    : None
      * Return  : reference to limit commission percentage
      **************************************************************************************/
-    double& GetCommissionLimitPctg() {
-        return commission_limit_pctg_;
+    double& GetCommissionLimitFactor() {
+        return commission_limit_factor_;
     }
 
     /**************************************************************************************
-     * Purpose : Access the market order commission percentage
+     * Purpose : Access the market order commission factor
      * Args    : None
      * Return  : reference to market commission percentage
      **************************************************************************************/
-    double& GetCommissionMarketPctg() {
-        return commission_market_pctg_;
+    double& GetCommissionMarketFactor() {
+        return commission_market_factor_;
     }
 };
