@@ -1,7 +1,7 @@
 #include "backtest.h"
 #include "strategy_high_breakout.h"
 #include "ranker.h"
-#include "database.h"
+#include "database_utils.h"
 
 int main(int argc, char** argv) {
 
@@ -47,7 +47,7 @@ int main(int argc, char** argv) {
     
     tester.loop();
 
-    std::filesystem::path backtest_store_dir = "/c/Users/Juan/Documents/Python/algoTrading/research/backtests/";
+    std::filesystem::path backtest_store_dir = "/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/";
     std::filesystem::path backtest_store_path = generateBacktestDbPath(backtest_store_dir);
 
     tester.storeResults(backtest_store_path);

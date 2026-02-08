@@ -55,5 +55,5 @@ global_deps = {
 # Subdirectories
 # ------------------------------
 subdir('lib')
-subdir('database')
+subdir('live_trading')
 subdir('research')

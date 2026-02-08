@@ -1,6 +1,6 @@
 #include "database_downloader.h"
 #include "logger.h"
-#include "database.h"        // writeCallback declaration
+#include "database_utils.h"        // writeCallback declaration
 
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>

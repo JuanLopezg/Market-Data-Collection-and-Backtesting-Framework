@@ -6,7 +6,6 @@
 
 #include "data_types.h"
 #include "ranker.h"
-#include "logger.h"
 
 
 /**************************************************************************************
@@ -60,79 +59,7 @@ public:
         unsigned int& last_trade_id,
         std::vector<Trade>& current_trades,
         double strategy_allocation
-    ) 
-    {
-        // ---------------------------------------------------------------------
-        // 1. Update open trades
-        // ---------------------------------------------------------------------
-        unsigned int openCount = 0;
-
-        for (auto& trade : current_trades) {
-            if (trade.exited_) {
-                LG_ERROR("Received a closed trade");
-                continue;
-            }
-
-            // Ensure market data exists for this coin
-            auto it = bars.find(trade.coin_);
-            if (it == bars.end()) {
-                LG_ERROR("No data for coin {}", trade.coin_);
-                continue;
-            }
-
-            // Delegate per-bar trade logic to the strategy
-            onBar(trade, it->second, ts);
-
-            // Count only real (non-simulated) open trades
-            if (!trade.exited_ && !trade.isSimulated_) {
-                ++openCount;
-            }
-        }
-
-        // Stop early if position limit already reached
-        if (openCount >= maxPosOpen_)
-            return;
-
-        // ---------------------------------------------------------------------
-        // 2. Rank trading universe
-        // ---------------------------------------------------------------------
-        RankedBars ranked = ranker_->rank(bars);
-
-        // ---------------------------------------------------------------------
-        // 3. Attempt new entries
-        // ---------------------------------------------------------------------
-        unsigned int rankingPosition = 0;
-
-        for (const auto& wrapped : ranked) {
-
-            if (openCount >= maxPosOpen_ ||
-                ++rankingPosition > maxRankingPosition_)
-                break;
-
-            const auto& [coin, bar] = wrapped.get();
-
-            // Skip coins with an existing open trade
-            if (hasOpenTrade(current_trades, coin))
-                continue;
-
-            // Strategy-specific entry condition
-            if (!shouldEnter(coin, bar, current_trades))
-                continue;
-
-            // Build and register new trade
-            Trade t = buildTrade(
-                coin,
-                bar,
-                ts,
-                last_trade_id,
-                strategy_allocation
-            );
-
-            current_trades.emplace_back(std::move(t));
-            ++openCount;
-        }
-    }
-
+    );
 
 protected:
     /**************************************************************************************
@@ -178,17 +105,12 @@ protected:
      * Return :
      *   true if a non-exited trade exists for the given coin, false otherwise
      **************************************************************************************/
-    bool hasOpenTrade(const std::vector<Trade>& trades,
-                      const Coin& coin) const
-    {
-        return std::any_of(trades.begin(), trades.end(),
-            [&](const Trade& t) {
-                return !t.exited_ && t.coin_ == coin;
-            });
-    }
+    bool hasOpenTrade(
+        const std::vector<Trade>& trades,
+        const Coin& coin
+    ) const;
 
 
-protected:
     /**************************************************************************************
      * Purpose : Strategy-specific entry condition
      *
