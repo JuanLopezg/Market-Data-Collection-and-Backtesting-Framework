@@ -6,55 +6,90 @@
 #include <utility>
 #include <stdexcept>
 
-Backtester::Backtester(const EnrichedData& marketData, Timestamp start, Timestamp end, Strategy& strategy, std::filesystem::path database_path)
-    : marketData_(marketData),
-      portfolio_(start),
-      current_trades_(),
-      strategy_(strategy),
-      start_(start),
-      end_(end),
-      database_path_(database_path)
+
+/**************************************************************************************
+ * Type    : Backtester
+ * Purpose : Orchestrates the execution of a backtest over historical market data
+ *
+ * This class drives the backtest loop. It iterates through historical timestamps,
+ * invokes signal generation on all strategy instances, updates the backtest context,
+ * and tracks execution progress.
+ **************************************************************************************/
+Backtester::Backtester(BacktestContext& backtest_context)
+    : backtest_context_(backtest_context)
 {}
 
-void Backtester::run(){
+
+/**************************************************************************************
+ * Purpose : Trigger signal calculation for all strategy instances at a given timestamp
+ *
+ * This method forwards the current market snapshot to each strategy instance,
+ * allowing strategies to generate new trades or update existing ones.
+ *
+ * Args    : bars - market data for all coins at the current timestamp
+ *           ts   - current timestamp
+ * Return  : None
+ **************************************************************************************/
+void Backtester::calculateSignals(const CoinBarMap& bars, Timestamp ts){
+    for (auto& strategy_instance : backtest_context_.GetStrategyPortfolio()) {
+        strategy_instance.calculateSignals(
+            bars,
+            ts,
+            this->backtest_context_.GetLastTradeId()
+        );
+    }
+}
+
+
+/**************************************************************************************
+ * Purpose : Execute the main backtest loop
+ *
+ * Iterates sequentially over the enriched historical market data, processes strategy
+ * signals for each timestamp, updates the global backtest context, and logs progress.
+ *
+ * The loop assumes time-ordered market data and performs a full portfolio update
+ * at each step.
+ *
+ * Args    : None
+ * Return  : None
+ **************************************************************************************/
+void Backtester::loop(){
     LG_INFO("Starting backtest");
 
-    auto beginIt = marketData_.lower_bound(start_);
-    auto endIt   = marketData_.upper_bound(end_);
-    this->starting_date_ = beginIt->first;
+    const EnrichedData& marketData = this->backtest_context_.GetMarketData();
+    assert(!marketData.empty());
 
-    const size_t totalSteps = std::distance(beginIt, endIt);
+    StrategyPortfolio& strategy_portfolio =
+        this->backtest_context_.GetStrategyPortfolio();
+
+    // Record the first timestamp of the backtest
+    this->starting_date_ = marketData.begin()->first;
+
+    const size_t totalSteps = marketData.size();
     size_t currentStep = 0;
-
     int lastLoggedPercent = 0;
     constexpr int LOG_STEP = 5;
 
-    for (auto it = marketData_.lower_bound(start_); it != marketData_.end() && it->first <= end_; ++it){
+    for (auto it = marketData.begin(); it != marketData.end(); ++it){
 
-        // Log every 5%
+        // Log progress at fixed percentage intervals
         ++currentStep;
-        int percent = static_cast<int>((static_cast<double>(currentStep) / totalSteps) * 100.0);
+        int percent = static_cast<int>(
+            (static_cast<double>(currentStep) / totalSteps) * 100.0
+        );
+
         if (percent >= lastLoggedPercent + LOG_STEP) {
             LG_INFO("Backtest progress: {}%", percent);
             lastLoggedPercent = percent;
         }
 
-        // Process backtesting data
+        // Process backtesting data for the current timestamp
         Timestamp ts = it->first;
         const CoinBarMap& bars = it->second;
 
         calculateSignals(bars, ts);
-        updatePortfolio();
-    }
-
-    if(currentStep > 0){
-        LG_INFO("Storing Results:");
-        storeResults();
-    }
-    else{
-        LG_INFO("No results to store");
+        updateBacktestContext();
     }
 
     LG_INFO("Backtest finished");
-
 }

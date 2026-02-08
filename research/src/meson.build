@@ -1,9 +1,9 @@
 sources = [
-    'signalizer_main.cpp'
+    'backtesting_main.cpp'
 ]
 
 executable(
-    'algotrading_signalizer',
+    'algotrading_research',
     sources,
     include_directories: include_directories('.'),
     dependencies: [

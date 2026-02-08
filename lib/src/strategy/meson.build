@@ -1,7 +1,13 @@
-# ---- Include directory for this folder ----
+# ---- Include directories ----
 strategy_inc = include_directories('.')
 
-# ---- Source files ----
+# ---- Subdirectories ----
+subdir('strategies')
+
+# ---- Merge include paths ----
+strategy_inc = [strategy_inc, strategies_inc]
+
+# ---- Source files (only translation units, not headers) ----
 strategy_sources = files(
-    'strategy_high_breakout.h'
+    'strategy_instance.h'
 )

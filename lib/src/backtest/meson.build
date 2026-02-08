@@ -4,5 +4,6 @@ backtest_inc = include_directories('.')
 # ---- Source files ----
 backtest_sources = files(
     'backtest.cpp',
-    'backtest_store.cpp'
+    'backtest_store.cpp',
+    'backtest_context.cpp'
 )

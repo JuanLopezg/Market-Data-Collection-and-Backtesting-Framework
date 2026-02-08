@@ -1,7 +1,21 @@
 #include "backtest.h"
+
 #include <stdexcept>
 
-void Backtester::storeTrades(sqlite3* db){
+
+/**************************************************************************************
+ * Purpose : Persist all trades (open and closed) to the SQLite database
+ *
+ * Creates the trades table if it does not exist and upserts all known trades.
+ * Indexes are created to support efficient post-backtest querying.
+ *
+ * Args    : db - open SQLite database handle
+ * Return  : None
+ *
+ * Throws  : std::runtime_error on any database error
+ **************************************************************************************/
+void Backtester::storeTrades(sqlite3* db)
+{
     const char* createTableSQL = R"(
         CREATE TABLE IF NOT EXISTS trades (
             trade_id       INTEGER PRIMARY KEY,
@@ -24,10 +38,24 @@ void Backtester::storeTrades(sqlite3* db){
         throw std::runtime_error("Failed to create trades table");
     }
 
+    // Indexes for fast querying
+    const char* createIndexSQL = R"(
+        CREATE INDEX IF NOT EXISTS idx_trades_coin
+            ON trades(coin);
+
+        CREATE INDEX IF NOT EXISTS idx_trades_start_ts
+            ON trades(start_ts);
+    )";
+
+    if (sqlite3_exec(db, createIndexSQL, nullptr, nullptr, nullptr) != SQLITE_OK) {
+        throw std::runtime_error("Failed to create trades indexes");
+    }
+
     const char* insertSQL = R"(
         INSERT INTO trades (
-            trade_id, start_ts, end_ts, commission, coin, direction, current_price,
-            entry_price, exit_price, size, is_simulated, exited, pnl
+            trade_id, start_ts, end_ts, commission, coin, direction,
+            current_price, entry_price, exit_price, size,
+            is_simulated, exited, pnl
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(trade_id) DO UPDATE SET
             start_ts      = excluded.start_ts,
@@ -41,7 +69,7 @@ void Backtester::storeTrades(sqlite3* db){
             size          = excluded.size,
             is_simulated  = excluded.is_simulated,
             exited        = excluded.exited,
-            pnl           = excluded.pnl
+            pnl           = excluded.pnl;
     )";
 
     sqlite3_stmt* stmt = nullptr;
@@ -49,45 +77,70 @@ void Backtester::storeTrades(sqlite3* db){
         throw std::runtime_error("Failed to prepare trades insert statement");
     }
 
-    std::map<TradeID, Trade>& all_trades = this->portfolio_.GetTradeHistory();
-    for (const auto& trade : this->current_trades_) {
-        all_trades[trade.trade_id_] = trade;
-    }
-
-    sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
-
-    for (const auto& kv : all_trades) {
-        const Trade& trade = kv.second;
-
-        sqlite3_bind_int64(stmt, 1, static_cast<sqlite3_int64>(trade.trade_id_));
-        sqlite3_bind_int64(stmt, 2, static_cast<sqlite3_int64>(trade.start_));
-        sqlite3_bind_int64(stmt, 3, static_cast<sqlite3_int64>(trade.end_));
-        sqlite3_bind_double(stmt, 4, trade.commission_);
-        sqlite3_bind_text(stmt, 5, trade.coin_.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_int(stmt, 6, static_cast<int>(trade.direction_));
-        sqlite3_bind_double(stmt, 7, trade.current_price_);
-        sqlite3_bind_double(stmt, 8, trade.entry_);
-        sqlite3_bind_double(stmt, 9, trade.exit_);
-        sqlite3_bind_double(stmt, 10, trade.size_);
-        sqlite3_bind_int(stmt, 11, trade.isSimulated_ ? 1 : 0);
-        sqlite3_bind_int(stmt, 12, trade.exited_ ? 1 : 0);
-        sqlite3_bind_double(stmt, 13, trade.pnl_);
-
-        if (sqlite3_step(stmt) != SQLITE_DONE) {
-            sqlite3_finalize(stmt);
-            sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
-            throw std::runtime_error("Failed to insert trade row");
+    try {
+        // Merge open trades into historical trades
+        auto& all_trades = backtest_context_.GetTradesHistory();
+        for (auto& strategyInstance : backtest_context_.GetStrategyPortfolio()) {
+            for (auto& trade : strategyInstance.GetCurrentTrades()) {
+                all_trades[trade.trade_id_] = trade;
+            }
         }
 
-        sqlite3_reset(stmt);
-        sqlite3_clear_bindings(stmt);
+        if (sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+            throw std::runtime_error("Failed to begin transaction (trades)");
+        }
+
+        for (const auto& [_, trade] : all_trades) {
+
+            sqlite3_bind_int64(stmt, 1, trade.trade_id_);
+            sqlite3_bind_int64(stmt, 2, trade.start_);
+            sqlite3_bind_int64(stmt, 3, trade.end_);
+            sqlite3_bind_double(stmt, 4, trade.commission_);
+            sqlite3_bind_text(stmt, 5, trade.coin_.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int(stmt, 6, static_cast<int>(trade.direction_));
+            sqlite3_bind_double(stmt, 7, trade.current_price_);
+            sqlite3_bind_double(stmt, 8, trade.entry_);
+            sqlite3_bind_double(stmt, 9, trade.exit_);
+            sqlite3_bind_double(stmt, 10, trade.size_);
+            sqlite3_bind_int(stmt, 11, trade.isSimulated_ ? 1 : 0);
+            sqlite3_bind_int(stmt, 12, trade.exited_ ? 1 : 0);
+            sqlite3_bind_double(stmt, 13, trade.pnl_);
+
+            if (sqlite3_step(stmt) != SQLITE_DONE) {
+                throw std::runtime_error("Failed to insert trade row");
+            }
+
+            sqlite3_reset(stmt);
+            sqlite3_clear_bindings(stmt);
+        }
+
+        if (sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+            throw std::runtime_error("Failed to commit transaction (trades)");
+        }
+    }
+    catch (...) {
+        sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        sqlite3_finalize(stmt);
+        throw;
     }
 
-    sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr);
     sqlite3_finalize(stmt);
 }
 
-void Backtester::storeBalanceEquity(sqlite3* db) {
+
+/**************************************************************************************
+ * Purpose : Persist balance and equity history to the SQLite database
+ *
+ * Stores the balance/equity time series accumulated during the backtest.
+ * Uses a transaction to ensure atomicity.
+ *
+ * Args    : db - open SQLite database handle
+ * Return  : None
+ *
+ * Throws  : std::runtime_error on any database error
+ **************************************************************************************/
+void Backtester::storeBalanceEquity(sqlite3* db)
+{
     const char* createTableSQL = R"(
         CREATE TABLE IF NOT EXISTS balance_equity (
             ts INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -109,67 +162,94 @@ void Backtester::storeBalanceEquity(sqlite3* db) {
     sqlite3_stmt* stmt = nullptr;
 
     if (sqlite3_prepare_v2(db, insertWithTsSQL, -1, &stmtWithTs, nullptr) != SQLITE_OK ||
-        sqlite3_prepare_v2(db, insertSQL, -1, &stmt, nullptr) != SQLITE_OK) {
-        throw std::runtime_error("Failed to prepare insert statements");
+        sqlite3_prepare_v2(db, insertSQL, -1, &stmt, nullptr) != SQLITE_OK)
+    {
+        if (stmtWithTs) sqlite3_finalize(stmtWithTs);
+        if (stmt) sqlite3_finalize(stmt);
+        throw std::runtime_error("Failed to prepare balance_equity insert statements");
     }
 
-    sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
-
-    const auto& history = this->portfolio_.GetBalanceEquityHistory();
+    const auto& history = backtest_context_.GetBalanceEquityHistoric();
     bool first = true;
-    sqlite3_int64 ts = static_cast<sqlite3_int64>(this->starting_date_);
+    sqlite3_int64 ts = static_cast<sqlite3_int64>(starting_date_);
 
-    for (const auto& [balance, equity] : history) {
-        if (first) {
-            sqlite3_bind_int64(stmtWithTs, 1, ts);
-            sqlite3_bind_double(stmtWithTs, 2, balance);
-            sqlite3_bind_double(stmtWithTs, 3, equity);
+    if (sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        sqlite3_finalize(stmtWithTs);
+        sqlite3_finalize(stmt);
+        throw std::runtime_error("Failed to begin transaction (balance_equity)");
+    }
 
-            if (sqlite3_step(stmtWithTs) != SQLITE_DONE) {
-                throw std::runtime_error("Failed to insert first balance_equity row");
+    try {
+        for (const auto& [balance, equity] : history) {
+            if (first) {
+                sqlite3_bind_int64(stmtWithTs, 1, ts);
+                sqlite3_bind_double(stmtWithTs, 2, balance);
+                sqlite3_bind_double(stmtWithTs, 3, equity);
+
+                if (sqlite3_step(stmtWithTs) != SQLITE_DONE) {
+                    throw std::runtime_error("Failed to insert first balance_equity row");
+                }
+
+                sqlite3_reset(stmtWithTs);
+                sqlite3_clear_bindings(stmtWithTs);
+                first = false;
+            } else {
+                sqlite3_bind_double(stmt, 1, balance);
+                sqlite3_bind_double(stmt, 2, equity);
+
+                if (sqlite3_step(stmt) != SQLITE_DONE) {
+                    throw std::runtime_error("Failed to insert balance_equity row");
+                }
+
+                sqlite3_reset(stmt);
+                sqlite3_clear_bindings(stmt);
             }
+        }
 
-            sqlite3_reset(stmtWithTs);
-            sqlite3_clear_bindings(stmtWithTs);
-            first = false;
-        } else {
-            sqlite3_bind_double(stmt, 1, balance);
-            sqlite3_bind_double(stmt, 2, equity);
-
-            if (sqlite3_step(stmt) != SQLITE_DONE) {
-                throw std::runtime_error("Failed to insert balance_equity row");
-            }
-
-            sqlite3_reset(stmt);
-            sqlite3_clear_bindings(stmt);
+        if (sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+            throw std::runtime_error("Failed to commit transaction (balance_equity)");
         }
     }
-
-    sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr);
+    catch (...) {
+        sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        sqlite3_finalize(stmtWithTs);
+        sqlite3_finalize(stmt);
+        throw;
+    }
 
     sqlite3_finalize(stmtWithTs);
     sqlite3_finalize(stmt);
 }
 
 
-void Backtester::storeResults(){
+/**************************************************************************************
+ * Purpose : Persist all backtest results to disk
+ *
+ * Creates the SQLite database file and delegates persistence of trades and
+ * balance/equity history.
+ *
+ * Args    : backtest_store_path - full path to the SQLite database file
+ * Return  : None
+ *
+ * Throws  : std::runtime_error on any filesystem or database error
+ **************************************************************************************/
+void Backtester::storeResults(std::filesystem::path& backtest_store_path)
+{
+    std::filesystem::create_directories(backtest_store_path.parent_path());
 
-    // Create database
-    std::filesystem::create_directories(this->database_path_.parent_path());
     sqlite3* db = nullptr;
-    if (sqlite3_open(this->database_path_.c_str(), &db) != SQLITE_OK) {
+    if (sqlite3_open(backtest_store_path.c_str(), &db) != SQLITE_OK) {
         throw std::runtime_error("Failed to create SQLite database");
     }
 
-    // store info
     try {
         storeBalanceEquity(db);
         storeTrades(db);
-    } catch (...) {
+    }
+    catch (...) {
         sqlite3_close(db);
         throw;
     }
 
-    // close db
-    sqlite3_close(db);    
+    sqlite3_close(db);
 }

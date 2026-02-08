@@ -13,7 +13,7 @@ subdir('database')
 subdir('data')
 subdir('backtest')
 subdir('strategy')
-subdir('portfolio')
+subdir('ranker')
 
 # ---- Include directories for all submodules ----
 include_dir = include_directories(
@@ -23,7 +23,8 @@ include_dir = include_directories(
     'data',
     'backtest',
     'strategy',
-    'portfolio'
+    'strategy/strategies',
+    'ranker'
 )
 
 # ---- Aggregate all sources from submodules ----
@@ -34,7 +35,7 @@ lib_sources += database_sources
 lib_sources += data_sources
 lib_sources += backtest_sources
 lib_sources += strategy_sources
-lib_sources += portfolio_sources
+lib_sources += ranker_sources
 
 
 # ---- Create the library ----
