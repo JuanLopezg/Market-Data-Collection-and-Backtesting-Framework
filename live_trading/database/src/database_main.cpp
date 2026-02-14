@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
     Logger::Instance().Setup(
         /*debugEnabled=*/false,
         /*quiet=*/false,
-        /*fileAppender=*/"database.log",
+        /*fileAppender=*/"",
         /*rollingAppender=*/"database_roll.log",
         /*includeHeader=*/true
     );

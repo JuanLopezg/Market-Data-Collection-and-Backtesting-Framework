@@ -66,7 +66,7 @@ void Logger::Setup(bool debugEnabled,
         auto* rfa = new log4cpp::RollingFileAppender(
             "rolling",
             rollingAppenderPath,
-            5 * 1024 * 1024,
+            20 * 1024 * 1024, // 20MB * 5 files = 100MB max of logs
             5
         );
         rfa->setLayout(layoutRolling);
