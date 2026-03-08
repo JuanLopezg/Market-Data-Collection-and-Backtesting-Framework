@@ -5,5 +5,6 @@ utils_inc = include_directories('.')
 utils_sources = files(
     'json_utils.cpp',
     'time_utils.cpp',
-    'database_utils.cpp'
+    'database_utils.cpp',
+    'csv_utils.cpp'
 )

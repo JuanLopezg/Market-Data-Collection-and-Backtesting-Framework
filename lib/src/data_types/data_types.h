@@ -3,6 +3,7 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <unordered_map>
 
 
 /**************************************************************************************
@@ -109,5 +110,24 @@ struct Trade {
  * Type aliases
  * Purpose : Common containers used across the engine
  **************************************************************************************/
-using CoinBarMap   = std::map<Coin, BarData>;
+using CoinBarMap   = std::unordered_map<Coin, BarData>;
 using EnrichedData = std::map<Timestamp, CoinBarMap>;
+
+
+
+/**************************************************************************************
+ * Purpose : Build enriched bar data with indicators from raw OHLCV market data
+ *
+ * This function processes OHLCV time series for each asset and computes additional
+ * derived fields used in backtesting. For every bar it calculates:
+ *
+ *   - 20-day rolling high (previous 20 bars)
+ *   - ATR(14) using the previous 14 true ranges
+ *
+ * Args    : raw - OHLCVData containing raw market candles organized as
+ *                 coin -> date -> OHLCV
+ *
+ * Return  : EnrichedData containing BarData with computed indicators organized as
+ *           date -> coin -> BarData
+ **************************************************************************************/
+EnrichedData buildEnriched(const OHLCVData& raw);

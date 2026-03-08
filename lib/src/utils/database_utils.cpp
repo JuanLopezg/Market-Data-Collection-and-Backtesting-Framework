@@ -1,4 +1,5 @@
 #include "database_utils.h"
+#include "logger.h"
 
 #include <string>
 #include <chrono>
@@ -6,6 +7,8 @@
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
+#include <sqlite3.h>
+#include <iostream>
 
 /**************************************************************************************
  * Purpose : CURL write callback used to accumulate incoming HTTP response data into
@@ -87,3 +90,81 @@ std::filesystem::path generateBacktestDbPath(
     return fullPath;
 }
 
+
+/**************************************************************************************
+ * Purpose : Load OHLCV market data from a SQLite database into an OHLCVData structure
+ *
+ * This function opens the SQLite database located at the provided filesystem path
+ * and executes a query against the `ohlcv_data` table. All rows with
+ *
+ *   date >= start_date
+ *
+ * are retrieved and ordered by pair and date in ascending order.
+ *
+ * Args    : database_path - filesystem path to the SQLite database file
+ *           start_date    - minimum date to load (inclusive), format YYYYMMDD
+ *
+ * Return  : OHLCVData populated with all matching OHLCV rows from the database;
+ *           returns an empty OHLCVData object on failure
+ **************************************************************************************/
+OHLCVData loadDatabase(std::filesystem::path database_path, Timestamp start_date)
+{
+    OHLCVData ohlcvData;
+    std::string path = database_path.string();
+
+    // ================= OPEN DB =================
+    sqlite3* db = nullptr;
+
+    if (sqlite3_open(path.c_str(), &db) != SQLITE_OK)
+    {
+        LG_ERROR("Failed to open DB: {}", sqlite3_errmsg(db));
+        return ohlcvData;
+    }
+
+    // ================= PREPARE QUERY =================
+    const char* sql =
+        "SELECT pair, date, open, high, low, close, volume "
+        "FROM ohlcv_data "
+        "WHERE date >= ? "
+        "ORDER BY pair, date ASC;";
+
+    sqlite3_stmt* stmt = nullptr;
+
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK)
+    {
+        LG_ERROR("Prepare failed: {}", sqlite3_errmsg(db));
+        sqlite3_close(db);
+        return ohlcvData;
+    }
+
+    // Bind start date parameter
+    sqlite3_bind_int(stmt, 1, static_cast<int>(start_date));
+
+    // ================= READ ROWS =================
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        const char* pair_c =
+            reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+
+        if (!pair_c) continue;
+
+        std::string pair(pair_c);
+
+        unsigned int date =
+            static_cast<unsigned int>(sqlite3_column_int(stmt, 1));
+
+        OHLCV candle;
+        candle.open   = sqlite3_column_double(stmt, 2);
+        candle.high   = sqlite3_column_double(stmt, 3);
+        candle.low    = sqlite3_column_double(stmt, 4);
+        candle.close  = sqlite3_column_double(stmt, 5);
+        candle.volume = sqlite3_column_double(stmt, 6);
+
+        ohlcvData.data[pair][date] = candle;
+    }
+
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+
+    return ohlcvData;
+}

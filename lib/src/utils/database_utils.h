@@ -3,6 +3,8 @@
 #include <string>
 #include <filesystem>
 
+#include "data_types.h"
+
 /**************************************************************************************
  * Purpose : Declaration of the CURL write callback used when downloading data via
  *           libcurl. The callback appends incoming data chunks into a std::string
@@ -39,3 +41,22 @@ size_t writeCallback(void* contents, size_t size, size_t nmemb, void* userp);
  *           or if a file with the generated name already exists
  **************************************************************************************/
 std::filesystem::path generateBacktestDbPath(const std::filesystem::path& directory);
+
+
+/**************************************************************************************
+ * Purpose : Load OHLCV market data from a SQLite database into an OHLCVData structure
+ *
+ * This function opens the SQLite database located at the provided filesystem path
+ * and executes a query against the `ohlcv_data` table. All rows with
+ *
+ *   date >= start_date
+ *
+ * are retrieved and ordered by pair and date in ascending order.
+ *
+ * Args    : database_path - filesystem path to the SQLite database file
+ *           start_date    - minimum date to load (inclusive), format YYYYMMDD
+ *
+ * Return  : OHLCVData populated with all matching OHLCV rows from the database;
+ *           returns an empty OHLCVData object on failure
+ **************************************************************************************/
+OHLCVData loadDatabase(std::filesystem::path database_path, Timestamp start_date);
