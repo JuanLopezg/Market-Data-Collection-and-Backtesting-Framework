@@ -22,6 +22,9 @@ boost_dep = dependency('boost',
     required : true
 )
 
+arrow_dep = dependency('arrow', required: true)
+parquet_dep = dependency('parquet', required: true)
+
 nlohmann_json_dep = dependency('nlohmann_json', required: true)
 
 json_schema_validator_dep = dependency(
@@ -49,6 +52,8 @@ global_deps = {
     'sqlite3_dep'               : sqlite3_dep,
     'curl_dep'                  : curl_dep, 
     'fmt_dep'                   : fmt_dep, 
+    'arrow_dep'                 : arrow_dep,
+    'parquet_dep'               : parquet_dep,
 }
 
 # ------------------------------

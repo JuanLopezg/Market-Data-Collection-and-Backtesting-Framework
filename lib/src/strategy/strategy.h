@@ -119,7 +119,8 @@ protected:
     virtual bool shouldEnter(
         const Coin& coin,
         const BarData& bar,
-        const std::vector<Trade>& current_trades
+        const std::vector<Trade>& current_trades,
+        const double strategy_allocation
     ) const = 0;
 
     /**************************************************************************************

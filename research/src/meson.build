@@ -14,6 +14,8 @@ executable(
         global_deps['json_schema_validator_dep'],
         global_deps['sqlite3_dep'],
         global_deps['curl_dep'],
-        global_deps['fmt_dep']
+        global_deps['fmt_dep'],
+        global_deps['arrow_dep'],
+        global_deps['parquet_dep']
     ]
 )

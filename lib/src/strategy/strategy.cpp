@@ -86,7 +86,7 @@ void Strategy::calculateSignals(
             continue;
 
         // Strategy-specific entry condition
-        if (!shouldEnter(coin, bar, current_trades))
+        if (!shouldEnter(coin, bar, current_trades, strategy_allocation))
             continue;
 
         // Build and register new trade

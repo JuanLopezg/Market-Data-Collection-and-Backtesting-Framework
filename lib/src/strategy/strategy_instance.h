@@ -69,10 +69,10 @@ public:
      * Computes the capital allocation for the strategy based on global equity
      * and forwards the current market snapshot to the strategy implementation.
      *
-     * Args    : bars          - market data for all coins at the current timestamp
-     *           ts            - current timestamp
-     *           last_trade_id - reference to the global trade identifier counter
-     *
+     * Args    : bars                - market data for all coins at the current timestamp
+     *           ts                  - current timestamp
+     *           last_trade_id       - reference to the global trade identifier counter
+     *           strategy_allocation - total strategy monetary allocation
      * Return  : None
      **************************************************************************************/
     void calculateSignals(const CoinBarMap& bars,
