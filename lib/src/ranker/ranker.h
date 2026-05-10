@@ -44,3 +44,27 @@ public:
     **************************************************************************************/
     RankedBars rank(const CoinBarMap& bars) const override;
 };
+
+/**************************************************************************************
+ * Type    : ROCRanker
+ * Purpose : Rank coin bar data by descending ROC
+**************************************************************************************/
+class ROCRanker final : public Ranker {
+public:
+    /**************************************************************************************
+     * Purpose : Rank bars based on their traded volume
+     * Args    : bars - map of coins to their associated OHLCV bar data
+     * Return  : Vector of references to bars ranked by volume (descending)
+    **************************************************************************************/
+    RankedBars rank(const CoinBarMap& bars) const override;
+};
+
+class ROCRankerI final : public Ranker {
+public:
+    /**************************************************************************************
+     * Purpose : Rank bars based on their traded volume
+     * Args    : bars - map of coins to their associated OHLCV bar data
+     * Return  : Vector of references to bars ranked by volume (descending)
+    **************************************************************************************/
+    RankedBars rank(const CoinBarMap& bars) const override;
+};

@@ -30,12 +30,13 @@ Backtester::Backtester(BacktestContext& backtest_context)
  *           ts   - current timestamp
  * Return  : None
  **************************************************************************************/
-void Backtester::calculateSignals(const CoinBarMap& bars, Timestamp ts){
+void Backtester::calculateSignals(const EnrichedData& marketData, Timestamp ts, bool live_trading){
     for (auto& strategy_instance : backtest_context_.GetStrategyPortfolio()) {
         strategy_instance.calculateSignals(
-            bars,
+            marketData,
             ts,
-            this->backtest_context_.GetLastTradeId()
+            this->backtest_context_.GetLastTradeId(),
+            this->backtest_context_.IsLiveTrading()
         );
     }
 }
@@ -85,10 +86,9 @@ void Backtester::loop(){
 
         // Process backtesting data for the current timestamp
         Timestamp ts = it->first;
-        const CoinBarMap& bars = it->second;
-
-        calculateSignals(bars, ts);
+        calculateSignals(marketData, ts, this->backtest_context_.IsLiveTrading());
         updateBacktestContext();
+
     }
 
     LG_INFO("Backtest finished");

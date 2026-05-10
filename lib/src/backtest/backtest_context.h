@@ -44,6 +44,9 @@ private:
     // Historical record of closed trades (including non-simulated trades)
     std::map<TradeID, Trade> trades_history_;
 
+    // Live trading backtesting or simulated
+    bool live_trading_ = false;
+
 public:
     /**************************************************************************************
      * Purpose : Construct and initialize the backtest execution context
@@ -66,13 +69,15 @@ public:
                              double initialEquity,
                              unsigned int lastTradeId = 0,
                              double commissionLimitFactor = 0.0,
-                             double commissionMarketFactor = 0.0)
+                             double commissionMarketFactor = 0.0,
+                             double live_trading = false)
         : market_data_(marketData),
           current_balance_(initialBalance),
           current_equity_(initialEquity),
           last_trade_id_(lastTradeId),
           commission_limit_factor_(commissionLimitFactor),
-          commission_market_factor_(commissionMarketFactor)
+          commission_market_factor_(commissionMarketFactor),
+          live_trading_(live_trading)
     {
         assert(!marketData.empty());
         assert(!strategies.empty());
@@ -186,5 +191,14 @@ public:
      **************************************************************************************/
     double& GetCommissionMarketFactor() {
         return commission_market_factor_;
+    }
+
+    /**************************************************************************************
+     * Purpose : Check if its live trading test or a backtest 
+     * Args    : None
+     * Return  : boolean
+     **************************************************************************************/
+    bool& IsLiveTrading() {
+        return live_trading_;
     }
 };

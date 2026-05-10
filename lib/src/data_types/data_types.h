@@ -69,9 +69,13 @@ struct BarData {
     double volume;
 
     // Derived / auxiliary data
-    unsigned int barNumber = 0;
-    double high_20d        = 0.0;
-    double atr_14d         = 0.0;
+    unsigned int barNumber  = 0;
+    double high_20d         = 0.0;
+    double atr_14d          = 0.0;
+    double u25d_volume      = 0.0;
+    double ma50             = 0.0;
+    unsigned int volumeRank = 0; // ascending order
+    double roc1             = 0.0;
 };
 
 
@@ -101,6 +105,8 @@ struct Trade {
 
     bool      isSimulated_     = true;
     bool      exited_          = false;
+
+    unsigned int barsHeld      = 0;
 
     std::string strategy_name_ = "None";
 };

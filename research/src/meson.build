@@ -1,5 +1,6 @@
 sources = [
-    'backtesting_main.cpp'
+    'backtesting_main.cpp',
+    'realtest.cpp'
 ]
 
 executable(

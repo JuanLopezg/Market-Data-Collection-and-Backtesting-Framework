@@ -10,6 +10,14 @@
 #include <sqlite3.h>
 #include <iostream>
 
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <filesystem>
+#include <algorithm>
+#include <cctype>
+
+
 /**************************************************************************************
  * Purpose : CURL write callback used to accumulate incoming HTTP response data into
  *           a std::string. libcurl calls this function repeatedly while downloading
@@ -91,23 +99,87 @@ std::filesystem::path generateBacktestDbPath(
 }
 
 
-/**************************************************************************************
- * Purpose : Load OHLCV market data from a SQLite database into an OHLCVData structure
- *
- * This function opens the SQLite database located at the provided filesystem path
- * and executes a query against the `ohlcv_data` table. All rows with
- *
- *   date >= start_date
- *
- * are retrieved and ordered by pair and date in ascending order.
- *
- * Args    : database_path - filesystem path to the SQLite database file
- *           start_date    - minimum date to load (inclusive), format YYYYMMDD
- *
- * Return  : OHLCVData populated with all matching OHLCV rows from the database;
- *           returns an empty OHLCVData object on failure
- **************************************************************************************/
-OHLCVData loadDatabase(std::filesystem::path database_path, Timestamp start_date)
+
+
+static Timestamp parseCsvDateToTimestamp(const std::string& date)
+{
+    // Input:  "2020-10-05"
+    // Output: 20201005
+    std::string yyyymmdd;
+    yyyymmdd.reserve(8);
+
+    for (char c : date)
+    {
+        if (c != '-')
+            yyyymmdd.push_back(c);
+    }
+
+    return static_cast<Timestamp>(std::stoul(yyyymmdd));
+}
+
+
+OHLCVData loadDatabaseFromCSV(std::filesystem::path csv_path, Timestamp start_date)
+{
+    OHLCVData ohlcvData;
+
+    std::ifstream file(csv_path);
+    if (!file.is_open())
+    {
+        LG_ERROR("Failed to open CSV: {}", csv_path.string());
+        return ohlcvData;
+    }
+
+    std::string line;
+
+    // Skip header:
+    // date,symbol,open,high,low,close,volume
+    std::getline(file, line);
+
+    while (std::getline(file, line))
+    {
+        if (line.empty())
+            continue;
+
+        std::stringstream ss(line);
+
+        std::string dateStr;
+        std::string symbol;
+        std::string openStr;
+        std::string highStr;
+        std::string lowStr;
+        std::string closeStr;
+        std::string volumeStr;
+
+        std::getline(ss, dateStr, ',');
+        std::getline(ss, symbol, ',');
+        std::getline(ss, openStr, ',');
+        std::getline(ss, highStr, ',');
+        std::getline(ss, lowStr, ',');
+        std::getline(ss, closeStr, ',');
+        std::getline(ss, volumeStr, ',');
+
+        if (dateStr.empty() || symbol.empty())
+            continue;
+
+        Timestamp date = parseCsvDateToTimestamp(dateStr);
+
+        if (date < start_date)
+            continue;
+
+        OHLCV candle;
+        candle.open   = std::stod(openStr);
+        candle.high   = std::stod(highStr);
+        candle.low    = std::stod(lowStr);
+        candle.close  = std::stod(closeStr);
+        candle.volume = std::stod(volumeStr);
+
+        ohlcvData.data[symbol][date] = candle;
+    }
+
+    return ohlcvData;
+}
+
+OHLCVData loadDatabaseFromSQLite(std::filesystem::path database_path, Timestamp start_date)
 {
     OHLCVData ohlcvData;
     std::string path = database_path.string();
@@ -167,4 +239,46 @@ OHLCVData loadDatabase(std::filesystem::path database_path, Timestamp start_date
     sqlite3_close(db);
 
     return ohlcvData;
+}
+
+/**************************************************************************************
+ * Purpose : Load OHLCV market data from a SQLite database into an OHLCVData structure
+ *
+ * This function opens the SQLite database located at the provided filesystem path
+ * and executes a query against the `ohlcv_data` table. All rows with
+ *
+ *   date >= start_date
+ *
+ * are retrieved and ordered by pair and date in ascending order.
+ *
+ * Args    : database_path - filesystem path to the SQLite database file
+ *           start_date    - minimum date to load (inclusive), format YYYYMMDD
+ *
+ * Return  : OHLCVData populated with all matching OHLCV rows from the database;
+ *           returns an empty OHLCVData object on failure
+ **************************************************************************************/
+OHLCVData loadDatabase(std::filesystem::path database_path, Timestamp start_date)
+{
+    std::string extension = database_path.extension().string();
+
+    std::transform(
+        extension.begin(),
+        extension.end(),
+        extension.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
+    );
+
+    if (extension == ".csv")
+    {
+        return loadDatabaseFromCSV(database_path, start_date);
+    }
+
+    if (extension == ".db")
+    {
+        return loadDatabaseFromSQLite(database_path, start_date);
+    }
+
+    LG_ERROR("Unsupported database extension: {}", extension);
+
+    return OHLCVData{};
 }

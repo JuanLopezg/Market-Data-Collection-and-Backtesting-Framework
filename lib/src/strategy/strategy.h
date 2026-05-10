@@ -54,11 +54,12 @@ public:
      * Return : None
      **********************************************************************************/
     void calculateSignals(
-        const CoinBarMap& bars,
+        const EnrichedData& marketData,
         Timestamp ts,
         unsigned int& last_trade_id,
         std::vector<Trade>& current_trades,
-        double strategy_allocation
+        double strategy_allocation,
+        bool live_trading
     );
 
 protected:
@@ -118,7 +119,8 @@ protected:
      **************************************************************************************/
     virtual bool shouldEnter(
         const Coin& coin,
-        const BarData& bar,
+        const EnrichedData& marketData,
+        Timestamp ts,
         const std::vector<Trade>& current_trades,
         const double strategy_allocation
     ) const = 0;
@@ -128,10 +130,11 @@ protected:
      **************************************************************************************/
     virtual Trade buildTrade(
         const Coin& coin,
-        const BarData& bar,
+        const EnrichedData& marketData,
         Timestamp ts,
         unsigned int& last_trade_id,
-        double strategy_allocation
+        double strategy_allocation,
+        bool live_trading
     ) const = 0;
 
     /**************************************************************************************
@@ -141,8 +144,10 @@ protected:
      **************************************************************************************/
     virtual void onBar(
         Trade& trade,
-        const BarData& bar,
-        Timestamp ts
+        const Coin& coin,
+        const EnrichedData& marketData,
+        Timestamp ts,
+        bool live_trading
     ) const = 0;
 
 

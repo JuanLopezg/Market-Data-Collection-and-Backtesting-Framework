@@ -53,6 +53,8 @@ public:
      **************************************************************************************/
     void storeResults(std::filesystem::path& backtest_store_path);
 
+    void closeTrades();
+
 private:
     // Reference to the global backtest execution context
     BacktestContext& backtest_context_;
@@ -70,7 +72,7 @@ private:
      *           ts   - current timestamp
      * Return  : None
      **************************************************************************************/
-    void calculateSignals(const CoinBarMap& bars, Timestamp ts);
+    void calculateSignals(const EnrichedData& marketData, Timestamp ts, bool live_trading);
 
     /**************************************************************************************
      * Purpose : Update the global backtest context

@@ -253,3 +253,12 @@ void Backtester::storeResults(std::filesystem::path& backtest_store_path)
 
     sqlite3_close(db);
 }
+
+void Backtester::closeTrades(){
+    auto& all_trades = backtest_context_.GetTradesHistory();
+    for (auto& strategyInstance : backtest_context_.GetStrategyPortfolio()) {
+        for (auto& trade : strategyInstance.GetCurrentTrades()) {
+            all_trades[trade.trade_id_] = trade;
+        }
+    }
+}

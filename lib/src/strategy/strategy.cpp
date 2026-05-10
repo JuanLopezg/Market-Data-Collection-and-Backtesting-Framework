@@ -26,16 +26,18 @@
  * Return : None
  **********************************************************************************/
 void Strategy::calculateSignals(
-    const CoinBarMap& bars,
+    const EnrichedData& marketData,
     Timestamp ts,
     unsigned int& last_trade_id,
     std::vector<Trade>& current_trades,
-    double strategy_allocation)
+    double strategy_allocation,
+    bool live_trading)
 {
     // ---------------------------------------------------------------------
     // 1. Update open trades
     // ---------------------------------------------------------------------
     unsigned int openCount = 0;
+    const auto& bars = marketData.at(ts);
 
     for (auto& trade : current_trades) {
         if (trade.exited_) {
@@ -51,7 +53,7 @@ void Strategy::calculateSignals(
         }
 
         // Delegate per-bar trade logic to the strategy
-        onBar(trade, it->second, ts);
+        onBar(trade, trade.coin_, marketData, ts, live_trading);
 
         // Count only real (non-simulated) open trades
         if (!trade.exited_ && !trade.isSimulated_) {
@@ -79,23 +81,24 @@ void Strategy::calculateSignals(
             ++rankingPosition > maxRankingPosition_)
             break;
 
-        const auto& [coin, bar] = wrapped.get();
+        const auto& [coin, _] = wrapped.get();
 
         // Skip coins with an existing open trade
         if (hasOpenTrade(current_trades, coin))
             continue;
 
         // Strategy-specific entry condition
-        if (!shouldEnter(coin, bar, current_trades, strategy_allocation))
+        if (!shouldEnter(coin, marketData, ts, current_trades, strategy_allocation))
             continue;
 
         // Build and register new trade
         Trade t = buildTrade(
             coin,
-            bar,
+            marketData,
             ts,
             last_trade_id,
-            strategy_allocation
+            strategy_allocation,
+            live_trading
         );
 
         current_trades.emplace_back(std::move(t));

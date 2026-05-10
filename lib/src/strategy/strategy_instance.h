@@ -75,17 +75,19 @@ public:
      *           strategy_allocation - total strategy monetary allocation
      * Return  : None
      **************************************************************************************/
-    void calculateSignals(const CoinBarMap& bars,
+    void calculateSignals(const EnrichedData& marketData,
                           Timestamp ts,
-                          unsigned int& last_trade_id)
+                          unsigned int& last_trade_id,
+                          bool live_trading)
     {
         double strategy_allocation = current_global_equity_ * weight_;
         strategy_->calculateSignals(
-            bars,
+            marketData,
             ts,
             last_trade_id,
             current_trades_,
-            strategy_allocation
+            strategy_allocation,
+            live_trading
         );
     }
 
