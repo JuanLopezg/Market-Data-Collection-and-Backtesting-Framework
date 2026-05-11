@@ -1,116 +1,68 @@
 #pragma once
 
-#include <vector>
 #include <filesystem>
-#include "strategy.h"
+#include <vector>
+
 #include <sqlite3.h>
+
+#include "data_types.h"
+#include "strategy.h"
 #include "backtest_context.h"
 
 
 /**************************************************************************************
  * Type    : Backtester
  * Purpose : Drives the execution of a backtest over historical market data
- *
- * The Backtester class is responsible for orchestrating the backtest lifecycle.
- * It iterates over historical market data, triggers signal generation on all
- * strategy instances, updates the global backtest context, and optionally
- * persists results.
  **************************************************************************************/
 class Backtester {
 public:
-    /**************************************************************************************
-     * Purpose : Construct a Backtester bound to an existing backtest context
-     *
-     * Args    : backtest_context - reference to an initialized backtest context
-     * Return  : None
-     **************************************************************************************/
     explicit Backtester(
         BacktestContext& backtest_context
     );
 
     /**************************************************************************************
      * Purpose : Execute the main backtest loop
-     *
-     * Iterates sequentially through the historical market data contained in the
-     * backtest context, invokes signal calculation on all strategy instances,
-     * updates balances and equity, and tracks execution progress.
-     *
-     * Args    : None
-     * Return  : None
      **************************************************************************************/
     void loop();
 
     /**************************************************************************************
      * Purpose : Persist all backtest results to disk
-     *
-     * Creates the SQLite database file and delegates persistence of trades and
-     * balance/equity history.
-     *
-     * Args    : backtest_store_path - full path to the SQLite database file
-     * Return  : None
-     *
-     * Throws  : std::runtime_error on any filesystem or database error
      **************************************************************************************/
     void storeResults(std::filesystem::path& backtest_store_path);
 
+    /**************************************************************************************
+     * Purpose : Copy all still-open trades into trade history
+     **************************************************************************************/
     void closeTrades();
 
 private:
-    // Reference to the global backtest execution context
     BacktestContext& backtest_context_;
 
-    // Timestamp corresponding to the first bar of the backtest
-    Timestamp starting_date_;
+    Timestamp starting_date_ = 0;
 
     /**************************************************************************************
      * Purpose : Trigger signal calculation for all strategy instances
-     *
-     * Forwards the current market snapshot to each strategy instance so that
-     * strategies may generate new trades or update existing ones.
-     *
-     * Args    : bars - market data for all coins at the current timestamp
-     *           ts   - current timestamp
-     * Return  : None
      **************************************************************************************/
-    void calculateSignals(const EnrichedData& marketData, Timestamp ts, bool live_trading);
+    void calculateSignals(
+        const MarketData& marketData,
+        Timestamp ts,
+        bool live_trading
+    );
 
     /**************************************************************************************
      * Purpose : Update the global backtest context
-     *
-     * Aggregates realized and unrealized PnL across all strategies, updates
-     * balance and equity values, and records historical snapshots.
-     *
-     * Args    : None
-     * Return  : None
      **************************************************************************************/
-    void updateBacktestContext(){
-        this->backtest_context_.updateConext();
+    void updateBacktestContext() {
+        backtest_context_.updateConext();
     }
 
-    
     /**************************************************************************************
-     * Purpose : Persist all trades (open and closed) to the SQLite database
-     *
-     * Creates the trades table if it does not exist and upserts all known trades.
-     * Indexes are created to support efficient post-backtest querying.
-     *
-     * Args    : db - open SQLite database handle
-     * Return  : None
-     *
-     * Throws  : std::runtime_error on any database error
+     * Purpose : Persist all trades to SQLite
      **************************************************************************************/
     void storeTrades(sqlite3* db);
 
     /**************************************************************************************
-     * Purpose : Persist balance and equity history to the SQLite database
-     *
-     * Stores the balance/equity time series accumulated during the backtest.
-     * Uses a transaction to ensure atomicity.
-     *
-     * Args    : db - open SQLite database handle
-     * Return  : None
-     *
-     * Throws  : std::runtime_error on any database error
+     * Purpose : Persist balance/equity history to SQLite
      **************************************************************************************/
     void storeBalanceEquity(sqlite3* db);
 };

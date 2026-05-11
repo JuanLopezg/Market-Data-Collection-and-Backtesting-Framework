@@ -1,6 +1,9 @@
 #include "backtest.h"
 #include "bargainChaser.h"
-#include "ranker.h"
+#include "indicator_ranker.h"
+#include "indicator_spec.h"
+#include "liquidity_universe.h"
+#include "universe_selector.h"
 #include "database_utils.h"
 #include "data_types.h"
 #include "csv_utils.h"
@@ -8,32 +11,34 @@
 #include "realtest.h"
 
 #include <sqlite3.h>
-#include <iostream>
-#include <map>
-#include <string>
-#include <fstream>
-#include <vector>
-#include <utility>
 
-#include <cstdio>
 #include <algorithm>
 #include <cstdlib>
+#include <cstdio>
 #include <filesystem>
-
+#include <fstream>
+#include <iostream>
+#include <map>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
 
 static std::string timestampToISODate(Timestamp ts)
 {
     std::string s = std::to_string(ts); // 20200101
 
-    if (s.size() != 8)
+    if (s.size() != 8) {
         return s;
+    }
 
     return s.substr(0, 4) + "-" + s.substr(4, 2) + "-" + s.substr(6, 2);
 }
 
+
 void printCoinTradesPlotlyChart(
-    const EnrichedData& marketData,
+    const MarketData& marketData,
     const std::map<TradeID, Trade>& tradesHistory,
     const std::string& coin = "AAVE",
     const std::string& outputHtml =
@@ -45,25 +50,35 @@ void printCoinTradesPlotlyChart(
     );
 
     std::ofstream html(outputHtml);
-    if (!html.is_open())
-        return;
 
-    std::string dates, opens, highs, lows, closes;
-    std::string entryDates, entryPrices;
-    std::string exitDates, exitPrices;
+    if (!html.is_open()) {
+        return;
+    }
+
+    std::string dates;
+    std::string opens;
+    std::string highs;
+    std::string lows;
+    std::string closes;
+
+    std::string entryDates;
+    std::string entryPrices;
+
+    std::string exitDates;
+    std::string exitPrices;
 
     bool first = true;
 
-    for (const auto& [ts, coinMap] : marketData)
-    {
+    for (const auto& [ts, coinMap] : marketData) {
         auto it = coinMap.find(coin);
-        if (it == coinMap.end())
+
+        if (it == coinMap.end()) {
             continue;
+        }
 
         const BarData& bar = it->second;
 
-        if (!first)
-        {
+        if (!first) {
             dates  += ",";
             opens  += ",";
             highs  += ",";
@@ -82,18 +97,18 @@ void printCoinTradesPlotlyChart(
 
     first = true;
 
-    for (const auto& [tradeId, trade] : tradesHistory)
-    {
+    for (const auto& [tradeId, trade] : tradesHistory) {
         (void)tradeId;
 
-        if (trade.coin_ != coin)
+        if (trade.coin_ != coin) {
             continue;
+        }
 
-        if (trade.start_ == 0)
+        if (trade.start_ == 0) {
             continue;
+        }
 
-        if (!first)
-        {
+        if (!first) {
             entryDates  += ",";
             entryPrices += ",";
         }
@@ -106,18 +121,18 @@ void printCoinTradesPlotlyChart(
 
     first = true;
 
-    for (const auto& [tradeId, trade] : tradesHistory)
-    {
+    for (const auto& [tradeId, trade] : tradesHistory) {
         (void)tradeId;
 
-        if (trade.coin_ != coin)
+        if (trade.coin_ != coin) {
             continue;
+        }
 
-        if (!trade.exited_ || trade.end_ == 0)
+        if (!trade.exited_ || trade.end_ == 0) {
             continue;
+        }
 
-        if (!first)
-        {
+        if (!first) {
             exitDates  += ",";
             exitPrices += ",";
         }
@@ -207,27 +222,31 @@ Plotly.newPlot('chart', [candle, entries, exits], layout, config);
     std::string cmd = "xdg-open \"" + outputHtml + "\" >/dev/null 2>&1 &";
 #endif
 
-    std::system(cmd.c_str());
+    const int result = std::system(cmd.c_str());
+    (void)result;
 }
 
 
 void printBalanceEquityChart(
     const std::vector<std::pair<Balance, Equity>>& eqbal,
-    const EnrichedData& marketData,
+    const MarketData& marketData,
     const std::string& outputHtml =
         "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/balance_equity.html"
 )
 {
-    if (eqbal.empty() || marketData.empty())
+    if (eqbal.empty() || marketData.empty()) {
         return;
+    }
 
     std::filesystem::create_directories(
         std::filesystem::path(outputHtml).parent_path()
     );
 
     std::ofstream html(outputHtml);
-    if (!html.is_open())
+
+    if (!html.is_open()) {
         return;
+    }
 
     std::string dates;
     std::string balances;
@@ -236,15 +255,13 @@ void printBalanceEquityChart(
     auto it = marketData.begin();
     bool first = true;
 
-    for (size_t i = 0; i < eqbal.size() && it != marketData.end(); ++i, ++it)
-    {
+    for (std::size_t i = 0; i < eqbal.size() && it != marketData.end(); ++i, ++it) {
         Timestamp ts = it->first;
 
         double balance = eqbal[i].first;
         double equity  = eqbal[i].second;
 
-        if (!first)
-        {
+        if (!first) {
             dates    += ",";
             balances += ",";
             equities += ",";
@@ -330,21 +347,21 @@ Plotly.newPlot('chart', [equity, balance], layout, config);
     std::string cmd = "xdg-open \"" + outputHtml + "\" >/dev/null 2>&1 &";
 #endif
 
-    std::system(cmd.c_str());
+    const int result = std::system(cmd.c_str());
+    (void)result;
 }
+
 
 void printTradesHistory(const std::map<TradeID, Trade>& tradesHistory)
 {
-    if (tradesHistory.empty())
-    {
+    if (tradesHistory.empty()) {
         LG_INFO("Trades history is empty");
         return;
     }
 
     LG_INFO("Trades history count={}", tradesHistory.size());
 
-    for (const auto& [tradeId, trade] : tradesHistory)
-    {
+    for (const auto& [tradeId, trade] : tradesHistory) {
         LG_INFO(
             "TRADE id={} coin={} strategy={} direction={} "
             "start={} end={} entry={} exit={} current_price={} "
@@ -372,11 +389,12 @@ void printTradesHistory(const std::map<TradeID, Trade>& tradesHistory)
     }
 }
 
+
 int main(int argc, char** argv)
 {
-    // ----------------------------------------------------
-    // Minimal logger setup (console only)
-    // ----------------------------------------------------
+    (void)argc;
+    (void)argv;
+
     Logger::Instance().Setup(
         true,   // debug enabled
         false,  // quiet
@@ -385,76 +403,162 @@ int main(int argc, char** argv)
         true    // include header
     );
 
-    /* std::string path = "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/databases/top_20_database.db";
+    std::string path =
+        "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/databases/1d_cmc.csv";
 
     LG_INFO("Database loading started");
     OHLCVData ohlcvData = loadDatabase(path, 00000000);
-    LG_INFO("Database loaded successful"); */
+    LG_INFO("Database loaded successfully");
 
-    std::string path = "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/databases/1d_cmc.csv";
-    OHLCVData ohlcvData = loadDatabase(path, 00000000);
+    unsigned int lastTradeId = 0;
 
-    EnrichedData market_data = buildEnriched(ohlcvData);
-    LG_INFO("Enriched data generation finished");
-
-    unsigned int last_trade_id = 0;
     double balance = 100000.0;
     double equity = balance;
-    double feeTaker = 0.045 / 100.0; // HL fees
-    double feeMaker = 0.015 / 100.0; // HL fees
 
-    /***********************************************************************************************************************/
+    double feeTaker = 0.045 / 100.0;
+    double feeMaker = 0.015 / 100.0;
+
     std::vector<std::unique_ptr<Strategy>> strategies;
 
-    //-----------------------------------------------------
-    // High Breakout
+    // ------------------------------------------------------------------
+    // BargainChaser strategy
+    // ------------------------------------------------------------------
     unsigned int maxPosOpen = 10;
     double riskPerTrade = 0.1;
-    std::unique_ptr<Ranker> ranker = std::make_unique<ROCRankerI>(); //std::make_unique<VolumeRanker>();
+
+    /*
+     * Universe selector:
+     *
+     * Keep only the top 20 most liquid coins at each timestamp.
+     * Liquidity is measured as SMA(Volume, 25).
+     */
+    unsigned int topLiquidityCount = 20;
+
+    std::unique_ptr<UniverseSelector> universeSelector =
+        std::make_unique<TopNLiquidityUniverse>(
+            IndicatorSpec{
+                IndicatorKind::SMA,
+                PriceField::Volume,
+                25
+            },
+            topLiquidityCount,
+            true
+        );
+
+    /*
+     * Ranker:
+     *
+     * Rank only those top 20 liquid coins by ROC(Close, 1), ascending.
+     *
+     * descending = false means lowest ROC first:
+     *   -20% before -10% before +5%
+     *
+     * So the biggest 1-day losers are ranked first.
+     */
+    std::unique_ptr<Ranker> ranker =
+        std::make_unique<IndicatorRanker>(
+            IndicatorSpec{
+                IndicatorKind::ROC,
+                PriceField::Close,
+                1
+            },
+            false
+        );
+
     double commissionEntryFactor = feeMaker;
     double commissionExitFactor = feeTaker;
-    unsigned int maxRankingPosition = 1000000; // there is no limit in the ranking, just that its >10% drop 
+
+    /*
+     * Since the universe already contains only the top 20 liquid coins,
+     * this scans all 20 after ranking by inverse ROC.
+     */
+    unsigned int maxRankingPosition = topLiquidityCount;
+
     unsigned int nBarsExit = 2;
-    double fallPercentage = 10;
+    double fallPercentage = 10.0;
+    unsigned int maLength = 50;
 
     strategies.push_back(
         std::make_unique<StrategyBargainChaser>(
             maxPosOpen,
             riskPerTrade,
+            std::move(universeSelector),
             std::move(ranker),
             commissionEntryFactor,
             commissionExitFactor,
             maxRankingPosition,
             nBarsExit,
-            fallPercentage
+            fallPercentage,
+            maLength
         )
     );
 
-    //-----------------------------------------------------
-    // Another strategy
+    BacktestContext context(
+        ohlcvData,
+        strategies,
+        balance,
+        equity,
+        lastTradeId,
+        feeMaker,
+        feeTaker,
+        false
+    );
 
-    /***********************************************************************************************************************/
+    const MarketData& marketData = context.GetMarketData();
 
+    LG_INFO("Market data and indicators initialized");
 
-    BacktestContext context = BacktestContext(market_data, strategies, balance, equity, last_trade_id, feeMaker, feeTaker);
-    Backtester tester = Backtester(context);
-    
+    Backtester tester(context);
+
     LG_INFO("Starting loop");
     tester.loop();
     LG_INFO("Finished loop");
 
     tester.closeTrades();
-    std::filesystem::path backtest_store_dir = "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/";
-    std::filesystem::path backtest_store_path = generateBacktestDbPath(backtest_store_dir);
 
-    //tester.storeResults(backtest_store_path);
+    std::filesystem::path backtestStoreDir =
+        "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/";
 
-    const std::string filename = "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/balance_equity_curve.csv";
-    //saveCurveToCSV(context.GetBalanceEquityHistoric(), filename);
+    std::filesystem::path backtestStorePath =
+        generateBacktestDbPath(backtestStoreDir);
 
+    (void)backtestStorePath;
 
-    printBalanceEquityChart(context.GetBalanceEquityHistoric(),market_data,"/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/balance_equity.html");
-    std::filesystem::path rt = "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/bargainChaser_rt.csv";
-    //compareBacktests(rt,context.GetTradesHistory(), false);
+    // tester.storeResults(backtestStorePath);
+
+    const std::string curveFilename =
+        "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/balance_equity_curve.csv";
+
+    (void)curveFilename;
+
+    // saveCurveToCSV(context.GetBalanceEquityHistoric(), curveFilename);
+
+    printBalanceEquityChart(
+        context.GetBalanceEquityHistoric(),
+        marketData,
+        "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/balance_equity.html"
+    );
+
+    // Optional trade chart
+    // printCoinTradesPlotlyChart(
+    //     marketData,
+    //     context.GetTradesHistory(),
+    //     "AAVE",
+    //     "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/aave_trades.html"
+    // );
+
+    std::filesystem::path rt =
+        "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/bargainChaser_rt.csv";
+
+    std::filesystem::path mismatchesCsv =
+        "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/bargainChaser_mismatches.csv";
+
+    compareBacktests(
+        rt,
+        context.GetTradesHistory(),
+        false,
+        mismatchesCsv
+    );
+
     return 0;
 }

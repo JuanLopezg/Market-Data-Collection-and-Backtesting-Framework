@@ -1,19 +1,17 @@
 #include "backtest.h"
+
+#include <cassert>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "logger.h"
 #include "time_utils.h"
-#include <string>
-#include <vector>
-#include <utility>
-#include <stdexcept>
 
 
 /**************************************************************************************
- * Type    : Backtester
- * Purpose : Orchestrates the execution of a backtest over historical market data
- *
- * This class drives the backtest loop. It iterates through historical timestamps,
- * invokes signal generation on all strategy instances, updates the backtest context,
- * and tracks execution progress.
+ * Purpose : Construct Backtester
  **************************************************************************************/
 Backtester::Backtester(BacktestContext& backtest_context)
     : backtest_context_(backtest_context)
@@ -21,22 +19,24 @@ Backtester::Backtester(BacktestContext& backtest_context)
 
 
 /**************************************************************************************
- * Purpose : Trigger signal calculation for all strategy instances at a given timestamp
- *
- * This method forwards the current market snapshot to each strategy instance,
- * allowing strategies to generate new trades or update existing ones.
- *
- * Args    : bars - market data for all coins at the current timestamp
- *           ts   - current timestamp
- * Return  : None
+ * Purpose : Trigger signal calculation for all strategy instances at a timestamp
  **************************************************************************************/
-void Backtester::calculateSignals(const EnrichedData& marketData, Timestamp ts, bool live_trading){
-    for (auto& strategy_instance : backtest_context_.GetStrategyPortfolio()) {
-        strategy_instance.calculateSignals(
+void Backtester::calculateSignals(
+    const MarketData& marketData,
+    Timestamp ts,
+    bool live_trading
+)
+{
+    const IndicatorEngine& indicators =
+        backtest_context_.GetIndicatorEngine();
+
+    for (auto& strategyInstance : backtest_context_.GetStrategyPortfolio()) {
+        strategyInstance.calculateSignals(
             marketData,
             ts,
-            this->backtest_context_.GetLastTradeId(),
-            this->backtest_context_.IsLiveTrading()
+            backtest_context_.GetLastTradeId(),
+            live_trading,
+            indicators
         );
     }
 }
@@ -44,39 +44,28 @@ void Backtester::calculateSignals(const EnrichedData& marketData, Timestamp ts, 
 
 /**************************************************************************************
  * Purpose : Execute the main backtest loop
- *
- * Iterates sequentially over the enriched historical market data, processes strategy
- * signals for each timestamp, updates the global backtest context, and logs progress.
- *
- * The loop assumes time-ordered market data and performs a full portfolio update
- * at each step.
- *
- * Args    : None
- * Return  : None
  **************************************************************************************/
-void Backtester::loop(){
+void Backtester::loop()
+{
     LG_INFO("Starting backtest");
 
-    const EnrichedData& marketData = this->backtest_context_.GetMarketData();
+    const MarketData& marketData = backtest_context_.GetMarketData();
     assert(!marketData.empty());
 
-    StrategyPortfolio& strategy_portfolio =
-        this->backtest_context_.GetStrategyPortfolio();
+    starting_date_ = marketData.begin()->first;
 
-    // Record the first timestamp of the backtest
-    this->starting_date_ = marketData.begin()->first;
+    const std::size_t totalSteps = marketData.size();
+    std::size_t currentStep = 0;
 
-    const size_t totalSteps = marketData.size();
-    size_t currentStep = 0;
     int lastLoggedPercent = 0;
     constexpr int LOG_STEP = 5;
 
-    for (auto it = marketData.begin(); it != marketData.end(); ++it){
-
-        // Log progress at fixed percentage intervals
+    for (auto it = marketData.begin(); it != marketData.end(); ++it) {
         ++currentStep;
-        int percent = static_cast<int>(
-            (static_cast<double>(currentStep) / totalSteps) * 100.0
+
+        const int percent = static_cast<int>(
+            (static_cast<double>(currentStep) /
+             static_cast<double>(totalSteps)) * 100.0
         );
 
         if (percent >= lastLoggedPercent + LOG_STEP) {
@@ -84,11 +73,15 @@ void Backtester::loop(){
             lastLoggedPercent = percent;
         }
 
-        // Process backtesting data for the current timestamp
-        Timestamp ts = it->first;
-        calculateSignals(marketData, ts, this->backtest_context_.IsLiveTrading());
-        updateBacktestContext();
+        const Timestamp ts = it->first;
 
+        calculateSignals(
+            marketData,
+            ts,
+            backtest_context_.IsLiveTrading()
+        );
+
+        updateBacktestContext();
     }
 
     LG_INFO("Backtest finished");

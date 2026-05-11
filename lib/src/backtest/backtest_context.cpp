@@ -1,47 +1,44 @@
 #include "backtest_context.h"
-#include <iostream>
+
 
 /**************************************************************************************
  * Purpose : Update the backtest execution context for the current timestep
  *
- * This method aggregates realized and unrealized PnL across all strategies,
- * updates balance and equity values, moves closed trades to the trade history,
- * and records a balance/equity snapshot.
- *
- * Args    : None
- * Return  : None
+ * Aggregates realized and unrealized PnL across all strategies, updates balance/equity,
+ * moves closed trades to trade history, and records a balance/equity snapshot.
  **************************************************************************************/
-void BacktestContext::updateConext(){
+void BacktestContext::updateConext()
+{
+    double floatingPNL = 0.0;
+    double balance = current_balance_;
 
-    double floatingPNL = 0;
-    double balance = this->current_balance_;
-    double bef = balance;
+    for (auto& strategyInstance : strategy_portfolio_) {
+        auto& currentTrades = strategyInstance.GetCurrentTrades();
 
-    for(auto& strategyInstance : this->strategy_portfolio_){
-        auto& current_trades = strategyInstance.GetCurrentTrades();
-
-        for (auto it = current_trades.begin(); it != current_trades.end(); ) {
+        for (auto it = currentTrades.begin(); it != currentTrades.end(); ) {
             Trade& trade = *it;
 
-            if (trade.exited_) { // trades just closed
-                if(!trade.isSimulated_){
+            if (trade.exited_) {
+                if (!trade.isSimulated_) {
                     trades_history_[trade.trade_id_] = trade;
-                    balance += (trade.pnl_ - trade.commission_);
+                    balance += trade.pnl_ - trade.commission_;
                 }
 
-                it = current_trades.erase(it); 
-            } 
-            else { // ongoing trades
-                if(!trade.isSimulated_){
+                it = currentTrades.erase(it);
+            } else {
+                if (!trade.isSimulated_) {
                     floatingPNL += trade.pnl_ - trade.commission_;
                 }
+
                 ++it;
             }
         }
-
     }
 
-    this->current_balance_ = balance;
-    this->current_equity_ = balance + floatingPNL;
-    this->balance_equity_historic_.emplace_back(std::make_pair(current_balance_,current_equity_));
+    current_balance_ = balance;
+    current_equity_ = balance + floatingPNL;
+
+    balance_equity_historic_.emplace_back(
+        std::make_pair(current_balance_, current_equity_)
+    );
 }

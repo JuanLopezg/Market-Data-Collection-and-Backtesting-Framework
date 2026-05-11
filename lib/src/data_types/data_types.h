@@ -33,11 +33,11 @@ enum class Direction : int {
  * Purpose : Raw OHLCV price and volume data for a single bar
  **************************************************************************************/
 struct OHLCV {
-    double open;
-    double high;
-    double low;
-    double close;
-    double volume;
+    double open   = 0.0;
+    double high   = 0.0;
+    double low    = 0.0;
+    double close  = 0.0;
+    double volume = 0.0;
 };
 
 
@@ -49,33 +49,30 @@ struct OHLCV {
  *   data[coin][timestamp] -> OHLCV
  **************************************************************************************/
 struct OHLCVData {
-    std::map<std::string, std::map<unsigned int, OHLCV>> data;
+    std::map<Coin, std::map<Timestamp, OHLCV>> data;
 };
 
 
 /**************************************************************************************
  * Type    : BarData
- * Purpose : Enriched OHLCV data with derived indicators
+ * Purpose : Basic market bar used during strategy execution
  *
- * This structure extends raw OHLCV data with precomputed indicators
- * commonly used by strategies (e.g. ATR, rolling highs).
+ * Important:
+ *   This struct should only contain data intrinsic to the bar itself.
+ *
+ *   Parameterized indicators such as RSI(14), ATR(20), ROC(5), SMA(Volume, 25),
+ *   Highest(High, 20), etc. should NOT be stored here.
+ *
+ *   Those are now handled by IndicatorEngine.
  **************************************************************************************/
 struct BarData {
-    // Raw OHLCV
-    double open;
-    double high;
-    double low;
-    double close;
-    double volume;
+    double open   = 0.0;
+    double high   = 0.0;
+    double low    = 0.0;
+    double close  = 0.0;
+    double volume = 0.0;
 
-    // Derived / auxiliary data
-    unsigned int barNumber  = 0;
-    double high_20d         = 0.0;
-    double atr_14d          = 0.0;
-    double u25d_volume      = 0.0;
-    double ma50             = 0.0;
-    unsigned int volumeRank = 0; // ascending order
-    double roc1             = 0.0;
+    unsigned int barNumber = 0;
 };
 
 
@@ -101,7 +98,7 @@ struct Trade {
     double    pnl_             = 0.0;
 
     double    sl_              = 0.0;
-    double    slReference_     = 0.0; // highest high / lowest low reached (used for trailing SL)
+    double    slReference_     = 0.0;
 
     bool      isSimulated_     = true;
     bool      exited_          = false;
@@ -116,24 +113,47 @@ struct Trade {
  * Type aliases
  * Purpose : Common containers used across the engine
  **************************************************************************************/
-using CoinBarMap   = std::unordered_map<Coin, BarData>;
-using EnrichedData = std::map<Timestamp, CoinBarMap>;
+using CoinBarMap = std::unordered_map<Coin, BarData>;
 
+/*
+ * MarketData structure:
+ *
+ *   marketData[timestamp][coin] -> BarData
+ */
+using MarketData = std::map<Timestamp, CoinBarMap>;
 
 
 /**************************************************************************************
- * Purpose : Build enriched bar data with indicators from raw OHLCV market data
+ * Compatibility alias
  *
- * This function processes OHLCV time series for each asset and computes additional
- * derived fields used in backtesting. For every bar it calculates:
+ * Previous code used EnrichedData.
+ * The data is no longer enriched with indicators, but keeping this alias allows
+ * the rest of the project to be migrated gradually.
+ **************************************************************************************/
+using EnrichedData = MarketData;
+
+
+/**************************************************************************************
+ * Purpose : Build market data from raw OHLCV data
  *
- *   - 20-day rolling high (previous 20 bars)
- *   - ATR(14) using the previous 14 true ranges
+ * This function converts:
  *
- * Args    : raw - OHLCVData containing raw market candles organized as
- *                 coin -> date -> OHLCV
+ *   raw.data[coin][timestamp] -> OHLCV
  *
- * Return  : EnrichedData containing BarData with computed indicators organized as
- *           date -> coin -> BarData
+ * into:
+ *
+ *   marketData[timestamp][coin] -> BarData
+ *
+ * It only copies raw bar fields and assigns barNumber.
+ * It does NOT calculate indicators.
+ **************************************************************************************/
+MarketData buildMarketData(const OHLCVData& raw);
+
+
+/**************************************************************************************
+ * Compatibility wrapper
+ *
+ * Previous code called buildEnriched().
+ * This now simply builds basic MarketData.
  **************************************************************************************/
 EnrichedData buildEnriched(const OHLCVData& raw);

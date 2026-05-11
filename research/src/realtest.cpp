@@ -51,7 +51,8 @@ struct RealtestTrade {
     double dividends = 0.0;
 };
 
-static std::string trim(std::string s) {
+static std::string trim(std::string s)
+{
     auto notSpace = [](unsigned char c) {
         return !std::isspace(c);
     };
@@ -62,7 +63,8 @@ static std::string trim(std::string s) {
     return s;
 }
 
-static std::string toLower(std::string value) {
+static std::string toLower(std::string value)
+{
     std::transform(
         value.begin(),
         value.end(),
@@ -75,7 +77,8 @@ static std::string toLower(std::string value) {
     return value;
 }
 
-static std::vector<std::string> parseCsvLine(const std::string& line) {
+static std::vector<std::string> parseCsvLine(const std::string& line)
+{
     std::vector<std::string> fields;
     std::string current;
     bool inQuotes = false;
@@ -102,7 +105,8 @@ static std::vector<std::string> parseCsvLine(const std::string& line) {
     return fields;
 }
 
-static double parseRealtestNumber(std::string value) {
+static double parseRealtestNumber(std::string value)
+{
     value = trim(value);
 
     if (value.empty()) {
@@ -137,7 +141,8 @@ static double parseRealtestNumber(std::string value) {
     return negativeByParentheses ? -result : result;
 }
 
-static int parseRealtestInt(std::string value) {
+static int parseRealtestInt(std::string value)
+{
     value = trim(value);
 
     if (value.empty()) {
@@ -260,7 +265,8 @@ static bool loadRealtestTrades(
     return true;
 }
 
-static std::int64_t daysFromCivil(int year, unsigned month, unsigned day) {
+static std::int64_t daysFromCivil(int year, unsigned month, unsigned day)
+{
     year -= month <= 2;
 
     const int era = (year >= 0 ? year : year - 399) / 400;
@@ -293,7 +299,8 @@ static void civilFromDays(
     year = static_cast<int>(y + (month <= 2));
 }
 
-static bool isPackedYYYYMMDD(std::int64_t value) {
+static bool isPackedYYYYMMDD(std::int64_t value)
+{
     if (value < 19000101 || value > 29991231) {
         return false;
     }
@@ -310,7 +317,8 @@ static bool isPackedYYYYMMDD(std::int64_t value) {
            day <= 31;
 }
 
-static Timestamp normalizeTimestamp(Timestamp timestamp) {
+static Timestamp normalizeTimestamp(Timestamp timestamp)
+{
     const std::int64_t raw = static_cast<std::int64_t>(timestamp);
 
     if (!isPackedYYYYMMDD(raw)) {
@@ -327,7 +335,8 @@ static Timestamp normalizeTimestamp(Timestamp timestamp) {
     return static_cast<Timestamp>(unixSeconds);
 }
 
-static std::string timestampToString(Timestamp timestamp) {
+static std::string timestampToString(Timestamp timestamp)
+{
     timestamp = normalizeTimestamp(timestamp);
 
     std::int64_t unixSeconds = static_cast<std::int64_t>(timestamp);
@@ -509,7 +518,8 @@ static bool parseRealtestDirection(
     return false;
 }
 
-static std::string directionToString(Direction direction) {
+static std::string directionToString(Direction direction)
+{
     switch (direction) {
         case Direction::Long:
             return "Long";
@@ -610,7 +620,8 @@ static double percentageDifferenceFromRealtest(
     return std::fabs(backtesterValue - realtestValue) / denominator * 100.0;
 }
 
-static double dynamicTolerancePercentForTrade(const Trade& realtestTrade) {
+static double dynamicTolerancePercentForTrade(const Trade& realtestTrade)
+{
     const double tradeId = static_cast<double>(realtestTrade.trade_id_);
 
     const double tolerance =
@@ -678,67 +689,167 @@ static bool tradesMatchManualChecks(
         );
 }
 
-static bool waitForEnterOrQuit() {
-    std::string input;
-
-    std::cout << "\nPress ENTER to continue, or type q then ENTER to stop: ";
-    std::getline(std::cin, input);
-
-    return input != "q" && input != "Q";
+static std::string doubleToString(double value)
+{
+    std::ostringstream output;
+    output << std::fixed << std::setprecision(10) << value;
+    return output.str();
 }
 
-static void printTradeSideBySide(
-    std::size_t index,
+static std::string boolToString(bool value)
+{
+    return value ? "YES" : "NO";
+}
+
+static std::string csvEscape(const std::string& value)
+{
+    bool needsQuotes = false;
+
+    for (char c : value) {
+        if (c == ',' || c == '"' || c == '\n' || c == '\r') {
+            needsQuotes = true;
+            break;
+        }
+    }
+
+    if (!needsQuotes) {
+        return value;
+    }
+
+    std::string escaped;
+    escaped.reserve(value.size() + 2);
+    escaped.push_back('"');
+
+    for (char c : value) {
+        if (c == '"') {
+            escaped += "\"\"";
+        } else {
+            escaped.push_back(c);
+        }
+    }
+
+    escaped.push_back('"');
+    return escaped;
+}
+
+static void writeCsvRow(
+    std::ofstream& csv,
+    const std::vector<std::string>& fields
+) {
+    for (std::size_t i = 0; i < fields.size(); ++i) {
+        if (i > 0) {
+            csv << ",";
+        }
+
+        csv << csvEscape(fields[i]);
+    }
+
+    csv << "\n";
+}
+
+static void appendTradeFields(
+    std::vector<std::string>& fields,
+    const Trade* trade,
+    TradeID displayedTradeId
+) {
+    if (trade == nullptr) {
+        for (int i = 0; i < 12; ++i) {
+            fields.emplace_back("");
+        }
+
+        return;
+    }
+
+    fields.push_back(std::to_string(displayedTradeId));
+    fields.push_back(trade->coin_);
+    fields.push_back(directionToString(trade->direction_));
+    fields.push_back(timestampToString(trade->start_));
+    fields.push_back(std::to_string(trade->start_));
+    fields.push_back(timestampToString(trade->end_));
+    fields.push_back(std::to_string(trade->end_));
+    fields.push_back(doubleToString(trade->entry_));
+    fields.push_back(doubleToString(trade->exit_));
+    fields.push_back(doubleToString(trade->size_));
+    fields.push_back(doubleToString(trade->pnl_));
+    fields.push_back(boolToString(trade->exited_));
+}
+
+static void writeMismatchCsvHeader(std::ofstream& csv)
+{
+    writeCsvRow(
+        csv,
+        {
+            "mismatch_type",
+            "comparison_index",
+
+            "same_symbol",
+            "same_start",
+            "same_end",
+            "entry_ok",
+            "exit_ok",
+            "size_ok",
+            "pnl_ok",
+
+            "entry_diff_pct",
+            "exit_diff_pct",
+            "size_diff_pct",
+            "pnl_diff_pct",
+            "dynamic_tolerance_pct",
+
+            "realtest_trade_id",
+            "realtest_symbol",
+            "realtest_side",
+            "realtest_start",
+            "realtest_start_raw",
+            "realtest_end",
+            "realtest_end_raw",
+            "realtest_entry",
+            "realtest_exit",
+            "realtest_size",
+            "realtest_pnl",
+            "realtest_exited",
+
+            "backtester_trade_id",
+            "backtester_symbol",
+            "backtester_side",
+            "backtester_start",
+            "backtester_start_raw",
+            "backtester_end",
+            "backtester_end_raw",
+            "backtester_entry",
+            "backtester_exit",
+            "backtester_size",
+            "backtester_pnl",
+            "backtester_exited"
+        }
+    );
+}
+
+static void writeMismatchCsvRow(
+    std::ofstream& csv,
+    const std::string& mismatchType,
+    std::size_t comparisonIndex,
     const Trade* realtestTrade,
     const Trade* backtesterTrade,
-    TradeID backtesterTradeId,
-    bool isMatch
+    TradeID backtesterTradeId
 ) {
-    std::cout << "\n============================================================\n";
-    std::cout << (isMatch ? "MATCH #" : "DIFFERENT MATCH #") << index + 1 << "\n";
-    std::cout << "============================================================\n";
+    bool sameSymbol = false;
+    bool sameStart = false;
+    bool sameEnd = false;
+    bool entryOk = false;
+    bool exitOk = false;
+    bool sizeOk = false;
+    bool pnlOk = false;
+
+    std::string entryDiffPct;
+    std::string exitDiffPct;
+    std::string sizeDiffPct;
+    std::string pnlDiffPct;
+    std::string tolerancePct;
 
     if (realtestTrade != nullptr) {
-        std::cout << "REALTEST\n";
-        std::cout << "  trade_id : " << realtestTrade->trade_id_ << "\n";
-        std::cout << "  symbol   : " << realtestTrade->coin_ << "\n";
-        std::cout << "  side     : " << directionToString(realtestTrade->direction_) << "\n";
-        std::cout << "  start    : " << timestampToString(realtestTrade->start_)
-                  << "  raw=" << realtestTrade->start_ << "\n";
-        std::cout << "  end      : " << timestampToString(realtestTrade->end_)
-                  << "  raw=" << realtestTrade->end_ << "\n";
-        std::cout << std::fixed << std::setprecision(10);
-        std::cout << "  entry    : " << realtestTrade->entry_ << "\n";
-        std::cout << "  exit     : " << realtestTrade->exit_ << "\n";
-        std::cout << "  size     : " << realtestTrade->size_ << "\n";
-        std::cout << "  pnl      : " << realtestTrade->pnl_ << "\n";
-    } else {
-        std::cout << "REALTEST\n";
-        std::cout << "  <missing>\n";
+        tolerancePct = doubleToString(dynamicTolerancePercentForTrade(*realtestTrade));
     }
-
-    std::cout << "\n";
-
-    if (backtesterTrade != nullptr) {
-        std::cout << "BACKTESTER MATCHED BY entry-date + symbol\n";
-        std::cout << "  trade_id : " << backtesterTradeId << "\n";
-        std::cout << "  symbol   : " << backtesterTrade->coin_ << "\n";
-        std::cout << "  side     : " << directionToString(backtesterTrade->direction_) << "\n";
-        std::cout << "  start    : " << timestampToString(backtesterTrade->start_)
-                  << "  raw=" << backtesterTrade->start_ << "\n";
-        std::cout << "  end      : " << timestampToString(backtesterTrade->end_)
-                  << "  raw=" << backtesterTrade->end_ << "\n";
-        std::cout << std::fixed << std::setprecision(10);
-        std::cout << "  entry    : " << backtesterTrade->entry_ << "\n";
-        std::cout << "  exit     : " << backtesterTrade->exit_ << "\n";
-        std::cout << "  size     : " << backtesterTrade->size_ << "\n";
-        std::cout << "  pnl      : " << backtesterTrade->pnl_ << "\n";
-    } else {
-        std::cout << "BACKTESTER MATCHED BY entry-date + symbol\n";
-        std::cout << "  <missing>\n";
-    }
-
-    std::cout << "\n";
 
     if (realtestTrade != nullptr && backtesterTrade != nullptr) {
         const Timestamp realtestStart = normalizeTimestamp(realtestTrade->start_);
@@ -747,112 +858,105 @@ static void printTradeSideBySide(
         const Timestamp realtestEnd = normalizeTimestamp(realtestTrade->end_);
         const Timestamp backtesterEnd = normalizeTimestamp(backtesterTrade->end_);
 
-        const bool sameSymbol = realtestTrade->coin_ == backtesterTrade->coin_;
-        const bool sameStart = realtestStart == backtesterStart;
-        const bool sameEnd = realtestEnd == backtesterEnd;
+        sameSymbol = realtestTrade->coin_ == backtesterTrade->coin_;
+        sameStart = realtestStart == backtesterStart;
+        sameEnd = realtestEnd == backtesterEnd;
 
-        const double dynamicTolerancePct =
-            dynamicTolerancePercentForTrade(*realtestTrade);
-
-        const bool sameEntry = equalWithinDynamicTolerance(
+        entryOk = equalWithinDynamicTolerance(
             *realtestTrade,
             realtestTrade->entry_,
             backtesterTrade->entry_
         );
 
-        const bool sameExit = equalWithinDynamicTolerance(
+        exitOk = equalWithinDynamicTolerance(
             *realtestTrade,
             realtestTrade->exit_,
             backtesterTrade->exit_
         );
 
-        const bool sameSize = equalWithinDynamicTolerance(
+        sizeOk = equalWithinDynamicTolerance(
             *realtestTrade,
             realtestTrade->size_,
             backtesterTrade->size_
         );
 
-        const bool samePnl = equalWithinDynamicTolerance(
+        pnlOk = equalWithinDynamicTolerance(
             *realtestTrade,
             realtestTrade->pnl_,
             backtesterTrade->pnl_
         );
 
-        const double entryDiffPct = percentageDifferenceFromRealtest(
-            realtestTrade->entry_,
-            backtesterTrade->entry_
+        entryDiffPct = doubleToString(
+            percentageDifferenceFromRealtest(
+                realtestTrade->entry_,
+                backtesterTrade->entry_
+            )
         );
 
-        const double exitDiffPct = percentageDifferenceFromRealtest(
-            realtestTrade->exit_,
-            backtesterTrade->exit_
+        exitDiffPct = doubleToString(
+            percentageDifferenceFromRealtest(
+                realtestTrade->exit_,
+                backtesterTrade->exit_
+            )
         );
 
-        const double sizeDiffPct = percentageDifferenceFromRealtest(
-            realtestTrade->size_,
-            backtesterTrade->size_
+        sizeDiffPct = doubleToString(
+            percentageDifferenceFromRealtest(
+                realtestTrade->size_,
+                backtesterTrade->size_
+            )
         );
 
-        const double pnlDiffPct = percentageDifferenceFromRealtest(
-            realtestTrade->pnl_,
-            backtesterTrade->pnl_
+        pnlDiffPct = doubleToString(
+            percentageDifferenceFromRealtest(
+                realtestTrade->pnl_,
+                backtesterTrade->pnl_
+            )
         );
-
-        std::cout << "CHECKS\n";
-
-        std::cout << "  symbol same            : " << (sameSymbol ? "YES" : "NO")
-                  << "  realtest=" << realtestTrade->coin_
-                  << " backtester=" << backtesterTrade->coin_ << "\n";
-
-        std::cout << "  start same             : " << (sameStart ? "YES" : "NO")
-                  << "  realtest=" << timestampToString(realtestTrade->start_)
-                  << " backtester=" << timestampToString(backtesterTrade->start_) << "\n";
-
-        std::cout << "  end same               : " << (sameEnd ? "YES" : "NO")
-                  << "  realtest=" << timestampToString(realtestTrade->end_)
-                  << " backtester=" << timestampToString(backtesterTrade->end_) << "\n";
-
-        std::cout << std::fixed << std::setprecision(4);
-        std::cout << "  entry within dynamic % : " << (sameEntry ? "YES" : "NO")
-                  << "  tolerance_pct=" << dynamicTolerancePct << "%"
-                  << " realtest=" << realtestTrade->entry_
-                  << " backtester=" << backtesterTrade->entry_
-                  << " diff_pct=" << entryDiffPct << "%\n";
-
-        std::cout << std::fixed << std::setprecision(4);
-        std::cout << "  exit within dynamic %  : " << (sameExit ? "YES" : "NO")
-                  << "  tolerance_pct=" << dynamicTolerancePct << "%"
-                  << " realtest=" << realtestTrade->exit_
-                  << " backtester=" << backtesterTrade->exit_
-                  << " diff_pct=" << exitDiffPct << "%\n";
-
-        std::cout << std::fixed << std::setprecision(4);
-        std::cout << "  size within dynamic %  : " << (sameSize ? "YES" : "NO")
-                  << "  tolerance_pct=" << dynamicTolerancePct << "%"
-                  << " realtest=" << realtestTrade->size_
-                  << " backtester=" << backtesterTrade->size_
-                  << " diff_pct=" << sizeDiffPct << "%\n";
-
-        std::cout << std::fixed << std::setprecision(4);
-        std::cout << "  pnl within dynamic %   : " << (samePnl ? "YES" : "NO")
-                  << "  tolerance_pct=" << dynamicTolerancePct << "%"
-                  << " realtest=" << realtestTrade->pnl_
-                  << " backtester=" << backtesterTrade->pnl_
-                  << " diff_pct=" << pnlDiffPct << "%\n";
-
-        std::cout << "  RESULT                 : "
-                  << (isMatch ? "MATCH" : "DIFFERENT") << "\n";
-    } else {
-        std::cout << "CHECKS\n";
-        std::cout << "  RESULT                 : DIFFERENT, no backtester trade found with same entry date and symbol\n";
     }
+
+    std::vector<std::string> fields;
+
+    fields.push_back(mismatchType);
+    fields.push_back(std::to_string(comparisonIndex));
+
+    fields.push_back(boolToString(sameSymbol));
+    fields.push_back(boolToString(sameStart));
+    fields.push_back(boolToString(sameEnd));
+    fields.push_back(boolToString(entryOk));
+    fields.push_back(boolToString(exitOk));
+    fields.push_back(boolToString(sizeOk));
+    fields.push_back(boolToString(pnlOk));
+
+    fields.push_back(entryDiffPct);
+    fields.push_back(exitDiffPct);
+    fields.push_back(sizeDiffPct);
+    fields.push_back(pnlDiffPct);
+    fields.push_back(tolerancePct);
+
+    appendTradeFields(
+        fields,
+        realtestTrade,
+        realtestTrade != nullptr ? realtestTrade->trade_id_ : static_cast<TradeID>(0)
+    );
+
+    appendTradeFields(
+        fields,
+        backtesterTrade,
+        backtesterTrade != nullptr ? backtesterTradeId : static_cast<TradeID>(0)
+    );
+
+    writeCsvRow(csv, fields);
 }
 
 static bool compareTradeVectorsIgnoringId(
     const std::vector<Trade>& referenceTrades,
     const std::map<TradeID, Trade>& candidateTradesById,
-    bool showAllTrades
+    bool showAllTrades,
+    const std::filesystem::path& mismatchesCsvPath
 ) {
+    (void)showAllTrades;
+
     struct CandidateTrade {
         TradeID tradeId;
         const Trade* trade;
@@ -904,45 +1008,27 @@ static bool compareTradeVectorsIgnoringId(
         }
     );
 
-    LG_INFO(
-        "Starting trade comparison by entry date and symbol. RealTest trades: {}, backtester trades: {}, showAllTrades={}",
-        realtestTradesSorted.size(),
-        backtesterTrades.size(),
-        showAllTrades
-    );
+    const std::filesystem::path parentPath = mismatchesCsvPath.parent_path();
 
-    std::cout << "\nTrade comparison by entry date + symbol\n";
-    std::cout << "RealTest trades  : " << realtestTradesSorted.size() << "\n";
-    std::cout << "Backtester trades: " << backtesterTrades.size() << "\n";
+    if (!parentPath.empty()) {
+        std::filesystem::create_directories(parentPath);
+    }
 
-    if (realtestTradesSorted.size() != backtesterTrades.size()) {
-        std::cout << "\nERROR: Trade counts differ. Aborting comparison.\n";
-        std::cout << "RealTest total  : " << realtestTradesSorted.size() << "\n";
-        std::cout << "Backtester total: " << backtesterTrades.size() << "\n";
+    std::ofstream mismatchCsv(mismatchesCsvPath);
 
-        LG_ERROR(
-            "Trade count mismatch. RealTest has {}, backtester has {}. Aborting comparison.",
-            realtestTradesSorted.size(),
-            backtesterTrades.size()
-        );
-
+    if (!mismatchCsv.is_open()) {
+        LG_ERROR("Could not open mismatch CSV for writing: {}", mismatchesCsvPath.string());
         return false;
     }
 
-    std::cout << "Trade counts match. Starting lookup by same entry date and same symbol.\n";
+    writeMismatchCsvHeader(mismatchCsv);
 
-    if (showAllTrades) {
-        std::cout << "Mode: showing ALL trades one by one.\n";
-    } else {
-        std::cout << "Mode: showing only DIFFERENT trades.\n";
-    }
-
-    std::cout << "Exact checks: symbol, entry date, exit date.\n";
-    std::cout << "Dynamic checks: entry, exit, size, and pnl within dynamic percentage.\n";
-    std::cout << "Dynamic tolerance: base=" << BASE_DYNAMIC_TOLERANCE_PERCENT
-              << "% + trade_id*" << EXTRA_DYNAMIC_TOLERANCE_PER_TRADE_ID
-              << "%, capped at " << MAX_DYNAMIC_TOLERANCE_PERCENT << "%.\n";
-    std::cout << "Press ENTER after each printed trade to continue. Type q then ENTER to stop.\n";
+    LG_INFO(
+        "Starting trade comparison by entry date and symbol. RealTest trades: {}, backtester trades: {}, mismatchCsv={}",
+        realtestTradesSorted.size(),
+        backtesterTrades.size(),
+        mismatchesCsvPath.string()
+    );
 
     std::vector<bool> backtesterMatched(backtesterTrades.size(), false);
 
@@ -951,8 +1037,7 @@ static bool compareTradeVectorsIgnoringId(
     std::size_t missingMatchCount = 0;
     std::size_t duplicateMatchCount = 0;
     std::size_t checkedCount = 0;
-
-    bool stoppedByUser = false;
+    std::size_t writtenMismatchRows = 0;
 
     for (std::size_t realtestIndex = 0; realtestIndex < realtestTradesSorted.size(); ++realtestIndex) {
         const Trade* realtestTrade = realtestTradesSorted[realtestIndex];
@@ -977,31 +1062,21 @@ static bool compareTradeVectorsIgnoringId(
             ++missingMatchCount;
             ++differentCount;
 
-            printTradeSideBySide(
-                realtestIndex,
+            writeMismatchCsvRow(
+                mismatchCsv,
+                "MISSING_BACKTESTER_MATCH",
+                realtestIndex + 1,
                 realtestTrade,
                 nullptr,
-                static_cast<TradeID>(0),
-                false
+                static_cast<TradeID>(0)
             );
 
-            if (!waitForEnterOrQuit()) {
-                std::cout << "Manual comparison stopped by user.\n";
-                stoppedByUser = true;
-                break;
-            }
-
+            ++writtenMismatchRows;
             continue;
         }
 
         if (matchingBacktesterIndexes.size() > 1) {
             ++duplicateMatchCount;
-
-            std::cout << "\nWARNING: More than one unmatched backtester trade found for RealTest trade "
-                      << realtestTrade->trade_id_
-                      << " with symbol=" << realtestTrade->coin_
-                      << " start=" << timestampToString(realtestTrade->start_)
-                      << ". Using the first one.\n";
         }
 
         const std::size_t backtesterIndex = matchingBacktesterIndexes.front();
@@ -1016,22 +1091,17 @@ static bool compareTradeVectorsIgnoringId(
             ++matchedCount;
         } else {
             ++differentCount;
-        }
 
-        if (showAllTrades || !isMatch) {
-            printTradeSideBySide(
-                realtestIndex,
+            writeMismatchCsvRow(
+                mismatchCsv,
+                "DIFFERENT_MATCHED_TRADE",
+                realtestIndex + 1,
                 realtestTrade,
                 backtesterTrade,
-                backtesterTradeId,
-                isMatch
+                backtesterTradeId
             );
 
-            if (!waitForEnterOrQuit()) {
-                std::cout << "Manual comparison stopped by user.\n";
-                stoppedByUser = true;
-                break;
-            }
+            ++writtenMismatchRows;
         }
     }
 
@@ -1040,8 +1110,21 @@ static bool compareTradeVectorsIgnoringId(
     for (std::size_t i = 0; i < backtesterMatched.size(); ++i) {
         if (!backtesterMatched[i]) {
             ++unmatchedBacktesterCount;
+
+            writeMismatchCsvRow(
+                mismatchCsv,
+                "UNMATCHED_BACKTESTER_TRADE",
+                i + 1,
+                nullptr,
+                backtesterTrades[i].trade,
+                backtesterTrades[i].tradeId
+            );
+
+            ++writtenMismatchRows;
         }
     }
+
+    mismatchCsv.close();
 
     std::cout << "\n============================================================\n";
     std::cout << "COMPARISON SUMMARY\n";
@@ -1054,10 +1137,11 @@ static bool compareTradeVectorsIgnoringId(
     std::cout << "Unmatched backtester trades       : " << unmatchedBacktesterCount << "\n";
     std::cout << "RealTest total                    : " << realtestTradesSorted.size() << "\n";
     std::cout << "Backtester total                  : " << backtesterTrades.size() << "\n";
-    std::cout << "Stopped by user                   : " << (stoppedByUser ? "YES" : "NO") << "\n";
+    std::cout << "Mismatch rows written             : " << writtenMismatchRows << "\n";
+    std::cout << "Mismatch CSV                      : " << mismatchesCsvPath.string() << "\n";
 
     LG_INFO(
-        "Trade comparison finished. checked={}, matched={}, different={}, missing_entry_symbol_matches={}, duplicate_hits={}, unmatched_backtester={}, realtest_total={}, backtester_total={}, stopped_by_user={}",
+        "Trade comparison finished. checked={}, matched={}, different={}, missing_entry_symbol_matches={}, duplicate_hits={}, unmatched_backtester={}, realtest_total={}, backtester_total={}, mismatch_rows_written={}, mismatch_csv={}",
         checkedCount,
         matchedCount,
         differentCount,
@@ -1066,11 +1150,11 @@ static bool compareTradeVectorsIgnoringId(
         unmatchedBacktesterCount,
         realtestTradesSorted.size(),
         backtesterTrades.size(),
-        stoppedByUser
+        writtenMismatchRows,
+        mismatchesCsvPath.string()
     );
 
     return
-        !stoppedByUser &&
         differentCount == 0 &&
         missingMatchCount == 0 &&
         duplicateMatchCount == 0 &&
@@ -1080,7 +1164,8 @@ static bool compareTradeVectorsIgnoringId(
 bool compareBacktests(
     std::filesystem::path& realtest_trades,
     std::map<TradeID, Trade>& backtesterTradesHistory,
-    bool showAllTrades
+    bool showAllTrades,
+    const std::filesystem::path& mismatchesCsvPath
 ) {
     std::vector<RealtestTrade> realtestCsvTrades;
 
@@ -1097,16 +1182,34 @@ bool compareBacktests(
     }
 
     LG_INFO(
-        "Starting comparison. RealTest trades: {}, backtester trades: {}, showAllTrades={}",
+        "Starting comparison. RealTest trades: {}, backtester trades: {}, showAllTrades={}, mismatchCsv={}",
         realtestTrades.size(),
         backtesterTradesHistory.size(),
-        showAllTrades
+        showAllTrades,
+        mismatchesCsvPath.string()
     );
 
     return compareTradeVectorsIgnoringId(
         realtestTrades,
         backtesterTradesHistory,
-        showAllTrades
+        showAllTrades,
+        mismatchesCsvPath
+    );
+}
+
+bool compareBacktests(
+    std::filesystem::path& realtest_trades,
+    std::map<TradeID, Trade>& backtesterTradesHistory,
+    bool showAllTrades
+) {
+    std::filesystem::path mismatchesCsvPath =
+        realtest_trades.parent_path() / "realtest_backtester_mismatches.csv";
+
+    return compareBacktests(
+        realtest_trades,
+        backtesterTradesHistory,
+        showAllTrades,
+        mismatchesCsvPath
     );
 }
 
