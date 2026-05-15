@@ -1,9 +1,11 @@
 #include "strategy.h"
 
+#include <algorithm>
 #include <utility>
 
 #include "indicator_engine.h"
 #include "logger.h"
+#include "no_ranker.h"
 
 
 Strategy::Strategy(
@@ -14,13 +16,15 @@ Strategy::Strategy(
     std::unique_ptr<Ranker> ranker,
     double commissionEntryFactor,
     double commissionExitFactor,
-    unsigned int maxRankingPosition
+    unsigned int maxRankingPosition,
+    std::vector<std::unique_ptr<MarketFilter>> marketFilters
 )
     : strategy_name_(std::move(name)),
       maxPosOpen_(maxPosOpen),
       riskPerTrade_(riskPerTradePctg),
       universeSelector_(std::move(universeSelector)),
       ranker_(std::move(ranker)),
+      marketFilters_(std::move(marketFilters)),
       maxRankingPosition_(maxRankingPosition),
       commissionEntryFactor_(commissionEntryFactor),
       commissionExitFactor_(commissionExitFactor)
@@ -28,12 +32,30 @@ Strategy::Strategy(
     if (!universeSelector_) {
         universeSelector_ = std::make_unique<AllUniverseSelector>();
     }
+
+    if (!ranker_) {
+        ranker_ = std::make_unique<NoRanker>();
+    }
 }
 
 
 std::vector<IndicatorSpec> Strategy::requiredIndicators() const
 {
     std::vector<IndicatorSpec> specs;
+
+    for (const auto& filter : marketFilters_) {
+        if (!filter) {
+            continue;
+        }
+
+        const auto filterSpecs = filter->requiredIndicators();
+
+        specs.insert(
+            specs.end(),
+            filterSpecs.begin(),
+            filterSpecs.end()
+        );
+    }
 
     if (universeSelector_) {
         const auto universeSpecs = universeSelector_->requiredIndicators();
@@ -59,6 +81,91 @@ std::vector<IndicatorSpec> Strategy::requiredIndicators() const
 }
 
 
+bool Strategy::marketFiltersPass(
+    const MarketData& marketData,
+    Timestamp ts,
+    const IndicatorEngine& indicators
+) const
+{
+    for (const auto& filter : marketFilters_) {
+        if (filter && !filter->passes(marketData, ts, indicators)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+
+bool Strategy::usesEntryOrders() const
+{
+    return false;
+}
+
+
+Order Strategy::buildOrder(
+    const Coin&,
+    const MarketData&,
+    Timestamp,
+    double,
+    bool,
+    const IndicatorEngine&
+) const
+{
+    LG_ERROR(
+        "Strategy {} uses entry orders but buildOrder() was not implemented",
+        strategy_name_
+    );
+
+    return Order{};
+}
+
+
+bool Strategy::shouldFillOrder(
+    const Order&,
+    const MarketData&,
+    Timestamp,
+    const IndicatorEngine&
+) const
+{
+    return false;
+}
+
+
+Trade Strategy::buildTradeFromOrder(
+    const Order&,
+    const MarketData&,
+    Timestamp,
+    unsigned int&,
+    bool,
+    const IndicatorEngine&
+) const
+{
+    LG_ERROR(
+        "Strategy {} filled an order but buildTradeFromOrder() was not implemented",
+        strategy_name_
+    );
+
+    Trade trade;
+    trade.strategy_name_ = strategy_name_;
+    trade.isSimulated_ = true;
+    trade.exited_ = true;
+
+    return trade;
+}
+
+
+bool Strategy::shouldCancelOrder(
+    const Order&,
+    const MarketData&,
+    Timestamp,
+    const IndicatorEngine&
+) const
+{
+    return false;
+}
+
+
 /**********************************************************************************
  * Purpose : Execute strategy logic for a single timestamp
  **********************************************************************************/
@@ -67,6 +174,7 @@ void Strategy::calculateSignals(
     Timestamp ts,
     unsigned int& last_trade_id,
     std::vector<Trade>& current_trades,
+    std::vector<Order>& pending_orders,
     double strategy_allocation,
     bool live_trading,
     const IndicatorEngine& indicators
@@ -82,7 +190,11 @@ void Strategy::calculateSignals(
     const auto& bars = tsIt->second;
 
     // ---------------------------------------------------------------------
-    // 1. Update open trades
+    // 1. Update open trades first.
+    //
+    // Important:
+    // Market filters only block NEW entries.
+    // Existing trades must still be updated/exited even when filters fail.
     // ---------------------------------------------------------------------
     unsigned int openCount = 0;
 
@@ -113,7 +225,60 @@ void Strategy::calculateSignals(
         }
     }
 
-    if (openCount >= maxPosOpen_) {
+    // ---------------------------------------------------------------------
+    // 2. Update pending entry orders.
+    //
+    // Orders are checked before new entries are created.
+    // Therefore, an order created today cannot fill on the same bar.
+    // It can only fill on a later bar.
+    // ---------------------------------------------------------------------
+    for (auto it = pending_orders.begin(); it != pending_orders.end(); ) {
+        const Order& order = *it;
+
+        const auto barIt = bars.find(order.coin_);
+
+        if (barIt == bars.end()) {
+            LG_ERROR("No data for pending order coin {}", order.coin_);
+            ++it;
+            continue;
+        }
+
+        if (openCount >= maxPosOpen_) {
+            ++it;
+            continue;
+        }
+
+        if (shouldFillOrder(order, marketData, ts, indicators)) {
+            Trade trade = buildTradeFromOrder(
+                order,
+                marketData,
+                ts,
+                last_trade_id,
+                live_trading,
+                indicators
+            );
+
+            if (!trade.exited_ && !trade.isSimulated_) {
+                ++openCount;
+            }
+
+            current_trades.emplace_back(std::move(trade));
+            it = pending_orders.erase(it);
+            continue;
+        }
+
+        if (shouldCancelOrder(order, marketData, ts, indicators)) {
+            it = pending_orders.erase(it);
+            continue;
+        }
+
+        ++it;
+    }
+
+    unsigned int activeEntryCount =
+        openCount + static_cast<unsigned int>(pending_orders.size());
+
+    if (activeEntryCount >= maxPosOpen_) {
         return;
     }
 
@@ -128,7 +293,17 @@ void Strategy::calculateSignals(
     }
 
     // ---------------------------------------------------------------------
-    // 2. Select tradable universe
+    // 3. Check strategy-level market filters.
+    //
+    // If these fail, the strategy opens no new trades and creates no new
+    // pending orders on this timestamp.
+    // ---------------------------------------------------------------------
+    if (!marketFiltersPass(marketData, ts, indicators)) {
+        return;
+    }
+
+    // ---------------------------------------------------------------------
+    // 4. Select tradable universe
     // ---------------------------------------------------------------------
     CoinBarMap tradableBars = universeSelector_->select(
         bars,
@@ -141,7 +316,7 @@ void Strategy::calculateSignals(
     }
 
     // ---------------------------------------------------------------------
-    // 3. Rank selected universe
+    // 5. Rank selected universe
     // ---------------------------------------------------------------------
     RankedUniverse ranked = ranker_->rank(
         tradableBars,
@@ -150,21 +325,22 @@ void Strategy::calculateSignals(
     );
 
     // ---------------------------------------------------------------------
-    // 4. Attempt new entries
+    // 6. Attempt new entries
     // ---------------------------------------------------------------------
     unsigned int rankingPosition = 0;
 
     for (const auto& rankedCoin : ranked) {
         ++rankingPosition;
 
-        if (openCount >= maxPosOpen_ ||
+        if (activeEntryCount >= maxPosOpen_ ||
             rankingPosition > maxRankingPosition_) {
             break;
         }
 
         const Coin& coin = rankedCoin.coin;
 
-        if (hasOpenTrade(current_trades, coin)) {
+        if (hasOpenTrade(current_trades, coin) ||
+            hasPendingOrder(pending_orders, coin)) {
             continue;
         }
 
@@ -179,6 +355,21 @@ void Strategy::calculateSignals(
             continue;
         }
 
+        if (usesEntryOrders()) {
+            Order order = buildOrder(
+                coin,
+                marketData,
+                ts,
+                strategy_allocation,
+                live_trading,
+                indicators
+            );
+
+            pending_orders.emplace_back(std::move(order));
+            ++activeEntryCount;
+            continue;
+        }
+
         Trade trade = buildTrade(
             coin,
             marketData,
@@ -189,8 +380,9 @@ void Strategy::calculateSignals(
             indicators
         );
 
-        if (!trade.isSimulated_) {
+        if (!trade.exited_ && !trade.isSimulated_) {
             ++openCount;
+            ++activeEntryCount;
         }
 
         current_trades.emplace_back(std::move(trade));
@@ -211,6 +403,24 @@ bool Strategy::hasOpenTrade(
         trades.end(),
         [&](const Trade& trade) {
             return !trade.exited_ && trade.coin_ == coin;
+        }
+    );
+}
+
+
+/**************************************************************************************
+ * Purpose : Check whether a coin already has a pending order
+ **************************************************************************************/
+bool Strategy::hasPendingOrder(
+    const std::vector<Order>& orders,
+    const Coin& coin
+) const
+{
+    return std::any_of(
+        orders.begin(),
+        orders.end(),
+        [&](const Order& order) {
+            return order.coin_ == coin;
         }
     );
 }

@@ -152,7 +152,7 @@ bool IndicatorEngine::has(
 ) const
 {
     const double v = value(coin, ts, spec);
-    return v == v;
+    return v == v; // NaN Check
 }
 
 

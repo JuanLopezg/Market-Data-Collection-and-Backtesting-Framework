@@ -1,9 +1,11 @@
 #include "backtest.h"
-#include "bargainChaser.h"
+#include "all_strategies.h"
 #include "indicator_ranker.h"
 #include "indicator_spec.h"
 #include "liquidity_universe.h"
 #include "universe_selector.h"
+#include "market_filter.h"
+#include "benchmark_above_sma_filter.h"
 #include "database_utils.h"
 #include "data_types.h"
 #include "csv_utils.h"
@@ -421,17 +423,26 @@ int main(int argc, char** argv)
     std::vector<std::unique_ptr<Strategy>> strategies;
 
     // ------------------------------------------------------------------
+    // Reusable market/regime filter for future strategies
+    // ------------------------------------------------------------------
+    std::vector<std::unique_ptr<MarketFilter>> btcAboveSma50Filters;
+
+    btcAboveSma50Filters.emplace_back(
+        std::make_unique<BenchmarkAboveSMAFilter>(
+            "BTC",
+            50
+        )
+    );
+
+    // ------------------------------------------------------------------
     // BargainChaser strategy
+    //
+    // Important:
+    // This strategy does NOT use the BTC regime filter.
     // ------------------------------------------------------------------
     unsigned int maxPosOpen = 10;
     double riskPerTrade = 0.1;
 
-    /*
-     * Universe selector:
-     *
-     * Keep only the top 20 most liquid coins at each timestamp.
-     * Liquidity is measured as SMA(Volume, 25).
-     */
     unsigned int topLiquidityCount = 20;
 
     std::unique_ptr<UniverseSelector> universeSelector =
@@ -445,16 +456,6 @@ int main(int argc, char** argv)
             true
         );
 
-    /*
-     * Ranker:
-     *
-     * Rank only those top 20 liquid coins by ROC(Close, 1), ascending.
-     *
-     * descending = false means lowest ROC first:
-     *   -20% before -10% before +5%
-     *
-     * So the biggest 1-day losers are ranked first.
-     */
     std::unique_ptr<Ranker> ranker =
         std::make_unique<IndicatorRanker>(
             IndicatorSpec{
@@ -468,30 +469,512 @@ int main(int argc, char** argv)
     double commissionEntryFactor = feeMaker;
     double commissionExitFactor = feeTaker;
 
-    /*
-     * Since the universe already contains only the top 20 liquid coins,
-     * this scans all 20 after ranking by inverse ROC.
-     */
     unsigned int maxRankingPosition = topLiquidityCount;
+    /* {
+        unsigned int nBarsExit = 2;
+        double fallPercentage = 10.0;
+        unsigned int maLength = 50;
 
-    unsigned int nBarsExit = 2;
-    double fallPercentage = 10.0;
-    unsigned int maLength = 50;
+        strategies.push_back(
+            std::make_unique<StrategyBargainChaser>(
+                maxPosOpen,
+                riskPerTrade,
+                std::move(universeSelector),
+                std::move(ranker),
+                commissionEntryFactor,
+                commissionExitFactor,
+                maxRankingPosition,
+                nBarsExit,
+                fallPercentage,
+                maLength
+            )
+        ); 
 
-    strategies.push_back(
-        std::make_unique<StrategyBargainChaser>(
-            maxPosOpen,
-            riskPerTrade,
+        strategies.push_back(
+        std::make_unique<StrategyATHChaser>(
+            10,                         // MaxPos
+            10.0,                       // QtyPct
             std::move(universeSelector),
-            std::move(ranker),
-            commissionEntryFactor,
-            commissionExitFactor,
-            maxRankingPosition,
-            nBarsExit,
-            fallPercentage,
-            maLength
-        )
-    );
+            feeMaker,
+            feeTaker,
+            0.15,                       // FromATH
+            0.10,                       // ExitFromEntry
+            30                          // MomentumScoreNum
+        ));
+    } */
+
+    /* {
+        unsigned int heldBars = 2;
+        double atrMultiple = 0.75;
+        unsigned int atrLength = 3;
+        unsigned int momentumScoreNum = 30;
+        double qtyPct = 10.0;
+        unsigned int maxPos = 10;
+
+        std::unique_ptr<Ranker> atrRanker =
+        std::make_unique<IndicatorRanker>(
+            IndicatorSpec{
+                IndicatorKind::ROC,
+                PriceField::Close,
+                momentumScoreNum
+            },
+            true
+        );
+
+
+        strategies.push_back(
+            std::make_unique<StrategyATRBreakout>(
+                maxPos,
+                qtyPct / 100.0,
+                std::move(universeSelector),
+                std::move(atrRanker),
+                commissionEntryFactor,
+                commissionExitFactor,
+                maxRankingPosition,
+                heldBars,
+                atrMultiple,
+                atrLength
+            )
+        ); 
+    } */
+
+    // ------------------------------------------------------------------
+    // MRShort strategy
+    // ------------------------------------------------------------------
+    /*  {
+        unsigned int rsiLen = 5;
+        double rsiEntry = 70.0;
+        unsigned int btcMALen = 50;
+        double entryATRMult = 0.30;
+        unsigned int entryATRLen = 5;
+        unsigned int heldBars = 3;
+        double qtyPct = 10.0;
+        unsigned int maxPos = 10;
+
+        std::unique_ptr<Ranker> mrShortRanker =
+            std::make_unique<IndicatorRanker>(
+                IndicatorSpec{
+                    IndicatorKind::SMA,
+                    PriceField::Volume,
+                    25
+                },
+                true
+            );
+
+        std::unique_ptr<UniverseSelector> mrShortUniverseSelector = {};
+
+        unsigned int maxRankingPosition = 1000000;
+
+        strategies.push_back(
+            std::make_unique<StrategyMRShort>(
+                maxPos,
+                qtyPct / 100.0,
+                std::move(mrShortUniverseSelector),
+                std::move(mrShortRanker),
+                feeTaker,
+                feeTaker,
+                maxRankingPosition,
+                rsiLen,
+                rsiEntry,
+                btcMALen,
+                entryATRMult,
+                entryATRLen,
+                heldBars,
+                "BTC"
+            )
+        );
+    }  */
+
+    // ------------------------------------------------------------------
+    // MR_LowsSweeper strategy
+    // ------------------------------------------------------------------
+    /* {
+        unsigned int heldBars = 15;
+        unsigned int xL = 2;
+        unsigned int rocN = 7;
+        unsigned int btcMALen = 50;
+        double qtyPct = 10.0;
+        unsigned int maxPos = 10;
+
+        std::unique_ptr<Ranker> mrLowsRanker =
+            std::make_unique<IndicatorRanker>(
+                IndicatorSpec{
+                    IndicatorKind::ROC,
+                    PriceField::Close,
+                    rocN
+                },
+                false
+            );
+
+        std::unique_ptr<UniverseSelector> mrLowsUniverseSelector = {};
+
+        unsigned int maxRankingPosition = 1000000;
+
+        strategies.push_back(
+            std::make_unique<StrategyMRLowsSweeper>(
+                maxPos,
+                qtyPct / 100.0,
+                std::move(mrLowsUniverseSelector),
+                std::move(mrLowsRanker),
+                feeMaker,
+                feeTaker,
+                maxRankingPosition,
+                heldBars,
+                xL,
+                btcMALen,
+                "BTC"
+            )
+        );
+    }  */
+
+    // ------------------------------------------------------------------
+    // Pure_Mom strategy
+    // ------------------------------------------------------------------
+    /* {
+        unsigned int heldBars = 7;
+        unsigned int rocN = 7;
+        unsigned int btcMALen = 50;
+        double qtyPct = 10.0;
+        unsigned int maxPos = 10;
+
+        std::unique_ptr<Ranker> pureMomRanker =
+            std::make_unique<IndicatorRanker>(
+                IndicatorSpec{
+                    IndicatorKind::ROC,
+                    PriceField::Close,
+                    rocN
+                },
+                true
+            );
+
+        std::unique_ptr<UniverseSelector> pureMomUniverseSelector = {};
+
+        unsigned int maxRankingPosition = 1000000;
+
+        strategies.push_back(
+            std::make_unique<StrategyPureMom>(
+                maxPos,
+                qtyPct / 100.0,
+                std::move(pureMomUniverseSelector),
+                std::move(pureMomRanker),
+                feeTaker,
+                feeTaker,
+                maxRankingPosition,
+                heldBars,
+                btcMALen,
+                "BTC"
+            )
+        );
+    }  */
+
+    // ------------------------------------------------------------------
+    // Pure_RSI strategy
+    // ------------------------------------------------------------------
+     /* {
+        unsigned int rsiLen = 7;
+        double rsiEntry = 80.0;
+        double rsiExit = 70.0;
+        double qtyPct = 10.0;
+        unsigned int maxPos = 10;
+
+        std::unique_ptr<Ranker> pureRSIRanker =
+            std::make_unique<IndicatorRanker>(
+                IndicatorSpec{
+                    IndicatorKind::SMA,
+                    PriceField::Volume,
+                    25
+                },
+                true
+            );
+
+        std::unique_ptr<UniverseSelector> pureRSIUniverseSelector = {};
+
+        unsigned int maxRankingPosition = 1000000;
+
+        strategies.push_back(
+            std::make_unique<StrategyPureRSI>(
+                maxPos,
+                qtyPct / 100.0,
+                std::move(pureRSIUniverseSelector),
+                std::move(pureRSIRanker),
+                feeTaker,
+                feeTaker,
+                maxRankingPosition,
+                rsiLen,
+                rsiEntry,
+                rsiExit
+            )
+        );
+    }  */
+
+    // ------------------------------------------------------------------
+    // MA_Cross strategy
+    // ------------------------------------------------------------------
+    /*  {
+        unsigned int mal = 20;
+        unsigned int mas = 10;
+        unsigned int btcMALen = 50;
+        double qtyPct = 10.0;
+        unsigned int maxPos = 10;
+
+        std::unique_ptr<Ranker> maCrossRanker =
+            std::make_unique<IndicatorRanker>(
+                IndicatorSpec{
+                    IndicatorKind::SMA,
+                    PriceField::Volume,
+                    25
+                },
+                true
+            );
+
+        std::unique_ptr<UniverseSelector> maCrossUniverseSelector = {};
+
+        std::vector<std::unique_ptr<MarketFilter>> maCrossFilters;
+
+        maCrossFilters.emplace_back(
+            std::make_unique<BenchmarkAboveSMAFilter>(
+                "BTC",
+                btcMALen
+            )
+        );
+
+        unsigned int maxRankingPosition = 1000000;
+
+        strategies.push_back(
+            std::make_unique<StrategyMACross>(
+                maxPos,
+                qtyPct / 100.0,
+                std::move(maCrossUniverseSelector),
+                std::move(maCrossRanker),
+                feeTaker,
+                feeTaker,
+                maxRankingPosition,
+                mas,
+                mal,
+                std::move(maCrossFilters)
+            )
+        );
+    }  */
+
+    // ------------------------------------------------------------------
+    // MA_Simple strategy
+    // ------------------------------------------------------------------
+    /*  {
+        unsigned int maLength = 20;
+        unsigned int btcMALen = 50;
+        double qtyPct = 10.0;
+        unsigned int maxPos = 10;
+
+        std::unique_ptr<Ranker> maSimpleRanker =
+            std::make_unique<IndicatorRanker>(
+                IndicatorSpec{
+                    IndicatorKind::SMA,
+                    PriceField::Volume,
+                    25
+                },
+                true
+            );
+
+        std::unique_ptr<UniverseSelector> maSimpleUniverseSelector = {};
+
+        std::vector<std::unique_ptr<MarketFilter>> maSimpleFilters;
+
+        maSimpleFilters.emplace_back(
+            std::make_unique<BenchmarkAboveSMAFilter>(
+                "BTC",
+                btcMALen
+            )
+        );
+
+        unsigned int maxRankingPosition = 1000000;
+
+        strategies.push_back(
+            std::make_unique<StrategyMASimple>(
+                maxPos,
+                qtyPct / 100.0,
+                std::move(maSimpleUniverseSelector),
+                std::move(maSimpleRanker),
+                feeTaker,
+                feeTaker,
+                maxRankingPosition,
+                maLength,
+                std::move(maSimpleFilters)
+            )
+        );
+    }  */
+
+    // ------------------------------------------------------------------
+    // Follow_BTC strategy
+    // ------------------------------------------------------------------
+    /* {
+        unsigned int btcMALength = 50;
+        double qtyPct = 6.6667;
+        unsigned int maxPos = 15;
+
+        std::unique_ptr<Ranker> followBTCRanker =
+            std::make_unique<IndicatorRanker>(
+                IndicatorSpec{
+                    IndicatorKind::SMA,
+                    PriceField::Volume,
+                    25
+                },
+                true
+            );
+
+        std::unique_ptr<UniverseSelector> followBTCUniverseSelector = {};
+
+        unsigned int maxRankingPosition = maxPos;
+
+        strategies.push_back(
+            std::make_unique<StrategyFollowBTC>(
+                maxPos,
+                qtyPct / 100.0,
+                std::move(followBTCUniverseSelector),
+                std::move(followBTCRanker),
+                feeTaker,
+                feeTaker,
+                maxRankingPosition,
+                btcMALength,
+                "BTC"
+            )
+        );
+    }  */
+
+    // ------------------------------------------------------------------
+    // MR_ATRLimit strategy
+    // ------------------------------------------------------------------
+    /*  {
+        unsigned int atrLength = 3;
+        double atrMultiple = 0.75;
+        unsigned int momentumLength = 10;
+        unsigned int heldBars = 2;
+        unsigned int btcMALength = 50;
+
+        double qtyPct = 10.0;
+        unsigned int maxPos = 10;
+
+        std::unique_ptr<UniverseSelector> mrATRLimitUniverseSelector = {};
+
+        std::unique_ptr<Ranker> mrATRLimitRanker =
+            std::make_unique<IndicatorRanker>(
+                IndicatorSpec{
+                    IndicatorKind::ROC,
+                    PriceField::Close,
+                    momentumLength
+                },
+                false
+            );
+
+        unsigned int maxRankingPosition = maxPos;
+
+        strategies.push_back(
+            std::make_unique<StrategyMRATRLimit>(
+                maxPos,
+                qtyPct / 100.0,
+                std::move(mrATRLimitUniverseSelector),
+                std::move(mrATRLimitRanker),
+                feeMaker,
+                feeTaker,
+                maxRankingPosition,
+                atrLength,
+                atrMultiple,
+                heldBars,
+                btcMALength,
+                "BTC"
+            )
+        );
+    }  */
+
+    // ------------------------------------------------------------------
+    // MR_RSILong strategy
+    // ------------------------------------------------------------------
+    /* {
+        unsigned int rsiLength = 3;
+        double rsiEntryLevel = 10.0;
+        unsigned int momentumLength = 30;
+        unsigned int heldBars = 1;
+        unsigned int btcMALength = 50;
+
+        double qtyPct = 10.0;
+        unsigned int maxPos = 10;
+
+        std::unique_ptr<UniverseSelector> mrRSILongUniverseSelector = {};
+
+        std::unique_ptr<Ranker> mrRSILongRanker =
+            std::make_unique<IndicatorRanker>(
+                IndicatorSpec{
+                    IndicatorKind::ROC,
+                    PriceField::Close,
+                    momentumLength
+                },
+                true
+            );
+
+        unsigned int maxRankingPosition = maxPos;
+
+        strategies.push_back(
+            std::make_unique<StrategyMRRSILong>(
+                maxPos,
+                qtyPct / 100.0,
+                std::move(mrRSILongUniverseSelector),
+                std::move(mrRSILongRanker),
+                feeMaker,
+                feeTaker,
+                maxRankingPosition,
+                rsiLength,
+                rsiEntryLevel,
+                heldBars,
+                btcMALength,
+                "BTC"
+            )
+        );
+    } */
+
+    // ------------------------------------------------------------------
+    // xH_Breakout strategy
+    // ------------------------------------------------------------------
+    /* {
+        unsigned int xH = 50;
+        unsigned int fastMALength = 5;
+        double stopLossPct = 0.15;
+        unsigned int momentumLength = 30;
+
+        double qtyPct = 10.0;
+        unsigned int maxPos = 10;
+
+        std::unique_ptr<UniverseSelector> xHUniverseSelector = {};
+
+        std::unique_ptr<Ranker> xHRanker =
+            std::make_unique<IndicatorRanker>(
+                IndicatorSpec{
+                    IndicatorKind::ROC,
+                    PriceField::Close,
+                    momentumLength
+                },
+                true
+            );
+
+        unsigned int maxRankingPosition = maxPos;
+
+        strategies.push_back(
+            std::make_unique<StrategyXHBreakout>(
+                maxPos,
+                qtyPct / 100.0,
+                std::move(xHUniverseSelector),
+                std::move(xHRanker),
+                feeMaker,
+                feeTaker,
+                maxRankingPosition,
+                xH,
+                fastMALength,
+                stopLossPct
+            )
+        );
+    } */
+
+
+
+
 
     BacktestContext context(
         ohlcvData,
@@ -553,12 +1036,7 @@ int main(int argc, char** argv)
     std::filesystem::path mismatchesCsv =
         "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/bargainChaser_mismatches.csv";
 
-    compareBacktests(
-        rt,
-        context.GetTradesHistory(),
-        false,
-        mismatchesCsv
-    );
+    //compareBacktests(rt,context.GetTradesHistory(),false,mismatchesCsv);
 
     return 0;
 }

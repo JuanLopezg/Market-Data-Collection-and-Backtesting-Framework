@@ -15,6 +15,8 @@ subdir('strategy')
 subdir('ranker')
 subdir('indicator')
 subdir('universe')
+subdir('filter')
+
 
 # ---- Include directories for all submodules ----
 include_dir = include_directories(
@@ -26,7 +28,8 @@ include_dir = include_directories(
     'strategy/strategies',
     'ranker',
     'indicator',
-    'universe'
+    'universe',
+    'filter'
 )
 
 # ---- Aggregate all sources from submodules ----
@@ -39,6 +42,7 @@ lib_sources += strategy_sources
 lib_sources += ranker_sources
 lib_sources += indicator_sources
 lib_sources += universe_sources
+lib_sources += filter_sources
 
 
 
