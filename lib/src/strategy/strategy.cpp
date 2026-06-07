@@ -6,6 +6,33 @@
 #include "indicator_engine.h"
 #include "logger.h"
 #include "no_ranker.h"
+#include <sstream>
+#include <vector>
+
+namespace {
+
+void closeTradeAtCurrentPrice(
+    Trade& trade,
+    Timestamp ts,
+    double commissionExitFactor
+)
+{
+    trade.exit_ = trade.current_price_;
+    trade.end_ = ts;
+    trade.exited_ = true;
+
+    if (trade.direction_ == Direction::Long) {
+        trade.pnl_ = (trade.exit_ - trade.entry_) * trade.size_;
+    } else if (trade.direction_ == Direction::Short) {
+        trade.pnl_ = (trade.entry_ - trade.exit_) * trade.size_;
+    } else {
+        trade.pnl_ = 0.0;
+    }
+
+    trade.commission_ += trade.exit_ * trade.size_ * commissionExitFactor;
+}
+
+} // namespace
 
 
 Strategy::Strategy(
@@ -180,6 +207,7 @@ void Strategy::calculateSignals(
     const IndicatorEngine& indicators
 )
 {
+
     const auto tsIt = marketData.find(ts);
 
     if (tsIt == marketData.end()) {
@@ -207,7 +235,19 @@ void Strategy::calculateSignals(
         const auto barIt = bars.find(trade.coin_);
 
         if (barIt == bars.end()) {
-            LG_ERROR("No data for coin {}", trade.coin_);
+            LG_ERROR(
+                "No data for coin {} on timestamp {}, closing trade at current_price={}",
+                trade.coin_,
+                ts,
+                trade.current_price_
+            );
+
+            closeTradeAtCurrentPrice(
+                trade,
+                ts,
+                commissionExitFactor_
+            );
+
             continue;
         }
 
@@ -238,12 +278,22 @@ void Strategy::calculateSignals(
         const auto barIt = bars.find(order.coin_);
 
         if (barIt == bars.end()) {
-            LG_ERROR("No data for pending order coin {}", order.coin_);
-            ++it;
+            LG_ERROR(
+                "No data for pending order coin {} on timestamp {}, deleting pending order",
+                order.coin_,
+                ts
+            );
+
+            it = pending_orders.erase(it);
             continue;
         }
 
         if (openCount >= maxPosOpen_) {
+            if (shouldCancelOrder(order, marketData, ts, indicators)) {
+                it = pending_orders.erase(it);
+                continue;
+            }
+
             ++it;
             continue;
         }
@@ -312,6 +362,7 @@ void Strategy::calculateSignals(
     );
 
     if (tradableBars.empty()) {
+        LG_INFO("No tradable bars at ts {}", ts);
         return;
     }
 

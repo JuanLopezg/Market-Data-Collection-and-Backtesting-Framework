@@ -25,6 +25,8 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <sstream>
+
 
 
 static std::string timestampToISODate(Timestamp ts)
@@ -391,6 +393,327 @@ void printTradesHistory(const std::map<TradeID, Trade>& tradesHistory)
     }
 }
 
+static std::string scaleCsvTrim(std::string s)
+{
+    auto notSpace = [](unsigned char c) {
+        return !std::isspace(c);
+    };
+
+    s.erase(s.begin(), std::find_if(s.begin(), s.end(), notSpace));
+    s.erase(std::find_if(s.rbegin(), s.rend(), notSpace).base(), s.end());
+
+    return s;
+}
+
+static std::string scaleCsvLower(std::string value)
+{
+    std::transform(
+        value.begin(),
+        value.end(),
+        value.begin(),
+        [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        }
+    );
+
+    return value;
+}
+
+static std::vector<std::string> scaleCsvParseLine(const std::string& line)
+{
+    std::vector<std::string> fields;
+    std::string current;
+    bool inQuotes = false;
+
+    for (std::size_t i = 0; i < line.size(); ++i)
+    {
+        char c = line[i];
+
+        if (c == '"')
+        {
+            if (inQuotes && i + 1 < line.size() && line[i + 1] == '"')
+            {
+                current += '"';
+                ++i;
+            }
+            else
+            {
+                inQuotes = !inQuotes;
+            }
+        }
+        else if (c == ',' && !inQuotes)
+        {
+            fields.push_back(current);
+            current.clear();
+        }
+        else
+        {
+            current += c;
+        }
+    }
+
+    fields.push_back(current);
+    return fields;
+}
+
+static std::string scaleCsvEscape(const std::string& value)
+{
+    bool needsQuotes = false;
+
+    for (char c : value)
+    {
+        if (c == ',' || c == '"' || c == '\n' || c == '\r')
+        {
+            needsQuotes = true;
+            break;
+        }
+    }
+
+    if (!needsQuotes)
+        return value;
+
+    std::string escaped;
+    escaped.push_back('"');
+
+    for (char c : value)
+    {
+        if (c == '"')
+            escaped += "\"\"";
+        else
+            escaped.push_back(c);
+    }
+
+    escaped.push_back('"');
+    return escaped;
+}
+
+static void scaleCsvWriteLine(
+    std::ofstream& output,
+    const std::vector<std::string>& fields
+)
+{
+    for (std::size_t i = 0; i < fields.size(); ++i)
+    {
+        if (i > 0)
+            output << ",";
+
+        output << scaleCsvEscape(fields[i]);
+    }
+
+    output << "\n";
+}
+
+static int scaleCsvFindColumn(
+    const std::vector<std::string>& header,
+    const std::vector<std::string>& possibleNames
+)
+{
+    for (std::size_t i = 0; i < header.size(); ++i)
+    {
+        const std::string columnName =
+            scaleCsvLower(scaleCsvTrim(header[i]));
+
+        for (const std::string& possibleName : possibleNames)
+        {
+            if (columnName == scaleCsvLower(possibleName))
+                return static_cast<int>(i);
+        }
+    }
+
+    return -1;
+}
+
+static std::string scaleCsvUpper(std::string value)
+{
+    std::transform(
+        value.begin(),
+        value.end(),
+        value.begin(),
+        [](unsigned char c) {
+            return static_cast<char>(std::toupper(c));
+        }
+    );
+
+    return value;
+}
+
+static std::string scaleCsvNumberString(double value)
+{
+    std::ostringstream output;
+    output << std::fixed << std::setprecision(10) << value;
+    return output.str();
+}
+
+void scaleLuncOHLCBy1000(
+    const std::filesystem::path& input_path,
+    const std::filesystem::path& output_path
+)
+{
+    std::ifstream input(input_path);
+    if (!input.is_open())
+    {
+        LG_ERROR("Failed to open input CSV: {}", input_path.string());
+        return;
+    }
+
+    std::ofstream output(output_path);
+    if (!output.is_open())
+    {
+        LG_ERROR("Failed to open output CSV: {}", output_path.string());
+        return;
+    }
+
+    std::string line;
+
+    if (!std::getline(input, line))
+    {
+        LG_ERROR("Input CSV is empty: {}", input_path.string());
+        return;
+    }
+
+    if (!line.empty() && line.back() == '\r')
+        line.pop_back();
+
+    std::vector<std::string> header = scaleCsvParseLine(line);
+
+    const int coinCol = scaleCsvFindColumn(header, {"coin", "symbol", "ticker"});
+    const int openCol = scaleCsvFindColumn(header, {"open", "o"});
+    const int highCol = scaleCsvFindColumn(header, {"high", "h"});
+    const int lowCol = scaleCsvFindColumn(header, {"low", "l"});
+    const int closeCol = scaleCsvFindColumn(header, {"close", "c"});
+
+    if (
+        coinCol < 0 ||
+        openCol < 0 ||
+        highCol < 0 ||
+        lowCol < 0 ||
+        closeCol < 0
+    )
+    {
+        LG_ERROR(
+            "Could not find required columns. Need coin/symbol/ticker plus open/high/low/close."
+        );
+        return;
+    }
+
+    scaleCsvWriteLine(output, header);
+
+    std::size_t changedRows = 0;
+    std::size_t totalRows = 0;
+
+    while (std::getline(input, line))
+    {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+
+        if (scaleCsvTrim(line).empty())
+            continue;
+
+        std::vector<std::string> fields = scaleCsvParseLine(line);
+
+        ++totalRows;
+
+        const std::size_t minRequiredSize =
+            static_cast<std::size_t>(
+                std::max({coinCol, openCol, highCol, lowCol, closeCol})
+            ) + 1;
+
+        if (fields.size() < minRequiredSize)
+        {
+            LG_ERROR("Skipping malformed CSV row: {}", line);
+            continue;
+        }
+
+        const std::string coin =
+            scaleCsvUpper(scaleCsvTrim(fields[coinCol]));
+
+        if (coin == "LUNC")
+        {
+            try
+            {
+                fields[openCol] =
+                    scaleCsvNumberString(std::stod(scaleCsvTrim(fields[openCol])) * 1000.0);
+
+                fields[highCol] =
+                    scaleCsvNumberString(std::stod(scaleCsvTrim(fields[highCol])) * 1000.0);
+
+                fields[lowCol] =
+                    scaleCsvNumberString(std::stod(scaleCsvTrim(fields[lowCol])) * 1000.0);
+
+                fields[closeCol] =
+                    scaleCsvNumberString(std::stod(scaleCsvTrim(fields[closeCol])) * 1000.0);
+
+                ++changedRows;
+            }
+            catch (const std::exception& e)
+            {
+                LG_ERROR("Failed to scale LUNC row: {}. Error: {}", line, e.what());
+            }
+        }
+
+        scaleCsvWriteLine(output, fields);
+    }
+
+    LG_INFO(
+        "Scaled LUNC OHLC by 1000. Changed rows: {} / {}. Output saved to: {}",
+        changedRows,
+        totalRows,
+        output_path.string()
+    );
+}
+
+void filterCSVByDateRange(
+    const std::filesystem::path& input_path,
+    const std::filesystem::path& output_path,
+    const std::string& start_date,
+    const std::string& end_date_exclusive
+)
+{
+    std::ifstream input(input_path);
+    if (!input.is_open())
+    {
+        LG_ERROR("Failed to open input CSV: {}", input_path.string());
+        return;
+    }
+
+    std::ofstream output(output_path);
+    if (!output.is_open())
+    {
+        LG_ERROR("Failed to open output CSV: {}", output_path.string());
+        return;
+    }
+
+    std::string line;
+
+    // Copy header
+    if (std::getline(input, line))
+    {
+        output << line << '\n';
+    }
+
+    while (std::getline(input, line))
+    {
+        if (line.empty())
+            continue;
+
+        std::stringstream ss(line);
+
+        std::string dateStr;
+        std::getline(ss, dateStr, ',');
+
+        if (dateStr.empty())
+            continue;
+
+        // Works for YYYY-MM-DD format
+        if (dateStr >= start_date && dateStr < end_date_exclusive)
+        {
+            output << line << '\n';
+        }
+    }
+
+    LG_INFO("Filtered CSV saved to: {}", output_path.string());
+}
+
 
 int main(int argc, char** argv)
 {
@@ -407,9 +730,38 @@ int main(int argc, char** argv)
 
     std::string path =
         "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/databases/1d_cmc.csv";
-
+std::string hola;
     LG_INFO("Database loading started");
     OHLCVData ohlcvData = loadDatabase(path, 00000000);
+
+    /* scaleLuncOHLCBy1000(
+    "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/databases/1d_cmc.csv",
+     "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/databases/1d_cmc_scaled.csv"
+);
+return 0; */
+
+    /* std::filesystem::path output_path =
+        "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/databases/cut.csv";
+
+    filterCSVByDateRange(
+        path,
+        output_path,
+        "2020-01-01",
+        "2020-04-01"
+    );
+
+    return 0; */
+
+    /* OHLCVData aaveOhlcvData;
+
+    auto it = ohlcvData.data.find("BTC");
+    if (it != ohlcvData.data.end()) {
+        aaveOhlcvData.data["BTC"] = it->second;
+    }
+
+    ohlcvData = aaveOhlcvData;   */
+
+
     LG_INFO("Database loaded successfully");
 
     unsigned int lastTradeId = 0;
@@ -417,8 +769,10 @@ int main(int argc, char** argv)
     double balance = 100000.0;
     double equity = balance;
 
-    double feeTaker = 0.045 / 100.0;
-    double feeMaker = 0.015 / 100.0;
+    //double feeTaker = 0.045 / 100.0;
+    //double feeMaker = 0.015 / 100.0;
+    double feeTaker = 0;
+    double feeMaker = 0;
 
     std::vector<std::unique_ptr<Strategy>> strategies;
 
@@ -456,21 +810,21 @@ int main(int argc, char** argv)
             true
         );
 
-    std::unique_ptr<Ranker> ranker =
-        std::make_unique<IndicatorRanker>(
-            IndicatorSpec{
-                IndicatorKind::ROC,
-                PriceField::Close,
-                1
-            },
-            false
-        );
 
-    double commissionEntryFactor = feeMaker;
-    double commissionExitFactor = feeTaker;
+    double commissionEntryFactor = 0;
+    double commissionExitFactor = 0;
 
     unsigned int maxRankingPosition = topLiquidityCount;
     /* {
+        std::unique_ptr<Ranker> ranker =
+            std::make_unique<IndicatorRanker>(
+                IndicatorSpec{
+                    IndicatorKind::ROC,
+                    PriceField::Close,
+                    1
+                },
+                false
+            );
         unsigned int nBarsExit = 2;
         double fallPercentage = 10.0;
         unsigned int maLength = 50;
@@ -489,19 +843,8 @@ int main(int argc, char** argv)
                 maLength
             )
         ); 
-
-        strategies.push_back(
-        std::make_unique<StrategyATHChaser>(
-            10,                         // MaxPos
-            10.0,                       // QtyPct
-            std::move(universeSelector),
-            feeMaker,
-            feeTaker,
-            0.15,                       // FromATH
-            0.10,                       // ExitFromEntry
-            30                          // MomentumScoreNum
-        ));
-    } */
+    }*/
+ 
 
     /* {
         unsigned int heldBars = 2;
@@ -536,12 +879,12 @@ int main(int argc, char** argv)
                 atrLength
             )
         ); 
-    } */
+    }  */
 
     // ------------------------------------------------------------------
     // MRShort strategy
     // ------------------------------------------------------------------
-    /*  {
+     /* {
         unsigned int rsiLen = 5;
         double rsiEntry = 70.0;
         unsigned int btcMALen = 50;
@@ -554,14 +897,13 @@ int main(int argc, char** argv)
         std::unique_ptr<Ranker> mrShortRanker =
             std::make_unique<IndicatorRanker>(
                 IndicatorSpec{
-                    IndicatorKind::SMA,
-                    PriceField::Volume,
-                    25
+                    IndicatorKind::ROC,
+                    PriceField::Close,
+                    30
                 },
                 true
             );
 
-        std::unique_ptr<UniverseSelector> mrShortUniverseSelector = {};
 
         unsigned int maxRankingPosition = 1000000;
 
@@ -569,7 +911,7 @@ int main(int argc, char** argv)
             std::make_unique<StrategyMRShort>(
                 maxPos,
                 qtyPct / 100.0,
-                std::move(mrShortUniverseSelector),
+                std::move(universeSelector),
                 std::move(mrShortRanker),
                 feeTaker,
                 feeTaker,
@@ -606,7 +948,7 @@ int main(int argc, char** argv)
                 false
             );
 
-        std::unique_ptr<UniverseSelector> mrLowsUniverseSelector = {};
+        std::unique_ptr<UniverseSelector> mrLowsUniverseSelector =*universeSelector;
 
         unsigned int maxRankingPosition = 1000000;
 
@@ -630,12 +972,14 @@ int main(int argc, char** argv)
     // ------------------------------------------------------------------
     // Pure_Mom strategy
     // ------------------------------------------------------------------
-    /* {
-        unsigned int heldBars = 7;
+   /*  {
+        unsigned int heldBars = 5;
         unsigned int rocN = 7;
         unsigned int btcMALen = 50;
         double qtyPct = 10.0;
-        unsigned int maxPos = 10;
+        unsigned int maxPos = 5;
+        unsigned int maxRankingPosition = 9099999999;
+
 
         std::unique_ptr<Ranker> pureMomRanker =
             std::make_unique<IndicatorRanker>(
@@ -647,15 +991,11 @@ int main(int argc, char** argv)
                 true
             );
 
-        std::unique_ptr<UniverseSelector> pureMomUniverseSelector = {};
-
-        unsigned int maxRankingPosition = 1000000;
-
         strategies.push_back(
             std::make_unique<StrategyPureMom>(
                 maxPos,
                 qtyPct / 100.0,
-                std::move(pureMomUniverseSelector),
+                std::move(universeSelector),
                 std::move(pureMomRanker),
                 feeTaker,
                 feeTaker,
@@ -665,12 +1005,12 @@ int main(int argc, char** argv)
                 "BTC"
             )
         );
-    }  */
+    } */
 
     // ------------------------------------------------------------------
     // Pure_RSI strategy
     // ------------------------------------------------------------------
-     /* {
+   {
         unsigned int rsiLen = 7;
         double rsiEntry = 80.0;
         double rsiExit = 70.0;
@@ -680,14 +1020,12 @@ int main(int argc, char** argv)
         std::unique_ptr<Ranker> pureRSIRanker =
             std::make_unique<IndicatorRanker>(
                 IndicatorSpec{
-                    IndicatorKind::SMA,
-                    PriceField::Volume,
-                    25
+                    IndicatorKind::RSI,
+                    PriceField::Close,
+                    rsiLen
                 },
                 true
             );
-
-        std::unique_ptr<UniverseSelector> pureRSIUniverseSelector = {};
 
         unsigned int maxRankingPosition = 1000000;
 
@@ -695,7 +1033,7 @@ int main(int argc, char** argv)
             std::make_unique<StrategyPureRSI>(
                 maxPos,
                 qtyPct / 100.0,
-                std::move(pureRSIUniverseSelector),
+                std::move(universeSelector),
                 std::move(pureRSIRanker),
                 feeTaker,
                 feeTaker,
@@ -705,7 +1043,7 @@ int main(int argc, char** argv)
                 rsiExit
             )
         );
-    }  */
+    }
 
     // ------------------------------------------------------------------
     // MA_Cross strategy
@@ -727,7 +1065,7 @@ int main(int argc, char** argv)
                 true
             );
 
-        std::unique_ptr<UniverseSelector> maCrossUniverseSelector = {};
+        std::unique_ptr<UniverseSelector> maCrossUniverseSelector =*universeSelector;
 
         std::vector<std::unique_ptr<MarketFilter>> maCrossFilters;
 
@@ -775,7 +1113,7 @@ int main(int argc, char** argv)
                 true
             );
 
-        std::unique_ptr<UniverseSelector> maSimpleUniverseSelector = {};
+        std::unique_ptr<UniverseSelector> maSimpleUniverseSelector =*universeSelector;
 
         std::vector<std::unique_ptr<MarketFilter>> maSimpleFilters;
 
@@ -821,7 +1159,7 @@ int main(int argc, char** argv)
                 true
             );
 
-        std::unique_ptr<UniverseSelector> followBTCUniverseSelector = {};
+        std::unique_ptr<UniverseSelector> followBTCUniverseSelector =*universeSelector;
 
         unsigned int maxRankingPosition = maxPos;
 
@@ -853,7 +1191,7 @@ int main(int argc, char** argv)
         double qtyPct = 10.0;
         unsigned int maxPos = 10;
 
-        std::unique_ptr<UniverseSelector> mrATRLimitUniverseSelector = {};
+        std::unique_ptr<UniverseSelector> mrATRLimitUniverseSelector =*universeSelector;
 
         std::unique_ptr<Ranker> mrATRLimitRanker =
             std::make_unique<IndicatorRanker>(
@@ -886,19 +1224,16 @@ int main(int argc, char** argv)
     }  */
 
     // ------------------------------------------------------------------
-    // MR_RSILong strategy
+    // MR_RSILong strategy Checked
     // ------------------------------------------------------------------
-    /* {
+    /*  {
         unsigned int rsiLength = 3;
         double rsiEntryLevel = 10.0;
         unsigned int momentumLength = 30;
         unsigned int heldBars = 1;
-        unsigned int btcMALength = 50;
-
         double qtyPct = 10.0;
         unsigned int maxPos = 10;
 
-        std::unique_ptr<UniverseSelector> mrRSILongUniverseSelector = {};
 
         std::unique_ptr<Ranker> mrRSILongRanker =
             std::make_unique<IndicatorRanker>(
@@ -910,25 +1245,23 @@ int main(int argc, char** argv)
                 true
             );
 
-        unsigned int maxRankingPosition = maxPos;
+        unsigned int maxRankingPosition = 9999999999999;
 
         strategies.push_back(
             std::make_unique<StrategyMRRSILong>(
                 maxPos,
                 qtyPct / 100.0,
-                std::move(mrRSILongUniverseSelector),
+                std::move(universeSelector),
                 std::move(mrRSILongRanker),
                 feeMaker,
                 feeTaker,
                 maxRankingPosition,
                 rsiLength,
                 rsiEntryLevel,
-                heldBars,
-                btcMALength,
-                "BTC"
+                heldBars
             )
         );
-    } */
+    }  */
 
     // ------------------------------------------------------------------
     // xH_Breakout strategy
@@ -936,13 +1269,11 @@ int main(int argc, char** argv)
     /* {
         unsigned int xH = 50;
         unsigned int fastMALength = 5;
-        double stopLossPct = 0.15;
         unsigned int momentumLength = 30;
 
         double qtyPct = 10.0;
         unsigned int maxPos = 10;
 
-        std::unique_ptr<UniverseSelector> xHUniverseSelector = {};
 
         std::unique_ptr<Ranker> xHRanker =
             std::make_unique<IndicatorRanker>(
@@ -954,20 +1285,19 @@ int main(int argc, char** argv)
                 true
             );
 
-        unsigned int maxRankingPosition = maxPos;
+        unsigned int maxRankingPosition = 9999999;
 
         strategies.push_back(
             std::make_unique<StrategyXHBreakout>(
                 maxPos,
                 qtyPct / 100.0,
-                std::move(xHUniverseSelector),
+                std::move(universeSelector),
                 std::move(xHRanker),
                 feeMaker,
                 feeTaker,
                 maxRankingPosition,
                 xH,
-                fastMALength,
-                stopLossPct
+                fastMALength
             )
         );
     } */
@@ -1009,6 +1339,9 @@ int main(int argc, char** argv)
 
     // tester.storeResults(backtestStorePath);
 
+    std::filesystem::path csv_path = "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/trades.csv";
+    tester.storeTradesCSV(csv_path);
+
     const std::string curveFilename =
         "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/balance_equity_curve.csv";
 
@@ -1016,27 +1349,27 @@ int main(int argc, char** argv)
 
     // saveCurveToCSV(context.GetBalanceEquityHistoric(), curveFilename);
 
-    printBalanceEquityChart(
+     printBalanceEquityChart(
         context.GetBalanceEquityHistoric(),
         marketData,
         "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/balance_equity.html"
-    );
+    ); 
 
-    // Optional trade chart
-    // printCoinTradesPlotlyChart(
-    //     marketData,
-    //     context.GetTradesHistory(),
-    //     "AAVE",
-    //     "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/aave_trades.html"
-    // );
+     //Optional trade chart
+    /* printCoinTradesPlotlyChart(
+         marketData,
+         context.GetTradesHistory(),
+         "AAVE",
+         "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/aave_trades.html"
+    );*/
 
     std::filesystem::path rt =
-        "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/bargainChaser_rt.csv";
+        "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/pureRsi.csv";
 
     std::filesystem::path mismatchesCsv =
-        "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/bargainChaser_mismatches.csv";
+        "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/pure_mom_mismatches.csv";
 
-    //compareBacktests(rt,context.GetTradesHistory(),false,mismatchesCsv);
+    compareBacktests(rt,context.GetTradesHistory(),false,mismatchesCsv);
 
     return 0;
 }

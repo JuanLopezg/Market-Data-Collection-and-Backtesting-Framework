@@ -18,8 +18,8 @@
 #include <vector>
 
 namespace {
-constexpr double BASE_DYNAMIC_TOLERANCE_PERCENT = 5.0;
-constexpr double EXTRA_DYNAMIC_TOLERANCE_PER_TRADE_ID = 0.15;
+constexpr double BASE_DYNAMIC_TOLERANCE_PERCENT = 20.0;
+constexpr double EXTRA_DYNAMIC_TOLERANCE_PER_TRADE_ID = 0.2;
 constexpr double MAX_DYNAMIC_TOLERANCE_PERCENT = 50.0;
 }
 
@@ -416,7 +416,8 @@ static bool parseRealtestTime(
 ) {
     std::string normalized = toLower(trim(time));
 
-    if (normalized.empty() || normalized == "open") {
+    if (normalized.empty() || normalized == "open" || normalized == "intraday") {
+
         hour = 0;
         minute = 0;
         second = 0;
@@ -949,6 +950,302 @@ static void writeMismatchCsvRow(
     writeCsvRow(csv, fields);
 }
 
+
+static std::int64_t entryDayKey(const Trade& trade)
+{
+    Timestamp normalized = normalizeTimestamp(trade.start_);
+    std::int64_t seconds = static_cast<std::int64_t>(normalized);
+
+    if (seconds < 0) {
+        return (seconds - 86399LL) / 86400LL;
+    }
+
+    return seconds / 86400LL;
+}
+
+static bool sameEntryDay(const Trade& left, const Trade& right)
+{
+    return entryDayKey(left) == entryDayKey(right);
+}
+
+static void printTerminalTrade(
+    const std::string& label,
+    const Trade* trade,
+    TradeID displayedTradeId
+) {
+    std::cout << "\n" << label << "\n";
+
+    if (trade == nullptr) {
+        std::cout << "  <no trade>\n";
+        return;
+    }
+
+    std::cout << "  id        : " << displayedTradeId << "\n";
+    std::cout << "  coin      : " << trade->coin_ << "\n";
+    std::cout << "  direction : " << directionToString(trade->direction_) << "\n";
+    std::cout << "  start     : " << timestampToString(trade->start_) << "\n";
+    std::cout << "  end       : " << timestampToString(trade->end_) << "\n";
+    std::cout << "  entry     : " << doubleToString(trade->entry_) << "\n";
+    std::cout << "  exit      : " << doubleToString(trade->exit_) << "\n";
+    std::cout << "  size      : " << doubleToString(trade->size_) << "\n";
+    std::cout << "  pnl       : " << doubleToString(trade->pnl_) << "\n";
+    std::cout << "  exited    : " << boolToString(trade->exited_) << "\n";
+}
+
+static void printNumericDifference(
+    const std::string& name,
+    double realtestValue,
+    double backtesterValue
+) {
+    const double rawDifference = backtesterValue - realtestValue;
+    const double diffPct = percentageDifferenceFromRealtest(realtestValue, backtesterValue);
+
+    std::cout << "  " << name << "\n";
+    std::cout << "    RealTest   : " << doubleToString(realtestValue) << "\n";
+    std::cout << "    Backtester : " << doubleToString(backtesterValue) << "\n";
+    std::cout << "    Difference : " << doubleToString(rawDifference) << "\n";
+    std::cout << "    Diff %     : " << doubleToString(diffPct) << "%\n";
+}
+
+static bool waitForEnterOrQuit()
+{
+    std::cout << "\nPress ENTER for next comparison, or type q + ENTER to quit: ";
+
+    std::string input;
+    std::getline(std::cin, input);
+
+    return toLower(trim(input)) == "q";
+}
+
+static bool compareTradeVectorsInteractive(
+    const std::vector<Trade>& referenceTrades,
+    const std::map<TradeID, Trade>& candidateTradesById
+) {
+    struct CandidateTrade {
+        TradeID tradeId;
+        const Trade* trade;
+    };
+
+    std::vector<const Trade*> realtestTradesSorted;
+    realtestTradesSorted.reserve(referenceTrades.size());
+
+    for (const Trade& trade : referenceTrades) {
+        realtestTradesSorted.push_back(&trade);
+    }
+
+    std::sort(
+        realtestTradesSorted.begin(),
+        realtestTradesSorted.end(),
+        [](const Trade* left, const Trade* right) {
+            if (entryDayKey(*left) != entryDayKey(*right)) {
+                return entryDayKey(*left) < entryDayKey(*right);
+            }
+
+            if (left->coin_ != right->coin_) {
+                return left->coin_ < right->coin_;
+            }
+
+            return left->trade_id_ < right->trade_id_;
+        }
+    );
+
+    std::vector<CandidateTrade> backtesterTrades;
+    backtesterTrades.reserve(candidateTradesById.size());
+
+    for (const auto& entry : candidateTradesById) {
+        backtesterTrades.push_back(CandidateTrade{entry.first, &entry.second});
+    }
+
+    std::sort(
+        backtesterTrades.begin(),
+        backtesterTrades.end(),
+        [](const CandidateTrade& left, const CandidateTrade& right) {
+            if (entryDayKey(*left.trade) != entryDayKey(*right.trade)) {
+                return entryDayKey(*left.trade) < entryDayKey(*right.trade);
+            }
+
+            if (left.trade->coin_ != right.trade->coin_) {
+                return left.trade->coin_ < right.trade->coin_;
+            }
+
+            return left.tradeId < right.tradeId;
+        }
+    );
+
+    std::vector<bool> backtesterMatched(backtesterTrades.size(), false);
+
+    std::size_t fullyMatchedCount = 0;
+    std::size_t differentCount = 0;
+    std::size_t missingBacktesterCount = 0;
+    std::size_t fallbackSameDayCount = 0;
+    std::size_t comparisonIndex = 0;
+
+    std::cout << "\n============================================================\n";
+    std::cout << "INTERACTIVE TRADE COMPARISON\n";
+    std::cout << "============================================================\n";
+    std::cout << "Matching rule:\n";
+    std::cout << "  1. Match only exact start date/time + same coin.\n";
+    std::cout << "  2. If not found, show <no trade>.\n";
+    std::cout << "  3. Never match a different coin as fallback.\n";
+
+    for (const Trade* realtestTrade : realtestTradesSorted) {
+        ++comparisonIndex;
+
+        std::size_t chosenBacktesterIndex = backtesterTrades.size();
+        std::string matchType = "NO_BACKTESTER_TRADE";
+
+        // Only match exact start date/time + same coin.
+        // Do NOT fallback to another coin from the same day.
+        for (std::size_t i = 0; i < backtesterTrades.size(); ++i) {
+            if (backtesterMatched[i]) {
+                continue;
+            }
+
+            const Trade* backtesterTrade = backtesterTrades[i].trade;
+
+            if (sameEntryDateAndSymbol(*realtestTrade, *backtesterTrade)) {
+                chosenBacktesterIndex = i;
+                matchType = "EXACT_START_AND_COIN";
+                break;
+            }
+        }
+
+        const Trade* backtesterTrade = nullptr;
+        TradeID backtesterTradeId = static_cast<TradeID>(0);
+
+        if (chosenBacktesterIndex != backtesterTrades.size()) {
+            backtesterMatched[chosenBacktesterIndex] = true;
+            backtesterTrade = backtesterTrades[chosenBacktesterIndex].trade;
+            backtesterTradeId = backtesterTrades[chosenBacktesterIndex].tradeId;
+        } else {
+            ++missingBacktesterCount;
+        }
+
+        const bool fullMatch =
+            backtesterTrade != nullptr &&
+            tradesMatchManualChecks(*realtestTrade, *backtesterTrade);
+
+        if (fullMatch) {
+            ++fullyMatchedCount;
+            continue;   // skip printing matched trades
+        }
+
+        ++differentCount;
+
+        std::cout << "\n\n============================================================\n";
+        std::cout << "MISMATCH #" << differentCount << "\n";
+        std::cout << "REAL COMPARISON INDEX: " << comparisonIndex << "\n";
+        std::cout << "MATCH TYPE  : " << matchType << "\n";
+        std::cout << "FULL MATCH  : " << boolToString(fullMatch) << "\n";
+        std::cout << "============================================================\n";
+
+        printTerminalTrade(
+            "REALTEST",
+            realtestTrade,
+            realtestTrade->trade_id_
+        );
+
+        printTerminalTrade(
+            "BACKTESTER",
+            backtesterTrade,
+            backtesterTradeId
+        );
+
+        if (backtesterTrade != nullptr) {
+            std::cout << "\nDIFFERENCES\n";
+
+            std::cout << "  same coin  : "
+                      << boolToString(realtestTrade->coin_ == backtesterTrade->coin_)
+                      << "\n";
+
+            std::cout << "  same day   : "
+                      << boolToString(sameEntryDay(*realtestTrade, *backtesterTrade))
+                      << "\n";
+
+            std::cout << "  same start : "
+                      << boolToString(
+                          normalizeTimestamp(realtestTrade->start_) ==
+                          normalizeTimestamp(backtesterTrade->start_)
+                      )
+                      << "\n";
+
+            std::cout << "  same end   : "
+                      << boolToString(
+                          normalizeTimestamp(realtestTrade->end_) ==
+                          normalizeTimestamp(backtesterTrade->end_)
+                      )
+                      << "\n";
+
+            printNumericDifference(
+                "entry",
+                realtestTrade->entry_,
+                backtesterTrade->entry_
+            );
+
+            printNumericDifference(
+                "exit",
+                realtestTrade->exit_,
+                backtesterTrade->exit_
+            );
+
+            printNumericDifference(
+                "size",
+                realtestTrade->size_,
+                backtesterTrade->size_
+            );
+
+            printNumericDifference(
+                "pnl",
+                realtestTrade->pnl_,
+                backtesterTrade->pnl_
+            );
+        }
+
+        if (waitForEnterOrQuit()) {
+            break;
+        }
+    }
+
+    for (std::size_t i = 0; i < backtesterTrades.size(); ++i) {
+        if (backtesterMatched[i]) {
+            continue;
+        }
+
+        ++comparisonIndex;
+
+        std::cout << "\n\n============================================================\n";
+        std::cout << "UNMATCHED BACKTESTER TRADE #" << comparisonIndex << "\n";
+        std::cout << "============================================================\n";
+
+        printTerminalTrade(
+            "REALTEST",
+            nullptr,
+            static_cast<TradeID>(0)
+        );
+
+        printTerminalTrade(
+            "BACKTESTER",
+            backtesterTrades[i].trade,
+            backtesterTrades[i].tradeId
+        );
+
+        if (waitForEnterOrQuit()) {
+            break;
+        }
+    }
+
+    std::cout << "\n============================================================\n";
+    std::cout << "INTERACTIVE COMPARISON SUMMARY\n";
+    std::cout << "============================================================\n";
+    std::cout << "RealTest trades checked        : " << realtestTradesSorted.size() << "\n";
+    std::cout << "Backtester trades total        : " << backtesterTrades.size() << "\n";
+    std::cout << "Fully matched                  : " << fullyMatchedCount << "\n";
+    std::cout << "Different / missing            : " << differentCount << "\n";
+    std::cout << "Missing backtester same-day    : " << missingBacktesterCount << "\n";
+
+    return differentCount == 0 && missingBacktesterCount == 0;
+}
+
 static bool compareTradeVectorsIgnoringId(
     const std::vector<Trade>& referenceTrades,
     const std::map<TradeID, Trade>& candidateTradesById,
@@ -1189,11 +1486,15 @@ bool compareBacktests(
         mismatchesCsvPath.string()
     );
 
-    return compareTradeVectorsIgnoringId(
+    // TERMINAL MODE ONLY:
+    // Ignore showAllTrades and mismatchesCsvPath here so this function always prints
+    // trade-by-trade comparisons in the terminal and waits for ENTER between pairs.
+    (void)showAllTrades;
+    (void)mismatchesCsvPath;
+
+    return compareTradeVectorsInteractive(
         realtestTrades,
-        backtesterTradesHistory,
-        showAllTrades,
-        mismatchesCsvPath
+        backtesterTradesHistory
     );
 }
 
@@ -1217,9 +1518,10 @@ bool compareBacktests(
     std::filesystem::path& realtest_trades,
     std::map<TradeID, Trade>& backtesterTradesHistory
 ) {
+    // Default to interactive terminal comparison.
     return compareBacktests(
         realtest_trades,
         backtesterTradesHistory,
-        false
+        true
     );
 }

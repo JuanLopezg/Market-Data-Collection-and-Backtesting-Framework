@@ -34,9 +34,22 @@ public:
         ranked.reserve(bars.size());
 
         for (const auto& [coin, bar] : bars) {
-            (void)bar;
-            ranked.emplace_back(RankedCoin{coin, 0.0});
+            ranked.emplace_back(
+                RankedCoin{
+                    coin,
+                    &bar,
+                    0.0
+                }
+            );
         }
+
+        std::sort(
+            ranked.begin(),
+            ranked.end(),
+            [](const RankedCoin& left, const RankedCoin& right) {
+                return left.coin < right.coin;
+            }
+        );
 
         return ranked;
     }

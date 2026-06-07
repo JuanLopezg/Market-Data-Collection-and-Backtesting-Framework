@@ -266,10 +266,9 @@ std::vector<double> calculateATR(
     result[len] = sumTR / static_cast<double>(len);
 
     for (std::size_t i = len + 1; i < n; ++i) {
-        sumTR += trueRange[i];
-        sumTR -= trueRange[i - len];
-
-        result[i] = sumTR / static_cast<double>(len);
+        result[i] =
+            ((result[i - 1] * static_cast<double>(len - 1)) + trueRange[i])
+            / static_cast<double>(len);
     }
 
     return result;

@@ -30,6 +30,8 @@ public:
      **************************************************************************************/
     void storeResults(std::filesystem::path& backtest_store_path);
 
+    void storeTradesCSV(const std::filesystem::path& csv_store_path);
+
     /**************************************************************************************
      * Purpose : Copy all still-open trades into trade history
      **************************************************************************************/
@@ -65,4 +67,5 @@ private:
      * Purpose : Persist balance/equity history to SQLite
      **************************************************************************************/
     void storeBalanceEquity(sqlite3* db);
+
 };

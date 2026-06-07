@@ -1,7 +1,9 @@
 #include "backtest.h"
 
 #include <stdexcept>
-
+#include <fstream>
+#include <iomanip>
+#include <string>
 
 /**************************************************************************************
  * Purpose : Persist all trades to SQLite
@@ -253,5 +255,104 @@ void Backtester::closeTrades()
         for (auto& trade : strategyInstance.GetCurrentTrades()) {
             allTrades[trade.trade_id_] = trade;
         }
+    }
+}
+
+
+/**************************************************************************************
+ * Purpose : Escape text values for CSV
+ **************************************************************************************/
+std::string csvEscape(const std::string& value)
+{
+    const bool needsQuotes =
+        value.find_first_of(",\"\n\r") != std::string::npos;
+
+    if (!needsQuotes) {
+        return value;
+    }
+
+    std::string escaped;
+    escaped.reserve(value.size() + 2);
+
+    escaped.push_back('"');
+
+    for (char c : value) {
+        if (c == '"') {
+            escaped += "\"\"";
+        } else {
+            escaped.push_back(c);
+        }
+    }
+
+    escaped.push_back('"');
+
+    return escaped;
+}
+
+
+
+
+/**************************************************************************************
+ * Purpose : Persist all trades to CSV
+ **************************************************************************************/
+void Backtester::storeTradesCSV(const std::filesystem::path& csv_store_path)
+{
+    if (!csv_store_path.parent_path().empty()) {
+        std::filesystem::create_directories(csv_store_path.parent_path());
+    }
+
+    auto& allTrades = backtest_context_.GetTradesHistory();
+
+    for (auto& strategyInstance : backtest_context_.GetStrategyPortfolio()) {
+        for (auto& trade : strategyInstance.GetCurrentTrades()) {
+            allTrades[trade.trade_id_] = trade;
+        }
+    }
+
+    std::ofstream file(csv_store_path);
+
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to create trades CSV file");
+    }
+
+    file << std::setprecision(17);
+
+    file
+        << "trade_id,"
+        << "start_ts,"
+        << "end_ts,"
+        << "commission,"
+        << "coin,"
+        << "direction,"
+        << "current_price,"
+        << "entry_price,"
+        << "exit_price,"
+        << "size,"
+        << "is_simulated,"
+        << "exited,"
+        << "pnl\n";
+
+    for (const auto& [tradeId, trade] : allTrades) {
+        (void)tradeId;
+
+        file
+            << trade.trade_id_ << ','
+            << trade.start_ << ','
+            << trade.end_ << ','
+            << trade.commission_ << ','
+            << csvEscape(trade.coin_) << ','
+            << static_cast<int>(trade.direction_) << ','
+            << trade.current_price_ << ','
+            << trade.entry_ << ','
+            << trade.exit_ << ','
+            << trade.size_ << ','
+            << (trade.isSimulated_ ? 1 : 0) << ','
+            << (trade.exited_ ? 1 : 0) << ','
+            << trade.pnl_
+            << '\n';
+    }
+
+    if (!file.good()) {
+        throw std::runtime_error("Failed while writing trades CSV file");
     }
 }
