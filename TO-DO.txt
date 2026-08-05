@@ -1,0 +1,151 @@
+atrBreakout
+bargainChaser
+mrRSILong
+pureMom
+xHBreakout
+mrShort
+pureRSI
+
+
+
+[DONE]3) checkear que las que estan dan lo mismo que realtest
+
+4)
+[DONE]metrics:
+        Measure net return and annualized return.
+        Measure maximum drawdown.
+        Measure Sharpe, Sortino, and Calmar ratios.
+        Measure profit factor and expectancy per trade.
+        Measure win rate, average win, and average loss.
+        Measure consecutive losses and largest loss.
+        Measure trade count, exposure, turnover, and holding time.
+        Measure monthly and yearly returns.
+
+[DONE]
+        Drawdown plot — yes, definitely.
+        Maximum drawdown — already included.
+        Maximum drawdown duration / time underwater — very useful.
+        Historical maximum consecutive losses — useful and easy.
+        Historical VaR 95% — optional.
+        Historical Expected Shortfall / CVaR 95% — better than VaR if you include only one tail-risk metric, because it measures the average loss beyond the VaR threshold.
+
+DONE
+        --> distribution of gains and losses (a lot of outliers? few?...)
+        Probability of drawdown worse than 20%, 30%, 50%
+        Monte Carlo max-drawdown percentiles, for example:
+        Median max drawdown
+        95th percentile max drawdown
+        99th percentile max drawdown
+        Maximum consecutive-loss distribution
+        Risk of ruin
+        monte carlo graph
+
+
+DONE --> initial parameter sensitivity tests 
+
+DONE --> test  parameter sensitivity with hourly data too for low held bar strategies and what else to see of those to finally verify them
+for this,analyze if its just the hled bards. stress test with %change in last day/last x bars and hold period of x bars (combinations of both)
+
+
+
+DONE with this we can already be validating or not the strategies --> freeze the parameters chosen for each one (ask chatgpt if the ones used make sense)
+
+DONE --> test mr short atr length for entry parameter // also test higher levels for rsi exit pure rsi level
+
+DONE --> do the same as the first one again but testing the final chosen parameters fixed, but for every strategy  that uses the btc ma or overall regime filter --> (use the backtesting metrics main)
+
+DONE --> do the same test we did the full first normal one one but with 8h timeframe and 4h timeframe and with daily constructed shifting (use the backtesting main code)
+
+
+
+
+
+
+
+
+
+
+ATRBreakout
+Parameter	before / current value
+heldBars	2 / 3
+atrMultiple	0.75 / 0.875
+atrLength	3 / 10
+
+PureRSI
+Parameter	Current value
+rsiLength	7 / 7
+rsiEntry	80.0 / 80
+rsiExit		70.0 / 70
+Ranker ind      7 / 7
+
+XHBreakout
+Parameter	Current value
+xH	        50 / 30
+fastMA  	5 / 5
+momentumLength	30 / 30
+
+
+
+
+DONE --> --> out of sample 2026 binance data (OOS)
+         --> BTC buy-and-hold
+
+
+
+
+
+--> XHbreakout over optimized? with atr? 
+--> Beta to BTC
+--> big wicks to upside and downside
+--> funding, transaction and slippage tests, costs (speacially for pure mom which is a strategy with low win per trade)
+
+--> build the infra to test already this strategy in hyperliquid and start trying
+
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+PORTFOLIO METRICS?
+Risk contribution of each strategy in the combined portfolio.
+Portfolio drawdown when strategies lose at the same time.
+Time under water / drawdown duration.
+Return-to-drawdown ratio.
+Whether profits depend on a few outlier trades.
+Capacity and liquidity risk: how much capital can be deployed before slippage removes the edge.
+
+--> can we get a higher and lower timeframe for each strategy? (correlations afterwards...) (maybe do this and then we will see the correlation among them)
+--> gaps en la database al descargar??
+
+
+
+5) how are we going to do in live markets trading (in backtest we looked forward..., modify the strategies so it works)
+6) how are we going to do the portfolio? sizing, limits,...
+7) how are we going to store trades, how are we going to have in online,...
+8) connection to hyperliquid, wallets,... create also from those real functions false ones to test with past information
+9) what are we going to do when there is no connection, fetch fails, order fails,..?
+10) grafana with main metrics
+11) create a false time handler outside docker and do a simulation of what would have happened
+12) give the code to alvaro to find vulnerabilities or other things with the claude
+13) live testing
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+--> ma siimple, ma cross,.. test these ones specially on higher market cap coins as those tend to trend much more than shitcoins
+
+

@@ -10,13 +10,13 @@ import pandas as pd
 # =========================
 # CONFIG
 # =========================
-SYMBOLS_FILE = "/mnt/c/Users/Juan/Documents/Python/algoTrading/all_symbols.txt"
+SYMBOLS_FILE = "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/parquets/all_symbols.txt"
 
 INTERVAL = "1d"
 OUTPUT_FILE = f"/mnt/c/Users/Juan/Documents/Python/algoTrading/binance_{INTERVAL}_cc.parquet"
 
 
-START_DATE = "2020-01-01"
+START_DATE = "2026-01-01"
 END_DATE = None  # None = now
 
 LIMIT = 1500

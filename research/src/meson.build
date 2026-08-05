@@ -1,6 +1,9 @@
 sources = [
-    'backtesting_main.cpp',
-    'realtest.cpp'
+    'backtest_helpers.cpp',
+    'realtest.cpp',
+    'backtest_html_report.cpp',
+    'backtest_metrics.cpp',
+    'backtesting_main.cpp'
 ]
 
 executable(

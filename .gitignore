@@ -23,3 +23,4 @@ __pycache__/
 *.log
 storage/
 lib/src/strategy/strategies/
+lib/src/strategy/on_hold/

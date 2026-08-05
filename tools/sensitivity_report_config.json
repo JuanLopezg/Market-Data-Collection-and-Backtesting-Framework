@@ -1,0 +1,26 @@
+{
+  "filters": {
+    "min_trade_count": 100,
+    "min_net_return_percent": 0.0,
+    "max_drawdown_percent": 35.0,
+    "min_calmar_ratio": 1.0,
+    "min_profit_factor": 1.1
+  },
+  "robustness": {
+    "min_existing_neighbours": 2,
+    "min_neighbour_pass_rate": 0.5,
+    "top_candidates_to_show": 20
+  },
+  "verdict": {
+    "minimum_successful_runs": 20,
+    "minimum_filter_pass_rate": 0.05,
+    "minimum_robust_candidates": 3
+  },
+  "strategy_overrides": {
+    "MRRSILong": {
+      "filters": {
+        "max_drawdown_percent": 30.0
+      }
+    }
+  }
+}

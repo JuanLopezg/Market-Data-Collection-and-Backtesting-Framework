@@ -5,12 +5,12 @@ import pandas as pd
 # =========================
 # CONFIG
 # =========================
-DIRECTORY = "/mnt/c/Users/Juan/Documents/Python/binance/intraday"
+DIRECTORY = "/mnt/c/Users/Juan/Documents/Python/algoTrading/"
 
 COLUMNS = ["date", "symbol", "open", "high", "low", "close", "volume"]
 NUMERIC_COLS = ["open", "high", "low", "close", "volume"]
 
-HOURLY = True
+HOURLY = False
 
 # =========================
 # HELPERS

@@ -2,11 +2,45 @@ import pandas as pd
 import yfinance as yf
 
 
-TICKERS = ["NVDA", "AAPL", "MSFT", "AMZN", "GOOGL", "TSLA"]
+TICKERS = [
+    "AAPL",
+    "NVDA",
+    "MSFT",
+    "AMZN",
+    "GOOGL",
+    "GOOG",
+    "AVGO",
+    "SPCX",
+    "META",
+    "TSLA",
+    "MU",
+    "WMT",
+    "AMD",
+    "ASML",
+    "CSCO",
+    "INTC",
+    "COST",
+    "AMAT",
+    "LRCX",
+    "NFLX",
+    "PLTR",
+    "ARM",
+    "PANW",
+    "TXN",
+    "LIN",
+    "KLAC",
+    "AMGN",
+    "TMUS",
+    "PEP",
+    "CRWD",
+
+    # Benchmark
+    "^NDX",
+]
 START_DATE = "2020-01-01"
 END_DATE = None
 
-OUTPUT_FILE = r"C:\Users\Juan\Documents\Python\algoTrading\stocks_daily.parquet"
+OUTPUT_FILE = "/mnt/c/Users/Juan/Documents/Python/algoTrading/stocks_dailyC.parquet"
 
 all_data = []
 
