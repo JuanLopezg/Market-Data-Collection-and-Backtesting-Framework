@@ -94,7 +94,18 @@ DONE --> --> out of sample 2026 binance data (OOS)
 
 
 
---> XHbreakout over optimized? with atr? 
+XH Breakout all types and donchian and purersi complete robustness test, select the strategies we will be trading
+
+--> see how to do the volatility targetting with each strategy and conduct the same robustness tests
+
+--> see how to do the volatility targetting as a strategy portfolio
+
+
+
+
+
+
+
 --> Beta to BTC
 --> big wicks to upside and downside
 --> funding, transaction and slippage tests, costs (speacially for pure mom which is a strategy with low win per trade)

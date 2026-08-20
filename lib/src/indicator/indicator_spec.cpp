@@ -45,6 +45,12 @@ std::string indicatorKindToString(IndicatorKind kind)
             return "Highest";
         case IndicatorKind::Lowest:
             return "Lowest";
+        case IndicatorKind::DonchianHigh:
+            return "DonchianHigh";
+        case IndicatorKind::DonchianLow:
+            return "DonchianLow";
+        case IndicatorKind::DonchianMid:
+            return "DonchianMid";
         default:
             return "UnknownIndicator";
     }

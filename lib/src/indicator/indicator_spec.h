@@ -15,7 +15,10 @@ enum class IndicatorKind {
     ATR,
     ROC,
     Highest,
-    Lowest
+    Lowest,
+    DonchianHigh,
+    DonchianLow,
+    DonchianMid
 };
 
 

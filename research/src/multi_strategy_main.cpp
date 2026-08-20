@@ -34,9 +34,10 @@
 #define ENABLE_ATR_BREAKOUT 0
 #define ENABLE_MR_SHORT 0
 #define ENABLE_PURE_MOM 0
-#define ENABLE_PURE_RSI 0
+#define ENABLE_PURE_RSI 1
 #define ENABLE_MR_RSI_LONG 0
 #define ENABLE_XH_BREAKOUT 1
+#define ENABLE_DONCHIAN_BREAKOUT 1
 
 namespace {
 
@@ -3273,6 +3274,52 @@ int main(int argc, char** argv)
                 maxRankingPosition,
                 xH,
                 fastMovingAverageLength
+            );
+        }
+    });
+#endif
+
+
+    // ------------------------------------------------------------------
+    // DonchianBreakout
+    // ------------------------------------------------------------------
+#if ENABLE_DONCHIAN_BREAKOUT
+    strategyDefinitions.push_back(StrategyDefinition{
+        "DonchianBreakout",
+        "donchian_breakout",
+        [=](
+            const std::string& benchmarkSymbol,
+            unsigned int benchmarkMovingAverageLength
+        ) -> std::unique_ptr<Strategy> {
+            constexpr unsigned int donchianLookback = 30;
+            constexpr bool useMarketStateFilter = false;
+            constexpr unsigned int momentumLength = 30;
+            constexpr double quantityPercent = 10.0;
+            constexpr unsigned int maxPositionsOpen = 10;
+            constexpr unsigned int maxRankingPosition = 9999999;
+
+            auto universeSelector = makeTopLiquidityUniverse();
+            auto ranker = std::make_unique<IndicatorRanker>(
+                IndicatorSpec{
+                    IndicatorKind::ROC,
+                    PriceField::Close,
+                    momentumLength
+                },
+                true
+            );
+
+            return std::make_unique<StrategyDonchianBreakout>(
+                maxPositionsOpen,
+                quantityPercent / 100.0,
+                std::move(universeSelector),
+                std::move(ranker),
+                feeMaker,
+                feeTaker,
+                maxRankingPosition,
+                donchianLookback,
+                useMarketStateFilter,
+                benchmarkMovingAverageLength,
+                benchmarkSymbol
             );
         }
     });

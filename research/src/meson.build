@@ -3,7 +3,7 @@ sources = [
     'realtest.cpp',
     'backtest_html_report.cpp',
     'backtest_metrics.cpp',
-    'backtesting_main.cpp'
+    'backtesting_metrics_main_html_reports.cpp'
 ]
 
 executable(

@@ -219,6 +219,27 @@ std::vector<double> IndicatorEngine::computeForCoin(
             );
             break;
 
+        case IndicatorKind::DonchianHigh:
+            values = calculateDonchianHigh(
+                series.bars,
+                spec.length
+            );
+            break;
+
+        case IndicatorKind::DonchianLow:
+            values = calculateDonchianLow(
+                series.bars,
+                spec.length
+            );
+            break;
+
+        case IndicatorKind::DonchianMid:
+            values = calculateDonchianMid(
+                series.bars,
+                spec.length
+            );
+            break;
+
         default:
             values = invalidVector(series.bars.size());
             break;

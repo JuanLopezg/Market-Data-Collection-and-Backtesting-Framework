@@ -23,10 +23,11 @@
 #define ENABLE_ATR_BREAKOUT 0
 #define ENABLE_MR_SHORT 0
 #define ENABLE_PURE_MOM 0
-#define ENABLE_PURE_RSI 0
+#define ENABLE_PURE_RSI 1
 #define ENABLE_MR_RSI_LONG 0
-#define ENABLE_XH_BREAKOUT 1
+#define ENABLE_XH_BREAKOUT 0
 #define ENABLE_XH_BREAKOUT_ATR 0
+#define ENABLE_DONCHIAN_BREAKOUT 0
 
 std::string benchmark = "BTC";
 
@@ -483,6 +484,58 @@ int main(int argc, char** argv)
                 backtestsDir / "final_tests/xhBreakoutATR.csv";
             mismatchesCsvPath =
                 backtestsDir / "xh_breakout_atr_mismatches.csv";
+            ++enabledStrategyCount;
+    }
+#endif
+
+
+    // ------------------------------------------------------------------
+    // DonchianBreakout
+    // ------------------------------------------------------------------
+#if ENABLE_DONCHIAN_BREAKOUT
+    {
+            constexpr unsigned int donchianLookback = 30;
+            constexpr unsigned int momentumLength = 30;
+            constexpr double quantityPercent = 10.0;
+            constexpr unsigned int maxPositionsOpen = 10;
+            constexpr unsigned int maxRankingPosition = 9999999;
+            bool marketFilter = true;
+            int lenFilter = 50;
+
+            auto universeSelector = makeTopLiquidityUniverse();
+            auto ranker = std::make_unique<IndicatorRanker>(
+                IndicatorSpec{
+                    IndicatorKind::ROC,
+                    PriceField::Close,
+                    momentumLength
+                },
+                true
+            );
+
+            strategies.push_back(
+                std::make_unique<StrategyDonchianBreakout>(
+                    maxPositionsOpen,
+                    quantityPercent / 100.0,
+                    std::move(universeSelector),
+                    std::move(ranker),
+                    feeMaker,
+                    feeTaker,
+                    maxRankingPosition,
+                    donchianLookback,       // Donchian lookback
+                    marketFilter,     // market-state filter ON
+                    lenFilter,       // BTC SMA length
+                    benchmark
+                )
+            );
+
+            activeStrategyName = "DonchianBreakout";
+            tradesCsvPath = backtestsDir / "donchian_breakout_trades.csv";
+            balanceEquityHtmlPath =
+                backtestsDir / "donchian_breakout_balance_equity.html";
+            realTestPath =
+                backtestsDir / "final_tests/donchianBreakout.csv";
+            mismatchesCsvPath =
+                backtestsDir / "donchian_breakout_mismatches.csv";
             ++enabledStrategyCount;
     }
 #endif

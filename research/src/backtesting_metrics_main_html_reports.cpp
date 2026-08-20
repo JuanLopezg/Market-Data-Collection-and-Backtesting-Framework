@@ -269,148 +269,26 @@ std::vector<StrategyDefinition> makeStrategyDefinitions(
     const std::string& benchmarkSymbol
 )
 {
+    (void)commissionEntryFactor;
+    (void)commissionExitFactor;
+
     std::vector<StrategyDefinition> definitions;
 
 
-
-
-
-    definitions.push_back(StrategyDefinition{
-        "ATRBreakout",
-        {
-            {"heldBars", 2.0},
-            {"atrMultiple", 0.75},
-            {"atrLength", 3.0},
-            {"momentumScoreLength", 30.0},
-            {"quantityPercent", 10.0},
-            {"maxPositionsOpen", 10.0},
-            {"maxRankingPosition", 999999.0}
-        },
-        makeSensitivityParameters({
-            {"heldBars", "Held bars", 1.0, 15.0, 1.0, true},
-            {"atrMultiple", "ATR multiple", 0.125, 1.25, 0.125, true},
-            {"atrLength", "ATR length", 1.0, 15.0, 1.0, true},
-            {"momentumScoreLength", "Momentum score length", 30.0, 30.0, 1.0, false},
-            {"quantityPercent", "Quantity (%)", 2.0, 20.0, 2.0, false},
-            {"maxPositionsOpen", "Maximum open positions", 1.0, 20.0, 1.0, false}
-        }),
-        [=](const ParameterValues& parameters) {
-            const unsigned int heldBars = unsignedParameterOr(parameters, "heldBars", 3U);
-            const double atrMultiple = parameterOr(parameters, "atrMultiple", 0.875);
-            const unsigned int atrLength = unsignedParameterOr(parameters, "atrLength", 10U);
-            const unsigned int momentumScoreLength = unsignedParameterOr(
-                parameters, "momentumScoreLength", 30U
-            );
-            const double quantityPercent = parameterOr(parameters, "quantityPercent", 10.0);
-            const unsigned int maxPositionsOpen = unsignedParameterOr(
-                parameters, "maxPositionsOpen", 10U
-            );
-            const unsigned int maxRankingPosition = unsignedParameterOr(
-                parameters, "maxRankingPosition", 999999U
-            );
-
-            auto universeSelector = makeTopLiquidityUniverse();
-            auto ranker = std::make_unique<IndicatorRanker>(
-                IndicatorSpec{
-                    IndicatorKind::ROC,
-                    PriceField::Close,
-                    momentumScoreLength
-                },
-                true
-            );
-
-            return std::make_unique<StrategyATRBreakout>(
-                maxPositionsOpen,
-                quantityPercent / 100.0,
-                std::move(universeSelector),
-                std::move(ranker),
-                commissionEntryFactor,
-                commissionExitFactor,
-                maxRankingPosition,
-                heldBars,
-                atrMultiple,
-                atrLength
-            );
-        },
-        [](const ParameterValues&) { return true; }
-    });
-
-    definitions.push_back(StrategyDefinition{
-        "MRShort",
-        {
-            {"rsiLength", 5.0},
-            {"rsiEntry", 70.0},
-            {"btcMovingAverageLength", 50.0},
-            {"entryAtrMultiple", 0.30},
-            {"entryAtrLength", 5.0},
-            {"heldBars", 7.0},
-            {"quantityPercent", 10.0},
-            {"maxPositionsOpen", 10.0},
-            {"maxRankingPosition", 1000000.0},
-            {"rankerRocLength", 30.0}
-        },
-        makeSensitivityParameters({
-            {"rsiLength", "RSI length", 1.0, 15.0, 1.0, false},
-            {"rsiEntry", "RSI entry", 30.0, 90.0, 5, true},
-            {"heldBars", "Held bars", 1.0, 15.0, 1.0, true},
-            {"entryAtrMultiple", "Entry ATR multiple", 0.125, 1.25, 0.125, true},
-            {"entryAtrLength", "Entry ATR length", 1.0, 15.0, 1.0, true},
-            {"btcMovingAverageLength", "BTC moving-average length", 50.0, 50.0, 1.0, false},
-            {"rankerRocLength", "Ranker ROC length", 30.0, 30.0, 1.0, false},
-            {"quantityPercent", "Quantity (%)", 2.0, 20.0, 2.0, false},
-            {"maxPositionsOpen", "Maximum open positions", 1.0, 20.0, 1.0, false}
-        }),
-        [=](const ParameterValues& parameters) {
-            const unsigned int rsiLength = unsignedParameterOr(parameters, "rsiLength", 5U);
-            const double rsiEntry = parameterOr(parameters, "rsiEntry", 70.0);
-            const unsigned int btcMovingAverageLength = unsignedParameterOr(
-                parameters, "btcMovingAverageLength", 50U
-            );
-            const double entryAtrMultiple = parameterOr(
-                parameters, "entryAtrMultiple", 0.30
-            );
-            const unsigned int entryAtrLength = unsignedParameterOr(
-                parameters, "entryAtrLength", 5U
-            );
-            const unsigned int heldBars = unsignedParameterOr(parameters, "heldBars", 3U);
-            const double quantityPercent = parameterOr(parameters, "quantityPercent", 10.0);
-            const unsigned int maxPositionsOpen = unsignedParameterOr(
-                parameters, "maxPositionsOpen", 10U
-            );
-            const unsigned int maxRankingPosition = unsignedParameterOr(
-                parameters, "maxRankingPosition", 1000000U
-            );
-            const unsigned int rankerRocLength = unsignedParameterOr(
-                parameters, "rankerRocLength", 30U
-            );
-
-            auto universeSelector = makeTopLiquidityUniverse();
-            auto ranker = std::make_unique<IndicatorRanker>(
-                IndicatorSpec{IndicatorKind::ROC, PriceField::Close, rankerRocLength},
-                true
-            );
-
-            return std::make_unique<StrategyMRShort>(
-                maxPositionsOpen,
-                quantityPercent / 100.0,
-                std::move(universeSelector),
-                std::move(ranker),
-                feeTaker,
-                feeTaker,
-                maxRankingPosition,
-                rsiLength,
-                rsiEntry,
-                btcMovingAverageLength,
-                entryAtrMultiple,
-                entryAtrLength,
-                heldBars,
-                benchmarkSymbol
-            );
-        },
-        [](const ParameterValues&) { return true; }
-    });
-
-
+    // ------------------------------------------------------------------
+    // PureRSI
+    //
+    // Test the RSI signal itself. Position sizing and maximum positions are
+    // intentionally fixed so the sweep measures signal robustness rather
+    // than portfolio concentration.
+    //
+    // Planned grid:
+    //   RSI length : 2 to 20, step 1
+    //   RSI entry  : 55 to 95, step 2.5
+    //   RSI exit   : 25 to 80, step 2.5
+    //
+    // Invalid combinations where entry <= exit are rejected.
+    // ------------------------------------------------------------------
     definitions.push_back(StrategyDefinition{
         "PureRSI",
         {
@@ -422,11 +300,11 @@ std::vector<StrategyDefinition> makeStrategyDefinitions(
             {"maxRankingPosition", 1000000.0}
         },
         makeSensitivityParameters({
-            {"rsiLength", "RSI length", 1.0, 15.0, 1.0, true},
-            {"rsiEntry", "RSI entry", 50.0, 90.0, 2.5, true},
-            {"rsiExit", "RSI exit", 30.0, 80.0, 2.5, true},
-            {"quantityPercent", "Quantity (%)", 2.0, 20.0, 2.0, false},
-            {"maxPositionsOpen", "Maximum open positions", 1.0, 20.0, 1.0, false}
+            {"rsiLength", "RSI length", 2.0, 20.0, 1.0, true},
+            {"rsiEntry", "RSI entry", 55.0, 95.0, 2.5, true},
+            {"rsiExit", "RSI exit", 25.0, 80.0, 2.5, true},
+            {"quantityPercent", "Quantity (%)", 10.0, 10.0, 1.0, false},
+            {"maxPositionsOpen", "Maximum open positions", 10.0, 10.0, 1.0, false}
         }),
         [=](const ParameterValues& parameters) {
             const unsigned int rsiLength = unsignedParameterOr(parameters, "rsiLength", 7U);
@@ -465,6 +343,100 @@ std::vector<StrategyDefinition> makeStrategyDefinitions(
         }
     });
 
+
+    // ------------------------------------------------------------------
+    // DonchianBreakout
+    //
+    // Main questions:
+    //   - How sensitive is the breakout to channel length?
+    //   - Does the BTC market-state filter improve robustness?
+    //   - Does the momentum ranking horizon matter?
+    //
+    // The benchmark moving average is also tested when the market-state
+    // filter is enabled. Redundant filter-OFF SMA combinations are rejected.
+    // ------------------------------------------------------------------
+    definitions.push_back(StrategyDefinition{
+        "DonchianBreakout",
+        {
+            {"donchianLookback", 30.0},
+            {"useMarketStateFilter", 0.0},
+            {"benchmarkMovingAverageLength", 50.0},
+            {"momentumLength", 30.0},
+            {"quantityPercent", 10.0},
+            {"maxPositionsOpen", 10.0},
+            {"maxRankingPosition", 9999999.0}
+        },
+        makeSensitivityParameters({
+            {"donchianLookback", "Donchian lookback", 10.0, 150.0, 5.0, true},
+            {"useMarketStateFilter", "Market-state filter (0/1)", 0.0, 1.0, 1.0, true},
+            {"benchmarkMovingAverageLength", "Benchmark moving-average length", 25.0, 100.0, 5.0, true},
+            {"momentumLength", "Momentum length", 10.0, 100.0, 5.0, true},
+            {"quantityPercent", "Quantity (%)", 10.0, 10.0, 1.0, false},
+            {"maxPositionsOpen", "Maximum open positions", 10.0, 10.0, 1.0, false}
+        }),
+        [=](const ParameterValues& parameters) {
+            const unsigned int donchianLookback = unsignedParameterOr(
+                parameters, "donchianLookback", 30U
+            );
+            const bool useMarketStateFilter =
+                parameterOr(parameters, "useMarketStateFilter", 0.0) >= 0.5;
+            const unsigned int benchmarkMovingAverageLength = unsignedParameterOr(
+                parameters, "benchmarkMovingAverageLength", 50U
+            );
+            const unsigned int momentumLength = unsignedParameterOr(
+                parameters, "momentumLength", 30U
+            );
+            const double quantityPercent = parameterOr(parameters, "quantityPercent", 10.0);
+            const unsigned int maxPositionsOpen = unsignedParameterOr(
+                parameters, "maxPositionsOpen", 10U
+            );
+            const unsigned int maxRankingPosition = unsignedParameterOr(
+                parameters, "maxRankingPosition", 9999999U
+            );
+
+            auto universeSelector = makeTopLiquidityUniverse();
+            auto ranker = std::make_unique<IndicatorRanker>(
+                IndicatorSpec{IndicatorKind::ROC, PriceField::Close, momentumLength},
+                true
+            );
+
+            return std::make_unique<StrategyDonchianBreakout>(
+                maxPositionsOpen,
+                quantityPercent / 100.0,
+                std::move(universeSelector),
+                std::move(ranker),
+                feeMaker,
+                feeTaker,
+                maxRankingPosition,
+                donchianLookback,
+                useMarketStateFilter,
+                benchmarkMovingAverageLength,
+                benchmarkSymbol
+            );
+        },
+        [](const ParameterValues& parameters) {
+            const bool useMarketStateFilter =
+                parameterOr(parameters, "useMarketStateFilter", 0.0) >= 0.5;
+
+            if (!useMarketStateFilter) {
+                return parameterOr(
+                    parameters,
+                    "benchmarkMovingAverageLength",
+                    50.0
+                ) == 50.0;
+            }
+
+            return true;
+        }
+    });
+
+
+    // ------------------------------------------------------------------
+    // XHBreakout
+    //
+    // Sweep the three parameters that define the trading logic/ranking:
+    // breakout lookback, fast exit MA and momentum ranking horizon.
+    // ------------------------------------------------------------------
     definitions.push_back(StrategyDefinition{
         "XHBreakout",
         {
@@ -476,14 +448,14 @@ std::vector<StrategyDefinition> makeStrategyDefinitions(
             {"maxRankingPosition", 9999999.0}
         },
         makeSensitivityParameters({
-            {"xH", "XH lookback", 10.0, 100.0, 5.0, true},
-            {"fastMovingAverageLength", "Fast moving-average length", 4.0, 15.0, 1.0, true},
-            {"momentumLength", "Momentum length", 20.0, 60.0, 4.0, true},
-            {"quantityPercent", "Quantity (%)", 2.0, 20.0, 2.0, false},
-            {"maxPositionsOpen", "Maximum open positions", 1.0, 20.0, 1.0, false}
+            {"xH", "XH lookback", 10.0, 150.0, 5.0, true},
+            {"fastMovingAverageLength", "Fast moving-average length", 2.0, 20.0, 1.0, true},
+            {"momentumLength", "Momentum length", 10.0, 100.0, 5.0, true},
+            {"quantityPercent", "Quantity (%)", 10.0, 10.0, 1.0, false},
+            {"maxPositionsOpen", "Maximum open positions", 10.0, 10.0, 1.0, false}
         }),
         [=](const ParameterValues& parameters) {
-            const unsigned int xH = unsignedParameterOr(parameters, "xH", 50U);
+            const unsigned int xH = unsignedParameterOr(parameters, "xH", 30U);
             const unsigned int fastMovingAverageLength = unsignedParameterOr(
                 parameters, "fastMovingAverageLength", 5U
             );
@@ -517,6 +489,77 @@ std::vector<StrategyDefinition> makeStrategyDefinitions(
             );
         },
         [](const ParameterValues&) { return true; }
+    });
+
+
+    // ------------------------------------------------------------------
+    // XHBreakout_ATR
+    //
+    // Test the breakout horizon together with the two main ATR-stop
+    // parameters. Momentum is swept more coarsely because the exit structure
+    // is the main difference versus XHBreakout.
+    // ------------------------------------------------------------------
+    definitions.push_back(StrategyDefinition{
+        "XHBreakout_ATR",
+        {
+            {"xH", 30.0},
+            {"atrLength", 14.0},
+            {"atrMultiplier", 3.0},
+            {"momentumLength", 30.0},
+            {"quantityPercent", 10.0},
+            {"maxPositionsOpen", 10.0},
+            {"maxRankingPosition", 9999999.0}
+        },
+        makeSensitivityParameters({
+            {"xH", "XH lookback", 10.0, 150.0, 10.0, true},
+            {"atrLength", "ATR length", 5.0, 29.0, 2.0, true},
+            {"atrMultiplier", "ATR stop multiplier", 1.0, 6.0, 0.25, true},
+            {"momentumLength", "Momentum length", 10.0, 100.0, 10.0, true},
+            {"quantityPercent", "Quantity (%)", 10.0, 10.0, 1.0, false},
+            {"maxPositionsOpen", "Maximum open positions", 10.0, 10.0, 1.0, false}
+        }),
+        [=](const ParameterValues& parameters) {
+            const unsigned int xH = unsignedParameterOr(parameters, "xH", 30U);
+            const unsigned int atrLength = unsignedParameterOr(
+                parameters, "atrLength", 14U
+            );
+            const double atrMultiplier = parameterOr(
+                parameters, "atrMultiplier", 3.0
+            );
+            const unsigned int momentumLength = unsignedParameterOr(
+                parameters, "momentumLength", 30U
+            );
+            const double quantityPercent = parameterOr(parameters, "quantityPercent", 10.0);
+            const unsigned int maxPositionsOpen = unsignedParameterOr(
+                parameters, "maxPositionsOpen", 10U
+            );
+            const unsigned int maxRankingPosition = unsignedParameterOr(
+                parameters, "maxRankingPosition", 9999999U
+            );
+
+            auto universeSelector = makeTopLiquidityUniverse();
+            auto ranker = std::make_unique<IndicatorRanker>(
+                IndicatorSpec{IndicatorKind::ROC, PriceField::Close, momentumLength},
+                true
+            );
+
+            return std::make_unique<StrategyXHBreakout_ATR>(
+                maxPositionsOpen,
+                quantityPercent / 100.0,
+                std::move(universeSelector),
+                std::move(ranker),
+                feeMaker,
+                feeTaker,
+                maxRankingPosition,
+                xH,
+                atrLength,
+                atrMultiplier
+            );
+        },
+        [](const ParameterValues& parameters) {
+            return parameterOr(parameters, "atrMultiplier", 0.0) > 0.0 &&
+                   parameterOr(parameters, "atrLength", 0.0) > 0.0;
+        }
     });
 
 
@@ -1401,7 +1444,7 @@ int main(int argc, char** argv)
     constexpr double commissionExitFactor = 0.0;
 
     constexpr bool runParameterSensitivity = true;
-    const std::string studyId = "local_refinement_v3_Daily";
+    const std::string studyId = "sensitivity_BIG_76480_20260810";
 
     const BacktestMetricsSettings metricsSettings{
         .periodsPerYear = periodsPerYear,
@@ -1426,7 +1469,7 @@ int main(int argc, char** argv)
     }
 
     LG_INFO("Database loading started");
-    OHLCVData ohlcvData = loadDatabase(databasePath, 00000000);
+    OHLCVData ohlcvData = loadDatabase(databasePath, 00000000, 20230101);
     LG_INFO("Database loaded successfully");
     LG_INFO(
         "Annualization settings: timeframe={} benchmark_symbol={} periods_per_year={}",

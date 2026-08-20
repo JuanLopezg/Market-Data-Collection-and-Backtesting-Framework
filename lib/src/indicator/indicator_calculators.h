@@ -80,3 +80,30 @@ std::vector<double> calculateLowest(
     PriceField source,
     unsigned int length
 );
+
+
+/**************************************************************************************
+ * Purpose : Calculate Donchian upper band
+ **************************************************************************************/
+std::vector<double> calculateDonchianHigh(
+    const std::vector<OHLCV>& bars,
+    unsigned int length
+);
+
+
+/**************************************************************************************
+ * Purpose : Calculate Donchian lower band
+ **************************************************************************************/
+std::vector<double> calculateDonchianLow(
+    const std::vector<OHLCV>& bars,
+    unsigned int length
+);
+
+
+/**************************************************************************************
+ * Purpose : Calculate Donchian midpoint
+ **************************************************************************************/
+std::vector<double> calculateDonchianMid(
+    const std::vector<OHLCV>& bars,
+    unsigned int length
+);

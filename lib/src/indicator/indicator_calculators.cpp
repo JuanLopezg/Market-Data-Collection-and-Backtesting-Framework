@@ -341,3 +341,41 @@ std::vector<double> calculateLowest(
 
     return result;
 }
+
+
+std::vector<double> calculateDonchianHigh(
+    const std::vector<OHLCV>& bars,
+    unsigned int length
+)
+{
+    return calculateHighest(bars, PriceField::High, length);
+}
+
+
+std::vector<double> calculateDonchianLow(
+    const std::vector<OHLCV>& bars,
+    unsigned int length
+)
+{
+    return calculateLowest(bars, PriceField::Low, length);
+}
+
+
+std::vector<double> calculateDonchianMid(
+    const std::vector<OHLCV>& bars,
+    unsigned int length
+)
+{
+    std::vector<double> result = invalidVector(bars.size());
+
+    const auto high = calculateDonchianHigh(bars, length);
+    const auto low = calculateDonchianLow(bars, length);
+
+    for (std::size_t i = 0; i < bars.size(); ++i) {
+        if (std::isfinite(high[i]) && std::isfinite(low[i])) {
+            result[i] = (high[i] + low[i]) / 2.0;
+        }
+    }
+
+    return result;
+}
