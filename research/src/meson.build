@@ -1,9 +1,7 @@
 sources = [
     'backtest_helpers.cpp',
     'realtest.cpp',
-    'backtest_html_report.cpp',
-    'backtest_metrics.cpp',
-    'backtesting_metrics_main_html_reports.cpp'
+    'backtesting_main.cpp'
 ]
 
 executable(
@@ -11,15 +9,16 @@ executable(
     sources,
     include_directories: include_directories('.'),
     dependencies: [
-        libalgolib_dep,
-        global_deps['boost_dep'],
-        global_deps['log4cpp_dep'],
-        global_deps['nlohmann_json_dep'],
-        global_deps['json_schema_validator_dep'],
-        global_deps['sqlite3_dep'],
-        global_deps['curl_dep'],
-        global_deps['fmt_dep'],
-        global_deps['arrow_dep'],
-        global_deps['parquet_dep']
+        libalgolib_dep
+    ]
+)
+
+# Local deterministic live-style integration test. No exchange API/network is used.
+executable(
+    'algotrading_fake_live',
+    ['fake_live_main.cpp'],
+    include_directories: include_directories('.'),
+    dependencies: [
+        libalgolib_dep
     ]
 )

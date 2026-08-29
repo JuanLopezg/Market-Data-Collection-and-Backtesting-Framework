@@ -90,9 +90,32 @@ momentumLength	30 / 30
 DONE --> --> out of sample 2026 binance data (OOS)
          --> BTC buy-and-hold
 
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+rsi strategy with RV as metric of ranking for entering
+
+check every backtest works
+
+create the several components / dockers for the vps --> build restore for each one so it doesnt get turned off
+
+create a docker that tells if one docker is off and creates alarm
+
+create a web with dashboard to check daily positions etc and alarms to phone
+
+test
 
 
 
+
+
+
+
+
+
+
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 XH Breakout all types and donchian and purersi complete robustness test, select the strategies we will be trading
 
@@ -138,6 +161,19 @@ Capacity and liquidity risk: how much capital can be deployed before slippage re
 11) create a false time handler outside docker and do a simulation of what would have happened
 12) give the code to alvaro to find vulnerabilities or other things with the claude
 13) live testing
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -216,9 +217,54 @@ Plotly.newPlot('chart', [candle, entries, exits], layout, config);
 }
 
 
+static bool rollingEquityVolatility(
+    const std::vector<std::pair<Balance, Equity>>& eqbal,
+    std::size_t endIndex,
+    std::size_t rollingWindow,
+    double periodsPerYear,
+    double& result
+)
+{
+    if (rollingWindow < 2 || endIndex < rollingWindow || periodsPerYear <= 0.0)
+        return false;
+
+    std::vector<double> returns;
+    returns.reserve(rollingWindow);
+
+    const std::size_t firstIndex = endIndex - rollingWindow + 1;
+    for (std::size_t i = firstIndex; i <= endIndex; ++i) {
+        const double previousEquity = eqbal[i - 1].second;
+        const double currentEquity = eqbal[i].second;
+
+        if (!std::isfinite(previousEquity) || !std::isfinite(currentEquity) || previousEquity <= 0.0)
+            return false;
+
+        returns.push_back(currentEquity / previousEquity - 1.0);
+    }
+
+    double mean = 0.0;
+    for (double value : returns)
+        mean += value;
+    mean /= static_cast<double>(returns.size());
+
+    double sumSquared = 0.0;
+    for (double value : returns) {
+        const double deviation = value - mean;
+        sumSquared += deviation * deviation;
+    }
+
+    const double variance = sumSquared / static_cast<double>(returns.size() - 1);
+    result = std::sqrt(std::max(0.0, variance)) * std::sqrt(periodsPerYear);
+    return std::isfinite(result);
+}
+
+
 void printBalanceEquityChart(
     const std::vector<std::pair<Balance, Equity>>& eqbal,
     const MarketData& marketData,
+    const std::vector<VolatilityDiagnosticSnapshot>& volatilityDiagnostics,
+    std::size_t rollingVolatilityWindow,
+    double periodsPerYear,
     const std::string& outputHtml
 )
 {
@@ -236,28 +282,79 @@ void printBalanceEquityChart(
         return;
     }
 
+    std::map<Timestamp, const VolatilityDiagnosticSnapshot*> diagnosticsByTimestamp;
+    StrategyID plottedStrategyId = 0;
+    std::string plottedStrategyName;
+    double configuredTargetVolatility = 0.0;
+
+    if (!volatilityDiagnostics.empty()) {
+        plottedStrategyId = volatilityDiagnostics.front().strategy_id;
+        plottedStrategyName = volatilityDiagnostics.front().strategy_name;
+        configuredTargetVolatility = volatilityDiagnostics.front().sizing.target_volatility;
+
+        for (const auto& diagnostic : volatilityDiagnostics) {
+            if (diagnostic.strategy_id == plottedStrategyId)
+                diagnosticsByTimestamp[diagnostic.timestamp] = &diagnostic;
+        }
+    }
+
     std::string dates;
     std::string balances;
     std::string equities;
+    std::string realizedVolatilities;
+    std::string targetVolatilities;
+    std::string preConstraintVolatilities;
+    std::string postConstraintVolatilities;
 
     auto it = marketData.begin();
     bool first = true;
 
     for (std::size_t i = 0; i < eqbal.size() && it != marketData.end(); ++i, ++it) {
-        Timestamp ts = it->first;
-
-        double balance = eqbal[i].first;
-        double equity  = eqbal[i].second;
+        const Timestamp ts = it->first;
+        const double balance = eqbal[i].first;
+        const double equity = eqbal[i].second;
 
         if (!first) {
-            dates    += ",";
+            dates += ",";
             balances += ",";
             equities += ",";
+            realizedVolatilities += ",";
+            targetVolatilities += ",";
+            preConstraintVolatilities += ",";
+            postConstraintVolatilities += ",";
         }
 
-        dates    += "'" + timestampToISODate(ts) + "'";
+        dates += "'" + timestampToISODate(ts) + "'";
         balances += std::to_string(balance);
         equities += std::to_string(equity);
+
+        double realizedVolatility = 0.0;
+        if (rollingEquityVolatility(
+                eqbal,
+                i,
+                rollingVolatilityWindow,
+                periodsPerYear,
+                realizedVolatility
+            )) {
+            realizedVolatilities += std::to_string(realizedVolatility * 100.0);
+        } else {
+            realizedVolatilities += "null";
+        }
+
+        if (!volatilityDiagnostics.empty())
+            targetVolatilities += std::to_string(configuredTargetVolatility * 100.0);
+        else
+            targetVolatilities += "null";
+
+        const auto diagnosticIt = diagnosticsByTimestamp.find(ts);
+        if (diagnosticIt != diagnosticsByTimestamp.end()) {
+            const auto& d = diagnosticIt->second->sizing;
+            preConstraintVolatilities += std::to_string(d.pre_constraint_volatility * 100.0);
+            postConstraintVolatilities += std::to_string(d.post_constraint_volatility * 100.0);
+        } else {
+            preConstraintVolatilities += "null";
+            postConstraintVolatilities += "null";
+        }
 
         first = false;
     }
@@ -268,17 +365,22 @@ void printBalanceEquityChart(
 <head>
     <meta charset="utf-8">
     <script src="https://cdn.plot.ly/plotly-3.4.0.min.js"></script>
-    <title>Balance vs Equity</title>
+    <title>Backtest Equity and Volatility</title>
 </head>
 <body>
-    <div id="chart" style="width:100%;height:95vh;"></div>
+    <div id="equityChart" style="width:100%;height:55vh;"></div>
+    <div id="volatilityChart" style="width:100%;height:40vh;"></div>
 
     <script>
 )HTML";
 
     html << "const dates = [" << dates << "];\n";
     html << "const balances = [" << balances << "];\n";
-    html << "const equities = [" << equities << "];\n\n";
+    html << "const equities = [" << equities << "];\n";
+    html << "const realizedVolatilities = [" << realizedVolatilities << "];\n";
+    html << "const targetVolatilities = [" << targetVolatilities << "];\n";
+    html << "const preConstraintVolatilities = [" << preConstraintVolatilities << "];\n";
+    html << "const postConstraintVolatilities = [" << postConstraintVolatilities << "];\n\n";
 
     html << R"HTML(
 const equity = {
@@ -299,16 +401,54 @@ const balance = {
     line: { color: 'red', width: 2 }
 };
 
-const layout = {
+const equityLayout = {
     title: 'Balance vs Equity',
-    xaxis: {
-        title: 'Date',
-        rangeslider: { visible: true }
-    },
-    yaxis: {
-        title: 'Value',
-        fixedrange: false
-    },
+    xaxis: { title: 'Date', rangeslider: { visible: false } },
+    yaxis: { title: 'Value', fixedrange: false },
+    dragmode: 'zoom',
+    hovermode: 'x unified'
+};
+
+const realizedVol = {
+    x: dates,
+    y: realizedVolatilities,
+    type: 'scatter',
+    mode: 'lines',
+    name: 'Rolling realized vol',
+    line: { color: 'blue', width: 2 }
+};
+
+const targetVol = {
+    x: dates,
+    y: targetVolatilities,
+    type: 'scatter',
+    mode: 'lines',
+    name: 'Configured target vol',
+    line: { color: 'red', width: 2, dash: 'dash' }
+};
+
+const preConstraintVol = {
+    x: dates,
+    y: preConstraintVolatilities,
+    type: 'scatter',
+    mode: 'lines',
+    name: 'Predicted vol before caps',
+    line: { color: 'gray', width: 1 }
+};
+
+const postConstraintVol = {
+    x: dates,
+    y: postConstraintVolatilities,
+    type: 'scatter',
+    mode: 'lines',
+    name: 'Predicted vol after caps',
+    line: { color: 'orange', width: 2 }
+};
+
+const volatilityLayout = {
+    title: 'Volatility Target Validation',
+    xaxis: { title: 'Date', rangeslider: { visible: true } },
+    yaxis: { title: 'Annualized volatility (%)', fixedrange: false, rangemode: 'tozero' },
     dragmode: 'zoom',
     hovermode: 'x unified'
 };
@@ -319,13 +459,27 @@ const config = {
     displaylogo: false
 };
 
-Plotly.newPlot('chart', [equity, balance], layout, config);
+Plotly.newPlot('equityChart', [equity, balance], equityLayout, config);
+Plotly.newPlot(
+    'volatilityChart',
+    [realizedVol, targetVol, preConstraintVol, postConstraintVol],
+    volatilityLayout,
+    config
+);
     </script>
 </body>
 </html>
 )HTML";
 
     html.close();
+
+    LG_INFO(
+        "Volatility chart uses {}-bar rolling account-equity returns, annualized with {} periods/year. Strategy id={} name={}",
+        rollingVolatilityWindow,
+        periodsPerYear,
+        plottedStrategyId,
+        plottedStrategyName
+    );
 
 #ifdef _WIN32
     std::string cmd = "start \"\" \"" + outputHtml + "\"";
@@ -337,6 +491,23 @@ Plotly.newPlot('chart', [equity, balance], layout, config);
 
     const int result = std::system(cmd.c_str());
     (void)result;
+}
+
+
+void printBalanceEquityChart(
+    const std::vector<std::pair<Balance, Equity>>& eqbal,
+    const MarketData& marketData,
+    const std::string& outputHtml
+)
+{
+    printBalanceEquityChart(
+        eqbal,
+        marketData,
+        {},
+        60,
+        365.0,
+        outputHtml
+    );
 }
 
 

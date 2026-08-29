@@ -1,147 +1,143 @@
 #pragma once
 
 #include <cassert>
+#include <cmath>
 #include <map>
-#include <memory>
+#include <set>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
+#include "account.h"
 #include "data_types.h"
-#include "strategy_instance.h"
 #include "indicator_engine.h"
+#include "price_snapshot.h"
+#include "strategy_instance.h"
+#include "target_portfolio.h"
+#include "trade_recorder.h"
+#include "volatility_diagnostic.h"
+
+
+struct AccountSnapshot {
+    Timestamp timestamp = 0;
+    double cash = 0.0;
+    Balance balance = 0.0;
+    Equity equity = 0.0;
+};
 
 
 /**************************************************************************************
  * Type    : BacktestContext
- * Purpose : Holds global backtest state and shared execution context
+ * Purpose : Shared historical data, configured strategies and actual simulated account
+ *
+ * BacktestContext no longer derives account state from Trade objects. Account changes
+ * from Fill objects; TradeRecord is analytics reconstructed separately from fills.
  **************************************************************************************/
 class BacktestContext {
 private:
     MarketData market_data_;
-
     IndicatorEngine indicator_engine_;
-
     StrategyPortfolio strategy_portfolio_;
 
-    double current_balance_;
-    double current_equity_;
+    Account account_;
+    double initial_capital_ = 0.0;
+    double market_commission_rate_ = 0.0;
 
-    unsigned int last_trade_id_;
-
-    double commission_limit_factor_;
-    double commission_market_factor_;
-
+    std::vector<AccountSnapshot> account_history_;
     std::vector<std::pair<Balance, Equity>> balance_equity_historic_;
+    TradeRecorder trade_recorder_;
+    std::vector<VolatilityDiagnosticSnapshot> volatility_diagnostics_;
+    mutable std::map<TradeID, Trade> legacy_trade_cache_;
 
-    std::map<TradeID, Trade> trades_history_;
-
-    bool live_trading_ = false;
+    TargetPortfolio last_global_target_;
+    PriceSnapshot last_marks_;
+    Timestamp last_timestamp_ = 0;
 
 public:
-    explicit BacktestContext(
+    BacktestContext(
         const OHLCVData& rawData,
-        std::vector<std::unique_ptr<Strategy>>& strategies,
-        double initialBalance,
-        double initialEquity,
-        unsigned int lastTradeId = 0,
-        double commissionLimitFactor = 0.0,
-        double commissionMarketFactor = 0.0,
-        bool liveTrading = false
+        StrategyPortfolio strategies,
+        double initialCash,
+        double marketCommissionRate = 0.0
     )
         : market_data_(buildMarketData(rawData)),
-          indicator_engine_(),
-          current_balance_(initialBalance),
-          current_equity_(initialEquity),
-          last_trade_id_(lastTradeId),
-          commission_limit_factor_(commissionLimitFactor),
-          commission_market_factor_(commissionMarketFactor),
-          live_trading_(liveTrading)
+          strategy_portfolio_(std::move(strategies)),
+          account_(initialCash),
+          initial_capital_(initialCash),
+          market_commission_rate_(marketCommissionRate)
     {
         assert(!rawData.data.empty());
         assert(!market_data_.empty());
-        assert(!strategies.empty());
-        assert(initialBalance > 0.0);
-        assert(initialEquity > 0.0);
-        assert(commissionLimitFactor  >= 0.0 && commissionLimitFactor  <= 100.0);
-        assert(commissionMarketFactor >= 0.0 && commissionMarketFactor <= 100.0);
 
-        const double weight = 1.0 / static_cast<double>(strategies.size());
+        if (strategy_portfolio_.empty())
+            throw std::invalid_argument("Backtest requires at least one strategy instance");
+        if (!std::isfinite(market_commission_rate_) || market_commission_rate_ < 0.0)
+            throw std::invalid_argument("Market commission rate must be finite and non-negative");
 
-        for (auto& strategy : strategies) {
-            strategy_portfolio_.emplace_back(
-                current_balance_,
-                current_equity_,
-                std::move(strategy),
-                weight
-            );
-        }
-
+        std::set<StrategyID> ids;
+        double allocationSum = 0.0;
         std::vector<IndicatorSpec> requiredSpecs;
 
         for (const auto& strategyInstance : strategy_portfolio_) {
-            const auto specs =
-                strategyInstance.GetStrategy().requiredIndicators();
+            if (!ids.insert(strategyInstance.id()).second)
+                throw std::invalid_argument("Strategy ids must be unique");
 
-            requiredSpecs.insert(
-                requiredSpecs.end(),
-                specs.begin(),
-                specs.end()
-            );
+            allocationSum += strategyInstance.allocationWeight();
+
+            const auto specs = strategyInstance.strategy().requiredIndicators();
+            requiredSpecs.insert(requiredSpecs.end(), specs.begin(), specs.end());
         }
+
+        if (!std::isfinite(allocationSum) || allocationSum > 1.0 + 1e-12)
+            throw std::invalid_argument("Strategy allocation weights cannot exceed 100% in total");
 
         indicator_engine_.precompute(rawData, requiredSpecs);
     }
 
-    void updateConext();
-
-    void updateContext()
+    StrategyInstance& strategyById(StrategyID strategyId)
     {
-        updateConext();
+        for (auto& strategy : strategy_portfolio_) {
+            if (strategy.id() == strategyId)
+                return strategy;
+        }
+
+        throw std::out_of_range("Strategy id not found");
     }
 
-    const MarketData& GetMarketData() const
+    const MarketData& GetMarketData() const { return market_data_; }
+    StrategyPortfolio& GetStrategyPortfolio() { return strategy_portfolio_; }
+    const StrategyPortfolio& GetStrategyPortfolio() const { return strategy_portfolio_; }
+
+    Account& GetAccount() { return account_; }
+    const Account& GetAccount() const { return account_; }
+
+    const IndicatorEngine& GetIndicatorEngine() const { return indicator_engine_; }
+    IndicatorEngine& GetIndicatorEngine() { return indicator_engine_; }
+
+    TradeRecorder& GetTradeRecorder() { return trade_recorder_; }
+    const TradeRecorder& GetTradeRecorder() const { return trade_recorder_; }
+
+    std::vector<AccountSnapshot>& GetAccountHistory() { return account_history_; }
+    const std::vector<AccountSnapshot>& GetAccountHistory() const { return account_history_; }
+
+    void recordVolatilityDiagnostic(
+        Timestamp ts,
+        StrategyID strategyId,
+        const std::string& strategyName,
+        const PortfolioSizingDiagnostics& sizingDiagnostics
+    )
     {
-        return market_data_;
+        volatility_diagnostics_.push_back({
+            ts,
+            strategyId,
+            strategyName,
+            sizingDiagnostics
+        });
     }
 
-    StrategyPortfolio& GetStrategyPortfolio()
+    const std::vector<VolatilityDiagnosticSnapshot>& GetVolatilityDiagnostics() const
     {
-        return strategy_portfolio_;
-    }
-
-    const StrategyPortfolio& GetStrategyPortfolio() const
-    {
-        return strategy_portfolio_;
-    }
-
-    double& GetCurrentBalance()
-    {
-        return current_balance_;
-    }
-
-    const double& GetCurrentBalance() const
-    {
-        return current_balance_;
-    }
-
-    double& GetCurrentEquity()
-    {
-        return current_equity_;
-    }
-
-    const double& GetCurrentEquity() const
-    {
-        return current_equity_;
-    }
-
-    unsigned int& GetLastTradeId()
-    {
-        return last_trade_id_;
-    }
-
-    const unsigned int& GetLastTradeId() const
-    {
-        return last_trade_id_;
+        return volatility_diagnostics_;
     }
 
     std::vector<std::pair<Balance, Equity>>& GetBalanceEquityHistoric()
@@ -156,51 +152,92 @@ public:
 
     std::map<TradeID, Trade>& GetTradesHistory()
     {
-        return trades_history_;
+        return const_cast<std::map<TradeID, Trade>&>(
+            static_cast<const BacktestContext&>(*this).GetTradesHistory()
+        );
     }
 
     const std::map<TradeID, Trade>& GetTradesHistory() const
     {
-        return trades_history_;
+        legacy_trade_cache_.clear();
+
+        if (last_marks_.size() == 0)
+            return legacy_trade_cache_;
+
+        const auto records = trade_recorder_.allTrades(last_marks_, last_timestamp_);
+        for (const TradeRecord& record : records) {
+            Trade trade;
+            trade.trade_id_ = record.trade_id;
+            trade.start_ = record.start;
+            trade.end_ = record.end;
+            trade.commission_ = record.commission;
+            trade.coin_ = record.coin;
+            trade.direction_ = record.direction;
+            trade.current_price_ = record.exit_price;
+            trade.entry_ = record.entry_price;
+            trade.exit_ = record.exit_price;
+            trade.size_ = record.peak_quantity;
+            trade.pnl_ = record.pnl;
+            trade.isSimulated_ = false;
+            trade.exited_ = record.exited;
+            trade.strategy_name_ = record.strategy_name;
+            legacy_trade_cache_[trade.trade_id_] = std::move(trade);
+        }
+
+        return legacy_trade_cache_;
     }
 
-    double& GetCommissionLimitFactor()
+    double GetCommissionMarketRate() const { return market_commission_rate_; }
+
+    void setLastGlobalTarget(TargetPortfolio target)
     {
-        return commission_limit_factor_;
+        last_global_target_ = std::move(target);
     }
 
-    const double& GetCommissionLimitFactor() const
+    const TargetPortfolio& GetLastGlobalTarget() const
     {
-        return commission_limit_factor_;
+        return last_global_target_;
     }
 
-    double& GetCommissionMarketFactor()
+    void recordAccountSnapshot(Timestamp ts, const PriceSnapshot& marks)
     {
-        return commission_market_factor_;
+        last_timestamp_ = ts;
+        last_marks_ = marks;
+
+        const double equity = account_.equity(marks);
+        const double balance = initial_capital_ + trade_recorder_.cumulativeClosedPnl();
+
+        account_history_.push_back({
+            ts,
+            account_.cash(),
+            balance,
+            equity
+        });
+
+        // Backtest chart semantics:
+        //   Balance = initial capital + PnL from fully closed trades only.
+        //   Equity  = marked account value, including open/unrealized PnL.
+        balance_equity_historic_.emplace_back(balance, equity);
     }
 
-    const double& GetCommissionMarketFactor() const
+    const PriceSnapshot& GetLastMarks() const { return last_marks_; }
+    Timestamp GetLastTimestamp() const { return last_timestamp_; }
+
+    double GetCurrentBalance() const
     {
-        return commission_market_factor_;
+        return initial_capital_ + trade_recorder_.cumulativeClosedPnl();
     }
 
-    bool IsLiveTrading() const
+    double GetCurrentCash() const
     {
-        return live_trading_;
+        return account_.cash();
     }
 
-    bool& GetLiveTradingFlag()
+    double GetCurrentEquity() const
     {
-        return live_trading_;
-    }
+        if (last_marks_.size() == 0)
+            return account_.cash();
 
-    const IndicatorEngine& GetIndicatorEngine() const
-    {
-        return indicator_engine_;
-    }
-
-    IndicatorEngine& GetIndicatorEngine()
-    {
-        return indicator_engine_;
+        return account_.equity(last_marks_);
     }
 };

@@ -1,71 +1,54 @@
 #pragma once
 
+#include <cstddef>
 #include <filesystem>
-#include <vector>
 
 #include <sqlite3.h>
 
-#include "data_types.h"
-#include "strategy.h"
 #include "backtest_context.h"
+#include "simulated_exchange.h"
+#include "trading_engine.h"
 
 
 /**************************************************************************************
  * Type    : Backtester
- * Purpose : Drives the execution of a backtest over historical market data
+ * Purpose : Historical clock/runtime around the shared TradingEngine
+ *
+ * Timing convention:
+ *   Day T close  -> TradingEngine::onBarClose()
+ *   Day T+1 open -> TradingEngine::executePendingPlans() -> simulated exchange events
  **************************************************************************************/
 class Backtester {
 public:
-    explicit Backtester(
-        BacktestContext& backtest_context
-    );
+    explicit Backtester(BacktestContext& backtestContext);
 
-    /**************************************************************************************
-     * Purpose : Execute the main backtest loop
-     **************************************************************************************/
     void loop();
 
-    /**************************************************************************************
-     * Purpose : Persist all backtest results to disk
-     **************************************************************************************/
-    void storeResults(std::filesystem::path& backtest_store_path);
+    void storeResults(std::filesystem::path& backtestStorePath);
+    void storeTradesCSV(const std::filesystem::path& csvStorePath);
+    void storeVolatilityDiagnosticsCSV(
+        const std::filesystem::path& csvStorePath,
+        std::size_t rollingWindow,
+        double periodsPerYear
+    );
 
-    void storeTradesCSV(const std::filesystem::path& csv_store_path);
-
-    /**************************************************************************************
-     * Purpose : Copy all still-open trades into trade history
-     **************************************************************************************/
-    void closeTrades();
+    // Kept for caller compatibility. Open trades are reported mark-to-market and are not
+    // force-filled/closed merely because historical data ended.
+    void closeTrades() {}
 
 private:
     BacktestContext& backtest_context_;
+    SimulatedExchange simulated_exchange_;
+    TradingEngine trading_engine_;
 
     Timestamp starting_date_ = 0;
 
-    /**************************************************************************************
-     * Purpose : Trigger signal calculation for all strategy instances
-     **************************************************************************************/
-    void calculateSignals(
-        const MarketData& marketData,
-        Timestamp ts,
-        bool live_trading
-    );
+    void executePendingPlansAtOpen(Timestamp ts, const CoinBarMap& bars);
+    void calculateClosePlans(const MarketData& marketData, Timestamp ts, const PriceSnapshot& closePrices);
 
-    /**************************************************************************************
-     * Purpose : Update the global backtest context
-     **************************************************************************************/
-    void updateBacktestContext() {
-        backtest_context_.updateConext();
-    }
+    static PriceSnapshot buildOpenPrices(const CoinBarMap& bars);
+    static PriceSnapshot buildClosePrices(const CoinBarMap& bars);
 
-    /**************************************************************************************
-     * Purpose : Persist all trades to SQLite
-     **************************************************************************************/
     void storeTrades(sqlite3* db);
-
-    /**************************************************************************************
-     * Purpose : Persist balance/equity history to SQLite
-     **************************************************************************************/
     void storeBalanceEquity(sqlite3* db);
-
 };

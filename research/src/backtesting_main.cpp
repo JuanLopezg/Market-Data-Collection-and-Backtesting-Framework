@@ -1,5 +1,11 @@
 #include "backtest.h"
-#include "all_strategies.h"
+#include "pureRSI.h"
+#include "equal_weight_sizer.h"
+#include "entry_exit_only_rebalance_policy.h"
+#include "risk_constraints.h"
+#include "sample_covariance_estimator.h"
+#include "threshold_rebalance_policy.h"
+#include "volatility_target_sizer.h"
 #include "backtest_helpers.h"
 #include "benchmark_above_sma_filter.h"
 #include "database_utils.h"
@@ -52,23 +58,16 @@ int main(int argc, char** argv)
         "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests";
 
     // Set to true only when the reference CSV already exists.
-    constexpr bool compareWithReferenceBacktest = false;
+    constexpr bool compareWithReferenceBacktest = true;
 
     LG_INFO("Database loading started");
     OHLCVData ohlcvData = loadDatabase(databasePath, 00000000);
     LG_INFO("Database loaded successfully");
 
-    unsigned int lastTradeId = 0;
     double balance = 100000.0;
-    double equity = balance;
 
-    // Fees used by the backtest engine and by strategies that receive maker/taker fees.
+    // Market commission rate as a decimal fraction. Example: 0.001 = 0.10%.
     const double feeTaker = 0.0;
-    const double feeMaker = 0.0;
-
-    // Fees used by BargainChaser and ATRBreakout.
-    const double commissionEntryFactor = 0.0;
-    const double commissionExitFactor = 0.0;
 
     constexpr unsigned int topLiquidityCount = 20;
 
@@ -85,7 +84,7 @@ int main(int argc, char** argv)
         );
     };
 
-    std::vector<std::unique_ptr<Strategy>> strategies;
+    StrategyPortfolio strategies;
 
     // Every enabled block sets the matching RealTest CSV and output paths.
     // Set exactly ONE ENABLE_* switch to 1, rebuild, and run.
@@ -95,6 +94,9 @@ int main(int argc, char** argv)
     std::filesystem::path balanceEquityHtmlPath;
     std::filesystem::path realTestPath;
     std::filesystem::path mismatchesCsvPath;
+    std::filesystem::path volatilityDiagnosticsCsvPath;
+    std::size_t rollingVolatilityWindow = 60;
+    double volatilityPeriodsPerYear = 365.0;
 
     // ------------------------------------------------------------------
     // BargainChaser
@@ -297,8 +299,7 @@ int main(int argc, char** argv)
     {
             constexpr unsigned int rsiLength = 7;
             constexpr double rsiEntry = 80.0;
-            constexpr double rsiExit = 65.0;
-            constexpr double quantityPercent = 10.0;
+            constexpr double rsiExit = 70.0;
             constexpr unsigned int maxPositionsOpen = 10;
             constexpr unsigned int maxRankingPosition = 1000000;
 
@@ -312,26 +313,52 @@ int main(int argc, char** argv)
                 true
             );
 
-            strategies.push_back(
+            // Volatility-target validation configuration. All percentages below are
+            // fractions of strategy equity: 0.20 = 20%.
+            constexpr std::size_t covarianceLookback = 5;
+            constexpr double periodsPerYear = 365.0;
+            constexpr double targetVolatility = 0.20;
+            constexpr double rebalanceThreshold = 0.02;
+            constexpr double maxGrossLeverage = 1.50;
+            constexpr double maxAssetWeight = 1.5;
+
+            /* auto portfolioSizer = std::make_unique<VolatilityTargetSizer>(
+                std::make_unique<SampleCovarianceEstimator>(covarianceLookback, periodsPerYear),
+                targetVolatility
+            );
+            auto rebalancePolicy = std::make_unique<ThresholdRebalancePolicy>(
+                rebalanceThreshold
+            );
+
+            rollingVolatilityWindow = covarianceLookback;
+            volatilityPeriodsPerYear = periodsPerYear; */
+
+            auto portfolioSizer = std::make_unique<EqualWeightSizer>(0.10);
+            auto rebalancePolicy = std::make_unique<EntryExitOnlyRebalancePolicy>();
+
+            strategies.emplace_back(
+                1,
                 std::make_unique<StrategyPureRSI>(
                     maxPositionsOpen,
-                    quantityPercent / 100.0,
                     std::move(universeSelector),
                     std::move(ranker),
-                    feeTaker,
-                    feeTaker,
                     maxRankingPosition,
                     rsiLength,
                     rsiEntry,
                     rsiExit
-                )
+                ),
+                1.0,                    // 100% of account equity allocated to this strategy
+                std::move(portfolioSizer),
+                RiskConstraints(maxGrossLeverage, maxAssetWeight),
+                std::move(rebalancePolicy)
             );
 
             activeStrategyName = "PureRSI";
-            tradesCsvPath = backtestsDir / "pure_rsi_trades.csv";
-            balanceEquityHtmlPath = backtestsDir / "pure_rsi_balance_equity.html";
+            tradesCsvPath = backtestsDir / "pure_rsi_vol_target_trades.csv";
+            balanceEquityHtmlPath = backtestsDir / "pure_rsi_vol_target_balance_equity.html";
+            volatilityDiagnosticsCsvPath = backtestsDir / "pure_rsi_vol_target_diagnostics.csv";
             realTestPath = backtestsDir / "final_tests/pureRSI.csv";
-            mismatchesCsvPath = backtestsDir / "pure_rsi_mismatches.csv";
+            mismatchesCsvPath = backtestsDir / "pure_rsi_vol_target_campaign_comparison.csv";
             ++enabledStrategyCount;
     }
 #endif
@@ -553,17 +580,16 @@ int main(int argc, char** argv)
 
     BacktestContext context(
         ohlcvData,
-        strategies,
+        std::move(strategies),
         balance,
-        equity,
-        lastTradeId,
-        feeMaker,
-        feeTaker,
-        false
+        feeTaker
     );
 
     const MarketData& marketData = context.GetMarketData();
+    const PortfolioSizerKind activeSizerKind =
+        context.GetStrategyPortfolio().front().portfolioSizerKind();
     LG_INFO("Market data and indicators initialized");
+    LG_INFO("Active portfolio sizer: {}", portfolioSizerKindName(activeSizerKind));
 
     Backtester tester(context);
 
@@ -575,18 +601,29 @@ int main(int argc, char** argv)
 
     tester.storeTradesCSV(tradesCsvPath);
 
+    if (!volatilityDiagnosticsCsvPath.empty()) {
+        tester.storeVolatilityDiagnosticsCSV(
+            volatilityDiagnosticsCsvPath,
+            rollingVolatilityWindow,
+            volatilityPeriodsPerYear
+        );
+    }
+
     printBalanceEquityChart(
         context.GetBalanceEquityHistoric(),
         marketData,
+        context.GetVolatilityDiagnostics(),
+        rollingVolatilityWindow,
+        volatilityPeriodsPerYear,
         balanceEquityHtmlPath.string()
     );
 
     if (compareWithReferenceBacktest)
     {
-        compareBacktests(
+        compareBacktestBySizing(
+            activeSizerKind,
             realTestPath,
             context.GetTradesHistory(),
-            false,
             mismatchesCsvPath
         );
     }

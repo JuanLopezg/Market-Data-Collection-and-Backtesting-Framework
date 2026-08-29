@@ -10,7 +10,22 @@ sqlite3_dep                = global_deps['sqlite3_dep']
 subdir('common_types')
 subdir('utils')
 subdir('data_types')
+subdir('market')
+subdir('position')
+subdir('account')
+subdir('analytics')
 subdir('backtest')
+subdir('signal')
+subdir('portfolio')
+subdir('risk')
+subdir('sizing')
+subdir('rebalance')
+subdir('execution')
+subdir('exchange')
+subdir('runtime')
+subdir('persistence')
+subdir('recovery')
+subdir('testing')
 subdir('strategy')
 subdir('ranker')
 subdir('indicator')
@@ -23,7 +38,22 @@ include_dir = include_directories(
     'common_types',
     'utils',
     'data_types',
+    'market',
+    'position',
+    'account',
+    'analytics',
     'backtest',
+    'signal',
+    'portfolio',
+    'risk',
+    'sizing',
+    'rebalance',
+    'execution',
+    'exchange',
+    'runtime',
+    'persistence',
+    'recovery',
+    'testing',
     'strategy',
     'strategy/strategies',
     'ranker',
@@ -37,7 +67,22 @@ lib_sources = []
 lib_sources += common_types_sources
 lib_sources += utils_sources
 lib_sources += data_types_sources
+lib_sources += market_sources
+lib_sources += position_sources
+lib_sources += account_sources
+lib_sources += analytics_sources
 lib_sources += backtest_sources
+lib_sources += signal_sources
+lib_sources += portfolio_sources
+lib_sources += risk_sources
+lib_sources += sizing_sources
+lib_sources += rebalance_sources
+lib_sources += execution_sources
+lib_sources += exchange_sources
+lib_sources += runtime_sources
+lib_sources += persistence_sources
+lib_sources += recovery_sources
+lib_sources += testing_sources
 lib_sources += strategy_sources
 lib_sources += ranker_sources
 lib_sources += indicator_sources

@@ -1,49 +1,102 @@
 #include "backtest.h"
 
 #include <cassert>
-#include <stdexcept>
-#include <string>
-#include <utility>
-#include <vector>
+#include <cmath>
 
 #include "logger.h"
-#include "time_utils.h"
 
 
-/**************************************************************************************
- * Purpose : Construct Backtester
- **************************************************************************************/
-Backtester::Backtester(BacktestContext& backtest_context)
-    : backtest_context_(backtest_context)
+Backtester::Backtester(BacktestContext& backtestContext)
+    : backtest_context_(backtestContext),
+      simulated_exchange_(backtestContext.GetCommissionMarketRate()),
+      trading_engine_(
+          backtestContext.GetStrategyPortfolio(),
+          backtestContext.GetAccount(),
+          backtestContext.GetTradeRecorder(),
+          backtestContext.GetIndicatorEngine(),
+          simulated_exchange_
+      )
 {}
 
 
+PriceSnapshot Backtester::buildOpenPrices(const CoinBarMap& bars)
+{
+    PriceSnapshot prices;
+
+    for (const auto& [coin, bar] : bars) {
+        if (std::isfinite(bar.open) && bar.open > 0.0)
+            prices.set(coin, bar.open);
+    }
+
+    return prices;
+}
+
+
+PriceSnapshot Backtester::buildClosePrices(const CoinBarMap& bars)
+{
+    PriceSnapshot prices;
+
+    for (const auto& [coin, bar] : bars) {
+        if (std::isfinite(bar.close) && bar.close > 0.0)
+            prices.set(coin, bar.close);
+    }
+
+    return prices;
+}
+
+
 /**************************************************************************************
- * Purpose : Trigger signal calculation for all strategy instances at a timestamp
+ * Purpose : Execute plans from the previous close at this historical bar open
  **************************************************************************************/
-void Backtester::calculateSignals(
+void Backtester::executePendingPlansAtOpen(Timestamp ts, const CoinBarMap& bars)
+{
+    // Previously submitted orders are allowed to fill before considering a new target.
+    simulated_exchange_.processOpen(ts, bars);
+    trading_engine_.processExchangeEvents();
+
+    if (!trading_engine_.hasPendingPlans())
+        return;
+
+    const ExecutionReferencePrices prices = buildOpenPrices(bars);
+    trading_engine_.executePendingPlans(ts, prices);
+
+    // SimulatedExchange acknowledges synchronously; live adapters may acknowledge later.
+    trading_engine_.processExchangeEvents();
+
+    simulated_exchange_.processOpen(ts, bars);
+    trading_engine_.processExchangeEvents();
+
+    backtest_context_.setLastGlobalTarget(trading_engine_.lastGlobalTarget());
+}
+
+
+/**************************************************************************************
+ * Purpose : Let shared TradingEngine process a completed historical bar close
+ **************************************************************************************/
+void Backtester::calculateClosePlans(
     const MarketData& marketData,
     Timestamp ts,
-    bool live_trading
+    const PriceSnapshot& closePrices
 )
 {
-    const IndicatorEngine& indicators =
-        backtest_context_.GetIndicatorEngine();
+    trading_engine_.onBarClose(marketData, ts, closePrices);
 
-    for (auto& strategyInstance : backtest_context_.GetStrategyPortfolio()) {
-        strategyInstance.calculateSignals(
-            marketData,
-            ts,
-            backtest_context_.GetLastTradeId(),
-            live_trading,
-            indicators
-        );
+    // Volatility diagnostics remain backtest analytics rather than TradingEngine state.
+    for (const auto& strategy : backtest_context_.GetStrategyPortfolio()) {
+        if (strategy.sizingDiagnostics()) {
+            backtest_context_.recordVolatilityDiagnostic(
+                ts,
+                strategy.id(),
+                strategy.name(),
+                *strategy.sizingDiagnostics()
+            );
+        }
     }
 }
 
 
 /**************************************************************************************
- * Purpose : Execute the main backtest loop
+ * Purpose : Historical clock. Strategy/execution orchestration lives in TradingEngine.
  **************************************************************************************/
 void Backtester::loop()
 {
@@ -56,7 +109,6 @@ void Backtester::loop()
 
     const std::size_t totalSteps = marketData.size();
     std::size_t currentStep = 0;
-
     int lastLoggedPercent = 0;
     constexpr int LOG_STEP = 5;
 
@@ -74,14 +126,16 @@ void Backtester::loop()
         }
 
         const Timestamp ts = it->first;
+        const CoinBarMap& bars = it->second;
 
-        calculateSignals(
-            marketData,
-            ts,
-            backtest_context_.IsLiveTrading()
-        );
+        // Plans built from the previous completed close become executable now.
+        executePendingPlansAtOpen(ts, bars);
 
-        updateBacktestContext();
+        // Mark account at this completed close before sizing today's strategy signals.
+        const PriceSnapshot closePrices = buildClosePrices(bars);
+        backtest_context_.recordAccountSnapshot(ts, closePrices);
+
+        calculateClosePlans(marketData, ts, closePrices);
     }
 
     LG_INFO("Backtest finished");

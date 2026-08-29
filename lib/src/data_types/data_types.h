@@ -12,10 +12,12 @@
  **************************************************************************************/
 using Balance   = double;
 using Equity    = double;
-using TradeID   = unsigned int;
-using OrderID   = unsigned int;
-using Timestamp = unsigned int;
-using Coin      = std::string;
+using TradeID    = unsigned int;
+using OrderID    = unsigned int;
+using FillID     = unsigned long long;
+using StrategyID = unsigned int;
+using Timestamp  = unsigned int;
+using Coin       = std::string;
 
 
 /**************************************************************************************

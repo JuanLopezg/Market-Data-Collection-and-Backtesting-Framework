@@ -3,6 +3,7 @@
 #include "backtest.h"
 #include "data_types.h"
 
+#include <cstddef>
 #include <filesystem>
 #include <map>
 #include <string>
@@ -19,6 +20,18 @@ void printCoinTradesPlotlyChart(
 );
 
 // Writes an interactive Plotly chart comparing account balance and equity.
+void printBalanceEquityChart(
+    const std::vector<std::pair<Balance, Equity>>& eqbal,
+    const MarketData& marketData,
+    const std::vector<VolatilityDiagnosticSnapshot>& volatilityDiagnostics,
+    std::size_t rollingVolatilityWindow,
+    double periodsPerYear,
+    const std::string& outputHtml =
+        "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/balance_equity.html"
+);
+
+
+// Backward-compatible overload for runners that do not request volatility diagnostics.
 void printBalanceEquityChart(
     const std::vector<std::pair<Balance, Equity>>& eqbal,
     const MarketData& marketData,

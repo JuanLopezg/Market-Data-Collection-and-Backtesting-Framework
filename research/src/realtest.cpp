@@ -1525,3 +1525,277 @@ bool compareBacktests(
         true
     );
 }
+
+bool compareBacktestCampaigns(
+    std::filesystem::path& realtest_trades,
+    std::map<TradeID, Trade>& backtesterTradesHistory,
+    const std::filesystem::path& comparisonCsvPath,
+    double priceTolerancePercent
+)
+{
+    if (!std::isfinite(priceTolerancePercent) || priceTolerancePercent < 0.0)
+        throw std::invalid_argument("Campaign comparison price tolerance must be non-negative");
+
+    std::vector<RealtestTrade> realtestCsvTrades;
+    if (!loadRealtestTrades(realtest_trades, realtestCsvTrades))
+        return false;
+
+    std::vector<Trade> realtestTrades;
+    if (!convertRealtestTradesToTrades(realtestCsvTrades, realtestTrades))
+        return false;
+
+    std::vector<std::pair<TradeID, const Trade*>> backtesterTrades;
+    backtesterTrades.reserve(backtesterTradesHistory.size());
+    for (const auto& [tradeId, trade] : backtesterTradesHistory)
+        backtesterTrades.push_back({tradeId, &trade});
+
+    std::vector<bool> backtesterMatched(backtesterTrades.size(), false);
+
+    if (!comparisonCsvPath.parent_path().empty())
+        std::filesystem::create_directories(comparisonCsvPath.parent_path());
+
+    std::ofstream csv(comparisonCsvPath);
+    if (!csv.is_open())
+        throw std::runtime_error("Could not create campaign comparison CSV");
+
+    csv
+        << "realtest_trade_id,backtester_trade_id,coin,direction_match,entry_date_match,"
+        << "exit_date_match,realtest_entry_price,backtester_entry_price,entry_price_match,"
+        << "realtest_exit_price,backtester_exit_price,exit_price_match,"
+        << "realtest_pnl_sign,backtester_pnl_sign,pnl_sign_match,campaign_match\n";
+
+    auto pnlSign = [](double value) {
+        if (value > 0.0) return 1;
+        if (value < 0.0) return -1;
+        return 0;
+    };
+
+    std::size_t matchedCampaigns = 0;
+    std::size_t missingCampaigns = 0;
+    std::size_t differentCampaigns = 0;
+    std::size_t pnlSignMatches = 0;
+    std::size_t comparedPnlSigns = 0;
+    std::size_t comparisonIndex = 0;
+    std::size_t displayedMismatchIndex = 0;
+    bool interactiveQuit = false;
+
+    std::cout << "\n============================================================\n";
+    std::cout << "INTERACTIVE VOL-TARGET CAMPAIGN COMPARISON\n";
+    std::cout << "============================================================\n";
+    std::cout << "Validation checks : direction, entry/exit dates and prices\n";
+    std::cout << "Informational     : size, PnL magnitude and PnL sign\n";
+    std::cout << "Matched campaigns are skipped; mismatches are shown one by one.\n";
+    std::cout << "Price tolerance   : " << priceTolerancePercent << "%\n";
+
+    for (const Trade& realtestTrade : realtestTrades) {
+        ++comparisonIndex;
+        std::size_t matchIndex = backtesterTrades.size();
+
+        for (std::size_t i = 0; i < backtesterTrades.size(); ++i) {
+            if (backtesterMatched[i])
+                continue;
+
+            const Trade& candidate = *backtesterTrades[i].second;
+            if (candidate.coin_ == realtestTrade.coin_ &&
+                normalizeTimestamp(candidate.start_) == normalizeTimestamp(realtestTrade.start_)) {
+                matchIndex = i;
+                break;
+            }
+        }
+
+        if (matchIndex == backtesterTrades.size()) {
+            ++missingCampaigns;
+            csv
+                << realtestTrade.trade_id_ << ",," << csvEscape(realtestTrade.coin_)
+                << ",0,0,0," << realtestTrade.entry_ << ",,0,"
+                << realtestTrade.exit_ << ",,0,"
+                << pnlSign(realtestTrade.pnl_) << ",,0,0\n";
+
+            if (!interactiveQuit) {
+                ++displayedMismatchIndex;
+                std::cout << "\n\n============================================================\n";
+                std::cout << "VOL-TARGET MISMATCH #" << displayedMismatchIndex << "\n";
+                std::cout << "REAL COMPARISON INDEX: " << comparisonIndex << "\n";
+                std::cout << "MATCH TYPE  : NO_BACKTESTER_CAMPAIGN\n";
+                std::cout << "CAMPAIGN OK : false\n";
+                std::cout << "============================================================\n";
+                printTerminalTrade("REALTEST", &realtestTrade, realtestTrade.trade_id_);
+                printTerminalTrade("BACKTESTER", nullptr, static_cast<TradeID>(0));
+                interactiveQuit = waitForEnterOrQuit();
+            }
+            continue;
+        }
+
+        backtesterMatched[matchIndex] = true;
+        const TradeID backtesterTradeId = backtesterTrades[matchIndex].first;
+        const Trade& backtesterTrade = *backtesterTrades[matchIndex].second;
+
+        const bool directionMatch = realtestTrade.direction_ == backtesterTrade.direction_;
+        const bool entryDateMatch =
+            normalizeTimestamp(realtestTrade.start_) == normalizeTimestamp(backtesterTrade.start_);
+        const bool exitDateMatch =
+            normalizeTimestamp(realtestTrade.end_) == normalizeTimestamp(backtesterTrade.end_);
+        const bool entryPriceMatch =
+            percentageDifferenceFromRealtest(realtestTrade.entry_, backtesterTrade.entry_) <=
+            priceTolerancePercent;
+        const bool exitPriceMatch =
+            percentageDifferenceFromRealtest(realtestTrade.exit_, backtesterTrade.exit_) <=
+            priceTolerancePercent;
+
+        const int realtestPnlSign = pnlSign(realtestTrade.pnl_);
+        const int backtesterPnlSign = pnlSign(backtesterTrade.pnl_);
+        const bool pnlSignMatch = realtestPnlSign == backtesterPnlSign;
+        ++comparedPnlSigns;
+        if (pnlSignMatch)
+            ++pnlSignMatches;
+
+        const bool campaignMatch =
+            directionMatch && entryDateMatch && exitDateMatch && entryPriceMatch && exitPriceMatch;
+
+        if (campaignMatch)
+            ++matchedCampaigns;
+        else
+            ++differentCampaigns;
+
+        csv
+            << realtestTrade.trade_id_ << ','
+            << backtesterTradeId << ','
+            << csvEscape(realtestTrade.coin_) << ','
+            << (directionMatch ? 1 : 0) << ','
+            << (entryDateMatch ? 1 : 0) << ','
+            << (exitDateMatch ? 1 : 0) << ','
+            << realtestTrade.entry_ << ','
+            << backtesterTrade.entry_ << ','
+            << (entryPriceMatch ? 1 : 0) << ','
+            << realtestTrade.exit_ << ','
+            << backtesterTrade.exit_ << ','
+            << (exitPriceMatch ? 1 : 0) << ','
+            << realtestPnlSign << ','
+            << backtesterPnlSign << ','
+            << (pnlSignMatch ? 1 : 0) << ','
+            << (campaignMatch ? 1 : 0)
+            << '\n';
+
+        if (campaignMatch || interactiveQuit)
+            continue;
+
+        ++displayedMismatchIndex;
+        std::cout << "\n\n============================================================\n";
+        std::cout << "VOL-TARGET MISMATCH #" << displayedMismatchIndex << "\n";
+        std::cout << "REAL COMPARISON INDEX: " << comparisonIndex << "\n";
+        std::cout << "MATCH TYPE  : EXACT_START_AND_COIN\n";
+        std::cout << "CAMPAIGN OK : false\n";
+        std::cout << "============================================================\n";
+
+        printTerminalTrade("REALTEST", &realtestTrade, realtestTrade.trade_id_);
+        printTerminalTrade("BACKTESTER", &backtesterTrade, backtesterTradeId);
+
+        std::cout << "\nVALIDATION DIFFERENCES\n";
+        std::cout << "  same direction : " << boolToString(directionMatch) << "\n";
+        std::cout << "  same start     : " << boolToString(entryDateMatch) << "\n";
+        std::cout << "  same end       : " << boolToString(exitDateMatch) << "\n";
+        std::cout << "  entry price OK : " << boolToString(entryPriceMatch) << "\n";
+        printNumericDifference("entry", realtestTrade.entry_, backtesterTrade.entry_);
+        std::cout << "  exit price OK  : " << boolToString(exitPriceMatch) << "\n";
+        printNumericDifference("exit", realtestTrade.exit_, backtesterTrade.exit_);
+
+        std::cout << "\nINFORMATIONAL ONLY (does not make campaign fail)\n";
+        printNumericDifference("size", realtestTrade.size_, backtesterTrade.size_);
+        printNumericDifference("pnl", realtestTrade.pnl_, backtesterTrade.pnl_);
+        std::cout << "  PnL sign match : " << boolToString(pnlSignMatch) << "\n";
+
+        interactiveQuit = waitForEnterOrQuit();
+    }
+
+    std::size_t unmatchedBacktester = 0;
+    for (std::size_t i = 0; i < backtesterMatched.size(); ++i) {
+        if (backtesterMatched[i])
+            continue;
+
+        ++unmatchedBacktester;
+        if (interactiveQuit)
+            continue;
+
+        ++displayedMismatchIndex;
+        std::cout << "\n\n============================================================\n";
+        std::cout << "UNMATCHED BACKTESTER CAMPAIGN #" << displayedMismatchIndex << "\n";
+        std::cout << "============================================================\n";
+        printTerminalTrade("REALTEST", nullptr, static_cast<TradeID>(0));
+        printTerminalTrade(
+            "BACKTESTER",
+            backtesterTrades[i].second,
+            backtesterTrades[i].first
+        );
+        interactiveQuit = waitForEnterOrQuit();
+    }
+
+    std::cout << "\n============================================================\n";
+    std::cout << "VOL-TARGET CAMPAIGN VALIDATION SUMMARY\n";
+    std::cout << "============================================================\n";
+    std::cout << "Campaigns matching date/price/direction : " << matchedCampaigns << "\n";
+    std::cout << "Different matched campaigns             : " << differentCampaigns << "\n";
+    std::cout << "Missing backtester campaigns            : " << missingCampaigns << "\n";
+    std::cout << "Unmatched backtester campaigns          : " << unmatchedBacktester << "\n";
+    std::cout << "PnL sign matches (informational only)   : "
+              << pnlSignMatches << "/" << comparedPnlSigns << "\n";
+    std::cout << "Price tolerance                         : " << priceTolerancePercent << "%\n";
+    std::cout << "Comparison CSV                          : " << comparisonCsvPath.string() << "\n";
+    if (interactiveQuit)
+        std::cout << "Interactive display                     : stopped by user; full CSV/summary still completed\n";
+
+    LG_INFO(
+        "Vol-target campaign validation finished. matched={}, different={}, missing={}, unmatched_backtester={}, pnl_sign_matches={}/{}, csv={}",
+        matchedCampaigns,
+        differentCampaigns,
+        missingCampaigns,
+        unmatchedBacktester,
+        pnlSignMatches,
+        comparedPnlSigns,
+        comparisonCsvPath.string()
+    );
+
+    return differentCampaigns == 0 && missingCampaigns == 0 && unmatchedBacktester == 0;
+}
+
+bool compareBacktestBySizing(
+    PortfolioSizerKind sizingKind,
+    std::filesystem::path& realtest_trades,
+    std::map<TradeID, Trade>& backtesterTradesHistory,
+    const std::filesystem::path& comparisonCsvPath
+)
+{
+    std::cout << "\n============================================================\n";
+    std::cout << "REALTEST VALIDATION MODE\n";
+    std::cout << "============================================================\n";
+    std::cout << "Portfolio sizer : " << portfolioSizerKindName(sizingKind) << "\n";
+
+    switch (sizingKind) {
+        case PortfolioSizerKind::EqualWeight:
+            std::cout << "Comparison      : exhaustive trade comparison\n";
+            std::cout << "Checks          : coin, entry/exit dates, prices, quantity and PnL\n";
+            return compareBacktests(
+                realtest_trades,
+                backtesterTradesHistory,
+                false,
+                comparisonCsvPath
+            );
+
+        case PortfolioSizerKind::VolatilityTarget:
+            std::cout << "Comparison      : strategic campaign comparison\n";
+            std::cout << "Checks          : direction, entry/exit dates and prices\n";
+            std::cout << "Informational   : PnL sign; quantity/PnL magnitude intentionally ignored\n";
+            return compareBacktestCampaigns(
+                realtest_trades,
+                backtesterTradesHistory,
+                comparisonCsvPath
+            );
+
+        default:
+            LG_ERROR(
+                "No RealTest comparison policy defined for portfolio sizer {}",
+                portfolioSizerKindName(sizingKind)
+            );
+            return false;
+    }
+}
+
