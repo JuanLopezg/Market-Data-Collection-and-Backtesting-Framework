@@ -4,10 +4,20 @@
 
 
 #include <sqlite3.h>
+#include <algorithm>
 #include <boost/filesystem.hpp>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
+
+static std::chrono::year_month_day fromYYYYMMDD(int yyyymmdd)
+{
+    int year = yyyymmdd / 10000;
+    unsigned month = static_cast<unsigned>((yyyymmdd / 100) % 100);
+    unsigned day = static_cast<unsigned>(yyyymmdd % 100);
+
+    return std::chrono::year{year} / std::chrono::month{month} / std::chrono::day{day};
+}
 
 /**************************************************************************************
  * Purpose : Opens (or creates) the OHLCV SQLite database and ensures that both:
@@ -214,6 +224,13 @@ bool DatabaseDownloader::storeDataOHLCV(sqlite3* db, const OHLCVData& data)
         return false;
     }
 
+    if (sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr) != SQLITE_OK)
+    {
+        LG_ERROR("SQLite begin transaction failed: {}", sqlite3_errmsg(db));
+        sqlite3_finalize(stmt);
+        return false;
+    }
+
     // Iterate over all pairs and their daily candles
     for (const auto& [pair, dailyMap] : data.data)
     {
@@ -232,6 +249,7 @@ bool DatabaseDownloader::storeDataOHLCV(sqlite3* db, const OHLCVData& data)
             {
                 LG_ERROR("Insert failed: {}", sqlite3_errmsg(db));
                 sqlite3_finalize(stmt);
+                sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
                 return false;
             }
 
@@ -242,6 +260,13 @@ bool DatabaseDownloader::storeDataOHLCV(sqlite3* db, const OHLCVData& data)
     }
 
     sqlite3_finalize(stmt);
+
+    if (sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr) != SQLITE_OK)
+    {
+        LG_ERROR("SQLite commit failed: {}", sqlite3_errmsg(db));
+        sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
 
     LG_INFO("Successfully stored OHLCV candles (pairs: {}).",
                  data.data.size());
@@ -490,19 +515,21 @@ void DatabaseDownloader::printLatestBTCUSDT(sqlite3* db)
 
 
 /**************************************************************************************
- * Purpose : For each tracked pair, determine how many days have passed since the last
- *           OHLCV candle stored in the DB.
+ * Purpose : For each tracked pair, determine how many recent OHLCV days need to be
+ *           fetched so the last 100-day window has no internal gaps.
  *
  *           Rules:
- *              - If pair has no rows → return 100
- *              - If last date is > 100 days before current date → return 100
- *              - Otherwise: return (currentYMD - lastStoredYMD)
+ *              - If pair has no rows -> return 100
+ *              - Only the most recent 100 calendar days are checked/fetched
+ *              - If an internal missing date exists, fetch from the earliest missing
+ *                date through currentDate so the gap is repaired by the normal UPSERT
+ *              - If the whole checked window is complete -> skip the pair
  *
  * Args    : db          - opened SQLite database.
- *           tracked     - TrackedData (contains the map<pair → days_out>).
- *           currentYMD  - current date (year_month_day) to compare against.
+ *           tracked     - TrackedData (contains the map<pair -> days_out>).
+ *           currentDate - current date (year_month_day) to compare against.
  *
- * Return  : std::map<std::string,int> → map of pair → day difference.
+ * Return  : std::map<std::string,int> -> map of pair -> days to fetch.
  **************************************************************************************/
 std::map<std::string,int> DatabaseDownloader::computeDaysSinceLastStoredOHLCV(
     sqlite3* db,
@@ -516,58 +543,119 @@ std::map<std::string,int> DatabaseDownloader::computeDaysSinceLastStoredOHLCV(
         return result;
     }
 
-    const char* sql =
-        "SELECT MAX(date) FROM ohlcv_data WHERE pair = ?;";
+    const char* boundsSql =
+        "SELECT MIN(date), MAX(date) FROM ohlcv_data WHERE pair = ?;";
 
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-        LG_ERROR("Prepare failed: {}",
-                      sqlite3_errmsg(db));
+    const char* datesSql =
+        "SELECT date FROM ohlcv_data "
+        "WHERE pair = ? AND date >= ? AND date <= ? "
+        "ORDER BY date ASC;";
+
+    sqlite3_stmt* boundsStmt = nullptr;
+    sqlite3_stmt* datesStmt = nullptr;
+
+    if (sqlite3_prepare_v2(db, boundsSql, -1, &boundsStmt, nullptr) != SQLITE_OK) {
+        LG_ERROR("Prepare bounds query failed: {}", sqlite3_errmsg(db));
         return result;
     }
 
-    int currentYMD = toYYYYMMDD(currentDate);
+    if (sqlite3_prepare_v2(db, datesSql, -1, &datesStmt, nullptr) != SQLITE_OK) {
+        LG_ERROR("Prepare dates query failed: {}", sqlite3_errmsg(db));
+        sqlite3_finalize(boundsStmt);
+        return result;
+    }
 
-    for (const auto& [pair, _] : tracked.trackedPairs)
+    const auto currentSys = std::chrono::sys_days{currentDate};
+    const auto oldestAllowedSys = currentSys - std::chrono::days(99);
+    const int currentYMD = toYYYYMMDD(currentDate);
+
+    for (const auto& [pair, daysOut] : tracked.trackedPairs)
     {
-        sqlite3_reset(stmt);
-        sqlite3_clear_bindings(stmt);
-        sqlite3_bind_text(stmt, 1, pair.c_str(), -1, SQLITE_TRANSIENT);
+        if (daysOut > 0) {
+            LG_INFO("{} outside selected ingestion set (days_out={}) -> SKIP",
+                         pair, daysOut);
+            continue;
+        }
 
-        int rc = sqlite3_step(stmt);
-        int lastYMD = (rc == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : 0;
+        sqlite3_reset(boundsStmt);
+        sqlite3_clear_bindings(boundsStmt);
+        sqlite3_bind_text(boundsStmt, 1, pair.c_str(), -1, SQLITE_TRANSIENT);
+
+        int rc = sqlite3_step(boundsStmt);
+        int firstYMD = 0;
+        int lastYMD = 0;
+
+        if (rc == SQLITE_ROW) {
+            firstYMD = sqlite3_column_int(boundsStmt, 0);
+            lastYMD = sqlite3_column_int(boundsStmt, 1);
+        }
 
         // --------------------------------------------------------------------
-        // CASE 1 — never stored → need full fetch
+        // CASE 1 - never stored -> need full fetch
         // --------------------------------------------------------------------
-        if (lastYMD == 0) {
+        if (firstYMD == 0 || lastYMD == 0) {
             result[pair] = 100;
             continue;
         }
 
-        // --------------------------------------------------------------------
-        // CASE 2 — already up-to-date → SKIP completely
-        // --------------------------------------------------------------------
-        if (lastYMD >= currentYMD) {
-            LG_INFO("{} is already up-to-date (last={}, cur={}) → SKIP",
-                         pair, lastYMD, currentYMD);
-            continue;   // DO NOT insert in result map
+        auto firstStoredSys = std::chrono::sys_days{fromYYYYMMDD(firstYMD)};
+        auto checkFromSys = std::max(firstStoredSys, oldestAllowedSys);
+        int checkFromYMD = toYYYYMMDD(std::chrono::year_month_day{checkFromSys});
+
+        sqlite3_reset(datesStmt);
+        sqlite3_clear_bindings(datesStmt);
+        sqlite3_bind_text(datesStmt, 1, pair.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(datesStmt, 2, checkFromYMD);
+        sqlite3_bind_int(datesStmt, 3, currentYMD);
+
+        std::set<int> storedDates;
+        while ((rc = sqlite3_step(datesStmt)) == SQLITE_ROW)
+            storedDates.insert(sqlite3_column_int(datesStmt, 0));
+
+        if (rc != SQLITE_DONE) {
+            LG_ERROR("Date scan failed for {}: {}", pair, sqlite3_errmsg(db));
+            continue;
+        }
+
+        std::chrono::sys_days earliestMissingSys{};
+        bool hasMissingDate = false;
+
+        for (auto day = checkFromSys; day <= currentSys; day += std::chrono::days(1))
+        {
+            int ymd = toYYYYMMDD(std::chrono::year_month_day{day});
+            if (!storedDates.contains(ymd)) {
+                earliestMissingSys = day;
+                hasMissingDate = true;
+                break;
+            }
         }
 
         // --------------------------------------------------------------------
-        // CASE 3 — compute difference
+        // CASE 2 - checked window is complete -> SKIP completely
         // --------------------------------------------------------------------
-        int diff = currentYMD - lastYMD;
+        if (!hasMissingDate) {
+            LG_INFO("{} OHLCV window is complete through {} -> SKIP",
+                         pair, currentYMD);
+            continue;
+        }
 
-        if (diff > 100)
-            diff = 100;
+        // --------------------------------------------------------------------
+        // CASE 3 - fetch from earliest missing day through currentDate
+        // --------------------------------------------------------------------
+        int daysNeeded = static_cast<int>((currentSys - earliestMissingSys).count()) + 1;
+        daysNeeded = std::clamp(daysNeeded, 1, 100);
 
-        result[pair] = diff;
+        int earliestMissingYMD = toYYYYMMDD(
+            std::chrono::year_month_day{earliestMissingSys}
+        );
 
-        LG_INFO("{} last={}, diff={} → FETCH {} days",
-                     pair, lastYMD, diff, diff);
+        result[pair] = daysNeeded;
+
+        LG_INFO("{} first missing={}, last stored={} -> FETCH {} days",
+                     pair, earliestMissingYMD, lastYMD, daysNeeded);
     }
 
-    sqlite3_finalize(stmt);
+    sqlite3_finalize(datesStmt);
+    sqlite3_finalize(boundsStmt);
     return result;
 }

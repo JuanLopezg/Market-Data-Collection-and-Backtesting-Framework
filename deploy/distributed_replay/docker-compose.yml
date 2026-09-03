@@ -1,0 +1,187 @@
+name: algotrading-distributed-replay
+
+x-runtime: &runtime
+  image: algotrading-runtime:step28
+  build:
+    context: ./.runtime_bundle
+  init: true
+  restart: on-failure
+  environment:
+    ALGOTRADING_LOG_DEBUG: "${ALGOTRADING_LOG_DEBUG:-0}"
+    ALGOTRADING_LOG_QUIET: "${ALGOTRADING_LOG_QUIET:-0}"
+    ALGOTRADING_LOG_DIR: "${ALGOTRADING_LOG_DIR:-}"
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+  networks: [replay]
+
+services:
+  nats:
+    image: nats:2.10-alpine
+    command: ["-js", "-m", "8222", "--store_dir", "/data"]
+    volumes:
+      - nats-data:/data
+    ports:
+      - "127.0.0.1:${REPLAY_NATS_PORT:-54228}:4222"
+      - "127.0.0.1:${REPLAY_NATS_MONITOR_PORT:-58228}:8222"
+    networks: [replay]
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: algotrading
+      POSTGRES_USER: algotrading
+      POSTGRES_PASSWORD: algotrading
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U algotrading -d algotrading"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${REPLAY_POSTGRES_PORT:-55438}:5432"
+    networks: [replay]
+
+  market-data:
+    <<: *runtime
+    command:
+      - algotrading_market_data_service
+      - --nats-url
+      - nats://nats:4222
+      - --historical-data
+      - /data/historical.csv
+      - --poll-timeout-ms
+      - "50"
+    volumes:
+      - "${HISTORICAL_DATA_PATH:-../../storage/databases/1d_cmc.csv}:/data/historical.csv:ro"
+    depends_on:
+      nats:
+        condition: service_started
+
+  strategy:
+    <<: *runtime
+    command:
+      - algotrading_strategy_service
+      - --nats-url
+      - nats://nats:4222
+      - --strategy-config
+      - /opt/algotrading/config/strategies/pure_rsi_signal.json
+      - --poll-timeout-ms
+      - "50"
+    depends_on:
+      nats:
+        condition: service_started
+
+  portfolio-risk:
+    <<: *runtime
+    command:
+      - algotrading_portfolio_risk_service
+      - --nats-url
+      - nats://nats:4222
+      - --portfolio-config
+      - ${REPLAY_PORTFOLIO_CONFIG:-/opt/algotrading/config/portfolio/pure_rsi_equal_weight.json}
+      - --poll-timeout-ms
+      - "50"
+    depends_on:
+      nats:
+        condition: service_started
+
+  order-planner:
+    <<: *runtime
+    command:
+      - algotrading_order_planner_service
+      - --nats-url
+      - nats://nats:4222
+      - --poll-timeout-ms
+      - "50"
+    depends_on:
+      nats:
+        condition: service_started
+
+  exchange-gateway:
+    <<: *runtime
+    command:
+      - algotrading_exchange_gateway
+      - --nats-url
+      - nats://nats:4222
+      - --poll-timeout-ms
+      - "50"
+    depends_on:
+      nats:
+        condition: service_started
+
+  simulated-exchange:
+    <<: *runtime
+    command:
+      - algotrading_simulated_exchange_service
+      - --nats-url
+      - nats://nats:4222
+      - --initial-cash
+      - "100000"
+      - --commission-rate
+      - "0.0"
+      - --poll-timeout-ms
+      - "50"
+    depends_on:
+      nats:
+        condition: service_started
+
+  execution-state:
+    <<: *runtime
+    command:
+      - algotrading_execution_state_service
+      - --nats-url
+      - nats://nats:4222
+      - --postgres
+      - host=postgres port=5432 dbname=algotrading user=algotrading password=algotrading
+      - --initial-cash
+      - "100000"
+      - --strategy
+      - 1:Pure_RSI
+      - --poll-timeout-ms
+      - "50"
+    depends_on:
+      nats:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+
+  replay-controller:
+    <<: *runtime
+    command:
+      - algotrading_replay_controller
+      - --nats-url
+      - nats://nats:4222
+      - --start-date
+      - ${REPLAY_START_DATE:-2024-01-01}
+      - --end-date
+      - ${REPLAY_END_DATE:-2024-01-03}
+      - --barrier-timeout-ms
+      - ${REPLAY_BARRIER_TIMEOUT_MS:-60000}
+      - --poll-timeout-ms
+      - "50"
+    depends_on:
+      market-data:
+        condition: service_started
+      strategy:
+        condition: service_started
+      portfolio-risk:
+        condition: service_started
+      order-planner:
+        condition: service_started
+      exchange-gateway:
+        condition: service_started
+      simulated-exchange:
+        condition: service_started
+      execution-state:
+        condition: service_started
+
+networks:
+  replay:
+
+volumes:
+  nats-data:
+  postgres-data:

@@ -123,6 +123,13 @@ ReconciliationReport Reconciler::compare(
         );
 
         if (!exchangeOrder) {
+            // Created means the local intent was durably staged before the outbound
+            // submit side effect. A crash may therefore legitimately leave it absent
+            // from the exchange. After a clean reconciliation the state authority may
+            // safely re-publish that idempotent submit command.
+            if (localOrder.status == ExecutionOrderStatus::Created)
+                continue;
+
             report.issues.push_back({
                 ReconciliationIssueKind::MissingExchangeOrder,
                 localOrder.request.coin,

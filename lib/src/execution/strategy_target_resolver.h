@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 
+#include "decision_batch.h"
 #include "execution_reference_prices.h"
 #include "rebalance_plan.h"
 #include "target_portfolio.h"
@@ -10,7 +11,7 @@
 
 /**************************************************************************************
  * Type    : StrategyTargetResolver
- * Purpose : Resolve one strategy's rebalance decisions into a monetary target portfolio
+ * Purpose : Resolve one strategy's decision intent into a monetary target portfolio
  *
  * Rules:
  *   HOLD:
@@ -21,14 +22,14 @@
  *     Desired monetary exposure becomes 0.
  *
  *   TARGET_WEIGHT:
- *     Desired monetary exposure becomes targetWeight * plan.referenceCapital().
+ *     Desired monetary exposure becomes targetWeight * referenceCapital.
  *
  * This does not create orders and does not mutate VirtualPositionState.
  **************************************************************************************/
 class StrategyTargetResolver {
 public:
     TargetPortfolio resolve(
-        const RebalancePlan& plan,
+        const StrategyDecisionIntent& intent,
         const VirtualPositionState& currentPositions,
         const ExecutionReferencePrices& prices
     ) const
@@ -44,7 +45,7 @@ public:
         }
 
         // Explicit decisions override the held exposure.
-        for (const auto& [coin, decision] : plan.values()) {
+        for (const auto& [coin, decision] : intent.decisions) {
             switch (decision.action) {
                 case RebalanceAction::Hold:
                     break;
@@ -54,11 +55,25 @@ public:
                     break;
 
                 case RebalanceAction::TargetWeight:
-                    target.set(coin, decision.target_weight * plan.referenceCapital());
+                    target.set(coin, decision.target_weight * intent.reference_capital);
                     break;
             }
         }
 
         return target;
+    }
+
+    // Compatibility overload retained for direct callers while runtime migrates to DTOs.
+    TargetPortfolio resolve(
+        const RebalancePlan& plan,
+        const VirtualPositionState& currentPositions,
+        const ExecutionReferencePrices& prices
+    ) const
+    {
+        StrategyDecisionIntent intent;
+        intent.decision_timestamp = plan.timestamp();
+        intent.reference_capital = plan.referenceCapital();
+        intent.decisions = plan.values();
+        return resolve(intent, currentPositions, prices);
     }
 };

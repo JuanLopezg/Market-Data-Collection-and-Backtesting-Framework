@@ -8,12 +8,20 @@
 
 /**************************************************************************************
  * Purpose : Constructs the DatabaseDownloader with the path to the SQLite database.
- * Args    : database_path - Filesystem path to the database file.
+ * Args    : database_path   - Filesystem path to the database file.
+ *           binanceBaseUrl - Base URL of the Binance-compatible market-data API.
  * Return  : None
  **************************************************************************************/
-DatabaseDownloader::DatabaseDownloader(boost::filesystem::path database_path)
-    : database_path_(std::move(database_path))
-{}
+DatabaseDownloader::DatabaseDownloader(boost::filesystem::path database_path,
+                                       std::string binanceBaseUrl,
+                                       MarketDataPairSelection pairSelection)
+    : database_path_(std::move(database_path)),
+      binance_base_url_(std::move(binanceBaseUrl)),
+      pair_selection_(pairSelection)
+{
+    if (!binance_base_url_.empty() && binance_base_url_.back() == '/')
+        binance_base_url_.pop_back();
+}
 
 /**************************************************************************************
  * Purpose : Debug helper to check which pairs in OHLCVData contain a specific date
@@ -180,7 +188,7 @@ void printDateOfStart(sqlite3* db)
  *              - Opening the SQLite database
  *              - Loading previous tracked data
  *              - Checking if the database is already up to date
- *              - Fetching the top-50 Binance perpetual pairs
+ *              - Fetching the configured Binance market-data pair set
  *              - Computing updated tracked-pair day counts
  *              - Storing results in the database
  *              - Printing resulting tracked_pairs contents
@@ -210,6 +218,17 @@ bool DatabaseDownloader::downloadData(std::chrono::year_month_day date)
     TrackedData prev = getTrackedPairs(db);
     bool prev_exists = prev.date != EMPTY_DATE && !prev.trackedPairs.empty();
 
+    // Never move the persisted tracked-pair snapshot backwards in time.
+    // Re-running an older replay range against a database that is already ahead
+    // must be idempotent and must not inflate days_out counters.
+    if (prev_exists && std::chrono::sys_days(prev.date) > std::chrono::sys_days(date))
+    {
+        LG_INFO("Tracked_pairs already ahead of {} (latest={}) -> SKIP historical rewind",
+                date_str, formatYMD(prev.date));
+        sqlite3_close(db);
+        return true;
+    }
+
     TrackedData updated_tracked_data = prev;
 
     // only if data for todays fetch didn't exist
@@ -217,18 +236,24 @@ bool DatabaseDownloader::downloadData(std::chrono::year_month_day date)
         // ------------------------------------------------------------
         // Always compute updated tracked pairs, even if empty
         // ------------------------------------------------------------
-        LG_INFO("Fetching top-50 volume pairs...");
-        std::set<std::string> top50 = getTop50PairsByVolume();
+        std::set<std::string> selectedPairs;
+        if (pair_selection_ == MarketDataPairSelection::AllEligible) {
+            LG_INFO("Fetching all eligible market-data pairs...");
+            selectedPairs = getEligiblePerpetualPairs();
+        } else {
+            LG_INFO("Fetching top-50 volume pairs...");
+            selectedPairs = getTop50PairsByVolume();
+        }
 
-        if (top50.empty())
+        if (selectedPairs.empty())
         {
-            LG_ERROR("ERROR — top-50 list is empty. Aborting.");
+            LG_ERROR("ERROR — selected market-data pair list is empty. Aborting.");
             sqlite3_close(db);
             return false;
         }
 
         // Compute new tracked-pairs state for "date"
-        updated_tracked_data = getNewTrackedPairs(prev, top50, prev_exists, date);
+        updated_tracked_data = getNewTrackedPairs(prev, selectedPairs, prev_exists, date);
 
         // ------------------------------------------------------------
         // Store TRACKED PAIRS FIRST (always)
@@ -251,7 +276,7 @@ bool DatabaseDownloader::downloadData(std::chrono::year_month_day date)
     if(dataToDownload.empty()){
         LG_INFO("OOHLCV already up to date.");
         sqlite3_close(db);
-        return false;
+        return true;
     }
 
     // ------------------------------------------------------------
@@ -282,7 +307,6 @@ bool DatabaseDownloader::downloadData(std::chrono::year_month_day date)
     LG_INFO("OHLCV data stored for {}", date_str);
 
     printTrackedData(db);
-    printAllBTCUSDT(db);
     sqlite3_close(db);
 
     LG_INFO("Database updated successfully.");

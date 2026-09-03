@@ -11,10 +11,147 @@
 #include <thread>
 #include <mutex>
 #include <vector>
+#include <chrono>
+#include <exception>
 
 #include "time_utils.h"
 
 using json = nlohmann::json;
+
+namespace {
+
+constexpr long HTTP_CONNECT_TIMEOUT_MS = 5000;
+constexpr long HTTP_REQUEST_TIMEOUT_MS = 15000;
+constexpr int HTTP_MAX_ATTEMPTS = 3;
+constexpr int HTTP_INITIAL_BACKOFF_MS = 250;
+
+bool performHttpGet(
+    const std::string& url,
+    std::string& response,
+    const std::string& requestName)
+{
+    for (int attempt = 1; attempt <= HTTP_MAX_ATTEMPTS; ++attempt)
+    {
+        response.clear();
+
+        CURL* curl = curl_easy_init();
+        if (!curl) {
+            LG_ERROR("[{}] Failed to initialize CURL", requestName);
+            return false;
+        }
+
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+        curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, HTTP_CONNECT_TIMEOUT_MS);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, HTTP_REQUEST_TIMEOUT_MS);
+
+        CURLcode rc = curl_easy_perform(curl);
+        long httpCode = 0;
+        if (rc == CURLE_OK)
+            curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
+        curl_easy_cleanup(curl);
+
+        if (rc == CURLE_OK && httpCode >= 200 && httpCode < 300)
+            return true;
+
+        bool retryable =
+            rc != CURLE_OK ||
+            httpCode == 408 ||
+            httpCode == 429 ||
+            httpCode >= 500;
+
+        if (rc != CURLE_OK) {
+            LG_WARN(
+                "[{}] HTTP attempt {}/{} failed: {}",
+                requestName, attempt, HTTP_MAX_ATTEMPTS, curl_easy_strerror(rc)
+            );
+        } else {
+            LG_WARN(
+                "[{}] HTTP attempt {}/{} returned status {}",
+                requestName, attempt, HTTP_MAX_ATTEMPTS, httpCode
+            );
+        }
+
+        if (!retryable || attempt == HTTP_MAX_ATTEMPTS)
+            break;
+
+        int backoffMs = HTTP_INITIAL_BACKOFF_MS << (attempt - 1);
+        std::this_thread::sleep_for(std::chrono::milliseconds(backoffMs));
+    }
+
+    LG_ERROR("[{}] HTTP request failed", requestName);
+    return false;
+}
+
+} // namespace
+
+/**************************************************************************************
+ * Purpose : Fetches the currently tradable Binance USD-M perpetual symbols quoted in
+ *           USDT using the /fapi/v1/exchangeInfo endpoint.
+ * Args    : None
+ * Return  : std::set<std::string> - Eligible symbols (e.g., "BTCUSDT").
+ **************************************************************************************/
+std::set<std::string> DatabaseDownloader::getEligiblePerpetualPairs()
+{
+    std::set<std::string> result;
+    std::string response;
+
+    std::string url = binance_base_url_ + "/fapi/v1/exchangeInfo";
+    if (!performHttpGet(url, response, "exchangeInfo"))
+        return result;
+
+    json exchangeInfo;
+    try {
+        exchangeInfo = json::parse(response);
+    }
+    catch (const json::exception& e) {
+        LG_ERROR("exchangeInfo JSON parse failed: {}", e.what());
+        return result;
+    }
+
+    if (!exchangeInfo.is_object() ||
+        !exchangeInfo.contains("symbols") ||
+        !exchangeInfo["symbols"].is_array())
+    {
+        LG_ERROR("exchangeInfo returned unexpected JSON shape");
+        return result;
+    }
+
+    for (const auto& item : exchangeInfo["symbols"])
+    {
+        if (!item.is_object() ||
+            !item.contains("symbol") ||
+            !item.contains("contractType") ||
+            !item.contains("status") ||
+            !item.contains("quoteAsset"))
+        {
+            LG_WARN("exchangeInfo contains an incomplete symbol entry");
+            continue;
+        }
+
+        try {
+            if (item["contractType"].get<std::string>() != "PERPETUAL" ||
+                item["status"].get<std::string>() != "TRADING" ||
+                item["quoteAsset"].get<std::string>() != "USDT")
+            {
+                continue;
+            }
+
+            result.insert(item["symbol"].get<std::string>());
+        }
+        catch (const std::exception& e) {
+            LG_WARN("exchangeInfo contains an invalid symbol entry: {}", e.what());
+        }
+    }
+
+    LG_INFO("exchangeInfo returned {} eligible USDT perpetual symbols", result.size());
+    return result;
+}
 
 /**************************************************************************************
  * Purpose : Fetches the top-50 Binance USDT perpetual futures pairs by 24h quote 
@@ -25,41 +162,53 @@ using json = nlohmann::json;
 std::set<std::string> DatabaseDownloader::getTop50PairsByVolume()
 {
     std::set<std::string> result;
+
+    std::set<std::string> eligiblePairs = getEligiblePerpetualPairs();
+    if (eligiblePairs.empty()) {
+        LG_ERROR("exchangeInfo returned no eligible USDT perpetual symbols");
+        return result;
+    }
+
     std::string response;
+    std::string url = binance_base_url_ + "/fapi/v1/ticker/24hr";
+    if (!performHttpGet(url, response, "ticker/24hr"))
+        return result;
 
-    CURL* curl = curl_easy_init();
-    if (!curl) {
-        LG_ERROR("Failed to initialize CURL");
+    json tickers;
+    try {
+        tickers = json::parse(response);
+    }
+    catch (const json::exception& e) {
+        LG_ERROR("ticker/24hr JSON parse failed: {}", e.what());
         return result;
     }
 
-    curl_easy_setopt(curl, CURLOPT_URL, "https://fapi.binance.com/fapi/v1/ticker/24hr");
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
-
-    CURLcode res = curl_easy_perform(curl);
-    curl_easy_cleanup(curl);
-
-    if (res != CURLE_OK) {
-        LG_ERROR("curl_easy_perform failed: {}", curl_easy_strerror(res));
+    if (!tickers.is_array()) {
+        LG_ERROR("ticker/24hr returned unexpected JSON shape");
         return result;
     }
-
-    json tickers = json::parse(response);
 
     struct PairVolume { std::string symbol; double quoteVol; };
     std::vector<PairVolume> pairs;
 
     for (auto& item : tickers)
     {
-        std::string symbol = item["symbol"].get<std::string>();
+        if (!item.is_object() || !item.contains("symbol") || !item.contains("quoteVolume")) {
+            LG_WARN("ticker/24hr contains an item without symbol/quoteVolume");
+            continue;
+        }
 
-        // USDT perpetual only
-        if (symbol.size() > 4 && symbol.substr(symbol.size() - 4) == "USDT")
-        {
-            double quoteVol = std::stod(item["quoteVolume"].get<std::string>());
-            pairs.push_back({symbol, quoteVol});
+        try {
+            std::string symbol = item["symbol"].get<std::string>();
+
+            if (eligiblePairs.contains(symbol))
+            {
+                double quoteVol = std::stod(item["quoteVolume"].get<std::string>());
+                pairs.push_back({symbol, quoteVol});
+            }
+        }
+        catch (const std::exception& e) {
+            LG_WARN("ticker/24hr contains an invalid item: {}", e.what());
         }
     }
 
@@ -166,40 +315,28 @@ OHLCVData DatabaseDownloader::fetchDataOHLCV(
                 // Build Binance request URL
                 // -------------------------------
                 std::string url = fmt::format(
-                    "https://fapi.binance.com/fapi/v1/klines"
+                    "{}/fapi/v1/klines"
                     "?symbol={}&interval=1d&limit={}&startTime={}&endTime={}",
-                    pair, daysNeeded, startMs, endMs
+                    binance_base_url_, pair, daysNeeded, startMs, endMs
                 );
 
                 // Perform request
                 std::string response;
-                CURL* curl = curl_easy_init();
-                if (!curl) {
-                    LG_ERROR("[{}] CURL init failed", pair);
+                if (!performHttpGet(url, response, pair))
                     return;
-                }
-
-                curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-                curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
-                curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-                curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
-
-                CURLcode rc = curl_easy_perform(curl);
-                curl_easy_cleanup(curl);
-
-                if (rc != CURLE_OK) {
-                    LG_ERROR("[{}] curl_easy_perform error: {}",
-                                  pair, curl_easy_strerror(rc));
-                    return;
-                }
 
                 // Parse JSON
                 json j;
                 try {
                     j = json::parse(response);
                 }
-                catch (...) {
-                    LG_ERROR("[{}] JSON parse failed", pair);
+                catch (const json::exception& e) {
+                    LG_ERROR("[{}] JSON parse failed: {}", pair, e.what());
+                    return;
+                }
+
+                if (!j.is_array()) {
+                    LG_ERROR("[{}] Unexpected klines JSON shape", pair);
                     return;
                 }
 
@@ -207,27 +344,37 @@ OHLCVData DatabaseDownloader::fetchDataOHLCV(
 
                 for (auto& arr : j)
                 {
-                    long openTime = arr[0].get<long>();
-
-                    auto tp_days = std::chrono::floor<std::chrono::days>(
-                        std::chrono::system_clock::time_point(
-                            std::chrono::milliseconds(openTime))
-                    );
-
-                    int ymd = toYYYYMMDD(std::chrono::year_month_day(tp_days));
-
-                    // Extra safety: skip future candles
-                    if (ymd > targetYmd)
+                    if (!arr.is_array() || arr.size() < 6) {
+                        LG_WARN("[{}] Ignoring malformed kline", pair);
                         continue;
+                    }
 
-                    OHLCV c;
-                    c.open   = std::stod(arr[1].get<std::string>());
-                    c.high   = std::stod(arr[2].get<std::string>());
-                    c.low    = std::stod(arr[3].get<std::string>());
-                    c.close  = std::stod(arr[4].get<std::string>());
-                    c.volume = std::stod(arr[5].get<std::string>());
+                    try {
+                        long openTime = arr[0].get<long>();
 
-                    local.data[pair][ymd] = c;
+                        auto tp_days = std::chrono::floor<std::chrono::days>(
+                            std::chrono::system_clock::time_point(
+                                std::chrono::milliseconds(openTime))
+                        );
+
+                        int ymd = toYYYYMMDD(std::chrono::year_month_day(tp_days));
+
+                        // Extra safety: skip future candles
+                        if (ymd > targetYmd)
+                            continue;
+
+                        OHLCV c;
+                        c.open   = std::stod(arr[1].get<std::string>());
+                        c.high   = std::stod(arr[2].get<std::string>());
+                        c.low    = std::stod(arr[3].get<std::string>());
+                        c.close  = std::stod(arr[4].get<std::string>());
+                        c.volume = std::stod(arr[5].get<std::string>());
+
+                        local.data[pair][ymd] = c;
+                    }
+                    catch (const std::exception& e) {
+                        LG_WARN("[{}] Ignoring invalid kline: {}", pair, e.what());
+                    }
                 }
 
                 // Merge thread-local data safely

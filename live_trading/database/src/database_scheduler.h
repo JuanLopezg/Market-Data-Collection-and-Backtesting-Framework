@@ -8,6 +8,7 @@
 #include "config_handler.h"
 #include "scheduler.h"
 #include "database_downloader.h"
+#include "clock.h"
 
 // --------------------------------------------------------------------------------------
 // Context used by the DatabaseScheduler. Holds the current database configuration.
@@ -37,13 +38,19 @@ public:
      *           interval       - Time between scheduler ticks.
      *           timeout        - Max time allowed for each processSecond() execution.
      *           secondsToStart - Optional initial delay before scheduling begins.
+     *           clock          - Time source used for UTC scheduling semantics.
+     *           binanceBaseUrl - Binance-compatible market-data API base URL.
+     *           pairSelection   - Market-data pair ingestion policy.
      * Return  : None
      **************************************************************************************/
     DatabaseScheduler(std::shared_ptr<DatabaseContext> ctx,
                       DatabaseConfigHandler& configHandler,
                       std::chrono::milliseconds interval,
                       std::chrono::milliseconds timeout,
-                      std::chrono::seconds secondsToStart = std::chrono::seconds(1));
+                      std::chrono::seconds secondsToStart = std::chrono::seconds(1),
+                      std::shared_ptr<Clock> clock = std::make_shared<SystemClock>(),
+                      std::string binanceBaseUrl = "https://fapi.binance.com",
+                      MarketDataPairSelection pairSelection = MarketDataPairSelection::Top50Volume);
 
 protected:
 
@@ -62,6 +69,9 @@ private:
 
     // Worker object responsible for contacting the remote database endpoints.
     DatabaseDownloader databaseDownloader_;
+
+    // Time source used for UTC scheduling semantics.
+    std::shared_ptr<Clock> clock_;
 
     // Timestamp of the next scheduled UTC midnight event.
     std::chrono::system_clock::time_point nextMidnightUTC_;

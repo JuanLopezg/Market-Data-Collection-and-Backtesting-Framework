@@ -1,7 +1,6 @@
 #include "trading_engine.h"
 
 #include <algorithm>
-#include <cmath>
 #include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
@@ -17,10 +16,9 @@ TradingEngine::TradingEngine(
     Exchange& exchange
 )
     : strategies_(strategies),
-      account_(account),
       trade_recorder_(tradeRecorder),
-      indicators_(indicators),
-      exchange_(exchange)
+      decision_engine_(strategies, indicators),
+      execution_engine_(strategies, account, tradeRecorder, exchange)
 {}
 
 
@@ -32,6 +30,13 @@ StrategyInstance& TradingEngine::strategyById(StrategyID strategyId)
     }
 
     throw std::out_of_range("Strategy id not found");
+}
+
+
+void TradingEngine::syncStrategyPositionMirrors()
+{
+    for (auto& strategy : strategies_)
+        strategy.virtualPositions() = execution_engine_.strategyPosition(strategy.id());
 }
 
 
@@ -73,45 +78,67 @@ void TradingEngine::restoreState(const TradingStateSnapshot& snapshot)
         (void)strategyById(state.strategy_id); // Reject state for strategies not configured now.
     }
 
-    account_.restoreState(snapshot.account_cash, snapshot.account_positions);
-
     const std::unordered_map<Coin, double> empty;
+    StrategyPositionSnapshot restoredStrategyPositions;
+
     for (auto& strategy : strategies_) {
         const auto it = strategyStates.find(strategy.id());
         if (it == strategyStates.end()) {
             // SQLite v1 may omit a completely empty strategy because it has no value rows.
             strategy.restoreState(empty, empty, empty);
+            restoredStrategyPositions.emplace(strategy.id(), VirtualPositionState{});
             continue;
         }
 
         strategy.restoreState(
             it->second->signals,
             it->second->desired_weights,
-            it->second->virtual_positions
+            empty
         );
+
+        VirtualPositionState restoredPositions;
+        for (const auto& [coin, quantity] : it->second->virtual_positions)
+            restoredPositions.set(coin, quantity);
+
+        restoredStrategyPositions.emplace(strategy.id(), std::move(restoredPositions));
     }
 
-    pending_plans_.clear();
+    DecisionBatch pendingDecisions;
+    pendingDecisions.decision_timestamp = snapshot.last_bar_close_timestamp;
+    std::unordered_set<StrategyID> restoredPendingStrategyIds;
+
     for (const PendingPlanSnapshot& pending : snapshot.pending_plans) {
         (void)strategyById(pending.strategy_id);
-        if (!pending_plans_.emplace(pending.strategy_id, pending.plan).second)
+        if (!restoredPendingStrategyIds.insert(pending.strategy_id).second)
             throw std::invalid_argument("Duplicate restored pending strategy plan");
+
+        StrategyDecisionIntent intent;
+        intent.strategy_id = pending.strategy_id;
+        intent.decision_timestamp = pending.plan.timestamp();
+        intent.reference_capital = pending.plan.referenceCapital();
+        intent.decisions = pending.plan.values();
+        pendingDecisions.strategies.push_back(std::move(intent));
     }
 
     for (const TrackedOrder& order : snapshot.orders)
         (void)strategyById(order.request.strategy_id);
-    order_manager_.restore(snapshot.orders, snapshot.processed_fill_ids);
 
-    OrderID maximumOrderId = 0;
-    for (const TrackedOrder& order : snapshot.orders)
-        maximumOrderId = std::max(maximumOrderId, order.request.order_id);
-    if (snapshot.next_order_id <= maximumOrderId)
-        throw std::invalid_argument("Restored next order id does not follow tracked orders");
+    decision_engine_.restoreState(
+        pendingDecisions,
+        snapshot.last_bar_close_timestamp
+    );
 
-    next_order_id_ = snapshot.next_order_id;
-    last_bar_close_timestamp_ = snapshot.last_bar_close_timestamp;
-    last_execution_timestamp_ = snapshot.last_execution_timestamp;
-    last_global_target_.clear(); // Derivable target; next decision/execution will rebuild it.
+    execution_engine_.restoreState(
+        snapshot.account_cash,
+        snapshot.account_positions,
+        restoredStrategyPositions,
+        snapshot.orders,
+        snapshot.processed_fill_ids,
+        snapshot.next_order_id,
+        snapshot.last_execution_timestamp
+    );
+
+    syncStrategyPositionMirrors();
 }
 
 
@@ -146,12 +173,12 @@ void TradingEngine::rebuildTradeRecorder(const std::vector<Fill>& fills)
 TradingStateSnapshot TradingEngine::stateSnapshot() const
 {
     TradingStateSnapshot snapshot;
-    snapshot.last_bar_close_timestamp = last_bar_close_timestamp_;
-    snapshot.last_execution_timestamp = last_execution_timestamp_;
-    snapshot.next_order_id = next_order_id_;
-    snapshot.account_cash = account_.cash();
-    snapshot.account_positions = account_.positions().values();
-    snapshot.processed_fill_ids = order_manager_.processedFillIds();
+    snapshot.last_bar_close_timestamp = decision_engine_.lastBarCloseTimestamp();
+    snapshot.last_execution_timestamp = execution_engine_.lastExecutionTimestamp();
+    snapshot.next_order_id = execution_engine_.nextOrderId();
+    snapshot.account_cash = execution_engine_.account().cash();
+    snapshot.account_positions = execution_engine_.account().positions().values();
+    snapshot.processed_fill_ids = execution_engine_.orderManager().processedFillIds();
 
     snapshot.strategies.reserve(strategies_.size());
     for (const auto& strategy : strategies_) {
@@ -159,16 +186,22 @@ TradingStateSnapshot TradingEngine::stateSnapshot() const
         strategyState.strategy_id = strategy.id();
         strategyState.signals = strategy.signalState().values();
         strategyState.desired_weights = strategy.desiredWeights().values();
-        strategyState.virtual_positions = strategy.virtualPositions().values();
+        strategyState.virtual_positions = execution_engine_.strategyPosition(strategy.id()).values();
         snapshot.strategies.push_back(std::move(strategyState));
     }
 
-    snapshot.pending_plans.reserve(pending_plans_.size());
-    for (const auto& [strategyId, plan] : pending_plans_)
-        snapshot.pending_plans.push_back({strategyId, plan});
+    const DecisionBatch& pendingDecisions = decision_engine_.pendingDecisions();
+    snapshot.pending_plans.reserve(pendingDecisions.strategies.size());
+    for (const StrategyDecisionIntent& intent : pendingDecisions.strategies) {
+        RebalancePlan plan(intent.decision_timestamp, intent.reference_capital);
+        for (const auto& [coin, decision] : intent.decisions)
+            plan.set(coin, decision);
 
-    snapshot.orders.reserve(order_manager_.orders().size());
-    for (const auto& [orderId, order] : order_manager_.orders()) {
+        snapshot.pending_plans.push_back({intent.strategy_id, std::move(plan)});
+    }
+
+    snapshot.orders.reserve(execution_engine_.orderManager().orders().size());
+    for (const auto& [orderId, order] : execution_engine_.orderManager().orders()) {
         (void)orderId;
         snapshot.orders.push_back(order);
     }
@@ -185,47 +218,7 @@ void TradingEngine::persist(const std::optional<Fill>& newFill) const
 
 
 /**************************************************************************************
- * Purpose : Apply one actual fill to lifecycle/account/strategy/analytics state
- **************************************************************************************/
-void TradingEngine::applyFill(const Fill& fill)
-{
-    // Validate/idempotently record the fill before mutating account state.
-    if (!order_manager_.onFill(fill))
-        return; // A replayed FillID must not mutate account/strategy/analytics twice.
-
-    account_.applyFill(fill);
-
-    StrategyInstance& strategy = strategyById(fill.strategy_id);
-    strategy.applyVirtualFill(fill);
-    trade_recorder_.onFill(fill, strategy.name());
-
-    // Fill audit row + resulting operational snapshot commit atomically.
-    persist(fill);
-}
-
-
-/**************************************************************************************
- * Purpose : Route queued exchange events exactly as a future live runtime will
- **************************************************************************************/
-void TradingEngine::processExchangeEvents()
-{
-    const std::vector<ExchangeEvent> events = exchange_.drainEvents();
-
-    for (const ExchangeEvent& event : events) {
-        if (const auto* update = std::get_if<OrderUpdate>(&event)) {
-            order_manager_.onOrderUpdate(*update);
-            persist();
-            continue;
-        }
-
-        if (const auto* fill = std::get_if<Fill>(&event))
-            applyFill(*fill);
-    }
-}
-
-
-/**************************************************************************************
- * Purpose : Update signals at a completed bar and create strategy rebalance plans
+ * Purpose : Update strategy decision state at one completed market-data slice
  **************************************************************************************/
 void TradingEngine::onBarClose(
     const MarketData& marketData,
@@ -234,29 +227,20 @@ void TradingEngine::onBarClose(
 )
 {
     requireTradingEnabled();
-    const double accountEquity = account_.equity(marks);
 
-    for (auto& strategy : strategies_) {
-        strategy.updateSignals(marketData, ts, indicators_);
+    decision_engine_.onBarClose(
+        marketData,
+        ts,
+        execution_engine_.accountEquity(marks),
+        execution_engine_.strategyPositions()
+    );
 
-        const double strategyCapital = accountEquity * strategy.allocationWeight();
-        const auto plan = strategy.calculateRebalancePlan(
-            marketData,
-            ts,
-            strategyCapital
-        );
-
-        if (plan && plan->size() > 0)
-            pending_plans_.insert_or_assign(strategy.id(), *plan);
-    }
-
-    last_bar_close_timestamp_ = ts;
     persist();
 }
 
 
 /**************************************************************************************
- * Purpose : Resolve pending targets and submit/cancel orders at executable prices
+ * Purpose : Resolve pending decision intent at executable prices
  **************************************************************************************/
 void TradingEngine::executePendingPlans(
     Timestamp ts,
@@ -264,78 +248,31 @@ void TradingEngine::executePendingPlans(
 )
 {
     requireTradingEnabled();
-    last_execution_timestamp_ = ts;
 
-    if (pending_plans_.empty()) {
-        persist();
-        return;
-    }
+    const bool hadPendingPlans = decision_engine_.hasPendingDecisions();
 
-    std::vector<TargetPortfolio> monetaryTargets;
-    std::vector<StrategyExecutionTarget> quantityTargets;
-    std::vector<VirtualPositionState> currentStrategyPositions;
-
-    monetaryTargets.reserve(strategies_.size());
-    quantityTargets.reserve(strategies_.size());
-    currentStrategyPositions.reserve(strategies_.size());
-
-    for (const auto& strategy : strategies_) {
-        TargetPortfolio monetaryTarget;
-
-        const auto planIt = pending_plans_.find(strategy.id());
-        if (planIt != pending_plans_.end()) {
-            monetaryTarget = strategy_target_resolver_.resolve(
-                planIt->second,
-                strategy.virtualPositions(),
-                prices
-            );
-        } else {
-            // No new decision means preserve the already-filled strategy quantities.
-            for (const auto& [coin, quantity] : strategy.virtualPositions().values()) {
-                if (!prices.contains(coin))
-                    throw std::runtime_error("Missing execution price for held strategy asset");
-
-                monetaryTarget.set(coin, quantity * prices.get(coin));
-            }
-        }
-
-        monetaryTargets.push_back(monetaryTarget);
-        quantityTargets.push_back({
-            strategy.id(),
-            account_target_resolver_.resolve(monetaryTarget, prices)
-        });
-        currentStrategyPositions.push_back(strategy.virtualPositions());
-    }
-
-    last_global_target_ = portfolio_aggregator_.aggregate(monetaryTargets);
-
-    const ExecutionPlan executionPlan = execution_coordinator_.createMarketPlan(
-        quantityTargets,
-        currentStrategyPositions,
-        order_manager_,
+    execution_engine_.executeDecisionBatch(
         ts,
-        ts,
-        next_order_id_
+        prices,
+        decision_engine_.pendingDecisions(),
+        [this](const std::optional<Fill>& fill) { persist(fill); }
     );
 
-    // Persist cancel intent BEFORE the external side effect. A restart can then reconcile it.
-    for (const OrderID orderId : executionPlan.order_ids_to_cancel) {
-        order_manager_.markCancelRequested(orderId, ts);
-        persist();
-        exchange_.cancelOrder(orderId);
-    }
-
-    // Persist the locally-created order BEFORE submission. If submit succeeds and the
-    // process dies immediately afterwards, reconciliation can still identify the intent.
-    for (const ExecutionOrder& order : executionPlan.orders_to_submit) {
-        order_manager_.track(order);
-        persist();
-
-        exchange_.submitOrder(order);
-        order_manager_.markSubmitted(order.order_id, ts);
+    if (hadPendingPlans) {
+        decision_engine_.clearPendingDecisions();
         persist();
     }
+}
 
-    pending_plans_.clear();
-    persist();
+
+/**************************************************************************************
+ * Purpose : Route queued asynchronous exchange lifecycle events
+ **************************************************************************************/
+void TradingEngine::processExchangeEvents()
+{
+    execution_engine_.processExchangeEvents(
+        [this](const std::optional<Fill>& fill) { persist(fill); }
+    );
+
+    syncStrategyPositionMirrors();
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <string>
@@ -55,7 +56,7 @@ public:
         ));
     }
 
-    void cancelOrder(OrderID orderId) override
+    void cancelOrderAt(OrderID orderId, Timestamp timestamp)
     {
         const auto it = active_orders_.find(orderId);
         if (it == active_orders_.end())
@@ -63,11 +64,16 @@ public:
 
         events_.emplace_back(OrderUpdate(
             orderId,
-            0,
+            timestamp,
             ExecutionOrderStatus::Canceled,
             "sim-" + std::to_string(orderId)
         ));
         active_orders_.erase(it);
+    }
+
+    void cancelOrder(OrderID orderId) override
+    {
+        cancelOrderAt(orderId, 0);
     }
 
     /**************************************************************************************
@@ -75,18 +81,29 @@ public:
      **************************************************************************************/
     void processOpen(Timestamp ts, const CoinBarMap& bars)
     {
-        for (auto it = active_orders_.begin(); it != active_orders_.end(); ) {
-            const ExecutionOrder& order = it->second;
-            if (order.active_from > ts) {
-                ++it;
-                continue;
-            }
+        // Fill IDs are part of the externally observable exchange contract. Do not let
+        // unordered_map bucket order decide which simultaneously-active order receives
+        // the next FillID. Canonicalize by local OrderID so in-process and distributed
+        // replay produce identical lifecycle identifiers.
+        std::vector<OrderID> executableOrderIds;
+        executableOrderIds.reserve(active_orders_.size());
 
-            const auto barIt = bars.find(order.coin);
-            if (barIt == bars.end()) {
-                ++it;
+        for (const auto& [orderId, order] : active_orders_) {
+            if (order.active_from <= ts && bars.find(order.coin) != bars.end())
+                executableOrderIds.push_back(orderId);
+        }
+
+        std::sort(executableOrderIds.begin(), executableOrderIds.end());
+
+        for (OrderID orderId : executableOrderIds) {
+            const auto orderIt = active_orders_.find(orderId);
+            if (orderIt == active_orders_.end())
                 continue;
-            }
+
+            const ExecutionOrder& order = orderIt->second;
+            const auto barIt = bars.find(order.coin);
+            if (barIt == bars.end())
+                continue;
 
             const double fillPrice = barIt->second.open;
             if (!std::isfinite(fillPrice) || fillPrice <= 0.0)
@@ -112,7 +129,7 @@ public:
                 ExecutionOrderStatus::Filled,
                 "sim-" + std::to_string(order.order_id)
             ));
-            it = active_orders_.erase(it);
+            active_orders_.erase(orderIt);
         }
     }
 
@@ -121,6 +138,11 @@ public:
         std::vector<ExchangeEvent> result;
         result.swap(events_);
         return result;
+    }
+
+    const std::unordered_map<OrderID, ExecutionOrder>& activeOrders() const
+    {
+        return active_orders_;
     }
 
     double commissionRate() const

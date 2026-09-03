@@ -17,11 +17,16 @@ static constexpr std::chrono::year_month_day EMPTY_DATE =
 
 /***********************************************
  * Struct storing a UTC date and a mapping
- * of trading pairs → days outside top-50.
+ * of trading pairs → days outside the selected ingestion set.
  ***********************************************/
+enum class MarketDataPairSelection {
+    Top50Volume,
+    AllEligible
+};
+
 struct TrackedData {
     std::chrono::year_month_day date;      // Stored date for these stats
-    std::map<std::string, int> trackedPairs; // Map pair → days outside top-50
+    std::map<std::string, int> trackedPairs; // Map pair → days outside selected ingestion set
 };
 
 /***********************************************
@@ -36,7 +41,8 @@ public:
      * Purpose : Construct the downloader with the path to an SQLite DB file.
      * Args    : database_path - Filesystem path to the OHLCV database.
      **************************************************************************************/
-    DatabaseDownloader(boost::filesystem::path database_path);
+    DatabaseDownloader(boost::filesystem::path database_path, std::string binance_base_url = {},
+                       MarketDataPairSelection pair_selection = MarketDataPairSelection::Top50Volume);
     ~DatabaseDownloader() = default;
 
     /**************************************************************************************
@@ -49,6 +55,12 @@ public:
 private:
     // Path to the database file
     boost::filesystem::path database_path_;
+
+    // Base URL used for Binance-compatible market-data requests.
+    std::string binance_base_url_;
+
+    // Controls whether ingestion uses the legacy top-50 or all eligible instruments.
+    MarketDataPairSelection pair_selection_;
 
     /**************************************************************************************
      * Purpose : Opens (or creates) the OHLCV SQLite database and ensures that both:
@@ -85,7 +97,14 @@ private:
     void printTrackedData(sqlite3* db);
 
     /**************************************************************************************
+     * Purpose : Fetch currently tradable Binance USD-M perpetual symbols quoted in USDT.
+     * Return  : std::set<std::string> - Set of eligible pair symbols.
+     **************************************************************************************/
+    std::set<std::string> getEligiblePerpetualPairs();
+
+    /**************************************************************************************
      * Purpose : Fetch the top-50 Binance USDT perpetual futures pairs by 24h volume.
+     *           Only symbols present in exchangeInfo as active USDT perpetuals are ranked.
      * Return  : std::set<std::string> - Set of pair symbols.
      **************************************************************************************/
     std::set<std::string> getTop50PairsByVolume();
@@ -93,14 +112,14 @@ private:
     /**************************************************************************************
      * Purpose : Compute updated trackedPairs mapping for the new date.
      * Args    : prev            - Previously stored tracked pair stats.
-     *           top50           - Current day's top-50 volume symbols.
+     *           selectedPairs   - Current day's selected market-data symbols.
      *           prev_exists     - Whether previous data exists in DB.
      *           current_date    - Date for which we compute stats.
      * Return  : TrackedData     - Newly computed tracked data struct.
      **************************************************************************************/
     TrackedData getNewTrackedPairs(
         const TrackedData& prev,
-        const std::set<std::string>& top50,
+        const std::set<std::string>& selectedPairs,
         bool prev_exists,
         std::chrono::year_month_day current_date
     );
@@ -151,19 +170,21 @@ private:
 
     
     /**************************************************************************************
-     * Purpose : For each tracked pair, determine how many days have passed since the last
-     *           OHLCV candle stored in the DB.
+     * Purpose : For each tracked pair, determine how many recent OHLCV days must be
+     *           fetched so the last 100-day window has no internal gaps.
      *
      *           Rules:
      *              - If pair has no rows → return 100
-     *              - If last date is > 100 days before current date → return 100
-     *              - Otherwise: return (currentYMD - lastStoredYMD)
+     *              - Check at most the latest 100 calendar days
+     *              - If a date is missing → fetch from the earliest missing date through
+     *                currentDate (normal OHLCV UPSERT repairs the gap)
+     *              - If the checked window is complete → skip the pair
      *
      * Args    : db          - opened SQLite database.
      *           tracked     - TrackedData (contains the map<pair → days_out>).
-     *           currentYMD  - current date (year_month_day) to compare against.
+     *           currentDate - current date (year_month_day) to compare against.
      *
-     * Return  : std::map<std::string,int> → map of pair → day difference.
+     * Return  : std::map<std::string,int> → map of pair → days to fetch.
      **************************************************************************************/
     std::map<std::string,int> computeDaysSinceLastStoredOHLCV(sqlite3* db, const TrackedData& tracked, std::chrono::year_month_day currentDate);
     

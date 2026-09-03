@@ -4,56 +4,34 @@
 #include <unordered_map>
 #include <vector>
 
-#include "account.h"
-#include "account_target_resolver.h"
-#include "exchange.h"
-#include "execution_coordinator.h"
-#include "indicator_engine.h"
-#include "order_manager.h"
-#include "portfolio_aggregator.h"
-#include "rebalance_plan.h"
+#include "decision_engine.h"
+#include "execution_engine.h"
 #include "state_store.h"
-#include "strategy_instance.h"
-#include "strategy_target_resolver.h"
-#include "target_portfolio.h"
-#include "trade_recorder.h"
 #include "trading_state_snapshot.h"
 
 
 /**************************************************************************************
  * Type    : TradingEngine
- * Purpose : Shared strategy/execution orchestrator used by backtest and future live runtime
+ * Purpose : Backward-compatible in-process facade over DecisionEngine + ExecutionEngine
  *
- * TradingEngine deliberately knows nothing about historical bars, next-open semantics,
- * wall-clock scheduling or exchange APIs. A runtime supplies market events/reference
- * prices; the engine owns pending plans, order lifecycle and fill application.
+ * Runtimes keep the validated API while strategy decision work and executable order/fill
+ * work are now delegated to explicit engines. This is the first structural split before
+ * transport DTOs and distributed service boundaries are introduced.
  **************************************************************************************/
 class TradingEngine {
 private:
     StrategyPortfolio& strategies_;
-    Account& account_;
     TradeRecorder& trade_recorder_;
-    const IndicatorEngine& indicators_;
-    Exchange& exchange_;
 
-    ExecutionCoordinator execution_coordinator_;
-    OrderManager order_manager_;
-    PortfolioAggregator portfolio_aggregator_;
-    StrategyTargetResolver strategy_target_resolver_;
-    AccountTargetResolver account_target_resolver_;
+    DecisionEngine decision_engine_;
+    ExecutionEngine execution_engine_;
 
-    std::unordered_map<StrategyID, RebalancePlan> pending_plans_;
-    TargetPortfolio last_global_target_;
-    OrderID next_order_id_ = 1;
-
-    Timestamp last_bar_close_timestamp_ = 0;
-    Timestamp last_execution_timestamp_ = 0;
     StateStore* state_store_ = nullptr; // Non-owning; live runtime controls store lifetime.
     bool trading_enabled_ = true;
 
     StrategyInstance& strategyById(StrategyID strategyId);
+    void syncStrategyPositionMirrors();
     void requireTradingEnabled() const;
-    void applyFill(const Fill& fill);
     void persist(const std::optional<Fill>& newFill = std::nullopt) const;
 
 public:
@@ -96,10 +74,13 @@ public:
     // Apply queued asynchronous exchange events in their original order.
     void processExchangeEvents();
 
-    bool hasPendingPlans() const { return !pending_plans_.empty(); }
+    bool hasPendingPlans() const { return decision_engine_.hasPendingDecisions(); }
 
-    OrderManager& orderManager() { return order_manager_; }
-    const OrderManager& orderManager() const { return order_manager_; }
+    OrderManager& orderManager() { return execution_engine_.orderManager(); }
+    const OrderManager& orderManager() const { return execution_engine_.orderManager(); }
 
-    const TargetPortfolio& lastGlobalTarget() const { return last_global_target_; }
+    const TargetPortfolio& lastGlobalTarget() const
+    {
+        return execution_engine_.lastGlobalTarget();
+    }
 };

@@ -25,9 +25,13 @@ std::string nowString() {
  **************************************************************************************/
 std::string currentUtcTimestamp()
 {
+    return currentUtcTimestamp(std::chrono::system_clock::now());
+}
+
+std::string currentUtcTimestamp(std::chrono::system_clock::time_point now)
+{
     using namespace std::chrono;
 
-    auto now = system_clock::now();
     auto ms  = duration_cast<milliseconds>(now.time_since_epoch()) % 1000;
 
     std::time_t t = system_clock::to_time_t(now);
@@ -44,9 +48,13 @@ std::string currentUtcTimestamp()
  **************************************************************************************/
 std::string timeUntilUtcMidnight()
 {
+    return timeUntilUtcMidnight(std::chrono::system_clock::now());
+}
+
+std::string timeUntilUtcMidnight(std::chrono::system_clock::time_point now)
+{
     using namespace std::chrono;
 
-    auto now = system_clock::now();
     auto todayMidnight = floor<days>(now);
     auto nextMidnight = todayMidnight + days{1};
 
@@ -70,17 +78,15 @@ std::string timeUntilUtcMidnight()
  **************************************************************************************/
 std::chrono::year_month_day getCurrentUtcDate()
 {
+    return getCurrentUtcDate(std::chrono::system_clock::now());
+}
+
+std::chrono::year_month_day getCurrentUtcDate(std::chrono::system_clock::time_point now)
+{
     using namespace std::chrono;
 
-    auto now = system_clock::now();
-    std::time_t t = system_clock::to_time_t(now);
-    std::tm utc_tm = *std::gmtime(&t);
-
-    year  y{utc_tm.tm_year + 1900};
-    month m{utc_tm.tm_mon + 1};
-    day   d{utc_tm.tm_mday};
-
-    return year_month_day{y, m, d};
+    auto today = floor<days>(now);
+    return year_month_day{today};
 }
 
 
@@ -126,9 +132,12 @@ std::string formatYMD(std::chrono::year_month_day ymd)
  * Return  : std::chrono::system_clock::time_point - Timestamp of next midnight UTC.
  **************************************************************************************/
 std::chrono::system_clock::time_point computeNextMidnightUTC() {
+    return computeNextMidnightUTC(std::chrono::system_clock::now());
+}
+
+std::chrono::system_clock::time_point computeNextMidnightUTC(std::chrono::system_clock::time_point now) {
     using namespace std::chrono;
 
-    const auto now = system_clock::now();
     const auto today = floor<days>(now);
     auto midnightNext = today + days{1};
 
@@ -165,10 +174,8 @@ int toYYYYMMDD(std::chrono::year_month_day ymd)
  *                  the given date.
  *
  * Notes   :
- *    - Uses std::mktime(), which interprets struct tm as local time. If precise UTC
- *      handling is required in the future, replace with timegm() (POSIX) or a custom
- *      conversion. For Binance OHLCV (daily candles), this is acceptable because
- *      candles align at midnight UTC.
+ *    - Conversion is performed directly from std::chrono::sys_days, so the result is
+ *      always UTC and does not depend on the host machine timezone.
  **************************************************************************************/
 long toUnixMillis(int yyyymmdd)
 {
@@ -176,15 +183,20 @@ long toUnixMillis(int yyyymmdd)
     int m = (yyyymmdd / 100) % 100;
     int d = yyyymmdd % 100;
 
-    std::tm tm{};
-    tm.tm_year = y - 1900;
-    tm.tm_mon  = m - 1;
-    tm.tm_mday = d;
-    tm.tm_hour = 0;
-    tm.tm_min  = 0;
-    tm.tm_sec  = 0;
+    std::chrono::year_month_day ymd{
+        std::chrono::year{y},
+        std::chrono::month{static_cast<unsigned>(m)},
+        std::chrono::day{static_cast<unsigned>(d)}
+    };
 
-    return static_cast<long>(std::mktime(&tm)) * 1000L;
+    if (!ymd.ok()) {
+        throw std::invalid_argument("Invalid YYYYMMDD date");
+    }
+
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::sys_days{ymd}.time_since_epoch());
+
+    return static_cast<long>(ms.count());
 }
 
 

@@ -23,6 +23,7 @@ std::string nowString();
  * Return  : std::string - UTC time formatted as "HH:MM:SS.mmm UTC"
  **************************************************************************************/
 std::string currentUtcTimestamp();
+std::string currentUtcTimestamp(std::chrono::system_clock::time_point now);
 
 /**************************************************************************************
  * Purpose : Computes the remaining time until the next UTC midnight (00:00:00).
@@ -30,6 +31,7 @@ std::string currentUtcTimestamp();
  * Return  : std::string - Formatted duration "HHh MMm SSs until UTC midnight"
  **************************************************************************************/
 std::string timeUntilUtcMidnight();
+std::string timeUntilUtcMidnight(std::chrono::system_clock::time_point now);
 
 /**************************************************************************************
  * Purpose : Retrieves the current UTC calendar date (year, month, day).
@@ -37,6 +39,7 @@ std::string timeUntilUtcMidnight();
  * Return  : std::chrono::year_month_day - Current date in UTC.
  **************************************************************************************/
 std::chrono::year_month_day getCurrentUtcDate();
+std::chrono::year_month_day getCurrentUtcDate(std::chrono::system_clock::time_point now);
 
 /**************************************************************************************
  * Purpose : Computes the date of the previous day relative to the input date.
@@ -58,6 +61,7 @@ std::string formatYMD(std::chrono::year_month_day ymd);
  * Return  : std::chrono::system_clock::time_point - Timestamp of next midnight UTC.
  **************************************************************************************/
 std::chrono::system_clock::time_point computeNextMidnightUTC();
+std::chrono::system_clock::time_point computeNextMidnightUTC(std::chrono::system_clock::time_point now);
 
 /**************************************************************************************
  * Purpose : Converts a chrono::year_month_day into an integer of the form YYYYMMDD.

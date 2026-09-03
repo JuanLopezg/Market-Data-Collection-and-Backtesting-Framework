@@ -102,6 +102,21 @@ public:
         double strategyCapital
     )
     {
+        return calculateRebalancePlan(
+            marketData,
+            ts,
+            strategyCapital,
+            virtual_positions_
+        );
+    }
+
+    std::optional<RebalancePlan> calculateRebalancePlan(
+        const MarketData& marketData,
+        Timestamp ts,
+        double strategyCapital,
+        const VirtualPositionState& currentPositions
+    )
+    {
         if (!std::isfinite(strategyCapital) || strategyCapital < 0.0)
             throw std::invalid_argument("Strategy capital must be finite and non-negative");
 
@@ -162,7 +177,7 @@ public:
             (void)weight;
             coins.insert(coin);
         }
-        for (const auto& [coin, quantity] : virtual_positions_.values()) {
+        for (const auto& [coin, quantity] : currentPositions.values()) {
             (void)quantity;
             coins.insert(coin);
         }
@@ -172,7 +187,7 @@ public:
         for (const Coin& coin : coins) {
             const double signal = signal_state_.get(coin);
             const double desiredWeight = desired_weights_.get(coin);
-            const double currentQuantity = virtual_positions_.get(coin);
+            const double currentQuantity = currentPositions.get(coin);
 
             double currentPrice = 0.0;
             if (tsIt != marketData.end()) {

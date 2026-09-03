@@ -1,0 +1,20 @@
+{
+  "strategies": [
+    {
+      "id": 1,
+      "name": "Pure_RSI",
+      "allocation_weight": 1.0,
+      "sizer": {
+        "type": "equal_weight",
+        "weight_per_full_signal": 0.10
+      },
+      "risk": {
+        "max_gross_leverage": 1.50,
+        "max_asset_weight": 1.50
+      },
+      "rebalance": {
+        "type": "entry_exit_only"
+      }
+    }
+  ]
+}

@@ -70,27 +70,27 @@ TrackedData DatabaseDownloader::getTrackedPairs(sqlite3* db)
 /**************************************************************************************
  * Purpose : Computes the new tracked pair state for the given date based on:
  *              - previous tracked data
- *              - current top-50 pairs
+ *              - current selected market-data pairs
  *              - whether previous data existed
  * Args    : prev         - Previous day's tracked data.
- *           top50        - Current top-50 pair set.
+ *           selectedPairs - Current market-data pair set.
  *           prev_exists  - Whether previous data exists.
  *           date         - Current date for which data is computed.
  * Return  : TrackedData  - New tracked data.
  **************************************************************************************/
 TrackedData DatabaseDownloader::getNewTrackedPairs(
         const TrackedData& prev,
-        const std::set<std::string>& top50,
+        const std::set<std::string>& selectedPairs,
         bool prev_exists,
         std::chrono::year_month_day date)
 {
     TrackedData result;
     result.date = date;
 
-    // No previous data → initialize all top50 pairs with 0 days
+    // No previous data → initialize all selected pairs with 0 days
     if (!prev_exists)
     {
-        for (const auto& p : top50)
+        for (const auto& p : selectedPairs)
             result.trackedPairs[p] = 0;
         return result;
     }
@@ -99,14 +99,14 @@ TrackedData DatabaseDownloader::getNewTrackedPairs(
     int diff = (std::chrono::sys_days(date) - std::chrono::sys_days(prev.date)).count();
     if (diff < 1) {diff = 1; LG_ERROR("wtf diff <1?");}
 
-    // Coins in top 50 → reset to zero
-    for (const auto& p : top50)
+    // Coins in the selected ingestion set → reset to zero
+    for (const auto& p : selectedPairs)
         result.trackedPairs[p] = 0;
 
-    // Coins not in top 50 → increment days
+    // Coins outside the selected ingestion set → increment days
     for (const auto& [oldPair, oldDays] : prev.trackedPairs)
     {
-        if (!top50.contains(oldPair))
+        if (!selectedPairs.contains(oldPair))
             result.trackedPairs[oldPair] = oldDays + diff;
     }
 

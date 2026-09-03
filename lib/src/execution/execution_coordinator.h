@@ -2,7 +2,7 @@
 
 #include <cmath>
 #include <stdexcept>
-#include <unordered_set>
+#include <set>
 #include <vector>
 
 #include "execution_plan.h"
@@ -56,7 +56,11 @@ public:
             const auto& target = targets[i];
             const auto& current = currentStrategyPositions[i];
 
-            std::unordered_set<Coin> coins;
+            // Canonical coin order is part of deterministic OrderID assignment.
+            // The distributed planner reconstructs unordered maps from transport, so
+            // relying on unordered iteration can swap OrderID<->coin attribution
+            // across otherwise equivalent processes.
+            std::set<Coin> coins;
             for (const auto& [coin, quantity] : target.positions.values()) {
                 (void)quantity;
                 coins.insert(coin);

@@ -5,6 +5,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -1009,6 +1010,13 @@ static void printNumericDifference(
 
 static bool waitForEnterOrQuit()
 {
+    // Validation automation may disable only the interactive pause. The actual
+    // RealTest matching/comparison policy remains exactly the same.
+    if (const char* nonInteractive = std::getenv("REALTEST_NONINTERACTIVE");
+        nonInteractive != nullptr && std::string(nonInteractive) == "1") {
+        return false;
+    }
+
     std::cout << "\nPress ENTER for next comparison, or type q + ENTER to quit: ";
 
     std::string input;

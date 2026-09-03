@@ -13,19 +13,26 @@
  *           interval       - Time between scheduler ticks.
  *           timeout        - Allowed execution time for processSecond().
  *           secondsToStart - Optional delay before the first scheduler tick.
+ *           clock          - Time source used for UTC scheduling semantics.
+ *           binanceBaseUrl - Binance-compatible market-data API base URL.
+ *           pairSelection   - Market-data pair ingestion policy.
  * Return  : None
  **************************************************************************************/
 DatabaseScheduler::DatabaseScheduler(std::shared_ptr<DatabaseContext> ctx,
                                      DatabaseConfigHandler& configHandler,
                                      std::chrono::milliseconds interval,
                                      std::chrono::milliseconds timeout,
-                                     std::chrono::seconds secondsToStart)
+                                     std::chrono::seconds secondsToStart,
+                                     std::shared_ptr<Clock> clock,
+                                     std::string binanceBaseUrl,
+                                     MarketDataPairSelection pairSelection)
     : Scheduler<DatabaseContext>(ctx, interval, timeout, secondsToStart),
       configHandler_(configHandler),
-      databaseDownloader_(this->ctx->config.GetDatabasePath())
+      databaseDownloader_(this->ctx->config.GetDatabasePath(), binanceBaseUrl, pairSelection),
+      clock_(clock)
 {
     // Compute when the next UTC midnight event should fire
-    nextMidnightUTC_ = computeNextMidnightUTC();
+    nextMidnightUTC_ = computeNextMidnightUTC(clock_->now());
 }
 
 
@@ -41,15 +48,16 @@ DatabaseScheduler::DatabaseScheduler(std::shared_ptr<DatabaseContext> ctx,
 void DatabaseScheduler::processSecond() {
 
     LG_INFO("Running processSecond");
+
+    auto now = clock_->now();
     LG_INFO("Current time: {}, time until UTC midnight: {}",
-                 currentUtcTimestamp(), timeUntilUtcMidnight());
+                 currentUtcTimestamp(now), timeUntilUtcMidnight(now));
 
     auto& ctxRef = *this->ctx;
 
     // ============================================================================
     // DAILY UTC MIDNIGHT EVENT — RUNS ONCE PER DAY
     // ============================================================================
-    auto now = std::chrono::system_clock::now();
 
     if (now >= nextMidnightUTC_ || firtsIteration) {
         LG_INFO("Midnight event triggered");
@@ -57,10 +65,10 @@ void DatabaseScheduler::processSecond() {
         firtsIteration = false;
 
         bool downloaded =
-            databaseDownloader_.downloadData(getPreviousDayDate(getCurrentUtcDate()));
+            databaseDownloader_.downloadData(getPreviousDayDate(getCurrentUtcDate(now)));
             
         // Schedule the next midnight trigger
-        nextMidnightUTC_ = computeNextMidnightUTC();
+        nextMidnightUTC_ = computeNextMidnightUTC(now);
     }
 
     // ============================================================================

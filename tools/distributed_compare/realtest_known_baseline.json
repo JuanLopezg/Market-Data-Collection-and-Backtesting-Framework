@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "source": "Manually confirmed STEP 32A/32B exact research-policy outputs on 2026-09-03",
+  "equal_weight": {
+    "summary": {
+      "realtest_trades_checked": 631,
+      "backtester_trades_total": 631,
+      "fully_matched": 628,
+      "different_or_missing": 3,
+      "missing_backtester_same_day": 1
+    },
+    "mismatches": [
+      {
+        "kind": "matched_mismatch",
+        "comparison_index": 502,
+        "match_type": "EXACT_START_AND_COIN",
+        "realtest": {
+          "id": "502", "coin": "BNB", "direction": "Long",
+          "start": "2024-06-05 00:00:00", "end": "2024-06-09 00:00:00",
+          "entry": "686.2014000000", "exit": "682.6639000000",
+          "size": "76.5681000000", "pnl": "-270.8600000000", "exited": "YES"
+        },
+        "candidate": {
+          "id": "502", "coin": "BNB", "direction": "Long",
+          "start": "2024-06-05 00:00:00", "end": "2024-06-08 00:00:00",
+          "entry": "686.2013940000", "exit": "683.3686030000",
+          "size": "77.0384643884", "pnl": "-218.2338685733", "exited": "YES"
+        }
+      },
+      {
+        "kind": "missing_candidate",
+        "comparison_index": 520,
+        "match_type": "NO_BACKTESTER_TRADE",
+        "realtest": {
+          "id": "519", "coin": "FET", "direction": "Long",
+          "start": "2024-09-21 00:00:00", "end": "2024-09-26 00:00:00",
+          "entry": "1.6330650000", "exit": "1.6361770000",
+          "size": "31640.3180620000", "pnl": "98.4600000000", "exited": "YES"
+        },
+        "candidate": null
+      },
+      {
+        "kind": "matched_mismatch",
+        "comparison_index": 631,
+        "match_type": "EXACT_START_AND_COIN",
+        "realtest": {
+          "id": "631", "coin": "ZEC", "direction": "Long",
+          "start": "2025-10-12 00:00:00", "end": "2025-10-13 23:59:59",
+          "entry": "292.3070000000", "exit": "249.7225000000",
+          "size": "269.2349270000", "pnl": "-11465.2300000000", "exited": "YES"
+        },
+        "candidate": {
+          "id": "631", "coin": "ZEC", "direction": "Long",
+          "start": "2025-10-12 00:00:00", "end": "2025-10-13 00:00:00",
+          "entry": "292.3069670000", "exit": "249.7225240000",
+          "size": "269.7706550268", "pnl": "-11488.0330820616", "exited": "NO"
+        }
+      },
+      {
+        "kind": "unmatched_candidate",
+        "comparison_index": 632,
+        "candidate": {
+          "id": "522", "coin": "FET", "direction": "Long",
+          "start": "2024-09-25 00:00:00", "end": "2024-09-26 00:00:00",
+          "entry": "1.7083000000", "exit": "1.6361770000",
+          "size": "31046.9153915332", "pnl": "-2239.1966787835", "exited": "YES"
+        }
+      }
+    ]
+  },
+  "vol_target": {
+    "summary": {
+      "campaigns_matching": 628,
+      "different_matched_campaigns": 2,
+      "missing_backtester_campaigns": 1,
+      "unmatched_backtester_campaigns": 1,
+      "price_tolerance_percent": "0.01"
+    },
+    "mismatches": [
+      {
+        "kind": "matched_mismatch",
+        "comparison_index": 502,
+        "match_type": "EXACT_START_AND_COIN",
+        "realtest": {
+          "id": "502", "coin": "BNB", "direction": "Long",
+          "start": "2024-06-05 00:00:00", "end": "2024-06-09 00:00:00",
+          "entry": "686.2014000000", "exit": "682.6639000000", "exited": "YES"
+        },
+        "candidate": {
+          "id": "502", "coin": "BNB", "direction": "Long",
+          "start": "2024-06-05 00:00:00", "end": "2024-06-08 00:00:00",
+          "entry": "686.2013940000", "exit": "683.3686030000", "exited": "YES"
+        }
+      },
+      {
+        "kind": "missing_candidate",
+        "comparison_index": 519,
+        "match_type": "NO_BACKTESTER_CAMPAIGN",
+        "realtest": {
+          "id": "519", "coin": "FET", "direction": "Long",
+          "start": "2024-09-21 00:00:00", "end": "2024-09-26 00:00:00",
+          "entry": "1.6330650000", "exit": "1.6361770000", "exited": "YES"
+        },
+        "candidate": null
+      },
+      {
+        "kind": "matched_mismatch",
+        "comparison_index": 631,
+        "match_type": "EXACT_START_AND_COIN",
+        "realtest": {
+          "id": "631", "coin": "ZEC", "direction": "Long",
+          "start": "2025-10-12 00:00:00", "end": "2025-10-13 23:59:59",
+          "entry": "292.3070000000", "exit": "249.7225000000", "exited": "YES"
+        },
+        "candidate": {
+          "id": "631", "coin": "ZEC", "direction": "Long",
+          "start": "2025-10-12 00:00:00", "end": "2025-10-13 00:00:00",
+          "entry": "292.3069670000", "exit": "249.7225240000", "exited": "NO"
+        }
+      },
+      {
+        "kind": "unmatched_candidate",
+        "comparison_index": 4,
+        "candidate": {
+          "id": "522", "coin": "FET", "direction": "Long",
+          "start": "2024-09-25 00:00:00", "end": "2024-09-26 00:00:00",
+          "entry": "1.7083000000", "exit": "1.6361770000", "exited": "YES"
+        }
+      }
+    ]
+  }
+}

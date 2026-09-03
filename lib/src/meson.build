@@ -10,6 +10,8 @@ sqlite3_dep                = global_deps['sqlite3_dep']
 subdir('common_types')
 subdir('utils')
 subdir('data_types')
+subdir('contracts')
+subdir('transport')
 subdir('market')
 subdir('position')
 subdir('account')
@@ -38,6 +40,8 @@ include_dir = include_directories(
     'common_types',
     'utils',
     'data_types',
+    'contracts',
+    'transport',
     'market',
     'position',
     'account',
@@ -67,6 +71,8 @@ lib_sources = []
 lib_sources += common_types_sources
 lib_sources += utils_sources
 lib_sources += data_types_sources
+lib_sources += contracts_sources
+lib_sources += transport_sources
 lib_sources += market_sources
 lib_sources += position_sources
 lib_sources += account_sources
@@ -103,7 +109,7 @@ libalgolib = library(
         json_schema_validator_dep,
         boost_dep,
         sqlite3_dep
-    ]
+    ] + persistence_deps + transport_deps
 )
 
 # ---- Export dependency for other parts of project ----
@@ -117,5 +123,5 @@ libalgolib_dep = declare_dependency(
         json_schema_validator_dep,
         boost_dep,
         sqlite3_dep
-    ]
+    ] + persistence_deps + transport_deps
 )
