@@ -25,6 +25,7 @@
 #include "portfolio_risk_engine.h"
 #include "rolling_market_state.h"
 #include "service_logging.h"
+#include "service_clock.h"
 #include "sample_covariance_estimator.h"
 #include "threshold_rebalance_policy.h"
 #include "transport_subjects.h"
@@ -42,6 +43,8 @@ struct Options {
     std::string stream = "ALGOTRADING_RUNTIME";
     std::string portfolio_config = "config/portfolio/pure_rsi_equal_weight.json";
     std::string postgres;
+    RuntimeMode runtime_mode = RuntimeMode::Live;
+    std::string simulation_id;
     int poll_timeout_ms = 250;
 };
 
@@ -53,6 +56,8 @@ void printUsage()
         << "  --stream NAME\n"
         << "  --portfolio-config PATH\n"
         << "  --postgres CONNECTION_STRING\n"
+        << "  --runtime-mode live|testnet|replay\n"
+        << "  --simulation-id ID   optional REPLAY identity guard\n"
         << "  --poll-timeout-ms N\n";
 }
 
@@ -78,6 +83,10 @@ Options parseOptions(int argc, char** argv)
             options.portfolio_config = requireValue("--portfolio-config");
         } else if (arg == "--postgres") {
             options.postgres = requireValue("--postgres");
+        } else if (arg == "--runtime-mode") {
+            options.runtime_mode = parseRuntimeMode(requireValue("--runtime-mode"));
+        } else if (arg == "--simulation-id") {
+            options.simulation_id = requireValue("--simulation-id");
         } else if (arg == "--poll-timeout-ms") {
             options.poll_timeout_ms = std::stoi(requireValue("--poll-timeout-ms"));
         } else {
@@ -497,6 +506,7 @@ class PortfolioRiskServiceRuntime {
 private:
     const Options options_;
     NatsJetStreamMessageBus bus_;
+    std::unique_ptr<ServiceClockContext> clock_;
     std::unique_ptr<PortfolioRiskCheckpointStore> checkpoint_store_;
     RollingMarketState market_state_;
     std::unique_ptr<PortfolioRiskEngine> engine_;
@@ -846,6 +856,21 @@ public:
         : options_(std::move(options)),
           bus_(options_.nats_url)
     {
+        // Clock control-plane bootstrap precedes rolling/account checkpoint recovery so a
+        // hard-restarted follower can request the authoritative revision immediately.
+        bus_.ensureStream(
+            options_.stream,
+            options_.runtime_mode == RuntimeMode::Replay
+                ? TransportSubjects::runtimeSubjects()
+                : TransportSubjects::tradingRuntimeSubjects()
+        );
+        clock_ = std::make_unique<ServiceClockContext>(
+            ServiceClockContext::Options{
+                options_.runtime_mode, options_.stream, "portfolio-risk", options_.simulation_id
+            },
+            bus_
+        );
+
         resetRuntimeState();
         if (!options_.postgres.empty()) {
             checkpoint_store_ = std::make_unique<PortfolioRiskCheckpointStore>(
@@ -857,19 +882,26 @@ public:
             LG_WARN("service=portfolio-risk event=restart_checkpoint_disabled reason=postgres_not_configured");
         }
 
-        bus_.ensureStream(options_.stream, TransportSubjects::runtimeSubjects());
-
         market_subscription_ = bus_.subscribe(
             consumer("portfolio-risk-market-slices", TransportSubjects::MARKET_SLICE_SNAPSHOT),
-            [this](const BusMessage& message) { return onMarketSlice(message); }
+            clock_->guard(
+                "market_slice",
+                [this](const BusMessage& message) { return onMarketSlice(message); }
+            )
         );
         account_subscription_ = bus_.subscribe(
             consumer("portfolio-risk-account-snapshots", TransportSubjects::ACCOUNT_SNAPSHOT),
-            [this](const BusMessage& message) { return onAccountSnapshot(message); }
+            clock_->guard(
+                "account_snapshot",
+                [this](const BusMessage& message) { return onAccountSnapshot(message); }
+            )
         );
         strategy_subscription_ = bus_.subscribe(
             consumer("portfolio-risk-strategy-intents", TransportSubjects::STRATEGY_INTENTS),
-            [this](const BusMessage& message) { return onStrategyIntents(message); }
+            clock_->guard(
+                "strategy_intents",
+                [this](const BusMessage& message) { return onStrategyIntents(message); }
+            )
         );
     }
 
@@ -883,14 +915,18 @@ public:
     void run()
     {
         LG_INFO(
-            "service=portfolio-risk event=service_ready stream={} config={} restart_checkpoint={} poll_timeout_ms={}",
+            "service=portfolio-risk event=service_ready stream={} config={} restart_checkpoint={} runtime_mode={} clock_sync={} poll_timeout_ms={}",
             options_.stream,
             options_.portfolio_config,
             checkpoint_store_ ? "postgres" : "disabled",
+            runtimeModeName(options_.runtime_mode),
+            clock_->synchronized() ? "ready" : "pending",
             options_.poll_timeout_ms
         );
+        std::cout.flush();
 
         while (running.load()) {
+            clock_->poll(32, 1);
             // Market/account state is polled first so a signal delivery can normally be
             // completed immediately. If transport ordering differs, Retry is safe.
             bus_.poll(market_subscription_, 32, options_.poll_timeout_ms);

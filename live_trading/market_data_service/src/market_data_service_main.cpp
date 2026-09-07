@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -15,6 +16,7 @@
 #include "market_slice_snapshot.h"
 #include "nats_jetstream_message_bus.h"
 #include "service_logging.h"
+#include "service_clock.h"
 #include "transport_subjects.h"
 
 
@@ -32,6 +34,8 @@ struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
     std::string stream = "ALGOTRADING_RUNTIME";
     std::filesystem::path historical_data;
+    RuntimeMode runtime_mode = RuntimeMode::Live;
+    std::string simulation_id;
     int poll_timeout_ms = 250;
 };
 
@@ -54,6 +58,10 @@ Options parseOptions(int argc, char** argv)
             options.stream = requireValue("--stream");
         else if (arg == "--historical-data")
             options.historical_data = requireValue("--historical-data");
+        else if (arg == "--runtime-mode")
+            options.runtime_mode = parseRuntimeMode(requireValue("--runtime-mode"));
+        else if (arg == "--simulation-id")
+            options.simulation_id = requireValue("--simulation-id");
         else if (arg == "--poll-timeout-ms")
             options.poll_timeout_ms = std::stoi(requireValue("--poll-timeout-ms"));
         else if (arg == "--help" || arg == "-h") {
@@ -62,6 +70,8 @@ Options parseOptions(int argc, char** argv)
                 << "  --nats-url URL\n"
                 << "  --stream NAME\n"
                 << "  --historical-data PATH   CSV/SQLite historical source (required)\n"
+                << "  --runtime-mode live|testnet|replay\n"
+                << "  --simulation-id ID   optional REPLAY identity guard\n"
                 << "  --poll-timeout-ms N\n";
             std::exit(0);
         }
@@ -158,7 +168,8 @@ class MarketDataServiceRuntime {
 private:
     const Options options_;
     NatsJetStreamMessageBus bus_;
-    HistoricalReleaseSource source_;
+    std::unique_ptr<ServiceClockContext> clock_;
+    std::unique_ptr<HistoricalReleaseSource> source_;
     DurableMessageBus::SubscriptionID release_subscription_ = 0;
 
     DurableConsumerOptions consumer() const
@@ -217,7 +228,7 @@ private:
                 if (request.decision_timestamp != 0)
                     return DurableMessageDisposition::Terminate;
 
-                MarketSliceSnapshot slice = source_.closedSlice(request.timestamp);
+                MarketSliceSnapshot slice = source_->closedSlice(request.timestamp);
                 slice.metadata = outputMetadata(
                     "market-slice:" + std::to_string(request.timestamp),
                     request
@@ -242,7 +253,7 @@ private:
                     request.timestamp <= request.decision_timestamp)
                     return DurableMessageDisposition::Terminate;
 
-                ExecutionPriceSnapshot prices = source_.executionOpen(
+                ExecutionPriceSnapshot prices = source_->executionOpen(
                     request.timestamp,
                     request.decision_timestamp
                 );
@@ -285,13 +296,31 @@ private:
 public:
     explicit MarketDataServiceRuntime(Options options)
         : options_(std::move(options)),
-          bus_(options_.nats_url),
-          source_(options_.historical_data)
+          bus_(options_.nats_url)
     {
-        bus_.ensureStream(options_.stream, TransportSubjects::runtimeSubjects());
+        // Restart-critical control plane comes first.  Historical source reconstruction can
+        // touch a large bind-mounted CSV and must never delay the ClockSyncRequest emitted by
+        // ServiceClockContext after a hard container recreation.
+        bus_.ensureStream(
+            options_.stream,
+            options_.runtime_mode == RuntimeMode::Replay
+                ? TransportSubjects::runtimeSubjects()
+                : TransportSubjects::tradingRuntimeSubjects()
+        );
+        clock_ = std::make_unique<ServiceClockContext>(
+            ServiceClockContext::Options{
+                options_.runtime_mode, options_.stream, "market-data", options_.simulation_id
+            },
+            bus_
+        );
+
+        source_ = std::make_unique<HistoricalReleaseSource>(options_.historical_data);
         release_subscription_ = bus_.subscribe(
             consumer(),
-            [this](const BusMessage& message) { return onRelease(message); }
+            clock_->guard(
+                "market_data_release",
+                [this](const BusMessage& message) { return onRelease(message); }
+            )
         );
     }
 
@@ -303,14 +332,19 @@ public:
     void run()
     {
         LG_INFO(
-            "service=market-data event=service_ready stream={} source={} poll_timeout_ms={}",
+            "service=market-data event=service_ready stream={} source={} runtime_mode={} clock_sync={} poll_timeout_ms={}",
             options_.stream,
             options_.historical_data.string(),
+            runtimeModeName(options_.runtime_mode),
+            clock_->synchronized() ? "ready" : "pending",
             options_.poll_timeout_ms
         );
+        std::cout.flush();
 
-        while (running.load())
+        while (running.load()) {
+            clock_->poll(32, 1);
             bus_.poll(release_subscription_, 16, options_.poll_timeout_ms);
+        }
 
         LG_INFO("service=market-data event=shutdown_requested");
         bus_.flush();

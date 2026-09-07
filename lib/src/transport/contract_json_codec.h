@@ -3,6 +3,9 @@
 #include <string>
 
 #include "account_snapshot.h"
+#include "clock_control.h"
+#include "clock_state.h"
+#include "clock_sync_request.h"
 #include "decision_batch.h"
 #include "execution_commands.h"
 #include "execution_cycle_complete.h"
@@ -22,6 +25,15 @@
  * Purpose : Stable JSON wire representation for service-boundary DTOs
  **************************************************************************************/
 namespace ContractJsonCodec {
+
+std::string encode(const ClockState& value);
+ClockState decodeClockState(const std::string& payload);
+
+std::string encode(const ClockControl& value);
+ClockControl decodeClockControl(const std::string& payload);
+
+std::string encode(const ClockSyncRequest& value);
+ClockSyncRequest decodeClockSyncRequest(const std::string& payload);
 
 std::string encode(const MarketDataReleaseRequest& value);
 MarketDataReleaseRequest decodeMarketDataReleaseRequest(const std::string& payload);

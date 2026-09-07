@@ -2,6 +2,7 @@
 #include <csignal>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
@@ -14,6 +15,7 @@
 #include "order_planner_engine.h"
 #include "order_planning.h"
 #include "service_logging.h"
+#include "service_clock.h"
 #include "strategy_position_snapshot.h"
 #include "transport_subjects.h"
 
@@ -39,6 +41,8 @@ bool envFlag(const char* name)
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
     std::string stream = "ALGOTRADING_RUNTIME";
+    RuntimeMode runtime_mode = RuntimeMode::Live;
+    std::string simulation_id;
     int poll_timeout_ms = 250;
 };
 
@@ -57,6 +61,10 @@ Options parseOptions(int argc, char** argv)
             options.nats_url = requireValue("--nats-url");
         else if (arg == "--stream")
             options.stream = requireValue("--stream");
+        else if (arg == "--runtime-mode")
+            options.runtime_mode = parseRuntimeMode(requireValue("--runtime-mode"));
+        else if (arg == "--simulation-id")
+            options.simulation_id = requireValue("--simulation-id");
         else if (arg == "--poll-timeout-ms")
             options.poll_timeout_ms = std::stoi(requireValue("--poll-timeout-ms"));
         else if (arg == "--help") {
@@ -64,6 +72,8 @@ Options parseOptions(int argc, char** argv)
                 << "Usage: algotrading_order_planner_service [options]\n"
                 << "  --nats-url URL\n"
                 << "  --stream NAME\n"
+                << "  --runtime-mode live|testnet|replay\n"
+                << "  --simulation-id ID   optional REPLAY identity guard\n"
                 << "  --poll-timeout-ms VALUE\n";
             std::exit(0);
         }
@@ -81,6 +91,7 @@ class OrderPlannerServiceRuntime {
 private:
     Options options_;
     NatsJetStreamMessageBus bus_;
+    std::unique_ptr<ServiceClockContext> clock_;
     OrderPlannerEngine planner_;
     DurableMessageBus::SubscriptionID request_subscription_ = 0;
     bool chaos_stale_plan_once_ = envFlag("ALGOTRADING_CHAOS_STALE_PLAN_ONCE");
@@ -260,10 +271,24 @@ public:
         : options_(std::move(options)),
           bus_(options_.nats_url)
     {
-        bus_.ensureStream(options_.stream, TransportSubjects::runtimeSubjects());
+        bus_.ensureStream(
+            options_.stream,
+            options_.runtime_mode == RuntimeMode::Replay
+                ? TransportSubjects::runtimeSubjects()
+                : TransportSubjects::tradingRuntimeSubjects()
+        );
+        clock_ = std::make_unique<ServiceClockContext>(
+            ServiceClockContext::Options{
+                options_.runtime_mode, options_.stream, "order-planner", options_.simulation_id
+            },
+            bus_
+        );
         request_subscription_ = bus_.subscribe(
             consumer(),
-            [this](const BusMessage& message) { return onRequest(message); }
+            clock_->guard(
+                "order_planning_request",
+                [this](const BusMessage& message) { return onRequest(message); }
+            )
         );
     }
 
@@ -275,12 +300,17 @@ public:
     void run()
     {
         LG_INFO(
-            "service=order-planner event=service_ready stream={} poll_timeout_ms={}",
+            "service=order-planner event=service_ready stream={} runtime_mode={} clock_sync={} poll_timeout_ms={}",
             options_.stream,
+            runtimeModeName(options_.runtime_mode),
+            clock_->synchronized() ? "ready" : "pending",
             options_.poll_timeout_ms
         );
-        while (running.load())
+        std::cout.flush();
+        while (running.load()) {
+            clock_->poll(32, 1);
             bus_.poll(request_subscription_, 32, options_.poll_timeout_ms);
+        }
         LG_INFO("service=order-planner event=shutdown_requested");
         bus_.flush();
         LG_INFO("service=order-planner event=shutdown_complete");

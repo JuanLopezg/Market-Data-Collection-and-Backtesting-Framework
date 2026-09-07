@@ -44,16 +44,21 @@ NatsBackendExchangeGatewayAdapter::NatsBackendExchangeGatewayAdapter(
                 if (message.subject == TransportSubjects::BACKEND_ORDER_UPDATE) {
                     if (!handlers_.on_order_update)
                         return DurableMessageDisposition::Retry;
-                    handlers_.on_order_update(
-                        ContractJsonCodec::decodeOrderUpdateEvent(message.payload)
-                    );
+                    const OrderUpdateEvent value =
+                        ContractJsonCodec::decodeOrderUpdateEvent(message.payload);
+                    if (event_time_gate_ && !event_time_gate_(value.metadata.produced_at))
+                        return DurableMessageDisposition::Retry;
+                    handlers_.on_order_update(value);
                     return DurableMessageDisposition::Ack;
                 }
 
                 if (message.subject == TransportSubjects::BACKEND_FILL) {
                     if (!handlers_.on_fill)
                         return DurableMessageDisposition::Retry;
-                    handlers_.on_fill(ContractJsonCodec::decodeFillEvent(message.payload));
+                    const FillEvent value = ContractJsonCodec::decodeFillEvent(message.payload);
+                    if (event_time_gate_ && !event_time_gate_(value.metadata.produced_at))
+                        return DurableMessageDisposition::Retry;
+                    handlers_.on_fill(value);
                     return DurableMessageDisposition::Ack;
                 }
 
@@ -71,9 +76,11 @@ NatsBackendExchangeGatewayAdapter::NatsBackendExchangeGatewayAdapter(
             try {
                 if (!handlers_.on_snapshot)
                     return DurableMessageDisposition::Retry;
-                handlers_.on_snapshot(
-                    ContractJsonCodec::decodeExchangeSnapshotEvent(message.payload)
-                );
+                const ExchangeSnapshotEvent value =
+                    ContractJsonCodec::decodeExchangeSnapshotEvent(message.payload);
+                if (event_time_gate_ && !event_time_gate_(value.metadata.produced_at))
+                    return DurableMessageDisposition::Retry;
+                handlers_.on_snapshot(value);
                 return DurableMessageDisposition::Ack;
             }
             catch (...) {
@@ -96,6 +103,12 @@ void NatsBackendExchangeGatewayAdapter::setHandlers(ExchangeGatewayHandlers hand
     if (!handlers.on_order_update || !handlers.on_fill || !handlers.on_snapshot)
         throw std::invalid_argument("Exchange gateway adapter requires all event handlers");
     handlers_ = std::move(handlers);
+}
+
+
+void NatsBackendExchangeGatewayAdapter::setEventTimeGate(std::function<bool(Timestamp)> gate)
+{
+    event_time_gate_ = std::move(gate);
 }
 
 

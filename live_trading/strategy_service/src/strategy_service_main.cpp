@@ -23,6 +23,7 @@
 #include "pureRSI.h"
 #include "rolling_market_state.h"
 #include "service_logging.h"
+#include "service_clock.h"
 #include "strategy_signal_engine.h"
 #include "strategy_signal_instance.h"
 #include "transport_subjects.h"
@@ -39,6 +40,8 @@ struct Options {
     std::string stream = "ALGOTRADING_RUNTIME";
     std::string strategy_config = "config/strategies/pure_rsi_signal.json";
     std::string postgres;
+    RuntimeMode runtime_mode = RuntimeMode::Live;
+    std::string simulation_id;
     int poll_timeout_ms = 250;
 };
 
@@ -50,6 +53,8 @@ void printUsage()
         << "  --stream NAME\n"
         << "  --strategy-config PATH\n"
         << "  --postgres CONNECTION_STRING\n"
+        << "  --runtime-mode live|testnet|replay\n"
+        << "  --simulation-id ID   optional REPLAY identity guard\n"
         << "  --poll-timeout-ms N\n";
 }
 
@@ -75,6 +80,10 @@ Options parseOptions(int argc, char** argv)
             options.strategy_config = requireValue("--strategy-config");
         } else if (arg == "--postgres") {
             options.postgres = requireValue("--postgres");
+        } else if (arg == "--runtime-mode") {
+            options.runtime_mode = parseRuntimeMode(requireValue("--runtime-mode"));
+        } else if (arg == "--simulation-id") {
+            options.simulation_id = requireValue("--simulation-id");
         } else if (arg == "--poll-timeout-ms") {
             options.poll_timeout_ms = std::stoi(requireValue("--poll-timeout-ms"));
         } else {
@@ -459,6 +468,7 @@ class StrategyServiceRuntime {
 private:
     const Options options_;
     NatsJetStreamMessageBus bus_;
+    std::unique_ptr<ServiceClockContext> clock_;
     std::unique_ptr<StrategyCheckpointStore> checkpoint_store_;
     RollingMarketState market_state_;
     std::unique_ptr<StrategySignalEngine> engine_;
@@ -631,6 +641,21 @@ public:
         : options_(std::move(options)),
           bus_(options_.nats_url)
     {
+        // Bind the REPLAY clock control plane before checkpoint reconstruction.  Database
+        // recovery is business-state work and must not postpone restart re-synchronization.
+        bus_.ensureStream(
+            options_.stream,
+            options_.runtime_mode == RuntimeMode::Replay
+                ? TransportSubjects::runtimeSubjects()
+                : TransportSubjects::tradingRuntimeSubjects()
+        );
+        clock_ = std::make_unique<ServiceClockContext>(
+            ServiceClockContext::Options{
+                options_.runtime_mode, options_.stream, "strategy", options_.simulation_id
+            },
+            bus_
+        );
+
         resetRuntimeState();
 
         if (!options_.postgres.empty()) {
@@ -645,8 +670,6 @@ public:
             );
         }
 
-        bus_.ensureStream(options_.stream, TransportSubjects::runtimeSubjects());
-
         DurableConsumerOptions consumer;
         consumer.stream = options_.stream;
         consumer.durable_name = "strategy-service-market-slices";
@@ -657,7 +680,10 @@ public:
 
         market_subscription_ = bus_.subscribe(
             consumer,
-            [this](const BusMessage& message) { return onMarketSlice(message); }
+            clock_->guard(
+                "market_slice",
+                [this](const BusMessage& message) { return onMarketSlice(message); }
+            )
         );
     }
 
@@ -666,15 +692,20 @@ public:
     void run()
     {
         LG_INFO(
-            "service=strategy event=service_ready stream={} config={} restart_checkpoint={} poll_timeout_ms={}",
+            "service=strategy event=service_ready stream={} config={} restart_checkpoint={} runtime_mode={} clock_sync={} poll_timeout_ms={}",
             options_.stream,
             options_.strategy_config,
             checkpoint_store_ ? "postgres" : "disabled",
+            runtimeModeName(options_.runtime_mode),
+            clock_->synchronized() ? "ready" : "pending",
             options_.poll_timeout_ms
         );
+        std::cout.flush();
 
-        while (running.load())
+        while (running.load()) {
+            clock_->poll(32, 1);
             bus_.poll(market_subscription_, 16, options_.poll_timeout_ms);
+        }
 
         LG_INFO("service=strategy event=shutdown_requested");
         bus_.flush();

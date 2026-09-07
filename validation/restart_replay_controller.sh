@@ -121,12 +121,23 @@ echo "[INFO] reached completed_cycles=$completed; pausing order-planner to hold 
 planner_paused=1
 
 # One in-flight plan can finish while the pause command is racing the controller.
-# Re-sample the completed count after the process is definitely frozen, then wait
-# for an OPEN release strictly beyond that completed prefix.
+# Do NOT infer WAIT_EXECUTION from cumulative log counters alone: a log marker can
+# become visible before the matching PostgreSQL checkpoint transaction is sampled,
+# or the just-finished execution can catch up between those two observations.
+#
+# The durable phase shape is authoritative:
+#   decisions == executions + 1   -> one persisted DecisionBatch is in flight
+#   execution_open > executions   -> OPEN(T+1) has been released for that decision
+# Require the same durable checkpoint pair for ~2 seconds while OrderPlanner is
+# frozen so the crash is injected into a real, stable WAIT_EXECUTION barrier.
 sleep 0.5
-completed="$(docker logs "$controller_id" 2>&1 | grep -c '\[REPLAY\] execution-complete' || true)"
-
 phase_ready=0
+stable_midphase=0
+last_checkpoint_pair=""
+db_decisions=""
+db_executions=""
+open_count=0
+
 for _ in $(seq 1 480); do
     if ! kill -0 "$HARNESS_PID" 2>/dev/null; then
         echo "[FAIL] harness exited before WAIT_EXECUTION phase was established"
@@ -135,38 +146,42 @@ for _ in $(seq 1 480); do
         exit 1
     fi
 
+    db_decisions="$(docker exec "$postgres_id" psql -U algotrading -d algotrading -tAc \
+        "SELECT count(*) FROM replay_controller_decision_checkpoint WHERE state_key='replay-controller';" | tr -d '[:space:]')"
+    db_executions="$(docker exec "$postgres_id" psql -U algotrading -d algotrading -tAc \
+        "SELECT count(*) FROM replay_controller_execution_checkpoint WHERE state_key='replay-controller';" | tr -d '[:space:]')"
     open_count="$(docker logs "$controller_id" 2>&1 | grep -c 'event=market_release_published kind=execution_open' || true)"
-    decision_count="$(docker logs "$controller_id" 2>&1 | grep -c '\[REPLAY\] decision-ready' || true)"
-    complete_now="$(docker logs "$controller_id" 2>&1 | grep -c '\[REPLAY\] execution-complete' || true)"
 
-    if (( open_count > complete_now && decision_count > complete_now )); then
-        completed="$complete_now"
-        phase_ready=1
-        break
+    if [[ "$db_decisions" =~ ^[0-9]+$ && "$db_executions" =~ ^[0-9]+$ ]] && \
+       (( db_decisions == db_executions + 1 && open_count > db_executions )); then
+        checkpoint_pair="$db_decisions|$db_executions"
+        if [[ "$checkpoint_pair" == "$last_checkpoint_pair" ]]; then
+            stable_midphase=$((stable_midphase + 1))
+        else
+            stable_midphase=0
+            last_checkpoint_pair="$checkpoint_pair"
+        fi
+
+        if (( stable_midphase >= 8 )); then
+            completed="$db_executions"
+            phase_ready=1
+            break
+        fi
+    else
+        stable_midphase=0
+        last_checkpoint_pair=""
     fi
     sleep 0.25
 done
+
 [[ "$phase_ready" == "1" ]] || {
-    echo "[FAIL] could not establish replay-controller WAIT_EXECUTION phase"
+    echo "[FAIL] could not establish durable/stable replay-controller WAIT_EXECUTION phase"
+    echo "[DIAG] last durable counts: decisions=${db_decisions:-?} executions=${db_executions:-?} execution_open_logs=${open_count:-?}"
     docker logs --tail=160 "$controller_id" || true
     exit 1
 }
 
-db_decisions="$(docker exec "$postgres_id" psql -U algotrading -d algotrading -tAc \
-    "SELECT count(*) FROM replay_controller_decision_checkpoint WHERE state_key='replay-controller';" | tr -d '[:space:]')"
-db_executions="$(docker exec "$postgres_id" psql -U algotrading -d algotrading -tAc \
-    "SELECT count(*) FROM replay_controller_execution_checkpoint WHERE state_key='replay-controller';" | tr -d '[:space:]')"
-
-[[ "$db_decisions" =~ ^[0-9]+$ && "$db_executions" =~ ^[0-9]+$ ]] || {
-    echo "[FAIL] could not read replay checkpoint counts from PostgreSQL"
-    exit 1
-}
-(( db_decisions > db_executions )) || {
-    echo "[FAIL] expected durable decision without execution before crash; decisions=$db_decisions executions=$db_executions"
-    exit 1
-}
-
-echo "[PASS] mid-phase checkpoint confirmed: decisions=$db_decisions executions=$db_executions"
+echo "[PASS] stable mid-phase checkpoint confirmed: decisions=$db_decisions executions=$db_executions execution_open_logs=$open_count"
 
 # The historical harness resolves and exports the actual replay range in its own
 # child shell. This wrapper is a separate parent shell, so a direct `docker compose

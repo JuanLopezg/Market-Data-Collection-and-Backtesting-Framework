@@ -58,6 +58,10 @@ services:
       - algotrading_market_data_service
       - --nats-url
       - nats://nats:4222
+      - --runtime-mode
+      - replay
+      - --simulation-id
+      - ${REPLAY_SIMULATION_ID:-}
       - --historical-data
       - /data/historical.csv
       - --poll-timeout-ms
@@ -74,6 +78,10 @@ services:
       - algotrading_strategy_service
       - --nats-url
       - nats://nats:4222
+      - --runtime-mode
+      - replay
+      - --simulation-id
+      - ${REPLAY_SIMULATION_ID:-}
       - --strategy-config
       - /opt/algotrading/config/strategies/pure_rsi_signal.json
       - --postgres
@@ -92,6 +100,10 @@ services:
       - algotrading_portfolio_risk_service
       - --nats-url
       - nats://nats:4222
+      - --runtime-mode
+      - replay
+      - --simulation-id
+      - ${REPLAY_SIMULATION_ID:-}
       - --portfolio-config
       - ${REPLAY_PORTFOLIO_CONFIG:-/opt/algotrading/config/portfolio/pure_rsi_equal_weight.json}
       - --postgres
@@ -110,6 +122,10 @@ services:
       - algotrading_order_planner_service
       - --nats-url
       - nats://nats:4222
+      - --runtime-mode
+      - replay
+      - --simulation-id
+      - ${REPLAY_SIMULATION_ID:-}
       - --poll-timeout-ms
       - "50"
     depends_on:
@@ -122,6 +138,10 @@ services:
       - algotrading_exchange_gateway
       - --nats-url
       - nats://nats:4222
+      - --runtime-mode
+      - replay
+      - --simulation-id
+      - ${REPLAY_SIMULATION_ID:-}
       - --poll-timeout-ms
       - "50"
     depends_on:
@@ -134,6 +154,10 @@ services:
       - algotrading_simulated_exchange_service
       - --nats-url
       - nats://nats:4222
+      - --runtime-mode
+      - replay
+      - --simulation-id
+      - ${REPLAY_SIMULATION_ID:-}
       - --postgres
       - host=postgres port=5432 dbname=algotrading user=algotrading password=algotrading
       - --initial-cash
@@ -154,6 +178,10 @@ services:
       - algotrading_execution_state_service
       - --nats-url
       - nats://nats:4222
+      - --runtime-mode
+      - replay
+      - --simulation-id
+      - ${REPLAY_SIMULATION_ID:-}
       - --postgres
       - host=postgres port=5432 dbname=algotrading user=algotrading password=algotrading
       - --initial-cash
@@ -180,10 +208,16 @@ services:
       - ${REPLAY_END_DATE:-2024-01-03}
       - --postgres
       - host=postgres port=5432 dbname=algotrading user=algotrading password=algotrading
+      - --simulation-id
+      - ${REPLAY_SIMULATION_ID:-}
       - --barrier-timeout-ms
       - ${REPLAY_BARRIER_TIMEOUT_MS:-60000}
       - --poll-timeout-ms
       - "50"
+      - --clock-speed
+      - ${REPLAY_CLOCK_SPEED:-max}
+      - --clock-wall-scale
+      - ${REPLAY_CLOCK_WALL_SCALE:-1.0}
     depends_on:
       market-data:
         condition: service_started

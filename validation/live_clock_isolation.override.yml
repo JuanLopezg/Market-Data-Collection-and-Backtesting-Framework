@@ -1,0 +1,92 @@
+services:
+  market-data:
+    command:
+      - algotrading_market_data_service
+      - --nats-url
+      - nats://nats:4222
+      - --runtime-mode
+      - ${CLOCK_ISOLATION_RUNTIME_MODE:-live}
+      - --historical-data
+      - /data/historical.csv
+      - --poll-timeout-ms
+      - "50"
+
+  strategy:
+    command:
+      - algotrading_strategy_service
+      - --nats-url
+      - nats://nats:4222
+      - --runtime-mode
+      - ${CLOCK_ISOLATION_RUNTIME_MODE:-live}
+      - --strategy-config
+      - /opt/algotrading/config/strategies/pure_rsi_signal.json
+      - --postgres
+      - host=postgres port=5432 dbname=algotrading user=algotrading password=algotrading
+      - --poll-timeout-ms
+      - "50"
+
+  portfolio-risk:
+    command:
+      - algotrading_portfolio_risk_service
+      - --nats-url
+      - nats://nats:4222
+      - --runtime-mode
+      - ${CLOCK_ISOLATION_RUNTIME_MODE:-live}
+      - --portfolio-config
+      - /opt/algotrading/config/portfolio/pure_rsi_equal_weight.json
+      - --postgres
+      - host=postgres port=5432 dbname=algotrading user=algotrading password=algotrading
+      - --poll-timeout-ms
+      - "50"
+
+  order-planner:
+    command:
+      - algotrading_order_planner_service
+      - --nats-url
+      - nats://nats:4222
+      - --runtime-mode
+      - ${CLOCK_ISOLATION_RUNTIME_MODE:-live}
+      - --poll-timeout-ms
+      - "50"
+
+  exchange-gateway:
+    command:
+      - algotrading_exchange_gateway
+      - --nats-url
+      - nats://nats:4222
+      - --runtime-mode
+      - ${CLOCK_ISOLATION_RUNTIME_MODE:-live}
+      - --poll-timeout-ms
+      - "50"
+
+  simulated-exchange:
+    command:
+      - algotrading_simulated_exchange_service
+      - --nats-url
+      - nats://nats:4222
+      - --runtime-mode
+      - ${CLOCK_ISOLATION_RUNTIME_MODE:-live}
+      - --postgres
+      - host=postgres port=5432 dbname=algotrading user=algotrading password=algotrading
+      - --initial-cash
+      - "100000"
+      - --commission-rate
+      - "0.0"
+      - --poll-timeout-ms
+      - "50"
+
+  execution-state:
+    command:
+      - algotrading_execution_state_service
+      - --nats-url
+      - nats://nats:4222
+      - --runtime-mode
+      - ${CLOCK_ISOLATION_RUNTIME_MODE:-live}
+      - --postgres
+      - host=postgres port=5432 dbname=algotrading user=algotrading password=algotrading
+      - --initial-cash
+      - "100000"
+      - --strategy
+      - 1:Pure_RSI
+      - --poll-timeout-ms
+      - "50"

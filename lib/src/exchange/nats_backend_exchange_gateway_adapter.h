@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 
 #include "exchange_gateway_adapter.h"
@@ -20,6 +21,7 @@ private:
     std::string stream_;
     NatsJetStreamMessageBus bus_;
     ExchangeGatewayHandlers handlers_;
+    std::function<bool(Timestamp)> event_time_gate_;
 
     DurableMessageBus::SubscriptionID event_subscription_ = 0;
     DurableMessageBus::SubscriptionID snapshot_subscription_ = 0;
@@ -37,6 +39,7 @@ public:
     ~NatsBackendExchangeGatewayAdapter() override;
 
     void setHandlers(ExchangeGatewayHandlers handlers) override;
+    void setEventTimeGate(std::function<bool(Timestamp)> gate);
     void submitOrder(const SubmitOrderCommand& command) override;
     void cancelOrder(const CancelOrderCommand& command) override;
     void requestSnapshot(const ExchangeSnapshotRequest& request) override;

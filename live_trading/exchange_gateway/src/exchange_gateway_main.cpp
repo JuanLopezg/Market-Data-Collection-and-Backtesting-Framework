@@ -2,6 +2,7 @@
 #include <csignal>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -12,6 +13,7 @@
 #include "nats_backend_exchange_gateway_adapter.h"
 #include "nats_jetstream_message_bus.h"
 #include "service_logging.h"
+#include "service_clock.h"
 #include "transport_subjects.h"
 
 
@@ -39,6 +41,8 @@ struct Options {
     std::string runtime_stream = "ALGOTRADING_RUNTIME";
     std::string control_stream = "ALGOTRADING_EXCHANGE_CONTROL";
     std::string backend_stream = "ALGOTRADING_EXCHANGE_BACKEND";
+    RuntimeMode runtime_mode = RuntimeMode::Live;
+    std::string simulation_id;
     int poll_timeout_ms = 250;
 };
 
@@ -63,6 +67,10 @@ Options parseOptions(int argc, char** argv)
             options.control_stream = requireValue("--control-stream");
         else if (arg == "--backend-stream")
             options.backend_stream = requireValue("--backend-stream");
+        else if (arg == "--runtime-mode")
+            options.runtime_mode = parseRuntimeMode(requireValue("--runtime-mode"));
+        else if (arg == "--simulation-id")
+            options.simulation_id = requireValue("--simulation-id");
         else if (arg == "--poll-timeout-ms")
             options.poll_timeout_ms = std::stoi(requireValue("--poll-timeout-ms"));
         else if (arg == "--help" || arg == "-h") {
@@ -72,6 +80,8 @@ Options parseOptions(int argc, char** argv)
                 << "  --stream NAME\n"
                 << "  --control-stream NAME\n"
                 << "  --backend-stream NAME\n"
+                << "  --runtime-mode live|testnet|replay\n"
+                << "  --simulation-id ID   optional REPLAY identity guard\n"
                 << "  --poll-timeout-ms N\n";
             std::exit(0);
         }
@@ -93,7 +103,8 @@ class ExchangeGatewayRuntime {
 private:
     const Options options_;
     NatsJetStreamMessageBus bus_;
-    NatsBackendExchangeGatewayAdapter adapter_;
+    std::unique_ptr<ServiceClockContext> clock_;
+    std::unique_ptr<NatsBackendExchangeGatewayAdapter> adapter_;
 
     DurableMessageBus::SubscriptionID submit_subscription_ = 0;
     DurableMessageBus::SubscriptionID cancel_subscription_ = 0;
@@ -218,7 +229,7 @@ private:
                 command.order.active_from,
                 command.metadata.message_id
             );
-            adapter_.submitOrder(command);
+            adapter_->submitOrder(command);
             LG_DEBUG("service=exchange-gateway event=submit_forwarded order_id={} disposition=ack", command.order.order_id);
             return DurableMessageDisposition::Ack;
         }
@@ -247,7 +258,7 @@ private:
                 command.requested_at,
                 command.metadata.message_id
             );
-            adapter_.cancelOrder(command);
+            adapter_->cancelOrder(command);
             LG_DEBUG("service=exchange-gateway event=cancel_forwarded order_id={} disposition=ack", command.order_id);
             return DurableMessageDisposition::Ack;
         }
@@ -272,7 +283,7 @@ private:
                 request.metadata.message_id,
                 request.metadata.correlation_id
             );
-            adapter_.requestSnapshot(request);
+            adapter_->requestSnapshot(request);
             return DurableMessageDisposition::Ack;
         }
         catch (const std::invalid_argument& error) {
@@ -288,18 +299,38 @@ private:
 public:
     explicit ExchangeGatewayRuntime(Options options)
         : options_(std::move(options)),
-          bus_(options_.nats_url),
-          adapter_(options_.nats_url, options_.backend_stream)
+          bus_(options_.nats_url)
     {
         // PATCH 24 deliberately keeps snapshot requests on a separate control stream.
         // Existing PATCH 17-23 runtime streams therefore need no in-place subject update.
-        bus_.ensureStream(options_.runtime_stream, TransportSubjects::runtimeSubjects());
+        bus_.ensureStream(
+            options_.runtime_stream,
+            options_.runtime_mode == RuntimeMode::Replay
+                ? TransportSubjects::runtimeSubjects()
+                : TransportSubjects::tradingRuntimeSubjects()
+        );
         bus_.ensureStream(
             options_.control_stream,
             TransportSubjects::exchangeGatewayControlSubjects()
         );
+        clock_ = std::make_unique<ServiceClockContext>(
+            ServiceClockContext::Options{
+                options_.runtime_mode, options_.runtime_stream, "exchange-gateway",
+                options_.simulation_id
+            },
+            bus_
+        );
 
-        adapter_.setHandlers({
+        // The backend adapter opens its own transport path; create it only after the
+        // authoritative REPLAY clock bootstrap has been emitted/bound.
+        adapter_ = std::make_unique<NatsBackendExchangeGatewayAdapter>(
+            options_.nats_url, options_.backend_stream
+        );
+        adapter_->setEventTimeGate(
+            [this](Timestamp timestamp) { return clock_->authorize(timestamp); }
+        );
+
+        adapter_->setHandlers({
             [this](const OrderUpdateEvent& value) { publish(value); },
             [this](const FillEvent& value) { publish(value); },
             [this](const ExchangeSnapshotEvent& value) { publish(value); }
@@ -311,7 +342,10 @@ public:
                 "exchange-gateway-submit",
                 TransportSubjects::SUBMIT_ORDER
             ),
-            [this](const BusMessage& message) { return onSubmit(message); }
+            clock_->guard(
+                "submit_order",
+                [this](const BusMessage& message) { return onSubmit(message); }
+            )
         );
         cancel_subscription_ = bus_.subscribe(
             consumer(
@@ -319,7 +353,10 @@ public:
                 "exchange-gateway-cancel",
                 TransportSubjects::CANCEL_ORDER
             ),
-            [this](const BusMessage& message) { return onCancel(message); }
+            clock_->guard(
+                "cancel_order",
+                [this](const BusMessage& message) { return onCancel(message); }
+            )
         );
         snapshot_request_subscription_ = bus_.subscribe(
             consumer(
@@ -327,7 +364,10 @@ public:
                 "exchange-gateway-snapshot-request",
                 TransportSubjects::EXCHANGE_SNAPSHOT_REQUEST
             ),
-            [this](const BusMessage& message) { return onSnapshotRequest(message); }
+            clock_->guard(
+                "exchange_snapshot_request",
+                [this](const BusMessage& message) { return onSnapshotRequest(message); }
+            )
         );
     }
 
@@ -341,17 +381,21 @@ public:
     void run()
     {
         LG_INFO(
-            "service=exchange-gateway event=service_ready runtime_stream={} control_stream={} backend_stream={} backend=nats-service poll_timeout_ms={}",
+            "service=exchange-gateway event=service_ready runtime_stream={} control_stream={} backend_stream={} backend=nats-service runtime_mode={} clock_sync={} poll_timeout_ms={}",
             options_.runtime_stream,
             options_.control_stream,
             options_.backend_stream,
+            runtimeModeName(options_.runtime_mode),
+            clock_->synchronized() ? "ready" : "pending",
             options_.poll_timeout_ms
         );
+        std::cout.flush();
 
         while (running.load()) {
+            clock_->poll(64, 1);
             // Exchange/backend events first so downstream state observes exchange truth
             // before additional outbound commands are forwarded whenever both are ready.
-            adapter_.poll(options_.poll_timeout_ms);
+            adapter_->poll(options_.poll_timeout_ms);
             bus_.poll(snapshot_request_subscription_, 8, options_.poll_timeout_ms);
             bus_.poll(cancel_subscription_, 32, options_.poll_timeout_ms);
             bus_.poll(submit_subscription_, 32, options_.poll_timeout_ms);

@@ -29,6 +29,7 @@
 #include "postgres_state_store.h"
 #include "reconciler.h"
 #include "service_logging.h"
+#include "service_clock.h"
 #include "trade_recorder.h"
 #include "trading_state_snapshot.h"
 #include "transport_subjects.h"
@@ -59,6 +60,8 @@ struct Options {
         "host=127.0.0.1 port=5432 dbname=algotrading user=algotrading password=algotrading";
     std::string stream = "ALGOTRADING_RUNTIME";
     std::string exchange_control_stream = "ALGOTRADING_EXCHANGE_CONTROL";
+    RuntimeMode runtime_mode = RuntimeMode::Live;
+    std::string simulation_id;
     double initial_cash = 100000.0;
     int poll_timeout_ms = 250;
     std::vector<ExecutionStrategyDescriptor> strategies;
@@ -102,6 +105,10 @@ Options parseOptions(int argc, char** argv)
             options.stream = requireValue("--stream");
         else if (arg == "--exchange-control-stream")
             options.exchange_control_stream = requireValue("--exchange-control-stream");
+        else if (arg == "--runtime-mode")
+            options.runtime_mode = parseRuntimeMode(requireValue("--runtime-mode"));
+        else if (arg == "--simulation-id")
+            options.simulation_id = requireValue("--simulation-id");
         else if (arg == "--initial-cash")
             options.initial_cash = std::stod(requireValue("--initial-cash"));
         else if (arg == "--poll-timeout-ms")
@@ -115,6 +122,8 @@ Options parseOptions(int argc, char** argv)
                 << "  --postgres CONNECTION_STRING\n"
                 << "  --stream NAME\n"
                 << "  --exchange-control-stream NAME\n"
+                << "  --runtime-mode live|testnet|replay\n"
+                << "  --simulation-id ID   optional REPLAY identity guard\n"
                 << "  --initial-cash VALUE\n"
                 << "  --poll-timeout-ms VALUE\n"
                 << "  --strategy ID:NAME   (repeat for each configured strategy)\n";
@@ -150,7 +159,8 @@ private:
     std::unordered_map<StrategyID, std::string> strategy_names_;
 
     NatsJetStreamMessageBus bus_;
-    PostgresStateStore store_;
+    std::unique_ptr<ServiceClockContext> clock_;
+    std::unique_ptr<PostgresStateStore> store_;
     Account account_;
     TradeRecorder trade_recorder_;
     MessageBusExchange exchange_;
@@ -216,7 +226,7 @@ private:
 
     void persist(const std::optional<Fill>& fill = std::nullopt)
     {
-        store_.save(snapshot(), fill);
+        store_->save(snapshot(), fill);
         LG_DEBUG(
             "service=execution-state event=state_persisted fill_id={} last_decision_timestamp={} last_execution_timestamp={} cash={} tracked_orders={}",
             fill ? std::to_string(fill->fill_id) : std::string{"none"},
@@ -367,7 +377,7 @@ private:
                 pending_decision_ = std::move(restoredBatch);
         }
 
-        std::vector<Fill> fills = store_.loadFills();
+        std::vector<Fill> fills = store_->loadFills();
         std::sort(fills.begin(), fills.end(), [](const Fill& a, const Fill& b) {
             if (a.timestamp != b.timestamp)
                 return a.timestamp < b.timestamp;
@@ -899,7 +909,6 @@ public:
     explicit ExecutionStateServiceRuntime(Options options)
         : options_(std::move(options)),
           bus_(options_.nats_url),
-          store_(options_.postgres_connection),
           account_(options_.initial_cash),
           exchange_(bus_),
           engine_(options_.strategies, account_, trade_recorder_, exchange_)
@@ -909,13 +918,28 @@ public:
             strategy_names_.emplace(strategy.strategy_id, strategy.name);
         }
 
-        bus_.ensureStream(options_.stream, TransportSubjects::runtimeSubjects());
+        bus_.ensureStream(
+            options_.stream,
+            options_.runtime_mode == RuntimeMode::Replay
+                ? TransportSubjects::runtimeSubjects()
+                : TransportSubjects::tradingRuntimeSubjects()
+        );
         bus_.ensureStream(
             options_.exchange_control_stream,
             TransportSubjects::exchangeGatewayControlSubjects()
         );
+        clock_ = std::make_unique<ServiceClockContext>(
+            ServiceClockContext::Options{
+                options_.runtime_mode, options_.stream, "execution-state", options_.simulation_id
+            },
+            bus_
+        );
 
-        if (const auto stored = store_.load()) {
+        // PostgreSQL state restoration follows clock bootstrap.  This keeps the replay
+        // control plane responsive even when database recovery is temporarily slow.
+        store_ = std::make_unique<PostgresStateStore>(options_.postgres_connection);
+
+        if (const auto stored = store_->load()) {
             LG_INFO("service=execution-state event=persisted_state_found action=restore");
             restore(*stored);
             LG_INFO(
@@ -934,30 +958,48 @@ public:
 
         exchange_snapshot_subscription_ = bus_.subscribe(
             consumer("execution-state-exchange-snapshot", TransportSubjects::EXCHANGE_SNAPSHOT),
-            [this](const BusMessage& message) { return onExchangeSnapshot(message); }
+            clock_->guard(
+                "exchange_snapshot",
+                [this](const BusMessage& message) { return onExchangeSnapshot(message); }
+            )
         );
         // One durable consumer owns the ordered public exchange event sequence.
         // Using separate OrderUpdate/Fill consumers can reorder Filled ahead of Fill
         // even when the gateway published Accepted -> Fill -> Filled correctly.
         exchange_event_subscription_ = bus_.subscribe(
             consumer("execution-state-exchange-events", TransportSubjects::EXECUTION_EVENT_FILTER),
-            [this](const BusMessage& message) { return onExchangeEvent(message); }
+            clock_->guard(
+                "exchange_event",
+                [this](const BusMessage& message) { return onExchangeEvent(message); }
+            )
         );
         plan_subscription_ = bus_.subscribe(
             consumer("execution-state-plans", TransportSubjects::ORDER_PLAN),
-            [this](const BusMessage& message) { return onPlan(message); }
+            clock_->guard(
+                "order_plan",
+                [this](const BusMessage& message) { return onPlan(message); }
+            )
         );
         decision_subscription_ = bus_.subscribe(
             consumer("execution-state-decisions", TransportSubjects::DECISION_BATCH),
-            [this](const BusMessage& message) { return onDecision(message); }
+            clock_->guard(
+                "decision_batch",
+                [this](const BusMessage& message) { return onDecision(message); }
+            )
         );
         prices_subscription_ = bus_.subscribe(
             consumer("execution-state-prices", TransportSubjects::EXECUTION_PRICES),
-            [this](const BusMessage& message) { return onPrices(message); }
+            clock_->guard(
+                "execution_prices",
+                [this](const BusMessage& message) { return onPrices(message); }
+            )
         );
         market_slice_subscription_ = bus_.subscribe(
             consumer("execution-state-market-slices", TransportSubjects::MARKET_SLICE_SNAPSHOT),
-            [this](const BusMessage& message) { return onMarketSlice(message); }
+            clock_->guard(
+                "market_slice",
+                [this](const BusMessage& message) { return onMarketSlice(message); }
+            )
         );
 
         // Reconciliation is an explicit request/response boundary now. The request is
@@ -978,14 +1020,18 @@ public:
     void run()
     {
         LG_INFO(
-            "service=execution-state event=service_ready stream={} reconciliation=required strategies={} initial_cash={} poll_timeout_ms={}",
+            "service=execution-state event=service_ready stream={} reconciliation=required strategies={} initial_cash={} runtime_mode={} clock_sync={} poll_timeout_ms={}",
             options_.stream,
             options_.strategies.size(),
             options_.initial_cash,
+            runtimeModeName(options_.runtime_mode),
+            clock_->synchronized() ? "ready" : "pending",
             options_.poll_timeout_ms
         );
+        std::cout.flush();
 
         while (running.load()) {
+            clock_->poll(64, 1);
             // Exchange truth/events are deliberately processed before new plans. This,
             // combined with state_revision validation, minimizes stale-plan windows.
             bus_.poll(exchange_snapshot_subscription_, 16, options_.poll_timeout_ms);

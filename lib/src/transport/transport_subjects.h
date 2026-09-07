@@ -9,6 +9,9 @@
  * them as subjects while tests/in-process adapters use the exact same contract names.
  **************************************************************************************/
 namespace TransportSubjects {
+inline constexpr const char* CLOCK_STATE = "simulation.clock.state.v1";
+inline constexpr const char* CLOCK_CONTROL = "simulation.clock.control.v1";
+inline constexpr const char* CLOCK_SYNC_REQUEST = "simulation.clock.sync.request.v1";
 inline constexpr const char* MARKET_DATA_RELEASE = "market.release.v1";
 inline constexpr const char* MARKET_SLICE_CLOSED = "market.slice.closed.v1";
 inline constexpr const char* MARKET_SLICE_SNAPSHOT = "market.slice.snapshot.v1";
@@ -36,7 +39,7 @@ inline constexpr const char* BACKEND_ORDER_UPDATE = "gateway.backend.event.order
 inline constexpr const char* BACKEND_FILL = "gateway.backend.event.fill.v1";
 inline constexpr const char* BACKEND_EXCHANGE_SNAPSHOT = "gateway.backend.snapshot.v1";
 
-inline std::vector<std::string> runtimeSubjects()
+inline std::vector<std::string> tradingRuntimeSubjects()
 {
     return {
         MARKET_DATA_RELEASE,
@@ -55,6 +58,17 @@ inline std::vector<std::string> runtimeSubjects()
         ORDER_PLANNING_REQUEST,
         ORDER_PLAN
     };
+}
+
+// REPLAY adds logical-clock transport to the normal trading subjects. LIVE/TESTNET
+// services deliberately call tradingRuntimeSubjects() so fake-clock subjects are not
+// required or installed as part of their bootstrap path.
+inline std::vector<std::string> runtimeSubjects()
+{
+    std::vector<std::string> result{CLOCK_STATE, CLOCK_SYNC_REQUEST, CLOCK_CONTROL};
+    const auto trading = tradingRuntimeSubjects();
+    result.insert(result.end(), trading.begin(), trading.end());
+    return result;
 }
 
 inline std::vector<std::string> exchangeGatewayControlSubjects()

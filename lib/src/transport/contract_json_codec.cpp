@@ -157,6 +157,123 @@ std::string dump(const T& value)
 
 namespace ContractJsonCodec {
 
+std::string encode(const ClockState& value)
+{
+    return dump(json{
+        {"metadata", metadataToJson(value.metadata)},
+        {"simulation_id", value.simulation_id},
+        {"logical_time", value.logical_time},
+        {"revision", value.revision},
+        {"mode", static_cast<int>(value.mode)},
+        {"speed_multiplier", value.speed_multiplier},
+        {"paused", value.paused}
+    });
+}
+
+ClockState decodeClockState(const std::string& payload)
+{
+    const json value = json::parse(payload);
+    ClockState result;
+    result.metadata = metadataFromJson(value.at("metadata"));
+    result.simulation_id = value.at("simulation_id").get<std::string>();
+    result.logical_time = value.at("logical_time").get<Timestamp>();
+    result.revision = value.at("revision").get<std::uint64_t>();
+    result.mode = static_cast<SimulationClockMode>(value.at("mode").get<int>());
+    result.speed_multiplier = value.value("speed_multiplier", 0.0);
+    result.paused = value.value("paused", false);
+
+    if (result.simulation_id.empty() || result.logical_time == 0 || result.revision == 0)
+        throw std::invalid_argument("Invalid logical clock identity/time/revision");
+    if (result.mode != SimulationClockMode::Realtime &&
+        result.mode != SimulationClockMode::Multiplier &&
+        result.mode != SimulationClockMode::MaxSpeed)
+        throw std::invalid_argument("Invalid simulation clock mode");
+    if (!std::isfinite(result.speed_multiplier) || result.speed_multiplier < 0.0)
+        throw std::invalid_argument("Invalid simulation clock speed multiplier");
+    if (result.mode == SimulationClockMode::Multiplier && result.speed_multiplier <= 0.0)
+        throw std::invalid_argument("Multiplier clock mode requires positive speed");
+    if (result.mode != SimulationClockMode::Multiplier && result.speed_multiplier != 0.0)
+        throw std::invalid_argument("Non-multiplier clock mode must use zero speed multiplier");
+
+    return result;
+}
+
+std::string encode(const ClockControl& value)
+{
+    return dump(json{
+        {"metadata", metadataToJson(value.metadata)},
+        {"simulation_id", value.simulation_id},
+        {"action", static_cast<int>(value.action)},
+        {"mode", static_cast<int>(value.mode)},
+        {"speed_multiplier", value.speed_multiplier},
+        {"expected_revision", value.expected_revision}
+    });
+}
+
+ClockControl decodeClockControl(const std::string& payload)
+{
+    const json value = json::parse(payload);
+    ClockControl result;
+    result.metadata = metadataFromJson(value.at("metadata"));
+    result.simulation_id = value.at("simulation_id").get<std::string>();
+    result.action = static_cast<ClockControlAction>(value.at("action").get<int>());
+    result.mode = static_cast<SimulationClockMode>(
+        value.value("mode", static_cast<int>(SimulationClockMode::MaxSpeed))
+    );
+    result.speed_multiplier = value.value("speed_multiplier", 0.0);
+    result.expected_revision = value.value("expected_revision", std::uint64_t{0});
+
+    if (result.metadata.schema_version != 1 || result.metadata.message_id.empty() ||
+        result.simulation_id.empty())
+        throw std::invalid_argument("Invalid logical clock control identity");
+    if (result.action != ClockControlAction::Pause &&
+        result.action != ClockControlAction::Resume &&
+        result.action != ClockControlAction::SetSpeed)
+        throw std::invalid_argument("Invalid logical clock control action");
+
+    if (result.action == ClockControlAction::SetSpeed) {
+        if (result.mode != SimulationClockMode::Realtime &&
+            result.mode != SimulationClockMode::Multiplier &&
+            result.mode != SimulationClockMode::MaxSpeed)
+            throw std::invalid_argument("Invalid logical clock control mode");
+        if (!std::isfinite(result.speed_multiplier) || result.speed_multiplier < 0.0)
+            throw std::invalid_argument("Invalid logical clock control speed multiplier");
+        if (result.mode == SimulationClockMode::Multiplier && result.speed_multiplier <= 0.0)
+            throw std::invalid_argument("Multiplier clock control requires positive speed");
+        if (result.mode != SimulationClockMode::Multiplier && result.speed_multiplier != 0.0)
+            throw std::invalid_argument("Realtime/MAX clock control must use zero speed multiplier");
+    }
+
+    return result;
+}
+
+std::string encode(const ClockSyncRequest& value)
+{
+    return dump(json{
+        {"metadata", metadataToJson(value.metadata)},
+        {"requester_id", value.requester_id},
+        {"simulation_id", value.simulation_id},
+        {"known_revision", value.known_revision}
+    });
+}
+
+ClockSyncRequest decodeClockSyncRequest(const std::string& payload)
+{
+    const json value = json::parse(payload);
+    ClockSyncRequest result;
+    result.metadata = metadataFromJson(value.at("metadata"));
+    result.requester_id = value.at("requester_id").get<std::string>();
+    result.simulation_id = value.value("simulation_id", std::string{});
+    result.known_revision = value.value("known_revision", std::uint64_t{0});
+
+    if (result.metadata.schema_version != 1 || result.metadata.message_id.empty() ||
+        result.requester_id.empty())
+        throw std::invalid_argument("Invalid logical clock sync request");
+
+    return result;
+}
+
+
 std::string encode(const MarketDataReleaseRequest& value)
 {
     return dump(json{
