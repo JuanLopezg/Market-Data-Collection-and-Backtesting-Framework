@@ -2,12 +2,17 @@
 #include <chrono>
 #include <csignal>
 #include <cstdio>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
+
+#include <libpq-fe.h>
 
 #include "contract_json_codec.h"
 #include "decision_batch.h"
@@ -33,6 +38,7 @@ struct Options {
     std::string stream = "ALGOTRADING_RUNTIME";
     std::string start_date;
     std::string end_date;
+    std::string postgres;
     int barrier_timeout_ms = 30000;
     int poll_timeout_ms = 100;
 };
@@ -101,6 +107,8 @@ Options parseOptions(int argc, char** argv)
             options.start_date = requireValue("--start-date");
         else if (arg == "--end-date")
             options.end_date = requireValue("--end-date");
+        else if (arg == "--postgres")
+            options.postgres = requireValue("--postgres");
         else if (arg == "--barrier-timeout-ms")
             options.barrier_timeout_ms = std::stoi(requireValue("--barrier-timeout-ms"));
         else if (arg == "--poll-timeout-ms")
@@ -112,6 +120,7 @@ Options parseOptions(int argc, char** argv)
                 << "  --stream NAME\n"
                 << "  --start-date YYYY-MM-DD   first decision close\n"
                 << "  --end-date YYYY-MM-DD     last decision close\n"
+                << "  --postgres CONNECTION     durable replay progress checkpoint\n"
                 << "  --barrier-timeout-ms N\n"
                 << "  --poll-timeout-ms N\n";
             std::exit(0);
@@ -134,10 +143,289 @@ Options parseOptions(int argc, char** argv)
 }
 
 
+class PgResult {
+private:
+    PGresult* result_ = nullptr;
+
+public:
+    explicit PgResult(PGresult* result) : result_(result) {}
+    ~PgResult()
+    {
+        if (result_)
+            PQclear(result_);
+    }
+
+    PgResult(const PgResult&) = delete;
+    PgResult& operator=(const PgResult&) = delete;
+
+    PgResult(PgResult&& other) noexcept
+        : result_(std::exchange(other.result_, nullptr))
+    {}
+
+    PgResult& operator=(PgResult&& other) noexcept
+    {
+        if (this != &other) {
+            if (result_)
+                PQclear(result_);
+            result_ = std::exchange(other.result_, nullptr);
+        }
+        return *this;
+    }
+
+    PGresult* get() const { return result_; }
+};
+
+
+class ReplayCheckpointStore {
+private:
+    PGconn* connection_ = nullptr;
+    static constexpr const char* STATE_KEY = "replay-controller";
+
+    void requireConnection() const
+    {
+        if (connection_ == nullptr || PQstatus(connection_) != CONNECTION_OK)
+            throw std::runtime_error("Replay checkpoint PostgreSQL connection is not ready");
+    }
+
+    PgResult exec(const std::string& sql, ExecStatusType expected) const
+    {
+        requireConnection();
+        PgResult result(PQexec(connection_, sql.c_str()));
+        if (result.get() == nullptr || PQresultStatus(result.get()) != expected) {
+            const std::string error = connection_ ? PQerrorMessage(connection_) : "unknown PostgreSQL error";
+            throw std::runtime_error("Replay checkpoint PostgreSQL query failed: " + error);
+        }
+        return result;
+    }
+
+    PgResult execParams(
+        const std::string& sql,
+        const std::vector<std::string>& parameters,
+        ExecStatusType expected
+    ) const
+    {
+        requireConnection();
+
+        std::vector<const char*> values;
+        values.reserve(parameters.size());
+        for (const std::string& parameter : parameters)
+            values.push_back(parameter.c_str());
+
+        PgResult result(PQexecParams(
+            connection_,
+            sql.c_str(),
+            static_cast<int>(values.size()),
+            nullptr,
+            values.data(),
+            nullptr,
+            nullptr,
+            0
+        ));
+
+        if (result.get() == nullptr || PQresultStatus(result.get()) != expected) {
+            const std::string error = connection_ ? PQerrorMessage(connection_) : "unknown PostgreSQL error";
+            throw std::runtime_error("Replay checkpoint PostgreSQL parameterized query failed: " + error);
+        }
+        return result;
+    }
+
+    void ensureSchema(Timestamp rangeStart, Timestamp rangeEnd)
+    {
+        exec(
+            "CREATE TABLE IF NOT EXISTS replay_controller_metadata ("
+            "state_key TEXT PRIMARY KEY, "
+            "range_start BIGINT NOT NULL, "
+            "range_end BIGINT NOT NULL"
+            ")",
+            PGRES_COMMAND_OK
+        );
+
+        exec(
+            "CREATE TABLE IF NOT EXISTS replay_controller_decision_checkpoint ("
+            "state_key TEXT NOT NULL, "
+            "decision_timestamp BIGINT NOT NULL, "
+            "message_id TEXT NOT NULL, "
+            "PRIMARY KEY(state_key, decision_timestamp)"
+            ")",
+            PGRES_COMMAND_OK
+        );
+
+        exec(
+            "CREATE TABLE IF NOT EXISTS replay_controller_execution_checkpoint ("
+            "state_key TEXT NOT NULL, "
+            "decision_timestamp BIGINT NOT NULL, "
+            "execution_timestamp BIGINT NOT NULL, "
+            "state_revision NUMERIC(20,0) NOT NULL, "
+            "message_id TEXT NOT NULL, "
+            "PRIMARY KEY(state_key, decision_timestamp)"
+            ")",
+            PGRES_COMMAND_OK
+        );
+
+        // state_revision is a std::uint64_t and may exceed PostgreSQL BIGINT's
+        // signed 64-bit range. 33B initially created this column as BIGINT, so
+        // migrate existing validation databases in-place as well as using the
+        // correct type for fresh databases. NUMERIC(20,0) losslessly covers the
+        // complete uint64_t range [0, 18446744073709551615].
+        exec(
+            "ALTER TABLE replay_controller_execution_checkpoint "
+            "ALTER COLUMN state_revision TYPE NUMERIC(20,0) "
+            "USING state_revision::numeric",
+            PGRES_COMMAND_OK
+        );
+
+        execParams(
+            "INSERT INTO replay_controller_metadata(state_key, range_start, range_end) "
+            "VALUES($1, $2, $3) ON CONFLICT(state_key) DO NOTHING",
+            {STATE_KEY, std::to_string(rangeStart), std::to_string(rangeEnd)},
+            PGRES_COMMAND_OK
+        );
+
+        const PgResult metadata = execParams(
+            "SELECT range_start, range_end FROM replay_controller_metadata WHERE state_key = $1",
+            {STATE_KEY},
+            PGRES_TUPLES_OK
+        );
+
+        if (PQntuples(metadata.get()) != 1)
+            throw std::runtime_error("Replay checkpoint metadata row missing");
+
+        const Timestamp storedStart = static_cast<Timestamp>(std::stoull(PQgetvalue(metadata.get(), 0, 0)));
+        const Timestamp storedEnd = static_cast<Timestamp>(std::stoull(PQgetvalue(metadata.get(), 0, 1)));
+        if (storedStart != rangeStart || storedEnd != rangeEnd)
+            throw std::runtime_error("Replay checkpoint range does not match configured replay range");
+    }
+
+public:
+    ReplayCheckpointStore(
+        const std::string& connectionString,
+        Timestamp rangeStart,
+        Timestamp rangeEnd
+    )
+    {
+        connection_ = PQconnectdb(connectionString.c_str());
+        if (connection_ == nullptr || PQstatus(connection_) != CONNECTION_OK) {
+            const std::string error = connection_ ? PQerrorMessage(connection_) : "cannot allocate PGconn";
+            if (connection_) {
+                PQfinish(connection_);
+                connection_ = nullptr;
+            }
+            throw std::runtime_error("Replay checkpoint PostgreSQL connect failed: " + error);
+        }
+
+        ensureSchema(rangeStart, rangeEnd);
+    }
+
+    ~ReplayCheckpointStore()
+    {
+        if (connection_)
+            PQfinish(connection_);
+    }
+
+    ReplayCheckpointStore(const ReplayCheckpointStore&) = delete;
+    ReplayCheckpointStore& operator=(const ReplayCheckpointStore&) = delete;
+
+    std::map<Timestamp, std::string> loadDecisions() const
+    {
+        const PgResult result = execParams(
+            "SELECT decision_timestamp, message_id "
+            "FROM replay_controller_decision_checkpoint "
+            "WHERE state_key = $1 ORDER BY decision_timestamp",
+            {STATE_KEY},
+            PGRES_TUPLES_OK
+        );
+
+        std::map<Timestamp, std::string> values;
+        for (int row = 0; row < PQntuples(result.get()); ++row) {
+            values.emplace(
+                static_cast<Timestamp>(std::stoull(PQgetvalue(result.get(), row, 0))),
+                PQgetvalue(result.get(), row, 1)
+            );
+        }
+        return values;
+    }
+
+    std::map<Timestamp, Timestamp> loadExecutions() const
+    {
+        const PgResult result = execParams(
+            "SELECT decision_timestamp, execution_timestamp "
+            "FROM replay_controller_execution_checkpoint "
+            "WHERE state_key = $1 ORDER BY decision_timestamp",
+            {STATE_KEY},
+            PGRES_TUPLES_OK
+        );
+
+        std::map<Timestamp, Timestamp> values;
+        for (int row = 0; row < PQntuples(result.get()); ++row) {
+            values.emplace(
+                static_cast<Timestamp>(std::stoull(PQgetvalue(result.get(), row, 0))),
+                static_cast<Timestamp>(std::stoull(PQgetvalue(result.get(), row, 1)))
+            );
+        }
+        return values;
+    }
+
+    void recordDecision(const DecisionBatch& value) const
+    {
+        execParams(
+            "INSERT INTO replay_controller_decision_checkpoint("
+            "state_key, decision_timestamp, message_id) VALUES($1, $2, $3) "
+            "ON CONFLICT(state_key, decision_timestamp) DO NOTHING",
+            {STATE_KEY, std::to_string(value.decision_timestamp), value.metadata.message_id},
+            PGRES_COMMAND_OK
+        );
+
+        const PgResult existing = execParams(
+            "SELECT message_id FROM replay_controller_decision_checkpoint "
+            "WHERE state_key = $1 AND decision_timestamp = $2",
+            {STATE_KEY, std::to_string(value.decision_timestamp)},
+            PGRES_TUPLES_OK
+        );
+
+        if (PQntuples(existing.get()) != 1 ||
+            value.metadata.message_id != PQgetvalue(existing.get(), 0, 0))
+            throw std::runtime_error("Conflicting replay decision checkpoint");
+    }
+
+    void recordExecution(const ExecutionCycleComplete& value) const
+    {
+        execParams(
+            "INSERT INTO replay_controller_execution_checkpoint("
+            "state_key, decision_timestamp, execution_timestamp, state_revision, message_id) "
+            "VALUES($1, $2, $3, $4, $5) "
+            "ON CONFLICT(state_key, decision_timestamp) DO NOTHING",
+            {
+                STATE_KEY,
+                std::to_string(value.decision_timestamp),
+                std::to_string(value.execution_timestamp),
+                std::to_string(value.state_revision),
+                value.metadata.message_id
+            },
+            PGRES_COMMAND_OK
+        );
+
+        const PgResult existing = execParams(
+            "SELECT execution_timestamp, state_revision, message_id "
+            "FROM replay_controller_execution_checkpoint "
+            "WHERE state_key = $1 AND decision_timestamp = $2",
+            {STATE_KEY, std::to_string(value.decision_timestamp)},
+            PGRES_TUPLES_OK
+        );
+
+        if (PQntuples(existing.get()) != 1 ||
+            static_cast<Timestamp>(std::stoull(PQgetvalue(existing.get(), 0, 0))) != value.execution_timestamp ||
+            static_cast<std::uint64_t>(std::stoull(PQgetvalue(existing.get(), 0, 1))) != value.state_revision ||
+            value.metadata.message_id != PQgetvalue(existing.get(), 0, 2))
+            throw std::runtime_error("Conflicting replay execution checkpoint");
+    }
+};
+
+
 class ReplayControllerRuntime {
 private:
     const Options options_;
     NatsJetStreamMessageBus bus_;
+    std::unique_ptr<ReplayCheckpointStore> checkpoint_store_;
     DurableMessageBus::SubscriptionID decision_subscription_ = 0;
     DurableMessageBus::SubscriptionID execution_subscription_ = 0;
 
@@ -163,6 +451,19 @@ private:
             if (value.metadata.schema_version != 1 || value.metadata.message_id.empty() ||
                 value.decision_timestamp == 0)
                 return DurableMessageDisposition::Terminate;
+
+            try {
+                if (checkpoint_store_)
+                    checkpoint_store_->recordDecision(value);
+            }
+            catch (const std::exception& error) {
+                LG_ERROR(
+                    "service=replay-controller event=decision_checkpoint_failed disposition=retry decision_timestamp={} error={}",
+                    value.decision_timestamp,
+                    error.what()
+                );
+                return DurableMessageDisposition::Retry;
+            }
 
             decisions_ready_[value.decision_timestamp] = value.metadata.message_id;
             LG_DEBUG(
@@ -193,6 +494,20 @@ private:
             if (existing != executions_complete_.end() &&
                 existing->second != value.execution_timestamp)
                 return DurableMessageDisposition::Terminate;
+
+            try {
+                if (checkpoint_store_)
+                    checkpoint_store_->recordExecution(value);
+            }
+            catch (const std::exception& error) {
+                LG_ERROR(
+                    "service=replay-controller event=execution_checkpoint_failed disposition=retry decision_timestamp={} execution_timestamp={} error={}",
+                    value.decision_timestamp,
+                    value.execution_timestamp,
+                    error.what()
+                );
+                return DurableMessageDisposition::Retry;
+            }
 
             executions_complete_[value.decision_timestamp] = value.execution_timestamp;
             LG_DEBUG(
@@ -267,6 +582,30 @@ public:
     {
         bus_.ensureStream(options_.stream, TransportSubjects::runtimeSubjects());
 
+        if (!options_.postgres.empty()) {
+            const Timestamp rangeStart = toTimestamp(parseDate(options_.start_date));
+            const Timestamp rangeEnd = toTimestamp(parseDate(options_.end_date));
+            checkpoint_store_ = std::make_unique<ReplayCheckpointStore>(
+                options_.postgres,
+                rangeStart,
+                rangeEnd
+            );
+            decisions_ready_ = checkpoint_store_->loadDecisions();
+            executions_complete_ = checkpoint_store_->loadExecutions();
+            LG_INFO(
+                "service=replay-controller event=replay_recovery_completed recovered_decisions={} recovered_executions={} range_start={} range_end={}",
+                decisions_ready_.size(),
+                executions_complete_.size(),
+                options_.start_date,
+                options_.end_date
+            );
+        }
+        else {
+            LG_WARN(
+                "service=replay-controller event=restart_checkpoint_disabled reason=postgres_not_configured"
+            );
+        }
+
         decision_subscription_ = bus_.subscribe(
             consumer("replay-controller-decisions", TransportSubjects::DECISION_BATCH),
             [this](const BusMessage& message) { return onDecision(message); }
@@ -308,22 +647,45 @@ public:
             const Timestamp decisionTimestamp = toTimestamp(decisionDate);
             const Timestamp executionTimestamp = toTimestamp(executionDate);
 
-            publishRelease(
-                MarketDataReleaseKind::ClosedSlice,
-                decisionTimestamp,
-                0,
-                "replay-release-close:" + std::to_string(decisionTimestamp)
-            );
+            const auto recoveredExecution = executions_complete_.find(decisionTimestamp);
+            if (recoveredExecution != executions_complete_.end()) {
+                if (recoveredExecution->second != executionTimestamp)
+                    throw std::runtime_error("Recovered execution timestamp conflicts with replay calendar");
+                ++completed;
+                LG_DEBUG(
+                    "service=replay-controller event=recovered_cycle_skipped decision_timestamp={} execution_timestamp={} completed_cycles={}",
+                    decisionTimestamp,
+                    executionTimestamp,
+                    completed
+                );
+                continue;
+            }
 
-            waitBarrier(
-                "decision " + formatDate(decisionDate),
-                [&] { return decisions_ready_.contains(decisionTimestamp); }
-            );
-            LG_INFO(
-                "[REPLAY] decision-ready close={} service=replay-controller event=decision_ready completed_cycles={}",
-                formatDate(decisionDate),
-                completed
-            );
+            if (!decisions_ready_.contains(decisionTimestamp)) {
+                publishRelease(
+                    MarketDataReleaseKind::ClosedSlice,
+                    decisionTimestamp,
+                    0,
+                    "replay-release-close:" + std::to_string(decisionTimestamp)
+                );
+
+                waitBarrier(
+                    "decision " + formatDate(decisionDate),
+                    [&] { return decisions_ready_.contains(decisionTimestamp); }
+                );
+                LG_INFO(
+                    "[REPLAY] decision-ready close={} service=replay-controller event=decision_ready completed_cycles={}",
+                    formatDate(decisionDate),
+                    completed
+                );
+            }
+            else {
+                LG_INFO(
+                    "service=replay-controller event=recovered_decision_barrier decision_timestamp={} completed_cycles={}",
+                    decisionTimestamp,
+                    completed
+                );
+            }
 
             publishRelease(
                 MarketDataReleaseKind::ExecutionOpen,

@@ -69,4 +69,5 @@ public:
     );
 
     Timestamp lastTimestamp() const { return last_timestamp_; }
+    void restoreLastTimestamp(Timestamp timestamp);
 };

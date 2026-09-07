@@ -43,6 +43,15 @@ void stopHandler(int)
     running.store(false);
 }
 
+bool envFlag(const char* name)
+{
+    const char* value = std::getenv(name);
+    if (value == nullptr)
+        return false;
+    const std::string text(value);
+    return !text.empty() && text != "0" && text != "false" && text != "FALSE";
+}
+
 
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
@@ -158,6 +167,9 @@ private:
     std::optional<ActiveExecutionCycle> active_execution_cycle_;
     Timestamp last_decision_timestamp_ = 0;
     bool reconciled_ = false;
+    bool chaos_nak_fill_after_persist_once_ =
+        envFlag("ALGOTRADING_CHAOS_NAK_FILL_AFTER_PERSIST_ONCE");
+    bool chaos_nak_fill_after_persist_done_ = false;
 
     DurableMessageBus::SubscriptionID exchange_snapshot_subscription_ = 0;
     DurableMessageBus::SubscriptionID exchange_event_subscription_ = 0;
@@ -808,23 +820,52 @@ private:
                 value.fill.price,
                 value.fill.commission
             );
+            const std::size_t processedBefore =
+                engine_.orderManager().processedFillIds().size();
             engine_.processExchangeEvent(
                 ExchangeEvent{value.fill},
                 [this](const std::optional<Fill>& fill) { persist(fill); }
             );
+            const std::size_t processedAfter =
+                engine_.orderManager().processedFillIds().size();
+
             publishAccountSnapshot(
                 value.fill.timestamp,
                 "account-snapshot:fill:" + std::to_string(value.fill.fill_id),
                 value.metadata.message_id
             );
-            LG_INFO(
-                "service=execution-state event=fill_applied fill_id={} cash={} positions={} processed_fill_ids={}",
-                value.fill.fill_id,
-                engine_.account().cash(),
-                engine_.account().positions().values().size(),
-                engine_.orderManager().processedFillIds().size()
-            );
+
+            if (processedAfter == processedBefore) {
+                LG_WARN(
+                    "service=execution-state event=fill_duplicate_ignored fill_id={} order_id={} transport_message_id={}",
+                    value.fill.fill_id,
+                    value.fill.order_id,
+                    value.metadata.message_id
+                );
+            }
+            else {
+                LG_INFO(
+                    "service=execution-state event=fill_applied fill_id={} cash={} positions={} processed_fill_ids={}",
+                    value.fill.fill_id,
+                    engine_.account().cash(),
+                    engine_.account().positions().values().size(),
+                    processedAfter
+                );
+            }
+
             maybePublishExecutionCycleComplete();
+
+            if (chaos_nak_fill_after_persist_once_ &&
+                !chaos_nak_fill_after_persist_done_) {
+                chaos_nak_fill_after_persist_done_ = true;
+                LG_WARN(
+                    "service=execution-state event=chaos_fill_nak_after_persist fill_id={} order_id={} disposition=retry",
+                    value.fill.fill_id,
+                    value.fill.order_id
+                );
+                return DurableMessageDisposition::Retry;
+            }
+
             return DurableMessageDisposition::Ack;
         }
         catch (const std::exception& error) {

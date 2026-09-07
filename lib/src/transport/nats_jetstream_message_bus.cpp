@@ -16,9 +16,55 @@ void checkNats(natsStatus status, const char* context)
     if (status == NATS_OK)
         return;
 
-    throw std::runtime_error(
-        std::string(context) + ": " + natsStatus_GetText(status)
-    );
+    natsStatus lastStatus = NATS_OK;
+    const char* lastError = nats_GetLastError(&lastStatus);
+
+    std::string message =
+        std::string(context) + ": " + natsStatus_GetText(status);
+
+    if (lastError != nullptr && *lastError != '\0')
+        message += std::string(" detail=") + lastError;
+
+    throw std::runtime_error(message);
+}
+
+void checkNatsJs(natsStatus status, jsErrCode errorCode, const char* context)
+{
+    if (status == NATS_OK)
+        return;
+
+    natsStatus lastStatus = NATS_OK;
+    const char* lastError = nats_GetLastError(&lastStatus);
+
+    std::string message =
+        std::string(context)
+        + ": " + natsStatus_GetText(status)
+        + " js_error_code=" + std::to_string(static_cast<int>(errorCode));
+
+    if (lastError != nullptr && *lastError != '\0')
+        message += std::string(" detail=") + lastError;
+
+    throw std::runtime_error(message);
+}
+
+std::string normalizeJetStreamFilterSubject(std::string subject)
+{
+    // nats-server is written in Go. Its JSON encoder may represent '>' as
+    // the HTML-safe JSON escape "\u003e". On the libnats version used by this
+    // project, ConsumerInfo can expose that escape sequence literally instead
+    // of decoding it back to '>'. They are the same NATS wildcard subject.
+    //
+    // Keep this normalization deliberately narrow: only the observed JSON
+    // representation of the NATS full-wildcard token is accepted as equivalent.
+    const char* escapes[] = {"\\u003e", "\\u003E"};
+    for (const char* escaped : escapes) {
+        std::size_t pos = 0;
+        while ((pos = subject.find(escaped, pos)) != std::string::npos) {
+            subject.replace(pos, 6, ">");
+            ++pos;
+        }
+    }
+    return subject;
 }
 
 void validateConsumerOptions(const DurableConsumerOptions& options)
@@ -268,24 +314,141 @@ DurableMessageBus::SubscriptionID NatsJetStreamMessageBus::subscribe(
     );
 
     subscribeOptions.Stream = options.stream.c_str();
-    subscribeOptions.Config.AckPolicy = js_AckExplicit;
-    subscribeOptions.Config.AckWait = options.ack_wait_ms * 1000000LL;
-    subscribeOptions.Config.MaxDeliver = options.max_deliver;
-    subscribeOptions.Config.MaxAckPending = options.max_ack_pending;
 
-    natsSubscription* subscription = nullptr;
+    // Durable consumers are server-side state. A hard service restart must bind to
+    // the existing consumer and preserve its ACK floor/redelivery state instead of
+    // trying to create a second consumer with the same durable name.
+    jsConsumerInfo* consumerInfo = nullptr;
     jsErrCode errorCode = static_cast<jsErrCode>(0);
-    const natsStatus status = js_PullSubscribe(
-        &subscription,
+    const natsStatus infoStatus = js_GetConsumerInfo(
+        &consumerInfo,
         impl_->jetstream,
-        options.subject.c_str(),
+        options.stream.c_str(),
         options.durable_name.c_str(),
         nullptr,
-        &subscribeOptions,
         &errorCode
     );
-    if (status != NATS_OK)
-        checkNats(status, "Failed to create JetStream durable pull subscription");
+
+    bool bindExisting = false;
+    if (infoStatus == NATS_OK) {
+        if (consumerInfo == nullptr || consumerInfo->Config == nullptr) {
+            jsConsumerInfo_Destroy(consumerInfo);
+            throw std::runtime_error(
+                "JetStream returned durable consumer info without config"
+            );
+        }
+
+        const jsConsumerConfig& config = *consumerInfo->Config;
+        const std::string existingStream =
+            consumerInfo->Stream ? consumerInfo->Stream : "";
+
+        // jsConsumerInfo::Name is the canonical server-side consumer identity.
+        // Older server/client combinations may also populate Config.Durable, but
+        // restart binding must not depend on that duplicate representation.
+        const std::string existingConsumerName =
+            (consumerInfo->Name && *consumerInfo->Name)
+                ? consumerInfo->Name
+                : (config.Durable ? config.Durable : "");
+
+        // Only validate structural invariants here. AckWait, MaxDeliver and
+        // MaxAckPending are server-side consumer configuration and may be
+        // normalized/defaulted by JetStream. Requiring byte-for-byte equality
+        // with the local creation request can reject the very same durable on
+        // restart. The explicit Stream+Consumer bind below is the authoritative
+        // operation and nats.c validates subject/filter compatibility.
+        const std::string existingFilter =
+            config.FilterSubject ? config.FilterSubject : "";
+        const std::string requestedFilterNormalized =
+            normalizeJetStreamFilterSubject(options.subject);
+        const std::string existingFilterNormalized =
+            normalizeJetStreamFilterSubject(existingFilter);
+
+        const bool isPull =
+            config.DeliverSubject == nullptr || *config.DeliverSubject == '\0';
+        const bool structurallyCompatible =
+            existingStream == options.stream
+            && existingConsumerName == options.durable_name
+            && existingFilterNormalized == requestedFilterNormalized
+            && config.AckPolicy == js_AckExplicit
+            && isPull;
+
+        if (!structurallyCompatible) {
+            const std::string details =
+                " requested_stream=" + options.stream
+                + " existing_stream=" + existingStream
+                + " requested_consumer=" + options.durable_name
+                + " existing_consumer=" + existingConsumerName
+                + " requested_filter=" + options.subject
+                + " existing_filter=" + existingFilter
+                + " requested_filter_normalized=" + requestedFilterNormalized
+                + " existing_filter_normalized=" + existingFilterNormalized
+                + " ack_policy=" + std::to_string(static_cast<int>(config.AckPolicy))
+                + " pull=" + std::string(isPull ? "true" : "false");
+
+            jsConsumerInfo_Destroy(consumerInfo);
+            throw std::runtime_error(
+                "Existing JetStream durable consumer is structurally incompatible:"
+                + details
+            );
+        }
+
+        jsConsumerInfo_Destroy(consumerInfo);
+        consumerInfo = nullptr;
+
+        // Explicit bind to the existing durable.
+        //
+        // Important: do NOT pass the application subject again on this path.
+        // nats.c compares the supplied subject byte-for-byte with ConsumerInfo's
+        // FilterSubject before binding. The libnats/server combination used by
+        // this project exposes the JSON-escaped wildcard "\\u003e" literally in
+        // ConsumerInfo, so passing ">" causes a false mismatch inside nats.c.
+        //
+        // Stream+Consumer marks this as an explicit bind. nats.c explicitly
+        // allows an empty subject for that case and then skips the subject/filter
+        // comparison while preserving the existing server-side consumer.
+        subscribeOptions.Consumer = options.durable_name.c_str();
+        bindExisting = true;
+    }
+    else if (infoStatus != NATS_NOT_FOUND) {
+        jsConsumerInfo_Destroy(consumerInfo);
+        checkNats(infoStatus, "Failed to query JetStream durable consumer");
+    }
+
+    natsSubscription* subscription = nullptr;
+    errorCode = static_cast<jsErrCode>(0);
+
+    natsStatus status = NATS_OK;
+    if (bindExisting) {
+        status = js_PullSubscribe(
+            &subscription,
+            impl_->jetstream,
+            "",
+            options.durable_name.c_str(),
+            nullptr,
+            &subscribeOptions,
+            &errorCode
+        );
+        if (status != NATS_OK)
+            checkNatsJs(status, errorCode, "Failed to bind existing JetStream durable pull subscription");
+    }
+    else {
+        subscribeOptions.Config.AckPolicy = js_AckExplicit;
+        subscribeOptions.Config.AckWait = options.ack_wait_ms * 1000000LL;
+        subscribeOptions.Config.MaxDeliver = options.max_deliver;
+        subscribeOptions.Config.MaxAckPending = options.max_ack_pending;
+
+        status = js_PullSubscribe(
+            &subscription,
+            impl_->jetstream,
+            options.subject.c_str(),
+            options.durable_name.c_str(),
+            nullptr,
+            &subscribeOptions,
+            &errorCode
+        );
+        if (status != NATS_OK)
+            checkNatsJs(status, errorCode, "Failed to create JetStream durable pull subscription");
+    }
 
     const SubscriptionID id = impl_->next_subscription_id++;
     impl_->subscriptions.emplace(

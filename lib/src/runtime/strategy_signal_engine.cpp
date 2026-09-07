@@ -61,3 +61,31 @@ StrategyIntentBatch StrategySignalEngine::onBarClose(
     last_timestamp_ = ts;
     return batch;
 }
+
+
+void StrategySignalEngine::restore(const StrategyIntentBatch& batch)
+{
+    if (batch.timestamp == 0)
+        throw std::invalid_argument("Strategy restore timestamp must be non-zero");
+    if (batch.strategies.size() != strategies_.size())
+        throw std::invalid_argument("Strategy restore batch size does not match configured strategies");
+
+    std::unordered_map<StrategyID, const StrategySignalIntent*> intents;
+    intents.reserve(batch.strategies.size());
+    for (const StrategySignalIntent& intent : batch.strategies) {
+        if (!intents.emplace(intent.strategy_id, &intent).second)
+            throw std::invalid_argument("Strategy restore batch contains duplicate strategy ids");
+    }
+
+    for (StrategySignalInstance& strategy : strategies_) {
+        const auto it = intents.find(strategy.id());
+        if (it == intents.end())
+            throw std::invalid_argument("Strategy restore batch is missing a configured strategy");
+        if (it->second->strategy_name != strategy.name())
+            throw std::invalid_argument("Strategy restore batch name does not match configured strategy");
+
+        strategy.restoreSignals(it->second->signals);
+    }
+
+    last_timestamp_ = batch.timestamp;
+}

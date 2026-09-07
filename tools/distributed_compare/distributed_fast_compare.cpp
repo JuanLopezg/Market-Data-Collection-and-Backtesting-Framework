@@ -778,7 +778,20 @@ void runComparison(const Options& options, const Captured& captured)
             fail(expected.timestamp, "fills", "FillID " + std::to_string(fillId) + " fields mismatch");
     }
 
-    const TradeRecorder distributedRecorder = buildDistributedTradeRecorder(captured.fills, strategyNames);
+    // Transport delivery is not economic identity. The same FillID may be
+    // redelivered under a different transport message_id and execution-state
+    // must ignore that duplicate. Trade/PnL reconstruction therefore has to use
+    // the already validated business-idempotent FillID set above, not the raw
+    // transport delivery vector.
+    std::vector<Fill> uniqueDistributedFills;
+    uniqueDistributedFills.reserve(distributedFills.size());
+    for (const auto& [fillId, fill] : distributedFills) {
+        (void)fillId;
+        uniqueDistributedFills.push_back(fill);
+    }
+
+    const TradeRecorder distributedRecorder =
+        buildDistributedTradeRecorder(uniqueDistributedFills, strategyNames);
     compareTrades(recorder, distributedRecorder);
 
     if (options.require_trading) {

@@ -205,3 +205,15 @@ DecisionBatch PortfolioRiskEngine::onSignals(
     last_timestamp_ = timestamp;
     return output;
 }
+
+
+void PortfolioRiskEngine::restoreLastTimestamp(Timestamp timestamp)
+{
+    if (timestamp == 0) {
+        last_timestamp_ = 0;
+        return;
+    }
+    if (last_timestamp_ != 0 && timestamp < last_timestamp_)
+        throw std::logic_error("Portfolio-risk restore timestamp cannot move backwards");
+    last_timestamp_ = timestamp;
+}

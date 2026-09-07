@@ -28,6 +28,9 @@ class SimulatedExchange final : public Exchange {
 private:
     double commission_rate_ = 0.0;
     FillID next_fill_id_ = 1;
+    bool reject_next_order_ = false;
+    std::string reject_next_order_message_ = "CHAOS_REJECT";
+    double split_next_fill_fraction_ = 0.0;
 
     std::unordered_map<OrderID, ExecutionOrder> active_orders_;
     std::vector<ExchangeEvent> events_;
@@ -46,6 +49,18 @@ public:
             throw std::invalid_argument("Order id must be non-zero");
         if (active_orders_.find(order.order_id) != active_orders_.end())
             throw std::invalid_argument("Order id already active");
+
+        if (reject_next_order_) {
+            reject_next_order_ = false;
+            events_.emplace_back(OrderUpdate(
+                order.order_id,
+                order.created_at,
+                ExecutionOrderStatus::Rejected,
+                "sim-" + std::to_string(order.order_id),
+                reject_next_order_message_
+            ));
+            return;
+        }
 
         active_orders_.emplace(order.order_id, order);
         events_.emplace_back(OrderUpdate(
@@ -109,20 +124,37 @@ public:
             if (!std::isfinite(fillPrice) || fillPrice <= 0.0)
                 throw std::runtime_error("Invalid simulated market fill price");
 
-            Fill fill;
-            fill.fill_id = next_fill_id_++;
-            fill.order_id = order.order_id;
-            fill.strategy_id = order.strategy_id;
-            fill.timestamp = ts;
-            fill.coin = order.coin;
-            fill.side = order.side;
-            fill.quantity = order.quantity;
-            fill.price = fillPrice;
-            fill.commission = std::abs(order.quantity * fillPrice) * commission_rate_;
-            fill.validate();
+            const auto makeFill = [&](double quantity) {
+                Fill fill;
+                fill.fill_id = next_fill_id_++;
+                fill.order_id = order.order_id;
+                fill.strategy_id = order.strategy_id;
+                fill.timestamp = ts;
+                fill.coin = order.coin;
+                fill.side = order.side;
+                fill.quantity = quantity;
+                fill.price = fillPrice;
+                fill.commission = std::abs(quantity * fillPrice) * commission_rate_;
+                fill.validate();
+                return fill;
+            };
+
+            if (split_next_fill_fraction_ > 0.0) {
+                const double firstQuantity = order.quantity * split_next_fill_fraction_;
+                const double secondQuantity = order.quantity - firstQuantity;
+                split_next_fill_fraction_ = 0.0;
+
+                if (firstQuantity <= 0.0 || secondQuantity <= 0.0)
+                    throw std::runtime_error("Invalid chaos partial-fill quantities");
+
+                events_.emplace_back(makeFill(firstQuantity));
+                events_.emplace_back(makeFill(secondQuantity));
+            }
+            else {
+                events_.emplace_back(makeFill(order.quantity));
+            }
 
             // Preserve exchange event ordering: execution first, terminal status second.
-            events_.emplace_back(std::move(fill));
             events_.emplace_back(OrderUpdate(
                 order.order_id,
                 ts,
@@ -138,6 +170,51 @@ public:
         std::vector<ExchangeEvent> result;
         result.swap(events_);
         return result;
+    }
+
+    void configureRejectNextOrder(std::string message = "CHAOS_REJECT")
+    {
+        reject_next_order_ = true;
+        reject_next_order_message_ = std::move(message);
+    }
+
+    void configureSplitNextFill(double fraction)
+    {
+        if (!std::isfinite(fraction) || fraction <= 0.0 || fraction >= 1.0)
+            throw std::invalid_argument("Split-fill fraction must be between 0 and 1");
+        split_next_fill_fraction_ = fraction;
+    }
+
+    /**************************************************************************************
+     * Purpose : Restore exchange-owned durable state after a process/container restart
+     *
+     * Recovery must not recreate accepted/fill lifecycle events. Those are handled by
+     * the service durable outbox. This method restores only the exchange truth required
+     * to continue deterministic execution.
+     **************************************************************************************/
+    void restoreState(
+        std::unordered_map<OrderID, ExecutionOrder> activeOrders,
+        FillID nextFillId
+    )
+    {
+        if (nextFillId == 0)
+            throw std::invalid_argument("Restored next FillID must be non-zero");
+
+        for (const auto& [orderId, order] : activeOrders) {
+            if (orderId == 0 || order.order_id != orderId)
+                throw std::invalid_argument("Restored active order id is invalid");
+            if (order.coin.empty() || !std::isfinite(order.quantity) || order.quantity <= 0.0)
+                throw std::invalid_argument("Restored active order is invalid");
+        }
+
+        active_orders_ = std::move(activeOrders);
+        next_fill_id_ = nextFillId;
+        events_.clear();
+    }
+
+    FillID nextFillId() const
+    {
+        return next_fill_id_;
     }
 
     const std::unordered_map<OrderID, ExecutionOrder>& activeOrders() const

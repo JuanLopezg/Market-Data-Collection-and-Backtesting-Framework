@@ -30,6 +30,11 @@ public:
         Timestamp ts
     );
 
+    // Restore only durable signal state at the latest already-processed timestamp.
+    // Indicators are intentionally not restored: the next onBarClose() recomputes them
+    // from RollingMarketState's released raw history exactly as in the normal path.
+    void restore(const StrategyIntentBatch& batch);
+
     Timestamp lastTimestamp() const { return last_timestamp_; }
 
     const StrategySignalPortfolio& strategies() const { return strategies_; }

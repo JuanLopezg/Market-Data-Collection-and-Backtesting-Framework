@@ -27,6 +27,8 @@ runtime_image="algotrading-runtime:step28"
 portfolio_mode="equal-weight"
 realtest_csv=""
 realtest_comparison_csv=""
+allow_controller_recreate=0
+skip_fast_compare=0
 
 usage() {
     cat <<'EOF'
@@ -50,6 +52,8 @@ Options:
   --portfolio-mode MODE    equal-weight (default) or vol-target
   --realtest-csv PATH       After fast==distributed, run the exact research RealTest comparator on distributed trades
   --realtest-comparison-csv PATH  Output path used by the research comparator (mainly VolTarget campaign CSV)
+  --allow-controller-recreate      Allow replay-controller container replacement during restart validation
+  --skip-fast-compare               Run distributed replay/health only; used by fault scenarios whose semantics intentionally differ from fast
 EOF
 }
 
@@ -72,6 +76,8 @@ while [[ $# -gt 0 ]]; do
         --portfolio-mode) portfolio_mode="$2"; shift 2 ;;
         --realtest-csv) realtest_csv="$2"; shift 2 ;;
         --realtest-comparison-csv) realtest_comparison_csv="$2"; shift 2 ;;
+        --allow-controller-recreate) allow_controller_recreate=1; shift ;;
+        --skip-fast-compare) skip_fast_compare=1; shift ;;
         --help|-h) usage; exit 0 ;;
         *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
@@ -96,7 +102,9 @@ esac
     echo "       Pass --historical-data /path/to/1d_cmc.csv" >&2
     exit 1
 }
-[[ -f "$COMPARE_SRC" ]] || { echo "[FAIL] comparator missing: $COMPARE_SRC" >&2; exit 1; }
+if [[ "$skip_fast_compare" != "1" ]]; then
+    [[ -f "$COMPARE_SRC" ]] || { echo "[FAIL] comparator missing: $COMPARE_SRC" >&2; exit 1; }
+fi
 if [[ -n "$realtest_csv" ]]; then
     [[ -f "$realtest_csv" ]] || { echo "[FAIL] RealTest CSV not found: $realtest_csv" >&2; exit 1; }
 fi
@@ -202,8 +210,12 @@ bash "$DEPLOY/build_runtime_bundle.sh" >"$LOG_DIR/02_runtime_bundle.log" 2>&1
 grep -Fq "Runtime bundle ready" "$LOG_DIR/02_runtime_bundle.log"
 echo "[PASS] distributed runtime bundle assembled"
 
-compile_comparator
-echo "[PASS] distributed-vs-fast comparator compiled"
+if [[ "$skip_fast_compare" == "1" ]]; then
+    echo "[INFO] distributed-vs-fast comparator intentionally skipped for fault scenario"
+else
+    compile_comparator
+    echo "[PASS] distributed-vs-fast comparator compiled"
+fi
 
 "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
 
@@ -256,13 +268,46 @@ done
 # A long window can be deliberately slow with the correctness-first indicator path.
 # Allow roughly barrier_timeout per cycle, capped by the loop cadence rather than a fixed 5-minute test limit.
 deadline_epoch=$(( $(date +%s) + (EXPECTED_CYCLES * barrier_timeout_ms / 1000) + 120 ))
+controller_missing_since=0
 while true; do
+    if [[ "$allow_controller_recreate" == "1" ]]; then
+        current_controller_id="$("${COMPOSE[@]}" ps -q replay-controller 2>/dev/null || true)"
+        if [[ -n "$current_controller_id" && "$current_controller_id" != "$controller_id" ]]; then
+            echo "[INFO] replay-controller replacement detected: $controller_id -> $current_controller_id"
+            controller_id="$current_controller_id"
+            controller_missing_since=0
+        fi
+    fi
+
     status="$(docker inspect -f '{{.State.Status}}' "$controller_id" 2>/dev/null || true)"
     if [[ "$status" == "exited" ]]; then
-        exit_code="$(docker inspect -f '{{.State.ExitCode}}' "$controller_id")"
-        [[ "$exit_code" == "0" ]] || { echo "[FAIL] replay-controller exited with code $exit_code"; dump_logs; exit 1; }
-        break
+        exit_code="$(docker inspect -f '{{.State.ExitCode}}' "$controller_id" 2>/dev/null || true)"
+        if [[ "$exit_code" == "0" ]]; then
+            break
+        fi
+        if [[ "$allow_controller_recreate" != "1" ]]; then
+            echo "[FAIL] replay-controller exited with code $exit_code"
+            dump_logs
+            exit 1
+        fi
+    elif [[ -z "$status" && "$allow_controller_recreate" != "1" ]]; then
+        echo "[FAIL] replay-controller container disappeared"
+        dump_logs
+        exit 1
     fi
+
+    if [[ "$allow_controller_recreate" == "1" && ( -z "$status" || "$status" == "exited" ) ]]; then
+        if (( controller_missing_since == 0 )); then
+            controller_missing_since=$(date +%s)
+        elif (( $(date +%s) - controller_missing_since >= 30 )); then
+            echo "[FAIL] replay-controller was not recreated within 30 seconds"
+            dump_logs
+            exit 1
+        fi
+    else
+        controller_missing_since=0
+    fi
+
     if (( $(date +%s) >= deadline_epoch )); then
         echo "[FAIL] replay-controller exceeded historical replay deadline"
         dump_logs
@@ -281,60 +326,65 @@ elapsed_sec="$(awk -v a="$start_ns" -v b="$end_ns" 'BEGIN { printf "%.3f", (b-a)
 cycles_per_sec="$(awk -v n="$EXPECTED_CYCLES" -v s="$elapsed_sec" 'BEGIN { if (s>0) printf "%.3f", n/s; else print "0" }')"
 echo "[PASS] historical replay completed: cycles=$EXPECTED_CYCLES elapsed=${elapsed_sec}s rate=${cycles_per_sec} cycles/s"
 
-compare_args=(
-    --nats-url "nats://127.0.0.1:$nats_port"
-    --expected-cycles "$EXPECTED_CYCLES"
-    --initial-cash "$initial_cash"
-    --commission-rate "$commission_rate"
-    --timeout-seconds 60
-    --portfolio-mode "$portfolio_mode"
-)
-if [[ -n "$realtest_csv" ]]; then
-    compare_args+=(--realtest-csv "$realtest_csv" --historical-data "$HISTORICAL_DATA")
-    if [[ -n "$realtest_comparison_csv" ]]; then
-        compare_args+=(--realtest-comparison-csv "$realtest_comparison_csv")
-    fi
-fi
-[[ "$require_trading" == "1" ]] && compare_args+=(--require-trading)
-
-compare_ok=0
-if [[ -n "$realtest_csv" ]]; then
-    # Keep stdout attached to the terminal because research's exact comparator is
-    # intentionally interactive on mismatches. tee also preserves a validation log.
-    set +e
-    LD_LIBRARY_PATH="$BUILD/lib/src${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$WORK_DIR/distributed_fast_compare" "${compare_args[@]}" 2>&1 \
-        | tee "$LOG_DIR/05_distributed_fast_compare.log"
-    compare_status=${PIPESTATUS[0]}
-    set -e
-    if [[ "$compare_status" == "0" ]]; then
-        compare_ok=1
-    fi
+if [[ "$skip_fast_compare" == "1" ]]; then
+    echo "[PASS] distributed replay completed; fast comparator intentionally skipped"
 else
-    for _ in $(seq 1 20); do
-        if LD_LIBRARY_PATH="$BUILD/lib/src${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-            "$WORK_DIR/distributed_fast_compare" "${compare_args[@]}" \
-            >"$LOG_DIR/05_distributed_fast_compare.log" 2>&1; then
-            compare_ok=1
-            break
+    compare_args=(
+        --nats-url "nats://127.0.0.1:$nats_port"
+        --expected-cycles "$EXPECTED_CYCLES"
+        --initial-cash "$initial_cash"
+        --commission-rate "$commission_rate"
+        --timeout-seconds 60
+        --portfolio-mode "$portfolio_mode"
+    )
+    if [[ -n "$realtest_csv" ]]; then
+        compare_args+=(--realtest-csv "$realtest_csv" --historical-data "$HISTORICAL_DATA")
+        if [[ -n "$realtest_comparison_csv" ]]; then
+            compare_args+=(--realtest-comparison-csv "$realtest_comparison_csv")
         fi
-        sleep 0.5
-    done
-fi
-if [[ "$compare_ok" != "1" ]]; then
-    echo "[FAIL] distributed-vs-fast historical comparator failed"
-    cat "$LOG_DIR/05_distributed_fast_compare.log" 2>/dev/null || true
-    dump_logs
-    exit 1
-fi
-if [[ -z "$realtest_csv" ]]; then
-    cat "$LOG_DIR/05_distributed_fast_compare.log"
-fi
-grep -Fq "DISTRIBUTED_FAST_COMPARE: PASS" "$LOG_DIR/05_distributed_fast_compare.log"
-echo "[PASS] distributed and fast paths match across historical replay"
-if [[ -n "$realtest_csv" ]]; then
-    grep -Fq "DISTRIBUTED_REALTEST_RESEARCH_POLICY:" "$LOG_DIR/05_distributed_fast_compare.log"
-    echo "[PASS] exact research RealTest comparison executed directly on distributed trades"
+    fi
+    [[ "$require_trading" == "1" ]] && compare_args+=(--require-trading)
+
+    compare_ok=0
+    if [[ -n "$realtest_csv" ]]; then
+        # Keep stdout attached to the terminal because research's exact comparator is
+        # intentionally interactive on mismatches. tee also preserves a validation log.
+        set +e
+        LD_LIBRARY_PATH="$BUILD/lib/src${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+            "$WORK_DIR/distributed_fast_compare" "${compare_args[@]}" 2>&1 \
+            | tee "$LOG_DIR/05_distributed_fast_compare.log"
+        compare_status=${PIPESTATUS[0]}
+        set -e
+        if [[ "$compare_status" == "0" ]]; then
+            compare_ok=1
+        fi
+    else
+        for _ in $(seq 1 20); do
+            if LD_LIBRARY_PATH="$BUILD/lib/src${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+                "$WORK_DIR/distributed_fast_compare" "${compare_args[@]}" \
+                >"$LOG_DIR/05_distributed_fast_compare.log" 2>&1; then
+                compare_ok=1
+                break
+            fi
+            sleep 0.5
+        done
+    fi
+    if [[ "$compare_ok" != "1" ]]; then
+        echo "[FAIL] distributed-vs-fast historical comparator failed"
+        cat "$LOG_DIR/05_distributed_fast_compare.log" 2>/dev/null || true
+        dump_logs
+        exit 1
+    fi
+    if [[ -z "$realtest_csv" ]]; then
+        cat "$LOG_DIR/05_distributed_fast_compare.log"
+    fi
+    grep -Fq "DISTRIBUTED_FAST_COMPARE: PASS" "$LOG_DIR/05_distributed_fast_compare.log"
+    echo "[PASS] distributed and fast paths match across historical replay"
+    if [[ -n "$realtest_csv" ]]; then
+        grep -Fq "DISTRIBUTED_REALTEST_RESEARCH_POLICY:" "$LOG_DIR/05_distributed_fast_compare.log"
+        echo "[PASS] exact research RealTest comparison executed directly on distributed trades"
+    fi
+
 fi
 
 if ! "${COMPOSE[@]}" exec -T postgres pg_isready -U algotrading -d algotrading >"$LOG_DIR/06_postgres_ready.log" 2>&1; then

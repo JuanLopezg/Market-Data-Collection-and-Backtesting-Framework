@@ -3,13 +3,17 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
+#include <libpq-fe.h>
 #include <nlohmann/json.hpp>
 
 #include "contract_json_codec.h"
@@ -34,6 +38,7 @@ struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
     std::string stream = "ALGOTRADING_RUNTIME";
     std::string strategy_config = "config/strategies/pure_rsi_signal.json";
+    std::string postgres;
     int poll_timeout_ms = 250;
 };
 
@@ -44,6 +49,7 @@ void printUsage()
         << "  --nats-url URL\n"
         << "  --stream NAME\n"
         << "  --strategy-config PATH\n"
+        << "  --postgres CONNECTION_STRING\n"
         << "  --poll-timeout-ms N\n";
 }
 
@@ -67,6 +73,8 @@ Options parseOptions(int argc, char** argv)
             options.stream = requireValue("--stream");
         } else if (arg == "--strategy-config") {
             options.strategy_config = requireValue("--strategy-config");
+        } else if (arg == "--postgres") {
+            options.postgres = requireValue("--postgres");
         } else if (arg == "--poll-timeout-ms") {
             options.poll_timeout_ms = std::stoi(requireValue("--poll-timeout-ms"));
         } else {
@@ -75,11 +83,258 @@ Options parseOptions(int argc, char** argv)
     }
 
     if (options.nats_url.empty() || options.stream.empty() || options.strategy_config.empty())
-        throw std::invalid_argument("Strategy-service string options cannot be empty");
+        throw std::invalid_argument("Strategy-service required string options cannot be empty");
     if (options.poll_timeout_ms <= 0)
         throw std::invalid_argument("--poll-timeout-ms must be positive");
     return options;
 }
+
+std::string readTextFile(const std::string& path)
+{
+    std::ifstream input(path, std::ios::binary);
+    if (!input)
+        throw std::runtime_error("Cannot open file: " + path);
+
+    return std::string(
+        std::istreambuf_iterator<char>(input),
+        std::istreambuf_iterator<char>()
+    );
+}
+
+class PgResult {
+private:
+    PGresult* result_ = nullptr;
+
+public:
+    explicit PgResult(PGresult* result) : result_(result) {}
+    ~PgResult()
+    {
+        if (result_)
+            PQclear(result_);
+    }
+
+    PgResult(const PgResult&) = delete;
+    PgResult& operator=(const PgResult&) = delete;
+
+    PgResult(PgResult&& other) noexcept
+        : result_(std::exchange(other.result_, nullptr))
+    {}
+
+    PgResult& operator=(PgResult&& other) noexcept
+    {
+        if (this != &other) {
+            if (result_)
+                PQclear(result_);
+            result_ = std::exchange(other.result_, nullptr);
+        }
+        return *this;
+    }
+
+    PGresult* get() const { return result_; }
+};
+
+class StrategyCheckpointStore {
+private:
+    PGconn* connection_ = nullptr;
+    static constexpr const char* STATE_KEY = "strategy-service";
+
+    void requireConnection() const
+    {
+        if (connection_ == nullptr || PQstatus(connection_) != CONNECTION_OK)
+            throw std::runtime_error("Strategy checkpoint PostgreSQL connection is not ready");
+    }
+
+    PgResult exec(const std::string& sql, ExecStatusType expected) const
+    {
+        requireConnection();
+        PgResult result(PQexec(connection_, sql.c_str()));
+        if (result.get() == nullptr || PQresultStatus(result.get()) != expected) {
+            const std::string error = connection_ ? PQerrorMessage(connection_) : "unknown PostgreSQL error";
+            throw std::runtime_error("Strategy checkpoint PostgreSQL query failed: " + error);
+        }
+        return result;
+    }
+
+    PgResult execParams(
+        const std::string& sql,
+        const std::vector<std::string>& parameters,
+        ExecStatusType expected
+    ) const
+    {
+        requireConnection();
+
+        std::vector<const char*> values;
+        values.reserve(parameters.size());
+        for (const std::string& parameter : parameters)
+            values.push_back(parameter.c_str());
+
+        PgResult result(PQexecParams(
+            connection_,
+            sql.c_str(),
+            static_cast<int>(values.size()),
+            nullptr,
+            values.data(),
+            nullptr,
+            nullptr,
+            0
+        ));
+
+        if (result.get() == nullptr || PQresultStatus(result.get()) != expected) {
+            const std::string error = connection_ ? PQerrorMessage(connection_) : "unknown PostgreSQL error";
+            throw std::runtime_error("Strategy checkpoint PostgreSQL parameterized query failed: " + error);
+        }
+        return result;
+    }
+
+    void ensureSchema(const std::string& strategyConfig)
+    {
+        exec(
+            "CREATE TABLE IF NOT EXISTS strategy_service_metadata ("
+            "state_key TEXT PRIMARY KEY, "
+            "strategy_config TEXT NOT NULL"
+            ")",
+            PGRES_COMMAND_OK
+        );
+
+        exec(
+            "CREATE TABLE IF NOT EXISTS strategy_market_slice_checkpoint ("
+            "state_key TEXT NOT NULL, "
+            "timestamp BIGINT NOT NULL, "
+            "slice_payload TEXT NOT NULL, "
+            "intent_payload TEXT NOT NULL, "
+            "PRIMARY KEY(state_key, timestamp)"
+            ")",
+            PGRES_COMMAND_OK
+        );
+
+        execParams(
+            "INSERT INTO strategy_service_metadata(state_key, strategy_config) "
+            "VALUES($1, $2) ON CONFLICT(state_key) DO NOTHING",
+            {STATE_KEY, strategyConfig},
+            PGRES_COMMAND_OK
+        );
+
+        const PgResult metadata = execParams(
+            "SELECT strategy_config FROM strategy_service_metadata WHERE state_key = $1",
+            {STATE_KEY},
+            PGRES_TUPLES_OK
+        );
+
+        if (PQntuples(metadata.get()) != 1)
+            throw std::runtime_error("Strategy checkpoint metadata row is missing");
+
+        const std::string persistedConfig = PQgetvalue(metadata.get(), 0, 0);
+        if (persistedConfig != strategyConfig)
+            throw std::runtime_error(
+                "Persisted strategy checkpoint belongs to a different strategy configuration"
+            );
+    }
+
+public:
+    StrategyCheckpointStore(
+        const std::string& connectionString,
+        const std::string& strategyConfig
+    )
+    {
+        connection_ = PQconnectdb(connectionString.c_str());
+        if (connection_ == nullptr || PQstatus(connection_) != CONNECTION_OK) {
+            const std::string error = connection_ ? PQerrorMessage(connection_) : "cannot allocate PGconn";
+            if (connection_) {
+                PQfinish(connection_);
+                connection_ = nullptr;
+            }
+            throw std::runtime_error("Cannot connect strategy checkpoint store to PostgreSQL: " + error);
+        }
+
+        ensureSchema(strategyConfig);
+    }
+
+    ~StrategyCheckpointStore()
+    {
+        if (connection_)
+            PQfinish(connection_);
+    }
+
+    StrategyCheckpointStore(const StrategyCheckpointStore&) = delete;
+    StrategyCheckpointStore& operator=(const StrategyCheckpointStore&) = delete;
+
+    struct Row {
+        Timestamp timestamp = 0;
+        std::string slice_payload;
+        std::string intent_payload;
+    };
+
+    std::vector<Row> loadAll() const
+    {
+        const PgResult result = execParams(
+            "SELECT timestamp, slice_payload, intent_payload FROM strategy_market_slice_checkpoint "
+            "WHERE state_key = $1 ORDER BY timestamp ASC",
+            {STATE_KEY},
+            PGRES_TUPLES_OK
+        );
+
+        std::vector<Row> rows;
+        rows.reserve(static_cast<std::size_t>(PQntuples(result.get())));
+
+        for (int row = 0; row < PQntuples(result.get()); ++row) {
+            const std::string timestampText = PQgetvalue(result.get(), row, 0);
+            const unsigned long long timestampValue = std::stoull(timestampText);
+            if (timestampValue > static_cast<unsigned long long>(std::numeric_limits<Timestamp>::max()))
+                throw std::runtime_error("Persisted strategy checkpoint timestamp is out of range");
+
+            Row value;
+            value.timestamp = static_cast<Timestamp>(timestampValue);
+            value.slice_payload = PQgetvalue(result.get(), row, 1);
+            value.intent_payload = PQgetvalue(result.get(), row, 2);
+            rows.push_back(std::move(value));
+        }
+
+        return rows;
+    }
+
+    std::optional<Row> rowFor(Timestamp timestamp) const
+    {
+        const PgResult result = execParams(
+            "SELECT slice_payload, intent_payload FROM strategy_market_slice_checkpoint "
+            "WHERE state_key = $1 AND timestamp = $2",
+            {STATE_KEY, std::to_string(timestamp)},
+            PGRES_TUPLES_OK
+        );
+
+        if (PQntuples(result.get()) == 0)
+            return std::nullopt;
+        if (PQntuples(result.get()) != 1)
+            throw std::runtime_error("Strategy checkpoint timestamp is not unique");
+
+        Row value;
+        value.timestamp = timestamp;
+        value.slice_payload = PQgetvalue(result.get(), 0, 0);
+        value.intent_payload = PQgetvalue(result.get(), 0, 1);
+        return value;
+    }
+
+    void save(
+        Timestamp timestamp,
+        const std::string& slicePayload,
+        const std::string& intentPayload
+    )
+    {
+        execParams(
+            "INSERT INTO strategy_market_slice_checkpoint("
+            "state_key, timestamp, slice_payload, intent_payload"
+            ") VALUES($1, $2, $3, $4) "
+            "ON CONFLICT(state_key, timestamp) DO NOTHING",
+            {STATE_KEY, std::to_string(timestamp), slicePayload, intentPayload},
+            PGRES_COMMAND_OK
+        );
+
+        const std::optional<Row> persisted = rowFor(timestamp);
+        if (!persisted.has_value() ||
+            persisted->slice_payload != slicePayload ||
+            persisted->intent_payload != intentPayload)
+            throw std::logic_error("Conflicting persisted strategy checkpoint");
+    }
+};
 
 IndicatorKind parseIndicatorKind(const std::string& value)
 {
@@ -204,9 +459,51 @@ class StrategyServiceRuntime {
 private:
     const Options options_;
     NatsJetStreamMessageBus bus_;
+    std::unique_ptr<StrategyCheckpointStore> checkpoint_store_;
     RollingMarketState market_state_;
-    StrategySignalEngine engine_;
+    std::unique_ptr<StrategySignalEngine> engine_;
     DurableMessageBus::SubscriptionID market_subscription_ = 0;
+
+    void resetRuntimeState()
+    {
+        market_state_ = RollingMarketState{};
+        engine_ = std::make_unique<StrategySignalEngine>(loadStrategies(options_.strategy_config));
+    }
+
+    void recoverFromCheckpoint()
+    {
+        if (!checkpoint_store_)
+            return;
+
+        resetRuntimeState();
+        const auto rows = checkpoint_store_->loadAll();
+
+        Timestamp latest = 0;
+        std::optional<StrategyIntentBatch> latestIntent;
+        for (const StrategyCheckpointStore::Row& row : rows) {
+            const MarketSliceSnapshot slice = ContractJsonCodec::decodeMarketSliceSnapshot(row.slice_payload);
+            if (slice.timestamp != row.timestamp)
+                throw std::logic_error("Persisted strategy checkpoint timestamp/slice mismatch");
+            if (!market_state_.append(slice))
+                throw std::logic_error("Duplicate slice found inside persisted strategy checkpoint");
+
+            StrategyIntentBatch intent = ContractJsonCodec::decodeStrategyIntentBatch(row.intent_payload);
+            if (intent.timestamp != row.timestamp)
+                throw std::logic_error("Persisted strategy checkpoint timestamp/intent mismatch");
+
+            latest = row.timestamp;
+            latestIntent = std::move(intent);
+        }
+
+        if (latestIntent.has_value())
+            engine_->restore(*latestIntent);
+
+        LG_INFO(
+            "service=strategy event=strategy_recovery_completed recovered_slices={} latest_timestamp={}",
+            rows.size(),
+            latest
+        );
+    }
 
     DurableMessageDisposition onMarketSlice(const BusMessage& message)
     {
@@ -230,6 +527,40 @@ private:
                 slice.metadata.correlation_id
             );
 
+            if (checkpoint_store_) {
+                const std::optional<StrategyCheckpointStore::Row> persisted = checkpoint_store_->rowFor(slice.timestamp);
+                if (persisted.has_value()) {
+                    if (persisted->slice_payload != message.payload) {
+                        LG_ALERT(
+                            "service=strategy event=checkpoint_conflict timestamp={} disposition=terminate",
+                            slice.timestamp
+                        );
+                        return DurableMessageDisposition::Terminate;
+                    }
+
+                    if (market_state_.empty() || market_state_.latestTimestamp() < slice.timestamp)
+                        recoverFromCheckpoint();
+
+                    LG_INFO(
+                        "service=strategy event=market_slice_checkpoint_duplicate timestamp={} disposition=ack",
+                        slice.timestamp
+                    );
+                    return DurableMessageDisposition::Ack;
+                }
+
+                // A previous attempt may have advanced RAM but failed before the durable
+                // checkpoint. Rebuild only from committed slices before retrying so the
+                // strategy engine again processes this timestamp exactly once locally.
+                if (!market_state_.empty() && slice.timestamp <= market_state_.latestTimestamp()) {
+                    LG_WARN(
+                        "service=strategy event=volatile_state_ahead_of_checkpoint timestamp={} latest_runtime_timestamp={} action=recover",
+                        slice.timestamp,
+                        market_state_.latestTimestamp()
+                    );
+                    recoverFromCheckpoint();
+                }
+            }
+
             if (!market_state_.append(slice)) {
                 LG_INFO(
                     "service=strategy event=market_slice_duplicate timestamp={} disposition=ack",
@@ -238,7 +569,7 @@ private:
                 return DurableMessageDisposition::Ack;
             }
 
-            StrategyIntentBatch output = engine_.onBarClose(
+            StrategyIntentBatch output = engine_->onBarClose(
                 market_state_.rawData(),
                 market_state_.marketData(),
                 slice.timestamp
@@ -251,9 +582,13 @@ private:
                 : slice.metadata.message_id;
             output.metadata.produced_at = slice.timestamp;
 
+            // Publish first, then checkpoint, then ACK. Because the output MessageID is
+            // deterministic, a crash after publish but before checkpoint safely republishes
+            // the same logical message after recovery and JetStream deduplicates it.
+            const std::string encodedIntent = ContractJsonCodec::encode(output);
             bus_.publish(
                 TransportSubjects::STRATEGY_INTENTS,
-                ContractJsonCodec::encode(output),
+                encodedIntent,
                 output.metadata.message_id
             );
 
@@ -270,6 +605,15 @@ private:
                 output.metadata.correlation_id
             );
 
+            if (checkpoint_store_) {
+                checkpoint_store_->save(slice.timestamp, message.payload, encodedIntent);
+                LG_DEBUG(
+                    "service=strategy event=strategy_checkpoint_committed timestamp={} message_id={}",
+                    slice.timestamp,
+                    slice.metadata.message_id
+                );
+            }
+
             return DurableMessageDisposition::Ack;
         }
         catch (const std::logic_error& error) {
@@ -285,9 +629,22 @@ private:
 public:
     explicit StrategyServiceRuntime(Options options)
         : options_(std::move(options)),
-          bus_(options_.nats_url),
-          engine_(loadStrategies(options_.strategy_config))
+          bus_(options_.nats_url)
     {
+        resetRuntimeState();
+
+        if (!options_.postgres.empty()) {
+            checkpoint_store_ = std::make_unique<StrategyCheckpointStore>(
+                options_.postgres,
+                readTextFile(options_.strategy_config)
+            );
+            recoverFromCheckpoint();
+        } else {
+            LG_WARN(
+                "service=strategy event=restart_checkpoint_disabled reason=postgres_not_configured"
+            );
+        }
+
         bus_.ensureStream(options_.stream, TransportSubjects::runtimeSubjects());
 
         DurableConsumerOptions consumer;
@@ -309,9 +666,10 @@ public:
     void run()
     {
         LG_INFO(
-            "service=strategy event=service_ready stream={} config={} poll_timeout_ms={}",
+            "service=strategy event=service_ready stream={} config={} restart_checkpoint={} poll_timeout_ms={}",
             options_.stream,
             options_.strategy_config,
+            checkpoint_store_ ? "postgres" : "disabled",
             options_.poll_timeout_ms
         );
 

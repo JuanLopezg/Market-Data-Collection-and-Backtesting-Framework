@@ -24,6 +24,15 @@ void stopHandler(int)
     running.store(false);
 }
 
+bool envFlag(const char* name)
+{
+    const char* value = std::getenv(name);
+    if (value == nullptr)
+        return false;
+    const std::string text(value);
+    return !text.empty() && text != "0" && text != "false" && text != "FALSE";
+}
+
 
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
@@ -89,6 +98,8 @@ private:
     DurableMessageBus::SubscriptionID submit_subscription_ = 0;
     DurableMessageBus::SubscriptionID cancel_subscription_ = 0;
     DurableMessageBus::SubscriptionID snapshot_request_subscription_ = 0;
+    bool chaos_duplicate_fill_once_ = envFlag("ALGOTRADING_CHAOS_DUPLICATE_FILL_ONCE");
+    bool chaos_duplicate_fill_done_ = false;
 
     DurableConsumerOptions consumer(
         const std::string& stream,
@@ -147,6 +158,23 @@ private:
             value.fill.price,
             value.metadata.message_id
         );
+
+        if (chaos_duplicate_fill_once_ && !chaos_duplicate_fill_done_) {
+            FillEvent duplicate = value;
+            duplicate.metadata.message_id += ":chaos-duplicate-transport";
+            bus_.publish(
+                TransportSubjects::FILL,
+                ContractJsonCodec::encode(duplicate),
+                duplicate.metadata.message_id
+            );
+            chaos_duplicate_fill_done_ = true;
+            LG_WARN(
+                "service=exchange-gateway event=chaos_duplicate_fill_injected fill_id={} order_id={} duplicate_message_id={}",
+                duplicate.fill.fill_id,
+                duplicate.fill.order_id,
+                duplicate.metadata.message_id
+            );
+        }
     }
 
     void publish(const ExchangeSnapshotEvent& value)

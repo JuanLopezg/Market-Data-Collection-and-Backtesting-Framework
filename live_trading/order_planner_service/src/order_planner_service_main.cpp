@@ -27,6 +27,15 @@ void stopHandler(int)
     running.store(false);
 }
 
+bool envFlag(const char* name)
+{
+    const char* value = std::getenv(name);
+    if (value == nullptr)
+        return false;
+    const std::string text(value);
+    return !text.empty() && text != "0" && text != "false" && text != "FALSE";
+}
+
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
     std::string stream = "ALGOTRADING_RUNTIME";
@@ -74,6 +83,8 @@ private:
     NatsJetStreamMessageBus bus_;
     OrderPlannerEngine planner_;
     DurableMessageBus::SubscriptionID request_subscription_ = 0;
+    bool chaos_stale_plan_once_ = envFlag("ALGOTRADING_CHAOS_STALE_PLAN_ONCE");
+    bool chaos_stale_plan_done_ = false;
 
     DurableConsumerOptions consumer() const
     {
@@ -177,6 +188,27 @@ private:
             output.cancel_order_ids = planning.execution_plan.order_ids_to_cancel;
             output.submit_orders = planning.execution_plan.orders_to_submit;
             output.global_target_exposure = planning.global_target.values();
+
+            if (chaos_stale_plan_once_ && !chaos_stale_plan_done_ &&
+                output.state_revision > 1) {
+                OrderPlanBatch stale = output;
+                --stale.state_revision;
+                stale.metadata.message_id += ":chaos-stale";
+                bus_.publish(
+                    TransportSubjects::ORDER_PLAN,
+                    ContractJsonCodec::encode(stale),
+                    stale.metadata.message_id
+                );
+                chaos_stale_plan_done_ = true;
+                LG_WARN(
+                    "service=order-planner event=chaos_stale_plan_injected decision_timestamp={} execution_timestamp={} stale_revision={} current_revision={} message_id={}",
+                    stale.decision_timestamp,
+                    stale.execution_timestamp,
+                    stale.state_revision,
+                    output.state_revision,
+                    stale.metadata.message_id
+                );
+            }
 
             bus_.publish(
                 TransportSubjects::ORDER_PLAN,
