@@ -1,3 +1,20 @@
+// ============================================================================
+// LEARNING VERSION — Strategy service orchestrator
+// ============================================================================
+//
+// Mental model:
+//   NATS MarketSliceSnapshot
+//          ↓
+//   this service orchestrator
+//          ↓
+//   RollingMarketState → StrategySignalEngine / PureRSI
+//          ↓
+//   StrategyIntentBatch → NATS
+//          ↓
+//   PostgreSQL checkpoint → ACK input
+//
+// ============================================================================
+
 #include <atomic>
 #include <csignal>
 #include <cstdlib>
@@ -33,6 +50,9 @@ namespace {
 using json = nlohmann::json;
 std::atomic<bool> running{true};
 
+// Called by the operating system when the process receives SIGINT/SIGTERM.
+// It does not immediately destroy anything; it simply flips `running` to false.
+// The main polling loop sees that flag and performs a clean shutdown.
 void stopHandler(int) { running.store(false); }
 
 struct Options {
@@ -45,6 +65,8 @@ struct Options {
     int poll_timeout_ms = 250;
 };
 
+// Prints the command-line options supported by this executable.
+// This is only user/operator help; it does not participate in trading logic.
 void printUsage()
 {
     std::cout
@@ -58,11 +80,20 @@ void printUsage()
         << "  --poll-timeout-ms N\n";
 }
 
+// Reads command-line arguments supplied when the Docker/process starts.
+// It builds one `Options` object containing things such as:
+// NATS address, PostgreSQL connection, strategy config, runtime mode and timeout.
+// It also rejects unknown/invalid arguments early so the service does not start
+// with an ambiguous configuration.
 Options parseOptions(int argc, char** argv)
 {
     Options options;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
+        // Small helper used only inside parseOptions().
+        // It means: "this flag must have another argument after it".
+        // Example: `--nats-url nats://nats:4222`.
+        // If the value is missing, startup fails with a clear error.
         auto requireValue = [&](const char* option) -> std::string {
             if (i + 1 >= argc)
                 throw std::invalid_argument(std::string(option) + " requires a value");
@@ -98,6 +129,9 @@ Options parseOptions(int argc, char** argv)
     return options;
 }
 
+// Loads an entire text file into a std::string.
+// In this service it is used to read the strategy configuration so the exact
+// config can be associated with PostgreSQL recovery state.
 std::string readTextFile(const std::string& path)
 {
     std::ifstream input(path, std::ios::binary);
@@ -110,25 +144,38 @@ std::string readTextFile(const std::string& path)
     );
 }
 
+// RAII wrapper around PostgreSQL's raw `PGresult*`.
+// libpq requires every result to be released with PQclear(). This wrapper makes
+// that automatic, reducing the chance of memory leaks when exceptions occur.
 class PgResult {
 private:
     PGresult* result_ = nullptr;
 
 public:
+    // Takes ownership of a raw PostgreSQL query result.
+// From this point onward this object is responsible for calling PQclear().
     explicit PgResult(PGresult* result) : result_(result) {}
+    // Destructor: automatically frees the PostgreSQL result when the wrapper
+// leaves scope, including when an exception is thrown.
     ~PgResult()
     {
         if (result_)
             PQclear(result_);
     }
 
+    // Copying is forbidden because two wrappers must never believe they both
+// own the same PGresult*. That could cause a double-free.
     PgResult(const PgResult&) = delete;
     PgResult& operator=(const PgResult&) = delete;
 
+    // Move constructor: transfers ownership of the PostgreSQL result from
+// another PgResult without copying the underlying pointer.
     PgResult(PgResult&& other) noexcept
         : result_(std::exchange(other.result_, nullptr))
     {}
 
+    // Move assignment: releases any result currently owned here, then takes
+// ownership of the other object's result.
     PgResult& operator=(PgResult&& other) noexcept
     {
         if (this != &other) {
@@ -139,20 +186,31 @@ public:
         return *this;
     }
 
+    // Gives callers access to the underlying libpq result without transferring
+// ownership. The PgResult wrapper still remains responsible for freeing it.
     PGresult* get() const { return result_; }
 };
 
+// PostgreSQL persistence layer used specifically by the strategy service.
+// Its job is to store enough durable information to recover after a crash:
+//   timestamp + input MarketSliceSnapshot + resulting StrategyIntentBatch.
+// It also stores the exact strategy configuration associated with that history.
 class StrategyCheckpointStore {
 private:
     PGconn* connection_ = nullptr;
     static constexpr const char* STATE_KEY = "strategy-service";
 
+    // Safety check used before every SQL operation.
+// It refuses to execute a query unless the PostgreSQL connection is healthy.
     void requireConnection() const
     {
         if (connection_ == nullptr || PQstatus(connection_) != CONNECTION_OK)
             throw std::runtime_error("Strategy checkpoint PostgreSQL connection is not ready");
     }
 
+    // Executes a normal SQL statement with no external parameters.
+// It verifies PostgreSQL returned the expected result type and converts database
+// failures into C++ exceptions. The returned PgResult cleans itself up.
     PgResult exec(const std::string& sql, ExecStatusType expected) const
     {
         requireConnection();
@@ -164,6 +222,9 @@ private:
         return result;
     }
 
+    // Executes parameterized SQL (`$1`, `$2`, ...).
+// Parameterized queries keep values separate from SQL text and are safer and
+// easier to reason about than manually concatenating values into a query.
     PgResult execParams(
         const std::string& sql,
         const std::vector<std::string>& parameters,
@@ -195,6 +256,10 @@ private:
         return result;
     }
 
+    // Ensures the two strategy checkpoint tables exist.
+// It also records the exact strategy configuration and checks that an existing
+// checkpoint was produced with the SAME config. If the config changed, recovery
+// is refused rather than silently mixing old state with new strategy rules.
     void ensureSchema(const std::string& strategyConfig)
     {
         exec(
@@ -240,6 +305,9 @@ private:
     }
 
 public:
+    // Opens the PostgreSQL connection for strategy recovery/checkpointing.
+// Startup fails if PostgreSQL cannot be reached. Once connected it also calls
+// ensureSchema() to create/validate the durable storage structure.
     StrategyCheckpointStore(
         const std::string& connectionString,
         const std::string& strategyConfig
@@ -258,12 +326,15 @@ public:
         ensureSchema(strategyConfig);
     }
 
+    // Closes the PostgreSQL connection when the checkpoint store is destroyed.
     ~StrategyCheckpointStore()
     {
         if (connection_)
             PQfinish(connection_);
     }
 
+    // Copying is disabled because a live PostgreSQL connection has a single
+// clear owner in this object.
     StrategyCheckpointStore(const StrategyCheckpointStore&) = delete;
     StrategyCheckpointStore& operator=(const StrategyCheckpointStore&) = delete;
 
@@ -273,6 +344,14 @@ public:
         std::string intent_payload;
     };
 
+    // Loads ALL committed strategy checkpoints in chronological order.
+// On restart, recoverFromCheckpoint() uses these rows to rebuild the in-memory
+// RollingMarketState and restore the latest strategy signal state.
+//
+// NOTE FOR FUTURE DESIGN:
+// This currently grows with history. We have already identified that production
+// may later prefer "latest checkpoint + only the required warmup history" from
+// the canonical market-data database instead of reloading unlimited history.
     std::vector<Row> loadAll() const
     {
         const PgResult result = execParams(
@@ -301,6 +380,9 @@ public:
         return rows;
     }
 
+    // Looks up the durable checkpoint for one exact timestamp.
+// Returns no value if that timestamp has never been committed.
+// This is used to recognize safe redeliveries/duplicates.
     std::optional<Row> rowFor(Timestamp timestamp) const
     {
         const PgResult result = execParams(
@@ -322,6 +404,12 @@ public:
         return value;
     }
 
+    // Persists one completed strategy step:
+//   input market slice + output strategy intent for the same timestamp.
+//
+// The insert deliberately does nothing on a duplicate primary key, then reads
+// the existing row back and verifies it is IDENTICAL. Therefore receiving the
+// same event again is safe, but conflicting history is treated as an error.
     void save(
         Timestamp timestamp,
         const std::string& slicePayload,
@@ -345,6 +433,8 @@ public:
     }
 };
 
+// Converts an indicator name from JSON ("SMA", "RSI", "ATR", ...)
+// into the C++ IndicatorKind enum understood by the indicator engine.
 IndicatorKind parseIndicatorKind(const std::string& value)
 {
     if (value == "SMA") return IndicatorKind::SMA;
@@ -360,6 +450,8 @@ IndicatorKind parseIndicatorKind(const std::string& value)
     throw std::invalid_argument("Unsupported indicator kind: " + value);
 }
 
+// Converts the configured indicator input ("Open", "Close", "Volume", ...)
+// into the C++ PriceField enum used by indicator calculations.
 PriceField parsePriceField(const std::string& value)
 {
     if (value == "Open") return PriceField::Open;
@@ -370,6 +462,9 @@ PriceField parsePriceField(const std::string& value)
     throw std::invalid_argument("Unsupported indicator source: " + value);
 }
 
+// Builds one complete IndicatorSpec from JSON.
+// Example: RSI of Close with length 7, or SMA of Volume with length 25.
+// It also validates that the requested lookback length is not zero.
 IndicatorSpec parseIndicatorSpec(const json& value)
 {
     IndicatorSpec spec{
@@ -383,6 +478,9 @@ IndicatorSpec parseIndicatorSpec(const json& value)
     return spec;
 }
 
+// Builds the configured market-universe selector.
+// For the current strategy this creates TopNLiquidityUniverse: rank coins by a
+// configured liquidity indicator and keep only the top N eligible assets.
 std::unique_ptr<UniverseSelector> makeUniverse(const json& value)
 {
     const std::string type = value.at("type").get<std::string>();
@@ -401,6 +499,10 @@ std::unique_ptr<UniverseSelector> makeUniverse(const json& value)
     );
 }
 
+// Builds the ranking rule used after the universe is selected.
+// The current configuration uses an indicator-based ranker (for PureRSI this is
+// the RSI ranking), but this factory keeps the construction separate from the
+// orchestration code.
 std::unique_ptr<Ranker> makeRanker(const json& value)
 {
     const std::string type = value.at("type").get<std::string>();
@@ -414,6 +516,10 @@ std::unique_ptr<Ranker> makeRanker(const json& value)
     );
 }
 
+// Reads the strategy JSON config and constructs the actual strategy objects.
+// Today this service accepts strategies of type PureRSI. Parameters such as
+// max signals, universe, ranking, RSI length, entry and exit thresholds come
+// from the JSON file rather than being hardcoded in this orchestrator.
 StrategySignalPortfolio loadStrategies(const std::string& path)
 {
     std::ifstream input(path);
@@ -459,11 +565,17 @@ StrategySignalPortfolio loadStrategies(const std::string& path)
     return strategies;
 }
 
+// Creates a deterministic message ID for the strategy output of one timestamp.
+// If the same candle must be recomputed after a crash, the same timestamp creates
+// the same ID, allowing JetStream to deduplicate the republished logical message.
 std::string intentMessageId(Timestamp timestamp)
 {
     return "strategy-intents:" + std::to_string(timestamp);
 }
 
+// The main ORCHESTRATOR for the strategy Docker/process.
+// It owns the communication bus, clock context, PostgreSQL checkpoint store,
+// in-memory rolling market history, strategy engine and NATS subscription.
 class StrategyServiceRuntime {
 private:
     const Options options_;
@@ -474,12 +586,19 @@ private:
     std::unique_ptr<StrategySignalEngine> engine_;
     DurableMessageBus::SubscriptionID market_subscription_ = 0;
 
+    // Clears volatile strategy state in RAM and rebuilds a fresh strategy engine
+// from the configured strategy JSON. This does NOT delete durable PostgreSQL data.
+// Recovery calls this first, then reconstructs RAM from committed checkpoints.
     void resetRuntimeState()
     {
         market_state_ = RollingMarketState{};
         engine_ = std::make_unique<StrategySignalEngine>(loadStrategies(options_.strategy_config));
     }
 
+    // Reconstructs the strategy service after a restart or when RAM can no longer
+// be trusted. It loads committed rows from PostgreSQL in timestamp order,
+// rebuilds RollingMarketState from the saved market slices, and restores the
+// latest strategy intent so persistent signals continue correctly.
     void recoverFromCheckpoint()
     {
         if (!checkpoint_store_)
@@ -515,6 +634,22 @@ private:
         );
     }
 
+    // Core event handler: called whenever NATS delivers a MarketSliceSnapshot.
+//
+// High-level sequence:
+//   1. Decode and validate the incoming market slice.
+//   2. Check PostgreSQL for an already-committed copy of this timestamp.
+//   3. Repair volatile RAM from PostgreSQL if a previous attempt died mid-step.
+//   4. Append the new slice to RollingMarketState.
+//   5. Run StrategySignalEngine / PureRSI for this close.
+//   6. Publish StrategyIntentBatch to NATS.
+//   7. Save input + output in PostgreSQL.
+//   8. ACK the input.
+//
+// Return value tells JetStream what to do:
+//   Ack       = successfully completed / known duplicate.
+//   Retry     = temporary failure; please redeliver.
+//   Terminate = permanently invalid/conflicting message; retrying will not help.
     DurableMessageDisposition onMarketSlice(const BusMessage& message)
     {
         try {
@@ -637,6 +772,17 @@ private:
     }
 
 public:
+    // Starts and wires the whole strategy service.
+//
+// It:
+//   - connects to NATS/JetStream,
+//   - sets up LIVE/TESTNET/REPLAY clock behaviour,
+//   - creates the PureRSI strategy engine,
+//   - connects to PostgreSQL and performs crash recovery when configured,
+//   - creates the durable MarketSlice consumer,
+//   - registers onMarketSlice() as the callback.
+//
+// After this constructor succeeds, the service is ready for run().
     explicit StrategyServiceRuntime(Options options)
         : options_(std::move(options)),
           bus_(options_.nats_url)
@@ -682,13 +828,21 @@ public:
             consumer,
             clock_->guard(
                 "market_slice",
+                // Callback given to NATS: whenever a market-slice message arrives,
+                // forward it to this StrategyServiceRuntime's onMarketSlice().
                 [this](const BusMessage& message) { return onMarketSlice(message); }
             )
         );
     }
 
+    // Destructor: closes the durable NATS subscription owned by this service.
     ~StrategyServiceRuntime() { bus_.close(market_subscription_); }
 
+    // Main event loop of the Docker/process.
+// Most of the time the strategy service simply waits for events.
+// Each iteration lets the clock context process any clock/control messages and
+// lets NATS deliver available MarketSlice messages to onMarketSlice().
+// When stopHandler() flips `running` to false, it flushes NATS and exits cleanly.
     void run()
     {
         LG_INFO(
@@ -715,6 +869,10 @@ public:
 
 } // namespace
 
+// Program entry point.
+// It sets up logging and clean-shutdown signal handlers, parses startup options,
+// constructs the StrategyServiceRuntime orchestrator and then runs it.
+// Any unrecoverable startup/runtime exception is logged as fatal and returns 1.
 int main(int argc, char** argv)
 {
     ServiceLogging::setup("strategy");
