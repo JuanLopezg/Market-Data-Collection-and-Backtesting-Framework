@@ -1,0 +1,18 @@
+STEP 35.1 VALIDATION
+
+Generation validation:
+- CGO_ENABLED=0 go test ./...
+- CGO_ENABLED=0 go vet ./...
+- CGO_ENABLED=0 go build ./...
+- npm run build
+- sh -n scripts/step35-symbol-mapping.sh
+- explicit symbol classification JSON parse / uniqueness
+
+Runtime acceptance:
+  ./scripts/step35-symbol-mapping.sh
+
+Acceptance semantics:
+- every required internal symbol must be classified;
+- unsupported symbols remain non-routable;
+- any MISSING_MAPPING / unclassified symbol fails closed;
+- 100% execution coverage is NOT required at Step 35 and order routing stays disabled.

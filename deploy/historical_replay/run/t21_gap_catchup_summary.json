@@ -1,0 +1,115 @@
+{
+  "capacity_armed_at": 0,
+  "capacity_check": false,
+  "capacity_max_lag_days_allowed": 2,
+  "capacity_max_lag_days_observed": 0,
+  "capacity_min_samples_required": 6,
+  "capacity_min_span_days_required": 0,
+  "capacity_observation_start": 0,
+  "capacity_ok": true,
+  "capacity_samples": [],
+  "capacity_span_days_observed": 0,
+  "cash": 89985.70520239843,
+  "critical_log_lines": [],
+  "execution_last_decision": 20200417,
+  "execution_last_execution": 20200418,
+  "expected_clock_wall_seconds": 316.8,
+  "expected_fingerprint_sha256": null,
+  "fault_profile": "strategy-gap",
+  "fault_state": {
+    "resumed": true,
+    "stopped": true
+  },
+  "fills": 2,
+  "fingerprint": {
+    "cash": 89985.7052024,
+    "fills": [
+      {
+        "coin": "LINK",
+        "commission": 0.0,
+        "fill_id": 1,
+        "order_id": 1,
+        "price": 3.287005,
+        "quantity": 3046.6320549,
+        "side": 0,
+        "strategy_id": 1,
+        "timestamp": 20200412
+      }
+    ],
+    "horizon": {
+      "target_completed": 20200415,
+      "target_execution_day": 20200416
+    },
+    "plans": [
+      {
+        "cancel_order_ids": [],
+        "submit_orders": [
+          {
+            "coin": "LINK",
+            "created_at": 20200411,
+            "current_notional_usd": 0.0,
+            "decision_timestamp": 20200411,
+            "delta_notional_usd": 10000.0,
+            "economic_order_id": "planned-notional-order:20200411:9842758960429053956:1",
+            "notional_usd": 10000.0,
+            "order_id": 1,
+            "pending_notional_usd": 0.0,
+            "reference_close": 3.282313,
+            "side": 0,
+            "state_revision": 9842758960429053956,
+            "strategy_id": 1,
+            "target_notional_usd": 10000.0
+          }
+        ],
+        "timestamp": 20200411
+      }
+    ],
+    "positions": {
+      "LINK": 3046.6320549
+    }
+  },
+  "fingerprint_match": true,
+  "fingerprint_sha256": "7ad7f2f7f85718ac2d5a6da467bfe1d79f87877ae287c3711c943d5be245b735",
+  "full_baseline": null,
+  "gap_catchup_observed": true,
+  "label": "t21_gap_catchup",
+  "planner_days": 4,
+  "planner_latest": 20200417,
+  "positions": {
+    "LINK": 3046.632054895435
+  },
+  "result": "PASS",
+  "risk_days": 4,
+  "risk_latest": 20200417,
+  "sim_exchange_latest": 20200418,
+  "simulated_start": "2020-04-10T12:00:00Z",
+  "speed": 1500.0,
+  "strategy_days": 4,
+  "strategy_latest": 20200417,
+  "t21_gap_evidence": {
+    "catchup_days": 5,
+    "internal_catchup_days": [
+      20200413,
+      20200414,
+      20200415,
+      20200416
+    ],
+    "pipeline_checks": {
+      "execution_last_decision": true,
+      "execution_last_execution": true,
+      "fills": true,
+      "planner_latest": true,
+      "risk_latest": true,
+      "sim_exchange_latest": true,
+      "strategy_latest": true
+    },
+    "published_frontier": 20200417,
+    "recovered_checkpoint": 20200412,
+    "source": "strategy-specific retained docker logs"
+  },
+  "t21_regraded_from_existing_evidence": true,
+  "target_completed": 20200415,
+  "target_execution_day": 20200416,
+  "tracked_orders": 2,
+  "wall_seconds": 414.89
+}

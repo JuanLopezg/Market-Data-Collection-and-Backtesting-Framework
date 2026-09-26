@@ -1,0 +1,140 @@
+postgres-1  | The files belonging to this database system will be owned by user "postgres".
+postgres-1  | This user must also own the server process.
+postgres-1  | 
+postgres-1  | The database cluster will be initialized with locale "en_US.utf8".
+postgres-1  | The default database encoding has accordingly been set to "UTF8".
+postgres-1  | The default text search configuration will be set to "english".
+postgres-1  | 
+postgres-1  | Data page checksums are disabled.
+postgres-1  | 
+postgres-1  | fixing permissions on existing directory /var/lib/postgresql/data ... ok
+postgres-1  | creating subdirectories ... ok
+postgres-1  | selecting dynamic shared memory implementation ... posix
+postgres-1  | selecting default max_connections ... 100
+postgres-1  | selecting default shared_buffers ... 128MB
+postgres-1  | selecting default time zone ... UTC
+postgres-1  | creating configuration files ... ok
+postgres-1  | running bootstrap script ... ok
+postgres-1  | sh: locale: not found
+postgres-1  | 2026-09-24 06:23:36.305 UTC [35] WARNING:  no usable system locales were found
+postgres-1  | performing post-bootstrap initialization ... ok
+postgres-1  | syncing data to disk ... ok
+postgres-1  | 
+postgres-1  | 
+postgres-1  | Success. You can now start the database server using:
+postgres-1  | 
+postgres-1  |     pg_ctl -D /var/lib/postgresql/data -l logfile start
+postgres-1  | 
+postgres-1  | initdb: warning: enabling "trust" authentication for local connections
+postgres-1  | initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+postgres-1  | waiting for server to start....2026-09-24 06:23:39.758 UTC [47] LOG:  starting PostgreSQL 16.15 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+postgres-1  | 2026-09-24 06:23:39.778 UTC [47] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1  | 2026-09-24 06:23:39.818 UTC [50] LOG:  database system was shut down at 2026-09-24 06:23:37 UTC
+postgres-1  | 2026-09-24 06:23:39.863 UTC [47] LOG:  database system is ready to accept connections
+postgres-1  |  done
+postgres-1  | server started
+postgres-1  | 2026-09-24 06:23:40.261 UTC [65] FATAL:  database "algotrading_historical_replay" does not exist
+postgres-1  | CREATE DATABASE
+postgres-1  | 
+postgres-1  | 
+postgres-1  | /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+postgres-1  | 
+postgres-1  | waiting for server to shut down....2026-09-24 06:23:40.728 UTC [47] LOG:  received fast shutdown request
+postgres-1  | 2026-09-24 06:23:40.762 UTC [47] LOG:  aborting any active transactions
+postgres-1  | 2026-09-24 06:23:40.767 UTC [47] LOG:  background worker "logical replication launcher" (PID 53) exited with exit code 1
+postgres-1  | 2026-09-24 06:23:40.768 UTC [48] LOG:  shutting down
+postgres-1  | 2026-09-24 06:23:40.783 UTC [48] LOG:  checkpoint starting: shutdown immediate
+postgres-1  | 2026-09-24 06:23:41.720 UTC [48] LOG:  checkpoint complete: wrote 926 buffers (5.7%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.072 s, sync=0.789 s, total=0.952 s; sync files=301, longest=0.605 s, average=0.003 s; distance=4283 kB, estimate=4283 kB; lsn=0/1925D78, redo lsn=0/1925D78
+postgres-1  | 2026-09-24 06:23:41.725 UTC [47] LOG:  database system is shut down
+postgres-1  |  done
+postgres-1  | server stopped
+postgres-1  | 
+postgres-1  | PostgreSQL init process complete; ready for start up.
+postgres-1  | 
+postgres-1  | 2026-09-24 06:23:41.800 UTC [1] LOG:  starting PostgreSQL 16.15 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+postgres-1  | 2026-09-24 06:23:41.800 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+postgres-1  | 2026-09-24 06:23:41.800 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+postgres-1  | 2026-09-24 06:23:41.847 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1  | 2026-09-24 06:23:41.910 UTC [70] LOG:  database system was shut down at 2026-09-24 06:23:41 UTC
+postgres-1  | 2026-09-24 06:23:41.934 UTC [1] LOG:  database system is ready to accept connections
+postgres-1  | 2026-09-24 06:28:41.905 UTC [68] LOG:  checkpoint starting: time
+postgres-1  | 2026-09-24 06:29:06.566 UTC [68] LOG:  checkpoint complete: wrote 248 buffers (1.5%); 0 WAL file(s) added, 0 removed, 0 recycled; write=24.607 s, sync=0.035 s, total=24.661 s; sync files=121, longest=0.006 s, average=0.001 s; distance=1742 kB, estimate=1742 kB; lsn=0/1AE70D8, redo lsn=0/1AD98E0
+postgres-1  | 2026-09-24 06:30:51.663 UTC [1] LOG:  received fast shutdown request
+postgres-1  | 2026-09-24 06:30:51.666 UTC [1] LOG:  aborting any active transactions
+postgres-1  | 2026-09-24 06:30:51.666 UTC [104] FATAL:  terminating connection due to administrator command
+postgres-1  | 2026-09-24 06:30:51.666 UTC [106] FATAL:  terminating connection due to administrator command
+postgres-1  | 2026-09-24 06:30:51.666 UTC [95] FATAL:  terminating connection due to administrator command
+postgres-1  | 2026-09-24 06:30:51.666 UTC [105] FATAL:  terminating connection due to administrator command
+postgres-1  | 2026-09-24 06:30:51.666 UTC [96] FATAL:  terminating connection due to administrator command
+postgres-1  | 2026-09-24 06:30:51.670 UTC [1] LOG:  background worker "logical replication launcher" (PID 73) exited with exit code 1
+postgres-1  | 2026-09-24 06:30:51.673 UTC [68] LOG:  shutting down
+postgres-1  | 2026-09-24 06:30:51.675 UTC [68] LOG:  checkpoint starting: shutdown immediate
+postgres-1  | 2026-09-24 06:30:51.687 UTC [68] LOG:  checkpoint complete: wrote 16 buffers (0.1%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.005 s, total=0.015 s; sync files=15, longest=0.003 s, average=0.001 s; distance=78 kB, estimate=1576 kB; lsn=0/1AED210, redo lsn=0/1AED210
+postgres-1  | 2026-09-24 06:30:51.691 UTC [1] LOG:  database system is shut down
+postgres-1  | 
+postgres-1  | PostgreSQL Database directory appears to contain a database; Skipping initialization
+postgres-1  | 
+postgres-1  | 2026-09-24 06:30:52.184 UTC [1] LOG:  starting PostgreSQL 16.15 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+postgres-1  | 2026-09-24 06:30:52.184 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+postgres-1  | 2026-09-24 06:30:52.184 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+postgres-1  | 2026-09-24 06:30:52.188 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1  | 2026-09-24 06:30:52.193 UTC [30] LOG:  database system was shut down at 2026-09-24 06:30:51 UTC
+postgres-1  | 2026-09-24 06:30:52.200 UTC [1] LOG:  database system is ready to accept connections
+nats-1      | [1] 2026/09/24 06:23:35.666336 [INF] Starting nats-server
+nats-1      | [1] 2026/09/24 06:23:35.666577 [INF]   Version:  2.10.29
+nats-1      | [1] 2026/09/24 06:23:35.666583 [INF]   Git:      [f91ddd8]
+nats-1      | [1] 2026/09/24 06:23:35.666586 [INF]   Name:     NCRJQXO64QMFLG7XVWYQ5Z3OY2LZK34D6MQJ6VQB46L7LKV2ZYHTY5M5
+nats-1      | [1] 2026/09/24 06:23:35.666597 [INF]   Node:     2GcT5WzF
+nats-1      | [1] 2026/09/24 06:23:35.666599 [INF]   ID:       NCRJQXO64QMFLG7XVWYQ5Z3OY2LZK34D6MQJ6VQB46L7LKV2ZYHTY5M5
+nats-1      | [1] 2026/09/24 06:23:35.675950 [INF] Starting http monitor on 0.0.0.0:8222
+nats-1      | [1] 2026/09/24 06:23:35.676464 [INF] Starting JetStream
+nats-1      | [1] 2026/09/24 06:23:35.677771 [INF]     _ ___ _____ ___ _____ ___ ___   _   __  __
+nats-1      | [1] 2026/09/24 06:23:35.677864 [INF]  _ | | __|_   _/ __|_   _| _ \ __| /_\ |  \/  |
+nats-1      | [1] 2026/09/24 06:23:35.677878 [INF] | || | _|  | | \__ \ | | |   / _| / _ \| |\/| |
+nats-1      | [1] 2026/09/24 06:23:35.677888 [INF]  \__/|___| |_| |___/ |_| |_|_\___/_/ \_\_|  |_|
+nats-1      | [1] 2026/09/24 06:23:35.677897 [INF] 
+nats-1      | [1] 2026/09/24 06:23:35.677915 [INF]          https://docs.nats.io/jetstream
+nats-1      | [1] 2026/09/24 06:23:35.677925 [INF] 
+nats-1      | [1] 2026/09/24 06:23:35.677982 [INF] ---------------- JETSTREAM ----------------
+nats-1      | [1] 2026/09/24 06:23:35.678003 [INF]   Max Memory:      4.23 GB
+nats-1      | [1] 2026/09/24 06:23:35.678015 [INF]   Max Storage:     712.06 GB
+nats-1      | [1] 2026/09/24 06:23:35.678049 [INF]   Store Directory: "/data/jetstream"
+nats-1      | [1] 2026/09/24 06:23:35.678059 [INF] -------------------------------------------
+nats-1      | [1] 2026/09/24 06:23:35.679406 [INF] Listening for client connections on 0.0.0.0:4222
+nats-1      | [1] 2026/09/24 06:23:35.679895 [INF] Server is ready
+nats-1      | [1] 2026/09/24 06:26:04.254044 [INF] Trapped "terminated" signal
+nats-1      | [1] 2026/09/24 06:26:04.254233 [INF] Initiating Shutdown...
+nats-1      | [1] 2026/09/24 06:26:04.254265 [INF] Initiating JetStream Shutdown...
+nats-1      | [1] 2026/09/24 06:26:04.254784 [INF] JetStream Shutdown
+nats-1      | [1] 2026/09/24 06:26:04.255515 [INF] Server Exiting..
+nats-1      | [1] 2026/09/24 06:26:04.790298 [INF] Starting nats-server
+nats-1      | [1] 2026/09/24 06:26:04.790379 [INF]   Version:  2.10.29
+nats-1      | [1] 2026/09/24 06:26:04.790381 [INF]   Git:      [f91ddd8]
+nats-1      | [1] 2026/09/24 06:26:04.790382 [INF]   Name:     NDNXYNEEFX23HMJO227J6W5GARBN7L2WKN7ZKY74OD4K2TT6K4H4SQZI
+nats-1      | [1] 2026/09/24 06:26:04.790391 [INF]   Node:     5tiFKK58
+nats-1      | [1] 2026/09/24 06:26:04.790392 [INF]   ID:       NDNXYNEEFX23HMJO227J6W5GARBN7L2WKN7ZKY74OD4K2TT6K4H4SQZI
+nats-1      | [1] 2026/09/24 06:26:04.791054 [INF] Starting http monitor on 0.0.0.0:8222
+nats-1      | [1] 2026/09/24 06:26:04.791162 [INF] Starting JetStream
+nats-1      | [1] 2026/09/24 06:26:04.791290 [INF]     _ ___ _____ ___ _____ ___ ___   _   __  __
+nats-1      | [1] 2026/09/24 06:26:04.791307 [INF]  _ | | __|_   _/ __|_   _| _ \ __| /_\ |  \/  |
+nats-1      | [1] 2026/09/24 06:26:04.791309 [INF] | || | _|  | | \__ \ | | |   / _| / _ \| |\/| |
+nats-1      | [1] 2026/09/24 06:26:04.791309 [INF]  \__/|___| |_| |___/ |_| |_|_\___/_/ \_\_|  |_|
+nats-1      | [1] 2026/09/24 06:26:04.791310 [INF] 
+nats-1      | [1] 2026/09/24 06:26:04.791311 [INF]          https://docs.nats.io/jetstream
+nats-1      | [1] 2026/09/24 06:26:04.791312 [INF] 
+nats-1      | [1] 2026/09/24 06:26:04.791313 [INF] ---------------- JETSTREAM ----------------
+nats-1      | [1] 2026/09/24 06:26:04.791315 [INF]   Max Memory:      4.23 GB
+nats-1      | [1] 2026/09/24 06:26:04.791317 [INF]   Max Storage:     712.02 GB
+nats-1      | [1] 2026/09/24 06:26:04.791318 [INF]   Store Directory: "/data/jetstream"
+nats-1      | [1] 2026/09/24 06:26:04.791318 [INF] -------------------------------------------
+nats-1      | [1] 2026/09/24 06:26:04.792717 [INF]   Starting restore for stream '$G > ALGOTRADING_HISTORICAL_EXCHANGE_BACKEND'
+nats-1      | [1] 2026/09/24 06:26:04.796160 [INF]   Restored 46 messages for stream '$G > ALGOTRADING_HISTORICAL_EXCHANGE_BACKEND' in 3ms
+nats-1      | [1] 2026/09/24 06:26:04.796397 [INF]   Starting restore for stream '$G > ALGOTRADING_HISTORICAL_EXCHANGE_CONTROL'
+nats-1      | [1] 2026/09/24 06:26:04.796829 [INF]   Restored 1 messages for stream '$G > ALGOTRADING_HISTORICAL_EXCHANGE_CONTROL' in 0s
+nats-1      | [1] 2026/09/24 06:26:04.796958 [INF]   Starting restore for stream '$G > ALGOTRADING_HISTORICAL_RUNTIME'
+nats-1      | [1] 2026/09/24 06:26:04.797500 [INF]   Restored 283 messages for stream '$G > ALGOTRADING_HISTORICAL_RUNTIME' in 1ms
+nats-1      | [1] 2026/09/24 06:26:04.797571 [INF]   Recovering 5 consumers for stream - '$G > ALGOTRADING_HISTORICAL_EXCHANGE_BACKEND'
+nats-1      | [1] 2026/09/24 06:26:04.799340 [INF]   Recovering 1 consumers for stream - '$G > ALGOTRADING_HISTORICAL_EXCHANGE_CONTROL'
+nats-1      | [1] 2026/09/24 06:26:04.799644 [INF]   Recovering 12 consumers for stream - '$G > ALGOTRADING_HISTORICAL_RUNTIME'
+nats-1      | [1] 2026/09/24 06:26:04.802834 [INF] Listening for client connections on 0.0.0.0:4222
+nats-1      | [1] 2026/09/24 06:26:04.803385 [INF] Server is ready

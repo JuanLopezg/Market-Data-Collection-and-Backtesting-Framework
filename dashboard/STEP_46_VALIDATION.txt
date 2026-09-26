@@ -1,0 +1,22 @@
+STEP 46 — MANUAL CONTROL SAFE ROUTING CONTRACT
+
+Required local runtime gate:
+  ./scripts/step46-manual-control-safe-routing.sh
+
+The gate validates:
+- Step 45 precondition;
+- full Go test/vet/build regression;
+- step46-v1 manual-control contract and isolated durable audit availability;
+- OPERATOR + CSRF + explicit confirmation requirement;
+- deterministic server-side request SHA-256 and current-target reference binding;
+- confirmed admission returns BLOCKED, submitted=false, routeEnabled=false;
+- tampered hash remains blocked and is durably audited;
+- append-only manual intent is projected into Alerts & Audit as HUMAN evidence;
+- global readiness phase becomes DASHBOARD_COMPLETE_PRIVATE_TESTNET_DEFERRED while private/trading/LIVE readiness remain false;
+- no NATS trading publish, exchange command route, signer/secret loader, or order submit/cancel API;
+- Manual Control and Alerts & Audit UI expose the Step 46 contract/evidence.
+
+Expected final banner:
+  STEP 46: PASS — MANUAL CONTROL SAFE ROUTING CONTRACT VALIDATED
+
+Do not claim Step 46 PASS unless that runtime gate actually reaches the final banner.

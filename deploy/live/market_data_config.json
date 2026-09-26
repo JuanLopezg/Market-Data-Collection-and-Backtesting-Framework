@@ -1,0 +1,14 @@
+{
+  "main_exchange": "binance",
+  "database_path": "/data/market/database.db",
+  "binance_base_url": "https://fapi.binance.com",
+  "nats_url": "nats://nats:4222",
+  "stream": "ALGOTRADING_RUNTIME",
+  "ranking_size": 100,
+  "active_top_n": 50,
+  "retain_after_top_n_days": 365,
+  "minimum_history_days": 100,
+  "max_parallel_requests": 8,
+  "midnight_delay_seconds": 5,
+  "retry_after_failure_seconds": 300
+}

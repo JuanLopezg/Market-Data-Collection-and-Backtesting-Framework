@@ -1,0 +1,187 @@
+name: algotrading-live
+
+x-runtime: &runtime
+  image: algotrading-runtime:live-pre-exchange
+  build:
+    context: ./.runtime_bundle
+  init: true
+  restart: on-failure
+  environment:
+    ALGOTRADING_LOG_DEBUG: "${ALGOTRADING_LOG_DEBUG:-0}"
+    ALGOTRADING_LOG_QUIET: "${ALGOTRADING_LOG_QUIET:-0}"
+    ALGOTRADING_LOG_DIR: "${ALGOTRADING_LOG_DIR:-}"
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+  networks: [live]
+
+x-postgres-connection: &postgres_connection "host=postgres port=5432 dbname=${POSTGRES_DB:-algotrading} user=${POSTGRES_USER:-algotrading} password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/live/.env}"
+
+services:
+  nats:
+    image: nats:2.10-alpine
+    command: ["-js", "-m", "8222", "--store_dir", "/data"]
+    volumes:
+      - nats-data:/data
+    ports:
+      - "127.0.0.1:${LIVE_NATS_PORT:-4222}:4222"
+      - "127.0.0.1:${LIVE_NATS_MONITOR_PORT:-8222}:8222"
+    networks: [live]
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-algotrading}"
+      POSTGRES_USER: "${POSTGRES_USER:-algotrading}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/live/.env}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-algotrading} -d ${POSTGRES_DB:-algotrading}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${LIVE_POSTGRES_PORT:-5432}:5432"
+    networks: [live]
+
+  market-data:
+    <<: *runtime
+    command:
+      - algotrading_market_data_service
+      - --config
+      - /opt/algotrading/live/market_data_config.json
+    volumes:
+      - "${MARKET_DATA_DIR:-../../storage/databases}:/data/market:rw"
+      - "./market_data_config.json:/opt/algotrading/live/market_data_config.json:ro"
+    depends_on:
+      nats:
+        condition: service_started
+
+  strategy:
+    <<: *runtime
+    command:
+      - algotrading_strategy_service
+      - --nats-url
+      - nats://nats:4222
+      - --stream
+      - ALGOTRADING_RUNTIME
+      - --strategy-config
+      - "${STRATEGY_CONFIG:-/opt/algotrading/config/strategies/pure_rsi_signal.json}"
+      - --market-data-db
+      - /data/market/database.db
+      - --market-warmup-days
+      - "${MARKET_WARMUP_DAYS:-100}"
+      - --market-top-n
+      - "${MARKET_TOP_N:-50}"
+      - --postgres
+      - *postgres_connection
+    volumes:
+      - "${MARKET_DATA_DIR:-../../storage/databases}:/data/market:ro"
+    depends_on:
+      nats:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      market-data:
+        condition: service_started
+
+  portfolio-risk:
+    <<: *runtime
+    command:
+      - algotrading_portfolio_risk_service
+      - --nats-url
+      - nats://nats:4222
+      - --stream
+      - ALGOTRADING_RUNTIME
+      - --portfolio-config
+      - "${PORTFOLIO_CONFIG:-/opt/algotrading/config/portfolio/pure_rsi_equal_weight.json}"
+      - --market-data-db
+      - /data/market/database.db
+      - --market-history-buffer-days
+      - "${MARKET_HISTORY_BUFFER_DAYS:-5}"
+      - --postgres
+      - *postgres_connection
+    volumes:
+      - "${MARKET_DATA_DIR:-../../storage/databases}:/data/market:ro"
+    depends_on:
+      nats:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      market-data:
+        condition: service_started
+
+  execution-state:
+    <<: *runtime
+    command:
+      - algotrading_execution_state_service
+      - --nats-url
+      - nats://nats:4222
+      - --postgres
+      - *postgres_connection
+      - --stream
+      - ALGOTRADING_RUNTIME
+      - --exchange-control-stream
+      - ALGOTRADING_EXCHANGE_CONTROL
+      - --market-data-db
+      - /data/market/database.db
+      - --initial-cash
+      - "${INITIAL_CASH:-100000}"
+      - --strategy
+      - 1:Pure_RSI
+    volumes:
+      - "${MARKET_DATA_DIR:-../../storage/databases}:/data/market:ro"
+    depends_on:
+      nats:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      market-data:
+        condition: service_started
+
+  order-planner:
+    <<: *runtime
+    command:
+      - algotrading_order_planner_service
+      - --nats-url
+      - nats://nats:4222
+      - --stream
+      - ALGOTRADING_RUNTIME
+      - --postgres
+      - *postgres_connection
+    depends_on:
+      nats:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+
+  # Not started in the pre-exchange dry topology. STEP 7 will attach the venue
+  # preparation adapter. Enable explicitly only when testing gateway transport.
+  exchange-gateway:
+    <<: *runtime
+    profiles: ["exchange-edge"]
+    command:
+      - algotrading_exchange_gateway
+      - --nats-url
+      - nats://nats:4222
+      - --stream
+      - ALGOTRADING_RUNTIME
+      - --control-stream
+      - ALGOTRADING_EXCHANGE_CONTROL
+      - --backend-stream
+      - ALGOTRADING_EXCHANGE_BACKEND
+      - --poll-timeout-ms
+      - "250"
+    depends_on:
+      nats:
+        condition: service_started
+
+networks:
+  live:
+
+volumes:
+  nats-data:
+  postgres-data:

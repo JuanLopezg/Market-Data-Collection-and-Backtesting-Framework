@@ -1,0 +1,55 @@
+services:
+  dashboard-api:
+    build:
+      context: ./dashboard-api
+    container_name: control-dashboard-api
+    restart: unless-stopped
+    stop_grace_period: 10s
+    expose:
+      - "8080"
+    environment:
+      DASHBOARD_API_ADDR: ":8080"
+      DASHBOARD_DATA_PROVIDER: "mock"
+      DASHBOARD_AUTH_ALLOW_DEMO: "true"
+      DASHBOARD_AUTH_COOKIE_SECURE: "false"
+      DASHBOARD_SESSION_TTL: "8h"
+      DASHBOARD_RESOURCE_TIMEOUT: "7s"
+      DASHBOARD_SSE_MAX_CLIENTS: "16"
+    mem_limit: 64m
+    cpus: 0.20
+    pids_limit: 64
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - dashboard-private
+
+  dashboard-web:
+    build:
+      context: .
+      args:
+        VITE_DASHBOARD_DATA_MODE: api
+        VITE_DASHBOARD_API_BASE_URL: /api
+        VITE_DASHBOARD_API_TIMEOUT_MS: 8000
+    container_name: control-dashboard-web
+    restart: unless-stopped
+    depends_on:
+      dashboard-api:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    mem_limit: 96m
+    cpus: 0.25
+    pids_limit: 96
+    networks:
+      - dashboard-public
+      - dashboard-private
+
+networks:
+  dashboard-public:
+    driver: bridge
+  dashboard-private:
+    driver: bridge
+    internal: true

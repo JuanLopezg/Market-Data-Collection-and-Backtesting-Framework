@@ -1,0 +1,12 @@
+CONTROL DASHBOARD STEP 42.2 VALIDATION
+=====================================
+Static/local package validation only; runtime PASS still requires the user's gate.
+
+- sh -n scripts/step37a-symbol-registry.sh: PASS
+- sh -n scripts/step42-ledger-foundation.sh: PASS
+- regression: WARN SYMBOL_REGISTRY_BLOCKED is non-fatal only after current registry validation: PASS
+- regression: CRITICAL SYMBOL_REGISTRY_BLOCKED remains fatal: PASS
+- go test ./...: PASS
+- go vet ./...: PASS
+- go build ./...: PASS
+- no wallet/signing/order-routing changes: PASS

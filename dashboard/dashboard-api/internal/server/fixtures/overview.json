@@ -1,0 +1,431 @@
+{
+  "stats": [
+    {
+      "label": "Total Equity",
+      "value": "$1,248,321",
+      "delta": "+2.36%",
+      "detail": "+$28,735 (7D)",
+      "trend": [
+        7,
+        8,
+        8,
+        9,
+        9,
+        10,
+        11,
+        10,
+        12,
+        13,
+        12,
+        14,
+        15
+      ]
+    },
+    {
+      "label": "Cash",
+      "value": "$312,448",
+      "delta": "+1.12%",
+      "detail": "+$3,461 (7D)",
+      "trend": [
+        5,
+        5,
+        6,
+        6,
+        5,
+        6,
+        6,
+        7,
+        7,
+        7,
+        8,
+        8,
+        9
+      ]
+    },
+    {
+      "label": "Unrealized PnL",
+      "value": "$86,242",
+      "delta": "+12.6%",
+      "detail": "+$9,612 (7D)",
+      "trend": [
+        4,
+        6,
+        5,
+        7,
+        8,
+        8,
+        9,
+        10,
+        9,
+        11,
+        12,
+        13,
+        14
+      ]
+    }
+  ],
+  "equityCurve": [
+    {
+      "label": "Sep 03",
+      "equity": 690,
+      "benchmark": 650
+    },
+    {
+      "label": "Sep 04",
+      "equity": 735,
+      "benchmark": 675
+    },
+    {
+      "label": "Sep 05",
+      "equity": 760,
+      "benchmark": 690
+    },
+    {
+      "label": "Sep 06",
+      "equity": 815,
+      "benchmark": 710
+    },
+    {
+      "label": "Sep 07",
+      "equity": 845,
+      "benchmark": 735
+    },
+    {
+      "label": "Sep 08",
+      "equity": 875,
+      "benchmark": 750
+    },
+    {
+      "label": "Sep 09",
+      "equity": 905,
+      "benchmark": 770
+    },
+    {
+      "label": "Sep 10",
+      "equity": 940,
+      "benchmark": 795
+    },
+    {
+      "label": "Sep 11",
+      "equity": 975,
+      "benchmark": 805
+    },
+    {
+      "label": "Sep 12",
+      "equity": 1010,
+      "benchmark": 825
+    },
+    {
+      "label": "Sep 13",
+      "equity": 1035,
+      "benchmark": 835
+    },
+    {
+      "label": "Sep 14",
+      "equity": 1075,
+      "benchmark": 850
+    },
+    {
+      "label": "Sep 15",
+      "equity": 1105,
+      "benchmark": 875
+    },
+    {
+      "label": "Sep 16",
+      "equity": 1140,
+      "benchmark": 895
+    },
+    {
+      "label": "Sep 17",
+      "equity": 1175,
+      "benchmark": 920
+    },
+    {
+      "label": "Sep 18",
+      "equity": 1200,
+      "benchmark": 940
+    },
+    {
+      "label": "Sep 19",
+      "equity": 1240,
+      "benchmark": 960
+    },
+    {
+      "label": "Sep 20",
+      "equity": 1280,
+      "benchmark": 990
+    },
+    {
+      "label": "Sep 21",
+      "equity": 1315,
+      "benchmark": 1015
+    },
+    {
+      "label": "Sep 22",
+      "equity": 1360,
+      "benchmark": 1050
+    },
+    {
+      "label": "Sep 23",
+      "equity": 1410,
+      "benchmark": 1090
+    }
+  ],
+  "liveExpected": [
+    {
+      "label": "Sep 03",
+      "equity": 0,
+      "benchmark": 0
+    },
+    {
+      "label": "Sep 04",
+      "equity": 6,
+      "benchmark": 3
+    },
+    {
+      "label": "Sep 05",
+      "equity": 10,
+      "benchmark": 5
+    },
+    {
+      "label": "Sep 06",
+      "equity": 18,
+      "benchmark": 7
+    },
+    {
+      "label": "Sep 07",
+      "equity": 22,
+      "benchmark": 10
+    },
+    {
+      "label": "Sep 08",
+      "equity": 26,
+      "benchmark": 12
+    },
+    {
+      "label": "Sep 09",
+      "equity": 30,
+      "benchmark": 14
+    },
+    {
+      "label": "Sep 10",
+      "equity": 35,
+      "benchmark": 17
+    },
+    {
+      "label": "Sep 11",
+      "equity": 40,
+      "benchmark": 19
+    },
+    {
+      "label": "Sep 12",
+      "equity": 45,
+      "benchmark": 21
+    },
+    {
+      "label": "Sep 13",
+      "equity": 48,
+      "benchmark": 22
+    },
+    {
+      "label": "Sep 14",
+      "equity": 54,
+      "benchmark": 24
+    },
+    {
+      "label": "Sep 15",
+      "equity": 58,
+      "benchmark": 27
+    },
+    {
+      "label": "Sep 16",
+      "equity": 63,
+      "benchmark": 29
+    },
+    {
+      "label": "Sep 17",
+      "equity": 68,
+      "benchmark": 32
+    },
+    {
+      "label": "Sep 18",
+      "equity": 71,
+      "benchmark": 35
+    },
+    {
+      "label": "Sep 19",
+      "equity": 77,
+      "benchmark": 37
+    },
+    {
+      "label": "Sep 20",
+      "equity": 83,
+      "benchmark": 41
+    },
+    {
+      "label": "Sep 21",
+      "equity": 88,
+      "benchmark": 44
+    },
+    {
+      "label": "Sep 22",
+      "equity": 94,
+      "benchmark": 48
+    },
+    {
+      "label": "Sep 23",
+      "equity": 101,
+      "benchmark": 53
+    }
+  ],
+  "positions": [
+    {
+      "asset": "BTC",
+      "side": "Long",
+      "quantity": 2.3456,
+      "quantityLabel": "2.3456",
+      "entryPrice": 34215,
+      "entryPriceLabel": "$34,215",
+      "currentPrice": 37420,
+      "currentPriceLabel": "$37,420",
+      "pnlUsd": 7517,
+      "pnlUsdLabel": "+$7,517",
+      "pnlPct": 9.1,
+      "pnlPctLabel": "+9.1%",
+      "currentWeightPct": 28.4,
+      "targetWeightPct": 28,
+      "targetQty": 2.3126,
+      "effectiveQty": 2.3456,
+      "localQty": 2.3456,
+      "exchangeQty": 2.3456,
+      "deltaQty": 0,
+      "status": "ALIGNED"
+    },
+    {
+      "asset": "ETH",
+      "side": "Long",
+      "quantity": 12.4,
+      "quantityLabel": "12.40",
+      "entryPrice": 2312,
+      "entryPriceLabel": "$2,312",
+      "currentPrice": 2484,
+      "currentPriceLabel": "$2,484",
+      "pnlUsd": 2132,
+      "pnlUsdLabel": "+$2,132",
+      "pnlPct": 7.4,
+      "pnlPctLabel": "+7.4%",
+      "currentWeightPct": 22.1,
+      "targetWeightPct": 22,
+      "targetQty": 12.4,
+      "effectiveQty": 12.4,
+      "localQty": 12.4,
+      "exchangeQty": 12.4,
+      "deltaQty": 0,
+      "status": "ALIGNED"
+    },
+    {
+      "asset": "SOL",
+      "side": "Long",
+      "quantity": 530,
+      "quantityLabel": "530.0",
+      "entryPrice": 124.5,
+      "entryPriceLabel": "$124.50",
+      "currentPrice": 138.2,
+      "currentPriceLabel": "$138.20",
+      "pnlUsd": 7261,
+      "pnlUsdLabel": "+$7,261",
+      "pnlPct": 11,
+      "pnlPctLabel": "+11.0%",
+      "currentWeightPct": 11.8,
+      "targetWeightPct": 12,
+      "targetQty": 530,
+      "effectiveQty": 530,
+      "localQty": 530,
+      "exchangeQty": 530,
+      "deltaQty": 0,
+      "status": "ALIGNED"
+    },
+    {
+      "asset": "LINK",
+      "side": "Short",
+      "quantity": 2400,
+      "quantityLabel": "2,400",
+      "entryPrice": 14.82,
+      "entryPriceLabel": "$14.82",
+      "currentPrice": 14.21,
+      "currentPriceLabel": "$14.21",
+      "pnlUsd": 1464,
+      "pnlUsdLabel": "+$1,464",
+      "pnlPct": 4.1,
+      "pnlPctLabel": "+4.1%",
+      "currentWeightPct": 7.6,
+      "targetWeightPct": 8,
+      "targetQty": -2400,
+      "effectiveQty": -2400,
+      "localQty": -2400,
+      "exchangeQty": -2400,
+      "deltaQty": 0,
+      "status": "ALIGNED"
+    },
+    {
+      "asset": "BNB",
+      "side": "Long",
+      "quantity": 18.5,
+      "quantityLabel": "18.50",
+      "entryPrice": 612.3,
+      "entryPriceLabel": "$612.30",
+      "currentPrice": 640.11,
+      "currentPriceLabel": "$640.11",
+      "pnlUsd": 514,
+      "pnlUsdLabel": "+$514",
+      "pnlPct": 4.6,
+      "pnlPctLabel": "+4.6%",
+      "currentWeightPct": 5,
+      "targetWeightPct": 5,
+      "targetQty": 18.5,
+      "effectiveQty": 18.5,
+      "localQty": 18.5,
+      "exchangeQty": 18.5,
+      "deltaQty": 0,
+      "status": "ALIGNED"
+    }
+  ],
+  "recentEvents": [
+    {
+      "time": "14:31:52",
+      "event": "BUY 0.50 BTC @ 37,420",
+      "source": "Execution",
+      "severity": "INFO"
+    },
+    {
+      "time": "14:28:11",
+      "event": "Reconciliation check completed",
+      "source": "System",
+      "severity": "INFO"
+    },
+    {
+      "time": "14:24:03",
+      "event": "Position deviation 0.18% within limits",
+      "source": "Risk",
+      "severity": "INFO"
+    },
+    {
+      "time": "14:20:17",
+      "event": "SELL 1,200 SOL @ 137.90",
+      "source": "Execution",
+      "severity": "INFO"
+    },
+    {
+      "time": "14:17:36",
+      "event": "High leverage attempt blocked",
+      "source": "Risk",
+      "severity": "WARN"
+    },
+    {
+      "time": "14:12:48",
+      "event": "Market data gap detected (2s)",
+      "source": "Market Data",
+      "severity": "WARN"
+    }
+  ]
+}

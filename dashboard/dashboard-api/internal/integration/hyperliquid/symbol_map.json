@@ -1,0 +1,699 @@
+{
+  "schemaVersion": 2,
+  "venue": "HYPERLIQUID",
+  "environment": "TESTNET",
+  "mappingPolicy": "EXPLICIT_ONLY",
+  "note": "Exact internal Binance-USDT-symbol to Hyperliquid coin mappings plus explicit unsupported classifications. Runtime suffix stripping, case conversion and heuristic aliasing are forbidden. A mapped coin is usable only when present in current Hyperliquid TESTNET metadata. Explicitly unsupported symbols are blocked from execution until an approved mapping exists.",
+  "mappings": [
+    {
+      "internal": "1000BONKUSDT",
+      "venue": "kBONK"
+    },
+    {
+      "internal": "1000FLOKIUSDT",
+      "venue": "kFLOKI"
+    },
+    {
+      "internal": "1000PEPEUSDT",
+      "venue": "kPEPE"
+    },
+    {
+      "internal": "1000SHIBUSDT",
+      "venue": "kSHIB"
+    },
+    {
+      "internal": "AAVEUSDT",
+      "venue": "AAVE"
+    },
+    {
+      "internal": "ADAUSDT",
+      "venue": "ADA"
+    },
+    {
+      "internal": "ALGOUSDT",
+      "venue": "ALGO"
+    },
+    {
+      "internal": "AMPUSDT",
+      "venue": "AMP"
+    },
+    {
+      "internal": "APEUSDT",
+      "venue": "APE"
+    },
+    {
+      "internal": "APTUSDT",
+      "venue": "APT"
+    },
+    {
+      "internal": "ARBUSDT",
+      "venue": "ARB"
+    },
+    {
+      "internal": "ARUSDT",
+      "venue": "AR"
+    },
+    {
+      "internal": "ASTERUSDT",
+      "venue": "ASTER"
+    },
+    {
+      "internal": "ATOMUSDT",
+      "venue": "ATOM"
+    },
+    {
+      "internal": "AVAXUSDT",
+      "venue": "AVAX"
+    },
+    {
+      "internal": "AXSUSDT",
+      "venue": "AXS"
+    },
+    {
+      "internal": "BANDUSDT",
+      "venue": "BAND"
+    },
+    {
+      "internal": "BATUSDT",
+      "venue": "BAT"
+    },
+    {
+      "internal": "BCHUSDT",
+      "venue": "BCH"
+    },
+    {
+      "internal": "BEAMUSDT",
+      "venue": "BEAM"
+    },
+    {
+      "internal": "BGBUSDT",
+      "venue": "BGB"
+    },
+    {
+      "internal": "BNBUSDT",
+      "venue": "BNB"
+    },
+    {
+      "internal": "BONKUSDT",
+      "venue": "BONK"
+    },
+    {
+      "internal": "BSVUSDT",
+      "venue": "BSV"
+    },
+    {
+      "internal": "BTCBUSDT",
+      "venue": "BTCB"
+    },
+    {
+      "internal": "BTCUSDT",
+      "venue": "BTC"
+    },
+    {
+      "internal": "BTGUSDT",
+      "venue": "BTG"
+    },
+    {
+      "internal": "CAKEUSDT",
+      "venue": "CAKE"
+    },
+    {
+      "internal": "CELOUSDT",
+      "venue": "CELO"
+    },
+    {
+      "internal": "CFXUSDT",
+      "venue": "CFX"
+    },
+    {
+      "internal": "CHZUSDT",
+      "venue": "CHZ"
+    },
+    {
+      "internal": "CNXUSDT",
+      "venue": "CNX"
+    },
+    {
+      "internal": "COMPUSDT",
+      "venue": "COMP"
+    },
+    {
+      "internal": "COREUSDT",
+      "venue": "CORE"
+    },
+    {
+      "internal": "CROUSDT",
+      "venue": "CRO"
+    },
+    {
+      "internal": "DASHUSDT",
+      "venue": "DASH"
+    },
+    {
+      "internal": "DCRUSDT",
+      "venue": "DCR"
+    },
+    {
+      "internal": "DOGEUSDT",
+      "venue": "DOGE"
+    },
+    {
+      "internal": "DOTUSDT",
+      "venue": "DOT"
+    },
+    {
+      "internal": "DYDXUSDT",
+      "venue": "DYDX"
+    },
+    {
+      "internal": "EGLDUSDT",
+      "venue": "EGLD"
+    },
+    {
+      "internal": "ENAUSDT",
+      "venue": "ENA"
+    },
+    {
+      "internal": "ENJUSDT",
+      "venue": "ENJ"
+    },
+    {
+      "internal": "EOSUSDT",
+      "venue": "EOS"
+    },
+    {
+      "internal": "ETCUSDT",
+      "venue": "ETC"
+    },
+    {
+      "internal": "ETHUSDT",
+      "venue": "ETH"
+    },
+    {
+      "internal": "FETUSDT",
+      "venue": "FET"
+    },
+    {
+      "internal": "FILUSDT",
+      "venue": "FIL"
+    },
+    {
+      "internal": "FLOKIUSDT",
+      "venue": "FLOKI"
+    },
+    {
+      "internal": "FLOWUSDT",
+      "venue": "FLOW"
+    },
+    {
+      "internal": "FTMUSDT",
+      "venue": "FTM"
+    },
+    {
+      "internal": "FTTUSDT",
+      "venue": "FTT"
+    },
+    {
+      "internal": "GALAUSDT",
+      "venue": "GALA"
+    },
+    {
+      "internal": "GMTUSDT",
+      "venue": "GMT"
+    },
+    {
+      "internal": "GRTUSDT",
+      "venue": "GRT"
+    },
+    {
+      "internal": "HBARUSDT",
+      "venue": "HBAR"
+    },
+    {
+      "internal": "HIVEUSDT",
+      "venue": "HIVE"
+    },
+    {
+      "internal": "HOTUSDT",
+      "venue": "HOT"
+    },
+    {
+      "internal": "HTUSDT",
+      "venue": "HT"
+    },
+    {
+      "internal": "HYPEUSDT",
+      "venue": "HYPE"
+    },
+    {
+      "internal": "ICPUSDT",
+      "venue": "ICP"
+    },
+    {
+      "internal": "ICXUSDT",
+      "venue": "ICX"
+    },
+    {
+      "internal": "IMXUSDT",
+      "venue": "IMX"
+    },
+    {
+      "internal": "INJUSDT",
+      "venue": "INJ"
+    },
+    {
+      "internal": "IPUSDT",
+      "venue": "IP"
+    },
+    {
+      "internal": "JASMYUSDT",
+      "venue": "JASMY"
+    },
+    {
+      "internal": "JUPUSDT",
+      "venue": "JUP"
+    },
+    {
+      "internal": "KASUSDT",
+      "venue": "KAS"
+    },
+    {
+      "internal": "KAVAUSDT",
+      "venue": "KAVA"
+    },
+    {
+      "internal": "KLAYUSDT",
+      "venue": "KLAY"
+    },
+    {
+      "internal": "KNCUSDT",
+      "venue": "KNC"
+    },
+    {
+      "internal": "KSMUSDT",
+      "venue": "KSM"
+    },
+    {
+      "internal": "LDOUSDT",
+      "venue": "LDO"
+    },
+    {
+      "internal": "LINKUSDT",
+      "venue": "LINK"
+    },
+    {
+      "internal": "LRCUSDT",
+      "venue": "LRC"
+    },
+    {
+      "internal": "LSKUSDT",
+      "venue": "LSK"
+    },
+    {
+      "internal": "LTCUSDT",
+      "venue": "LTC"
+    },
+    {
+      "internal": "LUNAUSDT",
+      "venue": "LUNA"
+    },
+    {
+      "internal": "LUNCUSDT",
+      "venue": "LUNC"
+    },
+    {
+      "internal": "MANAUSDT",
+      "venue": "MANA"
+    },
+    {
+      "internal": "MANTAUSDT",
+      "venue": "MANTA"
+    },
+    {
+      "internal": "MATICUSDT",
+      "venue": "MATIC"
+    },
+    {
+      "internal": "MKRUSDT",
+      "venue": "MKR"
+    },
+    {
+      "internal": "MNTUSDT",
+      "venue": "MNT"
+    },
+    {
+      "internal": "MOVEUSDT",
+      "venue": "MOVE"
+    },
+    {
+      "internal": "NEARUSDT",
+      "venue": "NEAR"
+    },
+    {
+      "internal": "NEOUSDT",
+      "venue": "NEO"
+    },
+    {
+      "internal": "NOTUSDT",
+      "venue": "NOT"
+    },
+    {
+      "internal": "OKBUSDT",
+      "venue": "OKB"
+    },
+    {
+      "internal": "OMGUSDT",
+      "venue": "OMG"
+    },
+    {
+      "internal": "OMUSDT",
+      "venue": "OM"
+    },
+    {
+      "internal": "ONDOUSDT",
+      "venue": "ONDO"
+    },
+    {
+      "internal": "ONEUSDT",
+      "venue": "ONE"
+    },
+    {
+      "internal": "ONTUSDT",
+      "venue": "ONT"
+    },
+    {
+      "internal": "OPUSDT",
+      "venue": "OP"
+    },
+    {
+      "internal": "ORDIUSDT",
+      "venue": "ORDI"
+    },
+    {
+      "internal": "PENGUUSDT",
+      "venue": "PENGU"
+    },
+    {
+      "internal": "PEPEUSDT",
+      "venue": "PEPE"
+    },
+    {
+      "internal": "PIUSDT",
+      "venue": "PI"
+    },
+    {
+      "internal": "POLUSDT",
+      "venue": "POL"
+    },
+    {
+      "internal": "PUMPUSDT",
+      "venue": "PUMP"
+    },
+    {
+      "internal": "QNTUSDT",
+      "venue": "QNT"
+    },
+    {
+      "internal": "QTUMUSDT",
+      "venue": "QTUM"
+    },
+    {
+      "internal": "RENDERUSDT",
+      "venue": "RENDER"
+    },
+    {
+      "internal": "RENUSDT",
+      "venue": "REN"
+    },
+    {
+      "internal": "REPUSDT",
+      "venue": "REP"
+    },
+    {
+      "internal": "RSRUSDT",
+      "venue": "RSR"
+    },
+    {
+      "internal": "RUNEUSDT",
+      "venue": "RUNE"
+    },
+    {
+      "internal": "RVNUSDT",
+      "venue": "RVN"
+    },
+    {
+      "internal": "SANDUSDT",
+      "venue": "SAND"
+    },
+    {
+      "internal": "SCUSDT",
+      "venue": "SC"
+    },
+    {
+      "internal": "SEIUSDT",
+      "venue": "SEI"
+    },
+    {
+      "internal": "SHIBUSDT",
+      "venue": "SHIB"
+    },
+    {
+      "internal": "SLPUSDT",
+      "venue": "SLP"
+    },
+    {
+      "internal": "SNTUSDT",
+      "venue": "SNT"
+    },
+    {
+      "internal": "SNXUSDT",
+      "venue": "SNX"
+    },
+    {
+      "internal": "SOLUSDT",
+      "venue": "SOL"
+    },
+    {
+      "internal": "STXUSDT",
+      "venue": "STX"
+    },
+    {
+      "internal": "SUIUSDT",
+      "venue": "SUI"
+    },
+    {
+      "internal": "SUSDT",
+      "venue": "S"
+    },
+    {
+      "internal": "SUSHIUSDT",
+      "venue": "SUSHI"
+    },
+    {
+      "internal": "SXPUSDT",
+      "venue": "SXP"
+    },
+    {
+      "internal": "SYSUSDT",
+      "venue": "SYS"
+    },
+    {
+      "internal": "TAOUSDT",
+      "venue": "TAO"
+    },
+    {
+      "internal": "TFUELUSDT",
+      "venue": "TFUEL"
+    },
+    {
+      "internal": "THETAUSDT",
+      "venue": "THETA"
+    },
+    {
+      "internal": "TIAUSDT",
+      "venue": "TIA"
+    },
+    {
+      "internal": "TMTGUSDT",
+      "venue": "TMTG"
+    },
+    {
+      "internal": "TONUSDT",
+      "venue": "TON"
+    },
+    {
+      "internal": "TRUMPUSDT",
+      "venue": "TRUMP"
+    },
+    {
+      "internal": "TRXUSDT",
+      "venue": "TRX"
+    },
+    {
+      "internal": "TWTUSDT",
+      "venue": "TWT"
+    },
+    {
+      "internal": "UMAUSDT",
+      "venue": "UMA"
+    },
+    {
+      "internal": "UNIUSDT",
+      "venue": "UNI"
+    },
+    {
+      "internal": "VETUSDT",
+      "venue": "VET"
+    },
+    {
+      "internal": "VGXUSDT",
+      "venue": "VGX"
+    },
+    {
+      "internal": "VIRTUALUSDT",
+      "venue": "VIRTUAL"
+    },
+    {
+      "internal": "WAVESUSDT",
+      "venue": "WAVES"
+    },
+    {
+      "internal": "WIFUSDT",
+      "venue": "WIF"
+    },
+    {
+      "internal": "WLDUSDT",
+      "venue": "WLD"
+    },
+    {
+      "internal": "WLFIUSDT",
+      "venue": "WLFI"
+    },
+    {
+      "internal": "XCNUSDT",
+      "venue": "XCN"
+    },
+    {
+      "internal": "XECUSDT",
+      "venue": "XEC"
+    },
+    {
+      "internal": "XEMUSDT",
+      "venue": "XEM"
+    },
+    {
+      "internal": "XLMUSDT",
+      "venue": "XLM"
+    },
+    {
+      "internal": "XMRUSDT",
+      "venue": "XMR"
+    },
+    {
+      "internal": "XPLUSDT",
+      "venue": "XPL"
+    },
+    {
+      "internal": "XRPUSDT",
+      "venue": "XRP"
+    },
+    {
+      "internal": "XTZUSDT",
+      "venue": "XTZ"
+    },
+    {
+      "internal": "YFIUSDT",
+      "venue": "YFI"
+    },
+    {
+      "internal": "ZBUSDT",
+      "venue": "ZB"
+    },
+    {
+      "internal": "ZECUSDT",
+      "venue": "ZEC"
+    },
+    {
+      "internal": "ZILUSDT",
+      "venue": "ZIL"
+    },
+    {
+      "internal": "ZRXUSDT",
+      "venue": "ZRX"
+    }
+  ],
+  "unsupported": [
+    {
+      "internal": "2ZUSDT",
+      "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+    },
+    {
+      "internal": "AEROUSDT",
+      "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+    },
+    {
+      "internal": "AKEUSDT",
+      "reason": "No approved Hyperliquid TESTNET execution mapping; block order routing until explicitly mapped or excluded by final venue policy."
+    },
+    {
+      "internal": "ARKUSDT",
+      "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+    },
+    {
+      "internal": "BROCCOLI714USDT",
+      "reason": "No approved Hyperliquid TESTNET execution mapping; block order routing until explicitly mapped or excluded by final venue policy."
+    },
+    {
+      "internal": "BRUSDT",
+      "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+    },
+    {
+      "internal": "BTWUSDT",
+      "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+    },
+    {
+      "internal": "LITUSDT",
+      "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+    },
+    {
+      "internal": "LYNUSDT",
+      "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+    },
+    {
+      "internal": "MUBARAKUSDT",
+      "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+    },
+    {
+      "internal": "NILUSDT",
+      "reason": "No approved Hyperliquid TESTNET execution mapping; block order routing until explicitly mapped or excluded by final venue policy."
+    },
+    {
+      "internal": "NOMUSDT",
+      "reason": "No approved Hyperliquid TESTNET execution mapping; block order routing until explicitly mapped or excluded by final venue policy."
+    },
+    {
+      "internal": "PHAUSDT",
+      "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+    },
+    {
+      "internal": "QUSDT",
+      "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+    },
+    {
+      "internal": "RAREUSDT",
+      "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+    },
+    {
+      "internal": "SAGAUSDT",
+      "reason": "No approved Hyperliquid TESTNET execution mapping; block order routing until explicitly mapped or excluded by final venue policy."
+    },
+    {
+      "internal": "XAIUSDT",
+      "reason": "No approved Hyperliquid TESTNET execution mapping; block order routing until explicitly mapped or excluded by final venue policy."
+    },
+    {
+      "internal": "龙虾USDT",
+      "reason": "No approved Hyperliquid TESTNET execution mapping; block order routing until explicitly mapped or excluded by final venue policy."
+    }
+  ]
+}

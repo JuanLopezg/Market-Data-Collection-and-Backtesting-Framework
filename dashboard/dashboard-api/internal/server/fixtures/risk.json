@@ -1,0 +1,125 @@
+{
+  "riskState": "PORTFOLIO WITHIN LIMITS",
+  "portfolioLimits": [
+    {
+      "id": "gross",
+      "label": "Gross Exposure",
+      "currentLabel": "76.2%",
+      "limitLabel": "100.0%",
+      "utilizationPct": 76.2,
+      "state": "OK"
+    },
+    {
+      "id": "net",
+      "label": "Net Exposure",
+      "currentLabel": "61.0%",
+      "limitLabel": "80.0%",
+      "utilizationPct": 76.3,
+      "state": "OK"
+    },
+    {
+      "id": "vol",
+      "label": "Portfolio Volatility",
+      "currentLabel": "14.8%",
+      "limitLabel": "18.0%",
+      "utilizationPct": 82.2,
+      "state": "WARN"
+    },
+    {
+      "id": "drawdown",
+      "label": "Drawdown",
+      "currentLabel": "4.1%",
+      "limitLabel": "12.0%",
+      "utilizationPct": 34.2,
+      "state": "OK"
+    },
+    {
+      "id": "cash",
+      "label": "Cash Reserve",
+      "currentLabel": "25.0%",
+      "limitLabel": "≥ 15.0%",
+      "utilizationPct": 60,
+      "state": "OK"
+    },
+    {
+      "id": "positions",
+      "label": "Active Positions",
+      "currentLabel": "5",
+      "limitLabel": "10",
+      "utilizationPct": 50,
+      "state": "OK"
+    }
+  ],
+  "assetLimits": [
+    {
+      "asset": "BTC",
+      "currentWeightLabel": "28.4%",
+      "approvedWeightLabel": "28.0%",
+      "maxWeightLabel": "30.0%",
+      "utilizationPct": 94.7,
+      "state": "WARN"
+    },
+    {
+      "asset": "ETH",
+      "currentWeightLabel": "22.1%",
+      "approvedWeightLabel": "22.0%",
+      "maxWeightLabel": "30.0%",
+      "utilizationPct": 73.7,
+      "state": "OK"
+    },
+    {
+      "asset": "SOL",
+      "currentWeightLabel": "11.8%",
+      "approvedWeightLabel": "12.0%",
+      "maxWeightLabel": "15.0%",
+      "utilizationPct": 78.7,
+      "state": "OK"
+    },
+    {
+      "asset": "LINK",
+      "currentWeightLabel": "7.6%",
+      "approvedWeightLabel": "8.0%",
+      "maxWeightLabel": "10.0%",
+      "utilizationPct": 76,
+      "state": "OK"
+    },
+    {
+      "asset": "BNB",
+      "currentWeightLabel": "5.0%",
+      "approvedWeightLabel": "5.0%",
+      "maxWeightLabel": "10.0%",
+      "utilizationPct": 50,
+      "state": "OK"
+    }
+  ],
+  "breaches": [
+    {
+      "rule": "BTC asset cap proximity",
+      "currentLabel": "28.4%",
+      "thresholdLabel": "30.0%",
+      "state": "WARN",
+      "action": "No block. New BTC target increases would be clipped by PortfolioRisk."
+    },
+    {
+      "rule": "Portfolio volatility proximity",
+      "currentLabel": "14.8%",
+      "thresholdLabel": "18.0%",
+      "state": "WARN",
+      "action": "Volatility scaling remains active; no pause required."
+    }
+  ],
+  "safety": {
+    "tradingState": "TRADING READY",
+    "reason": "No hard risk or reconciliation blocker is active.",
+    "killSwitch": "ARMED",
+    "lastRiskCheck": "14:32:12.884 UTC",
+    "riskRevision": "risk-rev-1842"
+  },
+  "exchangeAllocation": {
+    "assignedLabel": "$1,248,321",
+    "usedLabel": "$935,873",
+    "freeLabel": "$312,448",
+    "lockedLabel": "$42,180",
+    "lockedPct": 3.4
+  }
+}

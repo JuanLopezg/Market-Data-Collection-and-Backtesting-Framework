@@ -1,0 +1,166 @@
+{
+  "source": "historical-cmc",
+  "latestCompletedCandle": "2026-09-22 00:00 UTC",
+  "healthyAssets": 19,
+  "staleAssets": 1,
+  "totalAssets": 20,
+  "universeSize": 20,
+  "activeSignals": 5,
+  "availableSlots": 5,
+  "freshness": [
+    {
+      "asset": "BTC",
+      "lastCandle": "2026-09-22",
+      "ageLabel": "14h 32m",
+      "staleThresholdLabel": "36h",
+      "source": "historical-cmc",
+      "state": "HEALTHY"
+    },
+    {
+      "asset": "ETH",
+      "lastCandle": "2026-09-22",
+      "ageLabel": "14h 32m",
+      "staleThresholdLabel": "36h",
+      "source": "historical-cmc",
+      "state": "HEALTHY"
+    },
+    {
+      "asset": "SOL",
+      "lastCandle": "2026-09-22",
+      "ageLabel": "14h 32m",
+      "staleThresholdLabel": "36h",
+      "source": "historical-cmc",
+      "state": "HEALTHY"
+    },
+    {
+      "asset": "LINK",
+      "lastCandle": "2026-09-22",
+      "ageLabel": "14h 32m",
+      "staleThresholdLabel": "36h",
+      "source": "historical-cmc",
+      "state": "HEALTHY"
+    },
+    {
+      "asset": "BNB",
+      "lastCandle": "2026-09-22",
+      "ageLabel": "14h 32m",
+      "staleThresholdLabel": "36h",
+      "source": "historical-cmc",
+      "state": "HEALTHY"
+    },
+    {
+      "asset": "AVAX",
+      "lastCandle": "2026-09-21",
+      "ageLabel": "38h 32m",
+      "staleThresholdLabel": "36h",
+      "source": "historical-cmc",
+      "state": "STALE"
+    }
+  ],
+  "integrity": {
+    "missingCandles": 0,
+    "duplicateTimestamps": 0,
+    "gaps": 0,
+    "invalidRows": 0
+  },
+  "universe": [
+    {
+      "rank": 1,
+      "asset": "BTC",
+      "smaVolumeLabel": "$31.8B",
+      "rsi": 84.3,
+      "signal": "LONG",
+      "signalState": "ACTIVE",
+      "slotState": "OCCUPIED",
+      "diagnostic": "Entry condition active.",
+      "diagnosticTone": "normal"
+    },
+    {
+      "rank": 2,
+      "asset": "ETH",
+      "smaVolumeLabel": "$18.2B",
+      "rsi": 76.9,
+      "signal": "LONG",
+      "signalState": "PERSIST",
+      "slotState": "OCCUPIED",
+      "diagnostic": "Persistent long state.",
+      "diagnosticTone": "normal"
+    },
+    {
+      "rank": 3,
+      "asset": "SOL",
+      "smaVolumeLabel": "$4.6B",
+      "rsi": 72.1,
+      "signal": "LONG",
+      "signalState": "PERSIST",
+      "slotState": "OCCUPIED",
+      "diagnostic": "Persistent long state.",
+      "diagnosticTone": "normal"
+    },
+    {
+      "rank": 4,
+      "asset": "LINK",
+      "smaVolumeLabel": "$1.9B",
+      "rsi": 68.4,
+      "signal": "FLAT",
+      "signalState": "EXIT",
+      "slotState": "FREE",
+      "diagnostic": "Below exit threshold.",
+      "diagnosticTone": "normal"
+    },
+    {
+      "rank": 5,
+      "asset": "BNB",
+      "smaVolumeLabel": "$1.5B",
+      "rsi": 81.2,
+      "signal": "LONG",
+      "signalState": "ACTIVE",
+      "slotState": "OCCUPIED",
+      "diagnostic": "Entry condition active.",
+      "diagnosticTone": "normal"
+    },
+    {
+      "rank": 6,
+      "asset": "AVAX",
+      "smaVolumeLabel": "$920M",
+      "rsi": 82.8,
+      "signal": "FLAT",
+      "signalState": "BLOCKED",
+      "slotState": "FREE",
+      "diagnostic": "Stale data blocks candidate.",
+      "diagnosticTone": "bad"
+    },
+    {
+      "rank": 7,
+      "asset": "ATOM",
+      "smaVolumeLabel": "$610M",
+      "rsi": 80.6,
+      "signal": "FLAT",
+      "signalState": "REJECTED",
+      "slotState": "FREE",
+      "diagnostic": "Candidate qualified but risk/slot rules prevented activation.",
+      "diagnosticTone": "warn"
+    }
+  ],
+  "candidateRejections": [
+    {
+      "asset": "AVAX",
+      "reason": "STALE MARKET DATA",
+      "detail": "Latest completed candle exceeds the configured freshness threshold.",
+      "severity": "INVALID"
+    },
+    {
+      "asset": "ATOM",
+      "reason": "PORTFOLIO CONSTRAINT",
+      "detail": "Qualifying-looking signal did not become active after downstream portfolio/risk checks.",
+      "severity": "WARN"
+    }
+  ],
+  "strategySnapshot": {
+    "ranking": "Top 20 by SMA Volume(25)",
+    "entryRule": "RSI(7) > 80",
+    "exitRule": "RSI(7) < 70",
+    "maxPositions": "10 persistent positions",
+    "semantics": "LEVEL"
+  }
+}

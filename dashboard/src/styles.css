@@ -1,0 +1,70 @@
+
+.real-source-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 9px 12px;
+  border: 1px solid rgba(70, 150, 255, 0.28);
+  background: rgba(35, 105, 190, 0.08);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.real-source-banner strong { color: #7fb7ff; white-space: nowrap; }
+.real-source-banner span { color: var(--muted); }
+
+/* Step 24: derived real Alerts & Audit evidence */
+.alerts-gap-note {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  margin: 0 0 12px;
+  padding: 9px 11px;
+  border: 1px solid rgba(240, 180, 60, 0.24);
+  background: rgba(185, 125, 25, 0.07);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.alerts-gap-note strong { color: #efc66a; white-space: nowrap; }
+.alerts-gap-note span { color: var(--muted); }
+
+/* Step 31: read-only end-to-end evidence proof */
+.e2e-proof-head {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.e2e-proof-head > div {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: rgba(255,255,255,0.018);
+}
+.e2e-proof-head span,
+.e2e-proof-head small { display: block; color: var(--muted); }
+.e2e-proof-head span { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+.e2e-proof-head strong { display: block; margin: 4px 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.e2e-proof-head small { font-size: 10px; }
+.e2e-proof-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.e2e-proof-step {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: rgba(255,255,255,0.012);
+}
+.e2e-proof-step__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 7px; }
+.e2e-proof-step__top > span { color: var(--muted); font-size: 10px; }
+.e2e-proof-step > strong { display: block; font-size: 12px; margin-bottom: 5px; }
+.e2e-proof-step p { margin: 0 0 7px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.e2e-proof-step > small { display: block; color: var(--muted); font-size: 9px; overflow-wrap: anywhere; }
+.e2e-proof-note { margin-top: 10px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+@media (max-width: 1180px) {
+  .e2e-proof-head, .e2e-proof-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

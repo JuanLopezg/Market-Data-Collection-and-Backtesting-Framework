@@ -1,0 +1,85 @@
+nats-1  | [1] 2026/09/22 17:48:05.000488 [INF] Starting nats-server
+nats-1  | [1] 2026/09/22 17:48:05.000721 [INF]   Version:  2.10.29
+nats-1  | [1] 2026/09/22 17:48:05.000725 [INF]   Git:      [f91ddd8]
+nats-1  | [1] 2026/09/22 17:48:05.000727 [INF]   Name:     NC2XJFX66CMO2ECKNBP73GJZORPAQNGEN4ABSRUPRGEHGZHVWTTUFLDY
+nats-1  | [1] 2026/09/22 17:48:05.000730 [INF]   Node:     G5l0wosP
+nats-1  | [1] 2026/09/22 17:48:05.000732 [INF]   ID:       NC2XJFX66CMO2ECKNBP73GJZORPAQNGEN4ABSRUPRGEHGZHVWTTUFLDY
+nats-1  | [1] 2026/09/22 17:48:05.002234 [INF] Starting http monitor on 0.0.0.0:8222
+nats-1  | [1] 2026/09/22 17:48:05.002443 [INF] Starting JetStream
+nats-1  | [1] 2026/09/22 17:48:05.003402 [INF]     _ ___ _____ ___ _____ ___ ___   _   __  __
+nats-1  | [1] 2026/09/22 17:48:05.003440 [INF]  _ | | __|_   _/ __|_   _| _ \ __| /_\ |  \/  |
+nats-1  | [1] 2026/09/22 17:48:05.003443 [INF] | || | _|  | | \__ \ | | |   / _| / _ \| |\/| |
+nats-1  | [1] 2026/09/22 17:48:05.003444 [INF]  \__/|___| |_| |___/ |_| |_|_\___/_/ \_\_|  |_|
+nats-1  | [1] 2026/09/22 17:48:05.003445 [INF] 
+nats-1  | [1] 2026/09/22 17:48:05.003447 [INF]          https://docs.nats.io/jetstream
+nats-1  | [1] 2026/09/22 17:48:05.003448 [INF] 
+nats-1  | [1] 2026/09/22 17:48:05.003449 [INF] ---------------- JETSTREAM ----------------
+nats-1  | [1] 2026/09/22 17:48:05.003454 [INF]   Max Memory:      4.23 GB
+nats-1  | [1] 2026/09/22 17:48:05.003457 [INF]   Max Storage:     712.19 GB
+nats-1  | [1] 2026/09/22 17:48:05.003458 [INF]   Store Directory: "/data/jetstream"
+nats-1  | [1] 2026/09/22 17:48:05.003460 [INF] -------------------------------------------
+nats-1  | [1] 2026/09/22 17:48:05.005013 [INF] Listening for client connections on 0.0.0.0:4222
+nats-1  | [1] 2026/09/22 17:48:05.005514 [INF] Server is ready
+postgres-1  | The files belonging to this database system will be owned by user "postgres".
+postgres-1  | This user must also own the server process.
+postgres-1  | 
+postgres-1  | The database cluster will be initialized with locale "en_US.utf8".
+postgres-1  | The default database encoding has accordingly been set to "UTF8".
+postgres-1  | The default text search configuration will be set to "english".
+postgres-1  | 
+postgres-1  | Data page checksums are disabled.
+postgres-1  | 
+postgres-1  | fixing permissions on existing directory /var/lib/postgresql/data ... ok
+postgres-1  | creating subdirectories ... ok
+postgres-1  | selecting dynamic shared memory implementation ... posix
+postgres-1  | selecting default max_connections ... 100
+postgres-1  | selecting default shared_buffers ... 128MB
+postgres-1  | selecting default time zone ... UTC
+postgres-1  | creating configuration files ... ok
+postgres-1  | running bootstrap script ... ok
+postgres-1  | sh: locale: not found
+postgres-1  | 2026-09-22 17:48:06.107 UTC [36] WARNING:  no usable system locales were found
+postgres-1  | performing post-bootstrap initialization ... ok
+postgres-1  | initdb: warning: enabling "trust" authentication for local connections
+postgres-1  | initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+postgres-1  | syncing data to disk ... ok
+postgres-1  | 
+postgres-1  | 
+postgres-1  | Success. You can now start the database server using:
+postgres-1  | 
+postgres-1  |     pg_ctl -D /var/lib/postgresql/data -l logfile start
+postgres-1  | 
+postgres-1  | waiting for server to start....2026-09-22 17:48:10.331 UTC [54] LOG:  starting PostgreSQL 16.15 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+postgres-1  | 2026-09-22 17:48:10.334 UTC [54] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1  | 2026-09-22 17:48:10.407 UTC [57] LOG:  database system was shut down at 2026-09-22 17:48:06 UTC
+postgres-1  | 2026-09-22 17:48:10.483 UTC [54] LOG:  database system is ready to accept connections
+postgres-1  |  done
+postgres-1  | server started
+postgres-1  | 2026-09-22 17:48:11.184 UTC [72] FATAL:  database "algotrading_historical_replay" does not exist
+postgres-1  | CREATE DATABASE
+postgres-1  | 
+postgres-1  | 
+postgres-1  | /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+postgres-1  | 
+postgres-1  | waiting for server to shut down....2026-09-22 17:48:12.125 UTC [54] LOG:  received fast shutdown request
+postgres-1  | 2026-09-22 17:48:12.224 UTC [54] LOG:  aborting any active transactions
+postgres-1  | 2026-09-22 17:48:12.226 UTC [54] LOG:  background worker "logical replication launcher" (PID 60) exited with exit code 1
+postgres-1  | 2026-09-22 17:48:12.226 UTC [55] LOG:  shutting down
+postgres-1  | 2026-09-22 17:48:12.508 UTC [55] LOG:  checkpoint starting: shutdown immediate
+postgres-1  | .2026-09-22 17:48:13.286 UTC [80] FATAL:  the database system is shutting down
+postgres-1  | ..2026-09-22 17:48:15.370 UTC [87] FATAL:  the database system is shutting down
+postgres-1  | 2026-09-22 17:48:15.589 UTC [55] LOG:  checkpoint complete: wrote 926 buffers (5.7%); 0 WAL file(s) added, 0 removed, 0 recycled; write=1.049 s, sync=1.711 s, total=3.363 s; sync files=301, longest=1.364 s, average=0.006 s; distance=4283 kB, estimate=4283 kB; lsn=0/1925D78, redo lsn=0/1925D78
+postgres-1  | 2026-09-22 17:48:15.598 UTC [54] LOG:  database system is shut down
+postgres-1  |  done
+postgres-1  | server stopped
+postgres-1  | 
+postgres-1  | PostgreSQL init process complete; ready for start up.
+postgres-1  | 
+postgres-1  | 2026-09-22 17:48:15.796 UTC [1] LOG:  starting PostgreSQL 16.15 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+postgres-1  | 2026-09-22 17:48:15.796 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+postgres-1  | 2026-09-22 17:48:15.796 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+postgres-1  | 2026-09-22 17:48:15.880 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1  | 2026-09-22 17:48:16.055 UTC [91] LOG:  database system was shut down at 2026-09-22 17:48:15 UTC
+postgres-1  | 2026-09-22 17:48:16.153 UTC [1] LOG:  database system is ready to accept connections
+postgres-1  | 2026-09-22 17:53:16.085 UTC [89] LOG:  checkpoint starting: time
+postgres-1  | 2026-09-22 17:53:39.745 UTC [89] LOG:  checkpoint complete: wrote 238 buffers (1.5%); 0 WAL file(s) added, 0 removed, 0 recycled; write=23.608 s, sync=0.029 s, total=23.661 s; sync files=120, longest=0.006 s, average=0.001 s; distance=1595 kB, estimate=1595 kB; lsn=0/1ABF650, redo lsn=0/1AB4BF8

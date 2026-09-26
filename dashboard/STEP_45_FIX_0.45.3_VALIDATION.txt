@@ -1,0 +1,16 @@
+STEP 45 FIX 0.45.3 PACKAGE VALIDATION
+Date: 2026-09-26
+
+PASS — CGO_ENABLED=0 go test ./...
+PASS — CGO_ENABLED=0 go vet ./...
+PASS — CGO_ENABLED=0 go build ./...
+PASS — Step 45 shell syntax
+PASS — exact insufficient-history regression (3 completed observations -> 2 baseline observations)
+PASS — insufficient history validates contract but keeps projectionReady=false
+PASS — no metrics/anomalies fabricated under INSUFFICIENT_DATA
+PASS — ready-projection regression remains covered
+PASS — modified TSX syntax transpilation
+PASS — read-only/private-auth/order-routing safety assertions
+
+NOT CLAIMED HERE — full npm/Vite build because node_modules are not installed in the artifact environment. The user's Docker npm build is authoritative.
+NOT CLAIMED HERE — runtime Step 45 PASS. Run ./scripts/step45-live-vs-expected.sh against the rebuilt real local stack.

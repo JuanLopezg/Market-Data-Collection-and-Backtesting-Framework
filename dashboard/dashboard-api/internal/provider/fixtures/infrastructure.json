@@ -1,0 +1,246 @@
+{
+  "readiness": "READY",
+  "readinessReason": "All hard dependencies acceptable",
+  "lastUpdated": "14:32:18 UTC",
+  "vps": {
+    "cpuPct": 18,
+    "ramPct": 43,
+    "diskPct": 37,
+    "load1m": 0.62,
+    "networkRxLabel": "2.8 MB/s",
+    "networkTxLabel": "1.1 MB/s",
+    "uptimeLabel": "18d 07h",
+    "clockOffsetLabel": "+3.2 ms",
+    "clockSynced": true,
+    "state": "HEALTHY"
+  },
+  "containers": [
+    {
+      "name": "market-data",
+      "state": "RUNNING",
+      "health": "HEALTHY",
+      "restartCount": 0,
+      "uptimeLabel": "18d 07h",
+      "cpuPct": 2.8,
+      "ramMb": 118,
+      "lastHeartbeat": "0.4s ago"
+    },
+    {
+      "name": "strategy",
+      "state": "RUNNING",
+      "health": "HEALTHY",
+      "restartCount": 0,
+      "uptimeLabel": "18d 07h",
+      "cpuPct": 1.7,
+      "ramMb": 96,
+      "lastHeartbeat": "0.6s ago"
+    },
+    {
+      "name": "portfolio-risk",
+      "state": "RUNNING",
+      "health": "HEALTHY",
+      "restartCount": 0,
+      "uptimeLabel": "18d 07h",
+      "cpuPct": 1.2,
+      "ramMb": 82,
+      "lastHeartbeat": "0.5s ago"
+    },
+    {
+      "name": "order-planner",
+      "state": "RUNNING",
+      "health": "HEALTHY",
+      "restartCount": 0,
+      "uptimeLabel": "18d 07h",
+      "cpuPct": 1.1,
+      "ramMb": 74,
+      "lastHeartbeat": "0.7s ago"
+    },
+    {
+      "name": "execution-state",
+      "state": "RUNNING",
+      "health": "HEALTHY",
+      "restartCount": 1,
+      "uptimeLabel": "6d 03h",
+      "cpuPct": 1.9,
+      "ramMb": 104,
+      "lastHeartbeat": "0.3s ago"
+    },
+    {
+      "name": "exchange-gateway",
+      "state": "RUNNING",
+      "health": "HEALTHY",
+      "restartCount": 0,
+      "uptimeLabel": "18d 07h",
+      "cpuPct": 2.4,
+      "ramMb": 126,
+      "lastHeartbeat": "0.2s ago"
+    },
+    {
+      "name": "postgres",
+      "state": "RUNNING",
+      "health": "HEALTHY",
+      "restartCount": 0,
+      "uptimeLabel": "18d 07h",
+      "cpuPct": 3.8,
+      "ramMb": 312,
+      "lastHeartbeat": "0.3s ago"
+    },
+    {
+      "name": "nats",
+      "state": "RUNNING",
+      "health": "HEALTHY",
+      "restartCount": 0,
+      "uptimeLabel": "18d 07h",
+      "cpuPct": 1.3,
+      "ramMb": 88,
+      "lastHeartbeat": "0.2s ago"
+    }
+  ],
+  "services": [
+    {
+      "service": "MarketData",
+      "ready": true,
+      "mode": "REPLAY",
+      "lastEvent": "14:32:17.604",
+      "lagLabel": "0.4s",
+      "health": "HEALTHY"
+    },
+    {
+      "service": "Strategy",
+      "ready": true,
+      "mode": "REPLAY",
+      "lastEvent": "14:32:17.412",
+      "lagLabel": "0.6s",
+      "health": "HEALTHY"
+    },
+    {
+      "service": "PortfolioRisk",
+      "ready": true,
+      "mode": "REPLAY",
+      "lastEvent": "14:32:17.493",
+      "lagLabel": "0.5s",
+      "health": "HEALTHY"
+    },
+    {
+      "service": "OrderPlanner",
+      "ready": true,
+      "mode": "REPLAY",
+      "lastEvent": "14:32:17.312",
+      "lagLabel": "0.7s",
+      "health": "HEALTHY"
+    },
+    {
+      "service": "ExecutionState",
+      "ready": true,
+      "mode": "REPLAY",
+      "lastEvent": "14:32:17.718",
+      "lagLabel": "0.3s",
+      "health": "HEALTHY"
+    },
+    {
+      "service": "ExchangeGateway",
+      "ready": true,
+      "mode": "REPLAY",
+      "lastEvent": "14:32:17.806",
+      "lagLabel": "0.2s",
+      "health": "HEALTHY"
+    }
+  ],
+  "postgres": {
+    "connected": true,
+    "latencyMs": 3.8,
+    "activeConnections": 17,
+    "maxConnections": 100,
+    "storageUsedLabel": "18.7 GB / 50 GB",
+    "storagePct": 37,
+    "persistenceState": "Durable commits healthy",
+    "state": "HEALTHY"
+  },
+  "nats": {
+    "connected": true,
+    "streams": 7,
+    "consumers": 18,
+    "pendingMessages": 4,
+    "maxConsumerLag": 2,
+    "redeliveries": 1,
+    "ackHealthLabel": "ACK flow healthy",
+    "state": "HEALTHY"
+  },
+  "exchange": {
+    "venue": "BINANCE",
+    "connected": true,
+    "reconnectState": "Stable",
+    "lastApiActivity": "14:32:17.810",
+    "lastWsActivity": "14:32:18.041",
+    "apiLatencyMs": 46,
+    "state": "HEALTHY"
+  },
+  "outbox": {
+    "pendingMessages": 2,
+    "oldestAgeLabel": "0.8s",
+    "lastPublished": "14:32:17.922",
+    "state": "HEALTHY"
+  },
+  "dependencies": [
+    {
+      "component": "MarketData",
+      "state": "HEALTHY",
+      "reason": "Fresh canonical data available",
+      "lastCheck": "0.4s ago"
+    },
+    {
+      "component": "Strategy",
+      "state": "HEALTHY",
+      "reason": "Ready and processing current frontier",
+      "lastCheck": "0.6s ago"
+    },
+    {
+      "component": "PortfolioRisk",
+      "state": "HEALTHY",
+      "reason": "No blocking risk breach",
+      "lastCheck": "0.5s ago"
+    },
+    {
+      "component": "OrderPlanner",
+      "state": "HEALTHY",
+      "reason": "Planner ready",
+      "lastCheck": "0.7s ago"
+    },
+    {
+      "component": "ExecutionState",
+      "state": "HEALTHY",
+      "reason": "Execution state durable and current",
+      "lastCheck": "0.3s ago"
+    },
+    {
+      "component": "ExchangeGateway",
+      "state": "HEALTHY",
+      "reason": "Exchange connection healthy",
+      "lastCheck": "0.2s ago"
+    },
+    {
+      "component": "PostgreSQL",
+      "state": "HEALTHY",
+      "reason": "Connected · persistence healthy",
+      "lastCheck": "0.3s ago"
+    },
+    {
+      "component": "NATS / JetStream",
+      "state": "HEALTHY",
+      "reason": "Consumers within lag tolerance",
+      "lastCheck": "0.2s ago"
+    },
+    {
+      "component": "Reconciliation",
+      "state": "HEALTHY",
+      "reason": "Closed loop CLEAN",
+      "lastCheck": "7s ago"
+    },
+    {
+      "component": "Clock sync",
+      "state": "HEALTHY",
+      "reason": "Host offset within tolerance",
+      "lastCheck": "3s ago"
+    }
+  ]
+}

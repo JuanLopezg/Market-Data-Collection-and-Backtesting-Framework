@@ -3,34 +3,40 @@
 #include <csignal>
 #include <cstdlib>
 #include <chrono>
+#include <cmath>
 #include <iostream>
 #include <limits>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include "account.h"
+#include "canonical_market_data_reader.h"
 #include "contract_json_codec.h"
+#include "daily_close_snapshot.h"
 #include "decision_batch.h"
 #include "exchange_snapshot_event.h"
 #include "exchange_snapshot_request.h"
 #include "execution_engine.h"
 #include "execution_cycle_complete.h"
 #include "execution_planning_state.h"
-#include "execution_price_snapshot.h"
-#include "market_slice_snapshot.h"
+#include "market_data_updated.h"
+#include "live_execution_identity.h"
+#include "notional_order_planning.h"
 #include "message_bus_exchange.h"
 #include "nats_jetstream_message_bus.h"
-#include "order_planning.h"
 #include "postgres_state_store.h"
 #include "reconciler.h"
 #include "service_logging.h"
-#include "service_clock.h"
 #include "trade_recorder.h"
+#include "time_handler_factory.h"
+#include "time_utils.h"
 #include "trading_state_snapshot.h"
 #include "transport_subjects.h"
 
@@ -53,6 +59,27 @@ bool envFlag(const char* name)
     return !text.empty() && text != "0" && text != "false" && text != "FALSE";
 }
 
+Timestamp newestCompletedUtcDate(const TimeHandler& timeHandler)
+{
+    const auto todaySys = std::chrono::floor<std::chrono::days>(timeHandler.getTime());
+    const auto previousSys = todaySys - std::chrono::days{1};
+    const std::chrono::year_month_day ymd{std::chrono::sys_days{previousSys}};
+    const int value = int(ymd.year()) * 10000 +
+        static_cast<int>(unsigned(ymd.month())) * 100 +
+        static_cast<int>(unsigned(ymd.day()));
+    return static_cast<Timestamp>(value);
+}
+
+std::optional<Timestamp> configuredReplayBootstrapCompletedUtcDate(const TimeHandlerConfig& config)
+{
+    const char* simulatedReference = std::getenv(TimeHandlerFactory::SIMULATED_REFERENCE_ENV);
+    if (!simulatedReference || *simulatedReference == '\0')
+        return std::nullopt;
+
+    const auto referenceUtcDate = getCurrentUtcDate(config.simulated_reference_utc);
+    return static_cast<Timestamp>(toYYYYMMDD(getPreviousDayDate(referenceUtcDate)));
+}
+
 
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
@@ -60,10 +87,9 @@ struct Options {
         "host=127.0.0.1 port=5432 dbname=algotrading user=algotrading password=algotrading";
     std::string stream = "ALGOTRADING_RUNTIME";
     std::string exchange_control_stream = "ALGOTRADING_EXCHANGE_CONTROL";
-    RuntimeMode runtime_mode = RuntimeMode::Live;
-    std::string simulation_id;
+    std::string market_data_db = "storage/databases/database.db";
+    std::string market_data_source = "binance";
     double initial_cash = 100000.0;
-    int poll_timeout_ms = 250;
     std::vector<ExecutionStrategyDescriptor> strategies;
 };
 
@@ -105,14 +131,12 @@ Options parseOptions(int argc, char** argv)
             options.stream = requireValue("--stream");
         else if (arg == "--exchange-control-stream")
             options.exchange_control_stream = requireValue("--exchange-control-stream");
-        else if (arg == "--runtime-mode")
-            options.runtime_mode = parseRuntimeMode(requireValue("--runtime-mode"));
-        else if (arg == "--simulation-id")
-            options.simulation_id = requireValue("--simulation-id");
+        else if (arg == "--market-data-db")
+            options.market_data_db = requireValue("--market-data-db");
+        else if (arg == "--market-data-source")
+            options.market_data_source = requireValue("--market-data-source");
         else if (arg == "--initial-cash")
             options.initial_cash = std::stod(requireValue("--initial-cash"));
-        else if (arg == "--poll-timeout-ms")
-            options.poll_timeout_ms = std::stoi(requireValue("--poll-timeout-ms"));
         else if (arg == "--strategy")
             options.strategies.push_back(parseStrategy(requireValue("--strategy")));
         else if (arg == "--help") {
@@ -122,10 +146,9 @@ Options parseOptions(int argc, char** argv)
                 << "  --postgres CONNECTION_STRING\n"
                 << "  --stream NAME\n"
                 << "  --exchange-control-stream NAME\n"
-                << "  --runtime-mode live|testnet|replay\n"
-                << "  --simulation-id ID   optional REPLAY identity guard\n"
+                << "  --market-data-db PATH\n"
+                << "  --market-data-source NAME   expected MarketDataUpdated source, default binance\n"
                 << "  --initial-cash VALUE\n"
-                << "  --poll-timeout-ms VALUE\n"
                 << "  --strategy ID:NAME   (repeat for each configured strategy)\n";
             std::exit(0);
         }
@@ -139,8 +162,10 @@ Options parseOptions(int argc, char** argv)
         throw std::invalid_argument("Execution-state stream names cannot be empty");
     if (options.initial_cash <= 0.0)
         throw std::invalid_argument("--initial-cash must be positive");
-    if (options.poll_timeout_ms <= 0)
-        throw std::invalid_argument("--poll-timeout-ms must be positive");
+    if (options.market_data_db.empty())
+        throw std::invalid_argument("--market-data-db cannot be empty");
+    if (options.market_data_source.empty())
+        throw std::invalid_argument("--market-data-source cannot be empty");
 
     std::unordered_set<StrategyID> ids;
     for (const auto& strategy : options.strategies) {
@@ -155,11 +180,14 @@ Options parseOptions(int argc, char** argv)
 class ExecutionStateServiceRuntime {
 private:
     const Options options_;
+    const TimeHandlerConfig time_config_;
+    const TimeHandler time_handler_;
+    const std::optional<Timestamp> replay_bootstrap_completed_date_;
     std::vector<StrategyID> strategy_ids_;
     std::unordered_map<StrategyID, std::string> strategy_names_;
 
     NatsJetStreamMessageBus bus_;
-    std::unique_ptr<ServiceClockContext> clock_;
+    CanonicalMarketDataReader market_reader_;
     std::unique_ptr<PostgresStateStore> store_;
     Account account_;
     TradeRecorder trade_recorder_;
@@ -183,10 +211,9 @@ private:
 
     DurableMessageBus::SubscriptionID exchange_snapshot_subscription_ = 0;
     DurableMessageBus::SubscriptionID exchange_event_subscription_ = 0;
-    DurableMessageBus::SubscriptionID plan_subscription_ = 0;
     DurableMessageBus::SubscriptionID decision_subscription_ = 0;
-    DurableMessageBus::SubscriptionID prices_subscription_ = 0;
-    DurableMessageBus::SubscriptionID market_slice_subscription_ = 0;
+    DurableMessageBus::SubscriptionID notional_plan_subscription_ = 0;
+    DurableMessageBus::SubscriptionID market_update_account_subscription_ = 0;
 
     TradingStateSnapshot snapshot() const
     {
@@ -419,66 +446,262 @@ private:
         );
     }
 
-    static std::string planningRequestId(
-        Timestamp decisionTimestamp,
-        Timestamp executionTimestamp,
-        std::uint64_t stateRevision
-    )
+    std::set<Coin> notionalPlanningSymbols(const DecisionBatch& decision) const
     {
-        return "order-plan-request:" + std::to_string(decisionTimestamp) + ":" +
-            std::to_string(executionTimestamp) + ":" + std::to_string(stateRevision);
-    }
+        std::set<Coin> symbols;
 
-    DecisionBatch decisionFor(Timestamp decisionTimestamp) const
-    {
-        if (pending_decision_) {
-            if (pending_decision_->decision_timestamp != decisionTimestamp)
-                throw std::logic_error("Pending decision timestamp does not match execution prices");
-            return *pending_decision_;
+        for (const StrategyDecisionIntent& intent : decision.strategies) {
+            for (const auto& [coin, rebalance] : intent.decisions) {
+                (void)rebalance;
+                symbols.insert(coin);
+            }
         }
 
-        if (decisionTimestamp > last_decision_timestamp_)
-            throw std::logic_error("Execution prices arrived before the decision barrier");
+        for (const auto& [strategyId, positions] : engine_.strategyPositions()) {
+            (void)strategyId;
+            for (const auto& [coin, quantity] : positions.values()) {
+                (void)quantity;
+                symbols.insert(coin);
+            }
+        }
 
-        DecisionBatch empty;
-        empty.decision_timestamp = decisionTimestamp;
-        return empty;
+        // Do not require close(T) for unrelated account-level inventory. The notional
+        // planner is driven by strategy positions, today's decisions and open strategy
+        // orders. Requiring every account asset would make an unrelated/manual holding
+        // block the daily planning cycle merely because it is absent from canonical DB.
+        for (const auto& [orderId, tracked] : engine_.orderManager().orders()) {
+            (void)orderId;
+            if (tracked.isOpen())
+                symbols.insert(tracked.request.coin);
+        }
+
+        return symbols;
     }
 
-    void publishPlanningRequest(
-        const DecisionBatch& decision,
-        const ExecutionPriceSnapshot& prices
-    )
+    void publishNotionalPlanningRequest(const DecisionBatch& decision)
     {
-        OrderPlanningRequest request;
-        request.decision_timestamp = decision.decision_timestamp;
-        request.execution_timestamp = prices.timestamp;
-        request.decisions = decision;
-        request.prices = prices;
-        request.state = planningState();
+        const ExecutionPlanningStateSnapshot state = planningState();
+        const std::set<Coin> symbols = notionalPlanningSymbols(decision);
+
+        DailyCloseSnapshot closes;
+        closes.metadata.schema_version = 1;
+        closes.metadata.message_id = "daily-close:" + std::to_string(decision.decision_timestamp);
+        closes.metadata.correlation_id = decision.metadata.message_id;
+        closes.metadata.produced_at = decision.decision_timestamp;
+        closes.date = decision.decision_timestamp;
+        closes.closes = market_reader_.loadExactClosingPrices(decision.decision_timestamp, symbols);
+
+        NotionalOrderPlanningRequest request;
         request.metadata.schema_version = 1;
-        request.metadata.message_id = planningRequestId(
-            request.decision_timestamp,
-            request.execution_timestamp,
-            request.state.state_revision
+        request.metadata.message_id = LiveExecutionIdentity::notionalPlanningRequest(
+            decision.decision_timestamp,
+            state.state_revision
         );
-        request.metadata.correlation_id = prices.metadata.message_id;
-        request.metadata.produced_at = prices.timestamp;
+        request.metadata.correlation_id = decision.metadata.message_id;
+        request.metadata.produced_at = decision.decision_timestamp;
+        request.decision_timestamp = decision.decision_timestamp;
+        request.decisions = decision;
+        request.reference_closes = std::move(closes);
+        request.state = state;
 
         bus_.publish(
-            TransportSubjects::ORDER_PLANNING_REQUEST,
+            TransportSubjects::NOTIONAL_ORDER_PLANNING_REQUEST,
             ContractJsonCodec::encode(request),
             request.metadata.message_id
         );
+        bus_.flush();
+
         LG_INFO(
-            "service=execution-state event=planning_request_published decision_timestamp={} execution_timestamp={} state_revision={} tracked_orders={} next_order_id={} message_id={}",
+            "service=execution-state event=notional_planning_request_published decision_timestamp={} state_revision={} symbols={} tracked_orders={} next_order_id={} message_id={}",
             request.decision_timestamp,
-            request.execution_timestamp,
             request.state.state_revision,
+            request.reference_closes.closes.size(),
             request.state.orders.size(),
             request.state.next_order_id,
             request.metadata.message_id
         );
+    }
+
+    void handoffPendingDecisionIfReady()
+    {
+        if (!reconciled_ || !pending_decision_)
+            return;
+
+        const Timestamp newestCompleted = newestCompletedUtcDate(time_handler_);
+        if (pending_decision_->decision_timestamp > newestCompleted)
+            return;
+        if (!replay_bootstrap_completed_date_.has_value() &&
+            pending_decision_->decision_timestamp != newestCompleted)
+            return;
+
+        // Persisted pending decision -> durable self-contained NATS planning request ->
+        // clear pending marker. A crash after publish but before this second persist only
+        // republishes the same deterministic request on recovery.
+        publishNotionalPlanningRequest(*pending_decision_);
+        pending_decision_.reset();
+        persist();
+    }
+
+    DurableMessageDisposition onNotionalOrderPlan(const BusMessage& message)
+    {
+        try {
+            if (!reconciled_)
+                return DurableMessageDisposition::Retry;
+
+            const NotionalOrderPlanBatch plan =
+                ContractJsonCodec::decodeNotionalOrderPlanBatch(message.payload);
+
+            const Timestamp newestCompleted = newestCompletedUtcDate(time_handler_);
+            if (plan.decision_timestamp > newestCompleted) {
+                LG_DEBUG(
+                    "service=execution-state event=notional_plan_waiting_for_business_time "
+                    "decision_timestamp={} newest_completed_utc={} disposition=retry",
+                    plan.decision_timestamp,
+                    newestCompleted
+                );
+                return DurableMessageDisposition::Retry;
+            }
+
+            const Timestamp executionTimestamp = static_cast<Timestamp>(
+                nextDay(static_cast<unsigned int>(plan.decision_timestamp)));
+
+            // Durable idempotency: applyOrderPlan persists last_execution_timestamp before
+            // commands leave this process.  A redelivery after that boundary must ACK,
+            // never allocate/submit the same economics a second time.
+            if (engine_.lastExecutionTimestamp() >= executionTimestamp) {
+                LG_INFO(
+                    "service=execution-state event=notional_plan_duplicate_or_stale "
+                    "decision_timestamp={} execution_timestamp={} last_execution_timestamp={} "
+                    "disposition=ack",
+                    plan.decision_timestamp,
+                    executionTimestamp,
+                    engine_.lastExecutionTimestamp()
+                );
+                return DurableMessageDisposition::Ack;
+            }
+
+            const ExecutionPlanningStateSnapshot current = planningState();
+            if (current.state_revision != plan.state_revision) {
+                LG_WARN(
+                    "service=execution-state event=notional_plan_state_mismatch "
+                    "decision_timestamp={} plan_revision={} current_revision={} disposition=retry",
+                    plan.decision_timestamp,
+                    plan.state_revision,
+                    current.state_revision
+                );
+                return DurableMessageDisposition::Retry;
+            }
+
+            if (plan.next_order_id < current.next_order_id)
+                throw std::invalid_argument("Notional plan next_order_id regresses execution state");
+
+            OrderPlanBatch executable;
+            executable.metadata = plan.metadata;
+            executable.decision_timestamp = plan.decision_timestamp;
+            executable.execution_timestamp = executionTimestamp;
+            executable.state_revision = plan.state_revision;
+            executable.decisions = plan.decisions;
+            executable.next_order_id = plan.next_order_id;
+            executable.cancel_order_ids = plan.cancel_order_ids;
+            executable.global_target_exposure = plan.global_target_notional_usd;
+
+            executable.submit_orders.reserve(plan.submit_orders.size());
+            for (const PlannedNotionalOrder& order : plan.submit_orders) {
+                if (order.decision_timestamp != plan.decision_timestamp ||
+                    order.created_at != plan.decision_timestamp ||
+                    order.state_revision != plan.state_revision)
+                    throw std::invalid_argument("Notional plan order identity mismatch");
+                if (!std::isfinite(order.reference_close) || order.reference_close <= 0.0 ||
+                    !std::isfinite(order.notional_usd) || order.notional_usd <= 0.0)
+                    throw std::invalid_argument("Notional plan order has invalid close(T)/notional");
+
+                // A full FLAT must use the exact filled quantity owned by ExecutionState.
+                // Recomputing q as (q * close(T)) / close(T) can leave IEEE-754 dust
+                // (for example ~4.5e-13), which then survives as a fake held position.
+                // That is economically wrong and can later force PortfolioRisk to request
+                // OHLCV for a symbol whose market-data history has legitimately ended.
+                double quantity = 0.0;
+                if (order.target_notional_usd == 0.0) {
+                    const auto strategyIt = current.strategy_positions.find(order.strategy_id);
+                    if (strategyIt == current.strategy_positions.end())
+                        throw std::invalid_argument("FLAT plan has no current strategy position state");
+
+                    const auto positionIt = strategyIt->second.find(order.coin);
+                    if (positionIt == strategyIt->second.end())
+                        throw std::invalid_argument("FLAT plan has no current filled position for asset");
+
+                    const double currentQuantity = positionIt->second;
+                    if (!std::isfinite(currentQuantity) || currentQuantity == 0.0)
+                        throw std::invalid_argument("FLAT plan current filled position is invalid");
+
+                    const OrderSide expectedSide =
+                        currentQuantity > 0.0 ? OrderSide::Sell : OrderSide::Buy;
+                    if (order.side != expectedSide)
+                        throw std::invalid_argument("FLAT plan side does not flatten current filled position");
+
+                    quantity = std::abs(currentQuantity);
+                } else {
+                    // Non-flat sizing remains exactly the established T17 rule: convert
+                    // economic notional with the exact canonical close(T). Fill price is
+                    // independent exchange truth supplied by the historical T+1 OPEN.
+                    quantity = order.notional_usd / order.reference_close;
+                }
+
+                if (!std::isfinite(quantity) || quantity <= 0.0)
+                    throw std::invalid_argument("Notional plan converts to invalid quantity");
+
+                executable.submit_orders.emplace_back(
+                    order.order_id,
+                    order.strategy_id,
+                    order.created_at,
+                    executionTimestamp,
+                    order.coin,
+                    order.side,
+                    quantity
+                );
+            }
+
+            engine_.applyOrderPlan(
+                executable,
+                [this](const std::optional<Fill>& fill) { persist(fill); }
+            );
+
+            active_execution_cycle_ = ActiveExecutionCycle{
+                plan.decision_timestamp,
+                executionTimestamp,
+                plan.metadata.message_id
+            };
+
+            LG_INFO(
+                "service=execution-state event=notional_plan_applied "
+                "decision_timestamp={} execution_timestamp={} state_revision={} "
+                "cancels={} submits={} next_order_id={} message_id={}",
+                plan.decision_timestamp,
+                executionTimestamp,
+                plan.state_revision,
+                plan.cancel_order_ids.size(),
+                executable.submit_orders.size(),
+                plan.next_order_id,
+                plan.metadata.message_id
+            );
+
+            maybePublishExecutionCycleComplete();
+            return DurableMessageDisposition::Ack;
+        }
+        catch (const std::invalid_argument& error) {
+            LG_WARN(
+                "service=execution-state event=notional_plan_invalid disposition=terminate error={}",
+                error.what()
+            );
+            return DurableMessageDisposition::Terminate;
+        }
+        catch (const std::exception& error) {
+            LG_ERROR(
+                "service=execution-state event=notional_plan_failed disposition=retry error={}",
+                error.what()
+            );
+            return DurableMessageDisposition::Retry;
+        }
     }
 
     void requestExchangeSnapshot()
@@ -577,6 +800,7 @@ private:
                 "account-snapshot:reconciled:" + std::to_string(value.snapshot.timestamp),
                 value.metadata.message_id
             );
+            handoffPendingDecisionIfReady();
             maybePublishExecutionCycleComplete();
             return DurableMessageDisposition::Ack;
         }
@@ -586,33 +810,89 @@ private:
         }
     }
 
-    DurableMessageDisposition onMarketSlice(const BusMessage& message)
+    DurableMessageDisposition onMarketDataUpdatedForAccountSnapshot(const BusMessage& message)
     {
         try {
             if (!reconciled_)
                 return DurableMessageDisposition::Retry;
 
-            const MarketSliceSnapshot slice =
-                ContractJsonCodec::decodeMarketSliceSnapshot(message.payload);
-            if (slice.timestamp == 0 || slice.bars.empty())
+            const MarketDataUpdated update = ContractJsonCodec::decodeMarketDataUpdated(message.payload);
+            if (update.completed_through == 0 || update.source != options_.market_data_source || update.timeframe != "1d")
                 return DurableMessageDisposition::Terminate;
 
-            // The replay controller never releases the next close while the previous
-            // execution cycle is active. Keep this guard in the state authority too so
-            // a broken controller cannot manufacture a close snapshot from stale state.
-            if (active_execution_cycle_ &&
-                active_execution_cycle_->execution_timestamp >= slice.timestamp)
-                return DurableMessageDisposition::Retry;
+            const Timestamp newestCompleted = newestCompletedUtcDate(time_handler_);
+            if (update.completed_through > newestCompleted)
+                return DurableMessageDisposition::Terminate;
+            if (replay_bootstrap_completed_date_.has_value() &&
+                update.completed_through < *replay_bootstrap_completed_date_) {
+                LG_INFO(
+                    "service=execution-state event=pre_bootstrap_market_data_account_snapshot_skipped timestamp={} bootstrap_completed_date={} disposition=ack",
+                    update.completed_through,
+                    *replay_bootstrap_completed_date_
+                );
+                return DurableMessageDisposition::Ack;
+            }
+            if (!replay_bootstrap_completed_date_.has_value() &&
+                update.completed_through < newestCompleted) {
+                LG_INFO(
+                    "service=execution-state event=stale_market_data_account_snapshot_skipped timestamp={} newest_completed_utc={} disposition=ack",
+                    update.completed_through,
+                    newestCompleted
+                );
+                return DurableMessageDisposition::Ack;
+            }
 
+            // Historical replay must make the close-T account snapshot causal with
+            // execution at T.  Orders decided on T-1 execute at open(T), so publishing
+            // AccountSnapshot(T) before that execution cycle has been applied and fully
+            // consumed makes PortfolioRisk depend on CPU/NATS latency.  The immutable
+            // bootstrap day is the only exception: it intentionally exposes the initial
+            // account before any replay execution cycle exists.
+            if (replay_bootstrap_completed_date_.has_value() &&
+                update.completed_through > *replay_bootstrap_completed_date_) {
+                if (engine_.lastExecutionTimestamp() < update.completed_through) {
+                    LG_DEBUG(
+                        "service=execution-state event=replay_account_snapshot_waiting_for_execution_plan timestamp={} last_execution_timestamp={} disposition=retry",
+                        update.completed_through,
+                        engine_.lastExecutionTimestamp()
+                    );
+                    return DurableMessageDisposition::Retry;
+                }
+
+                if (active_execution_cycle_.has_value() &&
+                    active_execution_cycle_->execution_timestamp <= update.completed_through) {
+                    LG_DEBUG(
+                        "service=execution-state event=replay_account_snapshot_waiting_for_execution_cycle timestamp={} active_execution_timestamp={} disposition=retry",
+                        update.completed_through,
+                        active_execution_cycle_->execution_timestamp
+                    );
+                    return DurableMessageDisposition::Retry;
+                }
+            }
+
+            // LIVE market-data no longer publishes MarketSliceSnapshot. This small bridge
+            // exposes the already durable ExecutionState account at close T so
+            // PortfolioRisk can join StrategyIntent(T) + AccountSnapshot(T).
             publishAccountSnapshot(
-                slice.timestamp,
-                "account-snapshot:close:" + std::to_string(slice.timestamp),
-                slice.metadata.message_id
+                update.completed_through,
+                "account-snapshot:market-data:" + std::to_string(update.completed_through),
+                update.metadata.message_id
+            );
+
+            LG_INFO(
+                "service=execution-state event=market_data_account_snapshot_published timestamp={} source={} timeframe={} correlation_id={}",
+                update.completed_through,
+                update.source,
+                update.timeframe,
+                update.metadata.message_id
             );
             return DurableMessageDisposition::Ack;
         }
         catch (const std::exception& error) {
-            LG_ERROR("service=execution-state event=market_slice_failed disposition=retry error={}", error.what());
+            LG_ERROR(
+                "service=execution-state event=market_data_account_snapshot_failed disposition=retry error={}",
+                error.what()
+            );
             return DurableMessageDisposition::Retry;
         }
     }
@@ -624,167 +904,74 @@ private:
             if (batch.decision_timestamp == 0 || !validateDecisionStrategies(batch))
                 return DurableMessageDisposition::Terminate;
 
-            if (batch.decision_timestamp <= last_decision_timestamp_)
+            const Timestamp newestCompleted = newestCompletedUtcDate(time_handler_);
+            if (batch.decision_timestamp > newestCompleted) {
+                LG_WARN(
+                    "service=execution-state event=future_decision_rejected timestamp={} newest_completed_utc={}",
+                    batch.decision_timestamp,
+                    newestCompleted
+                );
+                return DurableMessageDisposition::Terminate;
+            }
+            if (replay_bootstrap_completed_date_.has_value() &&
+                batch.decision_timestamp < *replay_bootstrap_completed_date_) {
+                LG_INFO(
+                    "service=execution-state event=pre_bootstrap_decision_skipped timestamp={} bootstrap_completed_date={} disposition=ack",
+                    batch.decision_timestamp,
+                    *replay_bootstrap_completed_date_
+                );
                 return DurableMessageDisposition::Ack;
+            }
+            if (!replay_bootstrap_completed_date_.has_value() &&
+                batch.decision_timestamp < newestCompleted) {
+                LG_INFO(
+                    "service=execution-state event=stale_decision_skipped timestamp={} newest_completed_utc={} disposition=ack",
+                    batch.decision_timestamp,
+                    newestCompleted
+                );
+                return DurableMessageDisposition::Ack;
+            }
+
+            if (batch.decision_timestamp < last_decision_timestamp_)
+                return DurableMessageDisposition::Ack;
+
+            if (batch.decision_timestamp == last_decision_timestamp_) {
+                // A crash can leave the decision durably pending after the NATS message
+                // was already ACKed. Re-run only the handoff; deterministic MessageID
+                // keeps transport idempotent.
+                if (pending_decision_ &&
+                    pending_decision_->decision_timestamp == batch.decision_timestamp)
+                    handoffPendingDecisionIfReady();
+                return DurableMessageDisposition::Ack;
+            }
+
             if (pending_decision_)
                 return DurableMessageDisposition::Retry;
 
             last_decision_timestamp_ = batch.decision_timestamp;
-            if (!batch.strategies.empty())
-                pending_decision_ = batch;
+            pending_decision_ = batch;
             persist();
+
             LG_INFO(
-                "service=execution-state event=decision_persisted timestamp={} strategies={} pending_decision={} message_id={}",
+                "service=execution-state event=decision_persisted timestamp={} strategies={} reconciled={} message_id={}",
                 batch.decision_timestamp,
                 batch.strategies.size(),
-                pending_decision_.has_value(),
+                reconciled_,
                 batch.metadata.message_id
             );
+
+            handoffPendingDecisionIfReady();
             return DurableMessageDisposition::Ack;
+        }
+        catch (const std::logic_error& error) {
+            LG_WARN(
+                "service=execution-state event=decision_waiting_for_market_reference disposition=retry error={}",
+                error.what()
+            );
+            return DurableMessageDisposition::Retry;
         }
         catch (const std::exception& error) {
             LG_ERROR("service=execution-state event=decision_failed disposition=retry error={}", error.what());
-            return DurableMessageDisposition::Retry;
-        }
-    }
-
-    DurableMessageDisposition onPrices(const BusMessage& message)
-    {
-        try {
-            if (!reconciled_)
-                return DurableMessageDisposition::Retry;
-
-            const ExecutionPriceSnapshot value =
-                ContractJsonCodec::decodeExecutionPriceSnapshot(message.payload);
-            if (value.timestamp == 0 || value.decision_timestamp == 0 || value.prices.empty())
-                return DurableMessageDisposition::Terminate;
-
-            if (value.timestamp < engine_.lastExecutionTimestamp())
-                return DurableMessageDisposition::Ack;
-            if (value.timestamp == engine_.lastExecutionTimestamp()) {
-                publishAccountSnapshot(
-                    value.timestamp,
-                    "account-snapshot:execution:" + std::to_string(value.timestamp),
-                    value.metadata.message_id
-                );
-                return DurableMessageDisposition::Ack;
-            }
-
-            LG_INFO(
-                "service=execution-state event=execution_prices_received decision_timestamp={} execution_timestamp={} prices={} message_id={}",
-                value.decision_timestamp,
-                value.timestamp,
-                value.prices.size(),
-                value.metadata.message_id
-            );
-            const DecisionBatch decision = decisionFor(value.decision_timestamp);
-            publishPlanningRequest(decision, value);
-
-            // The request itself is now durable and self-contained (decision + executable
-            // prices + state snapshot). ACKing the price is therefore crash-safe.
-            return DurableMessageDisposition::Ack;
-        }
-        catch (const std::logic_error&) {
-            return DurableMessageDisposition::Retry;
-        }
-        catch (const std::exception& error) {
-            LG_ERROR("service=execution-state event=execution_prices_failed disposition=retry error={}", error.what());
-            return DurableMessageDisposition::Retry;
-        }
-    }
-
-    DurableMessageDisposition onPlan(const BusMessage& message)
-    {
-        try {
-            if (!reconciled_)
-                return DurableMessageDisposition::Retry;
-
-            const OrderPlanBatch plan = ContractJsonCodec::decodeOrderPlanBatch(message.payload);
-            if (plan.decision_timestamp == 0 || plan.execution_timestamp == 0 ||
-                plan.state_revision == 0 || plan.next_order_id == 0 ||
-                plan.decisions.decision_timestamp != plan.decision_timestamp ||
-                plan.prices.decision_timestamp != plan.decision_timestamp ||
-                plan.prices.timestamp != plan.execution_timestamp ||
-                plan.prices.prices.empty())
-                return DurableMessageDisposition::Terminate;
-
-            if (plan.execution_timestamp <= engine_.lastExecutionTimestamp())
-                return DurableMessageDisposition::Ack;
-
-            if (pending_decision_ &&
-                pending_decision_->decision_timestamp != plan.decision_timestamp) {
-                if (plan.decision_timestamp < pending_decision_->decision_timestamp)
-                    return DurableMessageDisposition::Ack;
-                return DurableMessageDisposition::Retry;
-            }
-            if (!pending_decision_) {
-                if (plan.decision_timestamp < last_decision_timestamp_)
-                    return DurableMessageDisposition::Ack;
-                if (plan.decision_timestamp > last_decision_timestamp_)
-                    return DurableMessageDisposition::Terminate;
-            }
-
-            const ExecutionPlanningStateSnapshot current = planningState();
-            if (plan.state_revision != current.state_revision) {
-                LG_WARN(
-                    "service=execution-state event=stale_order_plan plan_revision={} current_revision={} decision_timestamp={} execution_timestamp={} action=replan",
-                    plan.state_revision,
-                    current.state_revision,
-                    plan.decision_timestamp,
-                    plan.execution_timestamp
-                );
-                // State changed while planning (for example a fill/order update arrived).
-                // The plan echoes its decision/price context, so publish a new durable request
-                // against current state BEFORE ACKing this stale proposal.
-                publishPlanningRequest(plan.decisions, plan.prices);
-                return DurableMessageDisposition::Ack;
-            }
-
-            const std::string expectedRequest = planningRequestId(
-                plan.decision_timestamp,
-                plan.execution_timestamp,
-                current.state_revision
-            );
-            if (plan.metadata.correlation_id != expectedRequest)
-                return DurableMessageDisposition::Terminate;
-
-            (void)decisionFor(plan.decision_timestamp); // validates decision barrier/correlation
-
-            engine_.applyOrderPlan(
-                plan,
-                [this](const std::optional<Fill>& fill) { persist(fill); }
-            );
-            active_execution_cycle_ = ActiveExecutionCycle{
-                plan.decision_timestamp,
-                plan.execution_timestamp,
-                plan.metadata.message_id
-            };
-
-            if (pending_decision_ &&
-                pending_decision_->decision_timestamp == plan.decision_timestamp)
-                pending_decision_.reset();
-            persist();
-            LG_INFO(
-                "service=execution-state event=order_plan_applied decision_timestamp={} execution_timestamp={} state_revision={} cancels={} submits={} tracked_orders={} next_order_id={}",
-                plan.decision_timestamp,
-                plan.execution_timestamp,
-                plan.state_revision,
-                plan.cancel_order_ids.size(),
-                plan.submit_orders.size(),
-                engine_.orderManager().orders().size(),
-                engine_.nextOrderId()
-            );
-
-            publishAccountSnapshot(
-                plan.execution_timestamp,
-                "account-snapshot:execution:" + std::to_string(plan.execution_timestamp),
-                plan.metadata.message_id
-            );
-            maybePublishExecutionCycleComplete();
-            return DurableMessageDisposition::Ack;
-        }
-        catch (const std::exception& error) {
-            LG_ERROR("service=execution-state event=order_plan_failed disposition=retry error={}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -908,7 +1095,11 @@ private:
 public:
     explicit ExecutionStateServiceRuntime(Options options)
         : options_(std::move(options)),
+          time_config_(TimeHandlerFactory::loadConfigFromEnvironment()),
+          time_handler_(TimeHandlerFactory::create(time_config_)),
+          replay_bootstrap_completed_date_(configuredReplayBootstrapCompletedUtcDate(time_config_)),
           bus_(options_.nats_url),
+          market_reader_(options_.market_data_db),
           account_(options_.initial_cash),
           exchange_(bus_),
           engine_(options_.strategies, account_, trade_recorder_, exchange_)
@@ -918,25 +1109,12 @@ public:
             strategy_names_.emplace(strategy.strategy_id, strategy.name);
         }
 
-        bus_.ensureStream(
-            options_.stream,
-            options_.runtime_mode == RuntimeMode::Replay
-                ? TransportSubjects::runtimeSubjects()
-                : TransportSubjects::tradingRuntimeSubjects()
-        );
+        bus_.ensureStream(options_.stream, TransportSubjects::tradingRuntimeSubjects());
         bus_.ensureStream(
             options_.exchange_control_stream,
             TransportSubjects::exchangeGatewayControlSubjects()
         );
-        clock_ = std::make_unique<ServiceClockContext>(
-            ServiceClockContext::Options{
-                options_.runtime_mode, options_.stream, "execution-state", options_.simulation_id
-            },
-            bus_
-        );
 
-        // PostgreSQL state restoration follows clock bootstrap.  This keeps the replay
-        // control plane responsive even when database recovery is temporarily slow.
         store_ = std::make_unique<PostgresStateStore>(options_.postgres_connection);
 
         if (const auto stored = store_->load()) {
@@ -958,48 +1136,27 @@ public:
 
         exchange_snapshot_subscription_ = bus_.subscribe(
             consumer("execution-state-exchange-snapshot", TransportSubjects::EXCHANGE_SNAPSHOT),
-            clock_->guard(
-                "exchange_snapshot",
-                [this](const BusMessage& message) { return onExchangeSnapshot(message); }
-            )
+            [this](const BusMessage& message) { return onExchangeSnapshot(message); }
         );
-        // One durable consumer owns the ordered public exchange event sequence.
-        // Using separate OrderUpdate/Fill consumers can reorder Filled ahead of Fill
-        // even when the gateway published Accepted -> Fill -> Filled correctly.
+        // Exchange truth remains continuously processed even though economic decisions
+        // are daily. Fills/reconciliation are safety state, not a once-a-day signal.
         exchange_event_subscription_ = bus_.subscribe(
             consumer("execution-state-exchange-events", TransportSubjects::EXECUTION_EVENT_FILTER),
-            clock_->guard(
-                "exchange_event",
-                [this](const BusMessage& message) { return onExchangeEvent(message); }
-            )
-        );
-        plan_subscription_ = bus_.subscribe(
-            consumer("execution-state-plans", TransportSubjects::ORDER_PLAN),
-            clock_->guard(
-                "order_plan",
-                [this](const BusMessage& message) { return onPlan(message); }
-            )
+            [this](const BusMessage& message) { return onExchangeEvent(message); }
         );
         decision_subscription_ = bus_.subscribe(
-            consumer("execution-state-decisions", TransportSubjects::DECISION_BATCH),
-            clock_->guard(
-                "decision_batch",
-                [this](const BusMessage& message) { return onDecision(message); }
-            )
+            consumer("execution-state-live-decisions", TransportSubjects::DECISION_BATCH),
+            [this](const BusMessage& message) { return onDecision(message); }
         );
-        prices_subscription_ = bus_.subscribe(
-            consumer("execution-state-prices", TransportSubjects::EXECUTION_PRICES),
-            clock_->guard(
-                "execution_prices",
-                [this](const BusMessage& message) { return onPrices(message); }
-            )
+        notional_plan_subscription_ = bus_.subscribe(
+            consumer("execution-state-notional-plans", TransportSubjects::NOTIONAL_ORDER_PLAN),
+            [this](const BusMessage& message) { return onNotionalOrderPlan(message); }
         );
-        market_slice_subscription_ = bus_.subscribe(
-            consumer("execution-state-market-slices", TransportSubjects::MARKET_SLICE_SNAPSHOT),
-            clock_->guard(
-                "market_slice",
-                [this](const BusMessage& message) { return onMarketSlice(message); }
-            )
+        market_update_account_subscription_ = bus_.subscribe(
+            consumer("execution-state-market-data-account", TransportSubjects::MARKET_DATA_UPDATED),
+            [this](const BusMessage& message) {
+                return onMarketDataUpdatedForAccountSnapshot(message);
+            }
         );
 
         // Reconciliation is an explicit request/response boundary now. The request is
@@ -1009,10 +1166,9 @@ public:
 
     ~ExecutionStateServiceRuntime()
     {
-        bus_.close(market_slice_subscription_);
-        bus_.close(prices_subscription_);
+        bus_.close(market_update_account_subscription_);
+        bus_.close(notional_plan_subscription_);
         bus_.close(decision_subscription_);
-        bus_.close(plan_subscription_);
         bus_.close(exchange_event_subscription_);
         bus_.close(exchange_snapshot_subscription_);
     }
@@ -1020,32 +1176,37 @@ public:
     void run()
     {
         LG_INFO(
-            "service=execution-state event=service_ready stream={} reconciliation=required strategies={} initial_cash={} runtime_mode={} clock_sync={} poll_timeout_ms={}",
+            "service=execution-state event=service_ready time_source=time_handler stream={} reconciliation=required strategies={} initial_cash={} market_data_db={} market_data_source={} poll_interval_ms=1000",
             options_.stream,
             options_.strategies.size(),
             options_.initial_cash,
-            runtimeModeName(options_.runtime_mode),
-            clock_->synchronized() ? "ready" : "pending",
-            options_.poll_timeout_ms
+            options_.market_data_db,
+            options_.market_data_source
         );
         std::cout.flush();
 
         while (running.load()) {
-            clock_->poll(64, 1);
-            // Exchange truth/events are deliberately processed before new plans. This,
-            // combined with state_revision validation, minimizes stale-plan windows.
-            bus_.poll(exchange_snapshot_subscription_, 16, options_.poll_timeout_ms);
-            bus_.poll(exchange_event_subscription_, 64, options_.poll_timeout_ms);
-            bus_.poll(plan_subscription_, 32, options_.poll_timeout_ms);
-            bus_.poll(market_slice_subscription_, 32, options_.poll_timeout_ms);
-            bus_.poll(decision_subscription_, 32, options_.poll_timeout_ms);
-            bus_.poll(prices_subscription_, 32, options_.poll_timeout_ms);
+            const auto cycleStart = std::chrono::steady_clock::now();
+
+            // Execution truth is always serviced. Daily economic inputs are separately
+            // gated by newestCompletedUtcDate(time_handler_) inside their handlers.
+            bus_.poll(exchange_snapshot_subscription_, 16, 1);
+            bus_.poll(exchange_event_subscription_, 64, 1);
+            bus_.poll(market_update_account_subscription_, 32, 1);
+            bus_.poll(decision_subscription_, 32, 1);
+            bus_.poll(notional_plan_subscription_, 32, 1);
+
+            const auto elapsed = std::chrono::steady_clock::now() - cycleStart;
+            const auto interval = std::chrono::seconds(1);
+            if (elapsed < interval)
+                std::this_thread::sleep_for(interval - elapsed);
         }
 
         LG_INFO("service=execution-state event=shutdown_requested");
         bus_.flush();
         LG_INFO("service=execution-state event=shutdown_complete");
     }
+
 };
 
 } // namespace

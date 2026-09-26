@@ -1,0 +1,3467 @@
+{
+  "schemaVersion": 1,
+  "registryVersion": "2026-09-26-step37a.4",
+  "policy": "EXPLICIT_ONLY",
+  "marketDataSource": "BINANCE",
+  "note": "Versioned multi-exchange symbol registry. Every internal asset must map explicitly to each market-data/execution symbol. Runtime suffix stripping, case conversion, fuzzy matching and automatic aliasing are forbidden. Missing, blocked or venue-absent mappings are non-routable.",
+  "entries": [
+    {
+      "internal": "1000BONKUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "1000BONKUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "kBONK",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "1000FLOKIUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "1000FLOKIUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "kFLOKI",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "1000PEPEUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "1000PEPEUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "kPEPE",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "1000SHIBUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "1000SHIBUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "kSHIB",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "2ZUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "2ZUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "",
+          "status": "BLOCKED_EXPLICIT",
+          "routingPolicy": "DENY",
+          "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+        }
+      ]
+    },
+    {
+      "internal": "AAVEUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "AAVEUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "AAVE",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "ADAUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "ADAUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "ADA",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "AEROUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "AEROUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "",
+          "status": "BLOCKED_EXPLICIT",
+          "routingPolicy": "DENY",
+          "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+        }
+      ]
+    },
+    {
+      "internal": "AKEUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "AKEUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "",
+          "status": "BLOCKED_EXPLICIT",
+          "routingPolicy": "DENY",
+          "reason": "No approved Hyperliquid TESTNET execution mapping; block order routing until explicitly mapped or excluded by final venue policy."
+        }
+      ]
+    },
+    {
+      "internal": "ALGOUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "ALGOUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "ALGO",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "AMPUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "AMPUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "AMP",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "APEUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "APEUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "APE",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "APTUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "APTUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "APT",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "ARBUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "ARBUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "ARB",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "ARKUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "ARKUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "",
+          "status": "BLOCKED_EXPLICIT",
+          "routingPolicy": "DENY",
+          "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+        }
+      ]
+    },
+    {
+      "internal": "ARUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "ARUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "AR",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "ASTERUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "ASTERUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "ASTER",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "ATOMUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "ATOMUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "ATOM",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "AVAXUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "AVAXUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "AVAX",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "AXSUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "AXSUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "AXS",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "BANDUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "BANDUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "BAND",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "BATUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "BATUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "BAT",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "BCHUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "BCHUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "BCH",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "BEAMUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "BEAMUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "BEAM",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "BGBUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "BGBUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "BGB",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "BNBUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "BNBUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "BNB",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "BONKUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "BONKUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "BONK",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "BROCCOLI714USDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "BROCCOLI714USDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "",
+          "status": "BLOCKED_EXPLICIT",
+          "routingPolicy": "DENY",
+          "reason": "No approved Hyperliquid TESTNET execution mapping; block order routing until explicitly mapped or excluded by final venue policy."
+        }
+      ]
+    },
+    {
+      "internal": "BRUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "BRUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "",
+          "status": "BLOCKED_EXPLICIT",
+          "routingPolicy": "DENY",
+          "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+        }
+      ]
+    },
+    {
+      "internal": "BSVUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "BSVUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "BSV",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "BTCBUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "BTCBUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "BTCB",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "BTCUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "BTCUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "BTC",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "BTGUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "BTGUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "BTG",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "BTWUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "BTWUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "",
+          "status": "BLOCKED_EXPLICIT",
+          "routingPolicy": "DENY",
+          "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+        }
+      ]
+    },
+    {
+      "internal": "CAKEUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "CAKEUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "CAKE",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "CELOUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "CELOUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "CELO",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "CFXUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "CFXUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "CFX",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "CHZUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "CHZUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "CHZ",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "CNXUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "CNXUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "CNX",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "COMPUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "COMPUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "COMP",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "COREUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "COREUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "CORE",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "CROUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "CROUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "CRO",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "DASHUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "DASHUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "DASH",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "DCRUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "DCRUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "DCR",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "DOGEUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "DOGEUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "DOGE",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "DOTUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "DOTUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "DOT",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "DYDXUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "DYDXUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "DYDX",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "EGLDUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "EGLDUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "EGLD",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "ENAUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "ENAUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "ENA",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "ENJUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "ENJUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "ENJ",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "EOSUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "EOSUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "EOS",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "ETCUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "ETCUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "ETC",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "ETHUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "ETHUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "ETH",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "FETUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "FETUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "FET",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "FILUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "FILUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "FIL",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "FLOKIUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "FLOKIUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "FLOKI",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "FLOWUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "FLOWUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "FLOW",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "FTMUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "FTMUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "FTM",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "FTTUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "FTTUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "FTT",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "GALAUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "GALAUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "GALA",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "GMTUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "GMTUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "GMT",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "GRTUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "GRTUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "GRT",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "HBARUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "HBARUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "HBAR",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "HIVEUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "HIVEUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "HIVE",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "HOTUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "HOTUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "HOT",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "HTUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "HTUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "HT",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "HYPEUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "HYPEUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "HYPE",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "ICPUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "ICPUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "ICP",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "ICXUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "ICXUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "ICX",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "IMXUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "IMXUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "IMX",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "INJUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "INJUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "INJ",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "IPUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "IPUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "IP",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "JASMYUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "JASMYUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "JASMY",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "JUPUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "JUPUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "JUP",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "KASUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "KASUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "KAS",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "KAVAUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "KAVAUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "KAVA",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "KLAYUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "KLAYUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "KLAY",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "KNCUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "KNCUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "KNC",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "KSMUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "KSMUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "KSM",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "LDOUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "LDOUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "LDO",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "LINKUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "LINKUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "LINK",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "LITUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "LITUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "",
+          "status": "BLOCKED_EXPLICIT",
+          "routingPolicy": "DENY",
+          "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+        }
+      ]
+    },
+    {
+      "internal": "LRCUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "LRCUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "LRC",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "LSKUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "LSKUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "LSK",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "LTCUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "LTCUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "LTC",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "LUNAUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "LUNAUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "LUNA",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "LUNCUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "LUNCUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "LUNC",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "LYNUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "LYNUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "",
+          "status": "BLOCKED_EXPLICIT",
+          "routingPolicy": "DENY",
+          "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+        }
+      ]
+    },
+    {
+      "internal": "MANAUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "MANAUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "MANA",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "MANTAUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "MANTAUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "MANTA",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "MATICUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "MATICUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "MATIC",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "MKRUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "MKRUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "MKR",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "MNTUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "MNTUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "MNT",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "MOVEUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "MOVEUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "MOVE",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "MUBARAKUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "MUBARAKUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "",
+          "status": "BLOCKED_EXPLICIT",
+          "routingPolicy": "DENY",
+          "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+        }
+      ]
+    },
+    {
+      "internal": "NEARUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "NEARUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "NEAR",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "NEOUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "NEOUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "NEO",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "NILUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "NILUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "",
+          "status": "BLOCKED_EXPLICIT",
+          "routingPolicy": "DENY",
+          "reason": "No approved Hyperliquid TESTNET execution mapping; block order routing until explicitly mapped or excluded by final venue policy."
+        }
+      ]
+    },
+    {
+      "internal": "NOMUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "NOMUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "",
+          "status": "BLOCKED_EXPLICIT",
+          "routingPolicy": "DENY",
+          "reason": "No approved Hyperliquid TESTNET execution mapping; block order routing until explicitly mapped or excluded by final venue policy."
+        }
+      ]
+    },
+    {
+      "internal": "NOTUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "NOTUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "NOT",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "OKBUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "OKBUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "OKB",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "OMGUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "OMGUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "OMG",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "OMUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "OMUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "OM",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "ONDOUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "ONDOUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "ONDO",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "ONEUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "ONEUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "ONE",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "ONTUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "ONTUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "ONT",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "OPUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "OPUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "OP",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "ORDIUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "ORDIUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "ORDI",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "PENGUUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "PENGUUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "PENGU",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "PEPEUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "PEPEUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "PEPE",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "PHAUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "PHAUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "",
+          "status": "BLOCKED_EXPLICIT",
+          "routingPolicy": "DENY",
+          "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+        }
+      ]
+    },
+    {
+      "internal": "PIUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "PIUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "PI",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "POLUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "POLUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "POL",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "PUMPUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "PUMPUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "PUMP",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "QNTUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "QNTUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "QNT",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "QTUMUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "QTUMUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "QTUM",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "QUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "QUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "",
+          "status": "BLOCKED_EXPLICIT",
+          "routingPolicy": "DENY",
+          "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+        }
+      ]
+    },
+    {
+      "internal": "RAREUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "RAREUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "",
+          "status": "BLOCKED_EXPLICIT",
+          "routingPolicy": "DENY",
+          "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+        }
+      ]
+    },
+    {
+      "internal": "RENDERUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "RENDERUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "RENDER",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "RENUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "RENUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "REN",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "REPUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "REPUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "REP",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "RSRUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "RSRUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "RSR",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "RUNEUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "RUNEUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "RUNE",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "RVNUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "RVNUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "RVN",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "SAGAUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "SAGAUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "",
+          "status": "BLOCKED_EXPLICIT",
+          "routingPolicy": "DENY",
+          "reason": "No approved Hyperliquid TESTNET execution mapping; block order routing until explicitly mapped or excluded by final venue policy."
+        }
+      ]
+    },
+    {
+      "internal": "SANDUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "SANDUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "SAND",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "SCUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "SCUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "SC",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "SEIUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "SEIUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "SEI",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "SHIBUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "SHIBUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "SHIB",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "SLPUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "SLPUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "SLP",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "SNTUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "SNTUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "SNT",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "SNXUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "SNXUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "SNX",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "SOLUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "SOLUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "SOL",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "STXUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "STXUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "STX",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "SUIUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "SUIUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "SUI",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "SUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "SUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "S",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "SUSHIUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "SUSHIUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "SUSHI",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "SXPUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "SXPUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "SXP",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "SYSUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "SYSUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "SYS",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "TAOUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "TAOUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "TAO",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "TFUELUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "TFUELUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "TFUEL",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "THETAUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "THETAUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "THETA",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "TIAUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "TIAUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "TIA",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "TMTGUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "TMTGUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "TMTG",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "TONUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "TONUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "TON",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "TRUMPUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "TRUMPUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "TRUMP",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "TRXUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "TRXUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "TRX",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "TWTUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "TWTUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "TWT",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "UMAUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "UMAUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "UMA",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "UNIUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "UNIUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "UNI",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "VETUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "VETUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "VET",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "VGXUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "VGXUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "VGX",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "VIRTUALUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "VIRTUALUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "VIRTUAL",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "WAVESUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "WAVESUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "WAVES",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "WIFUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "WIFUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "WIF",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "WLDUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "WLDUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "WLD",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "WLFIUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "WLFIUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "WLFI",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "XAIUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "XAIUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "",
+          "status": "BLOCKED_EXPLICIT",
+          "routingPolicy": "DENY",
+          "reason": "No approved Hyperliquid TESTNET execution mapping; block order routing until explicitly mapped or excluded by final venue policy."
+        }
+      ]
+    },
+    {
+      "internal": "XCNUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "XCNUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "XCN",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "XECUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "XECUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "XEC",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "XEMUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "XEMUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "XEM",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "XLMUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "XLMUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "XLM",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "XMRUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "XMRUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "XMR",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "XPLUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "XPLUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "XPL",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "XRPUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "XRPUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "XRP",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "XTZUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "XTZUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "XTZ",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "YFIUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "YFIUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "YFI",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "ZBUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "ZBUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "ZB",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "ZECUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "ZECUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "ZEC",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "ZILUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "ZILUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "ZIL",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "ZRXUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "ZRXUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "ZRX",
+          "status": "MAPPED",
+          "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "龙虾USDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "龙虾USDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "",
+          "status": "BLOCKED_EXPLICIT",
+          "routingPolicy": "DENY",
+          "reason": "No approved Hyperliquid TESTNET execution mapping; block order routing until explicitly mapped or excluded by final venue policy."
+        }
+      ]
+    }
+  ]
+}

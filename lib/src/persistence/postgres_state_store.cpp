@@ -2,6 +2,9 @@
 
 #include <array>
 #include <cstdlib>
+#include <iomanip>
+#include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -13,6 +16,14 @@
 namespace {
 
 using json = nlohmann::json;
+
+
+std::string encodeDoubleForPostgres(double value)
+{
+    std::ostringstream stream;
+    stream << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
+    return stream.str();
+}
 
 
 void requireConnection(PGconn* connection, const char* context)
@@ -306,9 +317,9 @@ void PostgresStateStore::save(
                 std::to_string(newFill->timestamp),
                 newFill->coin,
                 std::to_string(static_cast<int>(newFill->side)),
-                std::to_string(newFill->quantity),
-                std::to_string(newFill->price),
-                std::to_string(newFill->commission)
+                encodeDoubleForPostgres(newFill->quantity),
+                encodeDoubleForPostgres(newFill->price),
+                encodeDoubleForPostgres(newFill->commission)
             };
             std::array<const char*, 9> values{};
             for (std::size_t i = 0; i < parameters.size(); ++i)

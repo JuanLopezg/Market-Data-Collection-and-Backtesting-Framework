@@ -1,0 +1,120 @@
+{
+  "mode": "REPLAY",
+  "exchange": "BINANCE",
+  "schemaLabel": "asset,weight_pct",
+  "maxUploadSizeLabel": "256 KB",
+  "exampleCsv": "asset,weight_pct\nBTC,28\nETH,22\nSOL,10\nLINK,6\nBNB,4\nCASH,30",
+  "requestHash": "mock:sha256:9db8f0e1a71c…",
+  "previewRows": [
+    {
+      "asset": "BTC",
+      "currentWeightPct": 28.4,
+      "requestedWeightPct": 28,
+      "approvedWeightPct": 28,
+      "estimatedNotionalLabel": "-$4,993",
+      "deltaPct": -0.4
+    },
+    {
+      "asset": "ETH",
+      "currentWeightPct": 22.1,
+      "requestedWeightPct": 22,
+      "approvedWeightPct": 22,
+      "estimatedNotionalLabel": "-$1,248",
+      "deltaPct": -0.1
+    },
+    {
+      "asset": "SOL",
+      "currentWeightPct": 11.8,
+      "requestedWeightPct": 10,
+      "approvedWeightPct": 10,
+      "estimatedNotionalLabel": "-$22,470",
+      "deltaPct": -1.8
+    },
+    {
+      "asset": "LINK",
+      "currentWeightPct": 7.6,
+      "requestedWeightPct": 6,
+      "approvedWeightPct": 6,
+      "estimatedNotionalLabel": "-$19,973",
+      "deltaPct": -1.6
+    },
+    {
+      "asset": "BNB",
+      "currentWeightPct": 5,
+      "requestedWeightPct": 4,
+      "approvedWeightPct": 4,
+      "estimatedNotionalLabel": "-$12,483",
+      "deltaPct": -1
+    },
+    {
+      "asset": "CASH",
+      "currentWeightPct": 25.1,
+      "requestedWeightPct": 30,
+      "approvedWeightPct": 30,
+      "estimatedNotionalLabel": "+$61,168",
+      "deltaPct": 4.9
+    }
+  ],
+  "validationIssues": [
+    {
+      "severity": "INFO",
+      "field": "schema",
+      "message": "Required columns asset and weight_pct are present."
+    },
+    {
+      "severity": "INFO",
+      "field": "weights",
+      "message": "Requested weights sum to 100.00%."
+    },
+    {
+      "severity": "WARN",
+      "field": "execution",
+      "message": "Order quantities and venue constraints are mock-only until the Dashboard API is connected."
+    }
+  ],
+  "orderPreview": [
+    {
+      "asset": "BTC",
+      "action": "SELL",
+      "deltaWeightPct": -0.4,
+      "estimatedNotionalLabel": "$4,993",
+      "estimatedFeeLabel": "$2.50",
+      "note": "Mock estimate only"
+    },
+    {
+      "asset": "ETH",
+      "action": "SELL",
+      "deltaWeightPct": -0.1,
+      "estimatedNotionalLabel": "$1,248",
+      "estimatedFeeLabel": "$0.62",
+      "note": "Mock estimate only"
+    },
+    {
+      "asset": "SOL",
+      "action": "SELL",
+      "deltaWeightPct": -1.8,
+      "estimatedNotionalLabel": "$22,470",
+      "estimatedFeeLabel": "$11.24",
+      "note": "Mock estimate only"
+    },
+    {
+      "asset": "LINK",
+      "action": "SELL",
+      "deltaWeightPct": -1.6,
+      "estimatedNotionalLabel": "$19,973",
+      "estimatedFeeLabel": "$9.99",
+      "note": "Mock estimate only"
+    },
+    {
+      "asset": "BNB",
+      "action": "SELL",
+      "deltaWeightPct": -1,
+      "estimatedNotionalLabel": "$12,483",
+      "estimatedFeeLabel": "$6.24",
+      "note": "Mock estimate only"
+    }
+  ],
+  "estimatedFeesLabel": "$30.59",
+  "estimatedTurnoverLabel": "4.90%",
+  "auditActorLabel": "local-ui / unauthenticated mock"
+}

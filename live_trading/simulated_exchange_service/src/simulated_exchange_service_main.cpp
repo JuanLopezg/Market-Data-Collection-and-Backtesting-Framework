@@ -28,8 +28,9 @@
 #include "execution_price_snapshot.h"
 #include "nats_jetstream_message_bus.h"
 #include "service_logging.h"
-#include "service_clock.h"
 #include "simulated_exchange.h"
+#include "time_handler_factory.h"
+#include "time_utils.h"
 #include "transport_subjects.h"
 
 
@@ -59,14 +60,19 @@ double envDouble(const char* name, double fallback)
     return std::stod(value);
 }
 
+Timestamp currentBusinessUtcDate(const TimeHandler& timeHandler)
+{
+    return static_cast<Timestamp>(
+        toYYYYMMDD(getCurrentUtcDate(timeHandler.getTime()))
+    );
+}
+
 
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
     std::string runtime_stream = "ALGOTRADING_RUNTIME";
     std::string backend_stream = "ALGOTRADING_EXCHANGE_BACKEND";
     std::string postgres;
-    RuntimeMode runtime_mode = RuntimeMode::Live;
-    std::string simulation_id;
     double initial_cash = 100000.0;
     double commission_rate = 0.0;
     int poll_timeout_ms = 250;
@@ -93,10 +99,6 @@ Options parseOptions(int argc, char** argv)
             options.backend_stream = requireValue("--backend-stream");
         else if (arg == "--postgres")
             options.postgres = requireValue("--postgres");
-        else if (arg == "--runtime-mode")
-            options.runtime_mode = parseRuntimeMode(requireValue("--runtime-mode"));
-        else if (arg == "--simulation-id")
-            options.simulation_id = requireValue("--simulation-id");
         else if (arg == "--initial-cash")
             options.initial_cash = std::stod(requireValue("--initial-cash"));
         else if (arg == "--commission-rate")
@@ -110,8 +112,6 @@ Options parseOptions(int argc, char** argv)
                 << "  --stream NAME\n"
                 << "  --backend-stream NAME\n"
                 << "  --postgres CONNECTION_STRING\n"
-                << "  --runtime-mode live|testnet|replay\n"
-                << "  --simulation-id ID   optional REPLAY identity guard\n"
                 << "  --initial-cash VALUE\n"
                 << "  --commission-rate VALUE\n"
                 << "  --poll-timeout-ms N\n";
@@ -743,7 +743,7 @@ class SimulatedExchangeServiceRuntime {
 private:
     const Options options_;
     NatsJetStreamMessageBus bus_;
-    std::unique_ptr<ServiceClockContext> clock_;
+    TimeHandler time_handler_;
     SimulatedExchange exchange_;
     Account account_;
     std::unique_ptr<SimulatedExchangeCheckpointStore> checkpoint_store_;
@@ -780,6 +780,26 @@ private:
     {
         if (metadata.schema_version != 1 || metadata.message_id.empty())
             throw std::invalid_argument("Invalid simulated-exchange contract metadata");
+    }
+
+    bool businessTimeReady(Timestamp timestamp, const char* eventName) const
+    {
+        // produced_at==0 is reserved for bootstrap/control-style requests that do not
+        // carry an economic timestamp yet. Preserve that existing contract convention.
+        if (timestamp == 0)
+            return true;
+
+        const Timestamp businessNow = currentBusinessUtcDate(time_handler_);
+        if (timestamp <= businessNow)
+            return true;
+
+        LG_DEBUG(
+            "service=simulated-exchange event=business_time_waiting business_event={} required_time={} current_business_date={} disposition=retry",
+            eventName,
+            timestamp,
+            businessNow
+        );
+        return false;
     }
 
     ContractMetadata eventMetadata(
@@ -1130,6 +1150,10 @@ private:
             validateMetadata(prices.metadata);
             if (prices.timestamp == 0 || prices.prices.empty())
                 return DurableMessageDisposition::Terminate;
+            if (!businessTimeReady(prices.metadata.produced_at, "execution_prices_metadata") ||
+                !businessTimeReady(prices.timestamp, "execution_prices_market_time")) {
+                return DurableMessageDisposition::Retry;
+            }
 
             LG_INFO(
                 "service=simulated-exchange event=execution_prices_received decision_timestamp={} execution_timestamp={} prices={} message_id={}",
@@ -1188,6 +1212,10 @@ private:
             validateMetadata(command.metadata);
             if (command.order.order_id == 0)
                 return DurableMessageDisposition::Terminate;
+            if (!businessTimeReady(command.metadata.produced_at, "backend_submit_order_metadata") ||
+                !businessTimeReady(command.order.created_at, "backend_submit_order_created_at")) {
+                return DurableMessageDisposition::Retry;
+            }
 
             LG_INFO(
                 "service=simulated-exchange event=submit_received order_id={} strategy_id={} coin={} side={} quantity={} active_from={} message_id={}",
@@ -1258,6 +1286,10 @@ private:
             validateMetadata(command.metadata);
             if (command.order_id == 0)
                 return DurableMessageDisposition::Terminate;
+            if (!businessTimeReady(command.metadata.produced_at, "backend_cancel_order_metadata") ||
+                !businessTimeReady(command.requested_at, "backend_cancel_order_requested_at")) {
+                return DurableMessageDisposition::Retry;
+            }
 
             LG_INFO(
                 "service=simulated-exchange event=cancel_received order_id={} requested_at={} message_id={}",
@@ -1286,6 +1318,8 @@ private:
             const ExchangeSnapshotRequest request =
                 ContractJsonCodec::decodeExchangeSnapshotRequest(message.payload);
             validateMetadata(request.metadata);
+            if (!businessTimeReady(request.metadata.produced_at, "backend_snapshot_request_metadata"))
+                return DurableMessageDisposition::Retry;
 
             flushPendingEvents(request.metadata.message_id);
 
@@ -1326,23 +1360,12 @@ public:
     explicit SimulatedExchangeServiceRuntime(Options options)
         : options_(std::move(options)),
           bus_(options_.nats_url),
+          time_handler_(TimeHandlerFactory::createFromEnvironment()),
           exchange_(options_.commission_rate),
           account_(options_.initial_cash)
     {
-        bus_.ensureStream(
-            options_.runtime_stream,
-            options_.runtime_mode == RuntimeMode::Replay
-                ? TransportSubjects::runtimeSubjects()
-                : TransportSubjects::tradingRuntimeSubjects()
-        );
+        bus_.ensureStream(options_.runtime_stream, TransportSubjects::tradingRuntimeSubjects());
         bus_.ensureStream(options_.backend_stream, TransportSubjects::exchangeBackendSubjects());
-        clock_ = std::make_unique<ServiceClockContext>(
-            ServiceClockContext::Options{
-                options_.runtime_mode, options_.runtime_stream, "simulated-exchange",
-                options_.simulation_id
-            },
-            bus_
-        );
 
         recoverDurableState();
 
@@ -1367,10 +1390,7 @@ public:
                 "simulated-exchange-prices",
                 TransportSubjects::EXECUTION_PRICES
             ),
-            clock_->guard(
-                "execution_prices",
-                [this](const BusMessage& message) { return onPrices(message); }
-            )
+            [this](const BusMessage& message) { return onPrices(message); }
         );
         submit_subscription_ = bus_.subscribe(
             consumer(
@@ -1378,10 +1398,7 @@ public:
                 "simulated-exchange-submit",
                 TransportSubjects::BACKEND_SUBMIT_ORDER
             ),
-            clock_->guard(
-                "backend_submit_order",
-                [this](const BusMessage& message) { return onSubmit(message); }
-            )
+            [this](const BusMessage& message) { return onSubmit(message); }
         );
         cancel_subscription_ = bus_.subscribe(
             consumer(
@@ -1389,10 +1406,7 @@ public:
                 "simulated-exchange-cancel",
                 TransportSubjects::BACKEND_CANCEL_ORDER
             ),
-            clock_->guard(
-                "backend_cancel_order",
-                [this](const BusMessage& message) { return onCancel(message); }
-            )
+            [this](const BusMessage& message) { return onCancel(message); }
         );
         snapshot_request_subscription_ = bus_.subscribe(
             consumer(
@@ -1400,10 +1414,7 @@ public:
                 "simulated-exchange-snapshot-request",
                 TransportSubjects::BACKEND_EXCHANGE_SNAPSHOT_REQUEST
             ),
-            clock_->guard(
-                "backend_snapshot_request",
-                [this](const BusMessage& message) { return onSnapshotRequest(message); }
-            )
+            [this](const BusMessage& message) { return onSnapshotRequest(message); }
         );
     }
 
@@ -1418,20 +1429,18 @@ public:
     void run()
     {
         LG_INFO(
-            "service=simulated-exchange event=service_ready runtime_stream={} backend_stream={} initial_cash={} commission_rate={} persistence={} runtime_mode={} clock_sync={} poll_timeout_ms={}",
+            "service=simulated-exchange event=service_ready runtime_stream={} backend_stream={} initial_cash={} commission_rate={} persistence={} business_date={} time_model=local_time_handler poll_timeout_ms={}",
             options_.runtime_stream,
             options_.backend_stream,
             options_.initial_cash,
             options_.commission_rate,
             checkpoint_store_ ? "postgres" : "disabled",
-            runtimeModeName(options_.runtime_mode),
-            clock_->synchronized() ? "ready" : "pending",
+            currentBusinessUtcDate(time_handler_),
             options_.poll_timeout_ms
         );
         std::cout.flush();
 
         while (running.load()) {
-            clock_->poll(64, 1);
             // Prices first: orders submitted later for the same active_from timestamp are
             // still filled from the stored exact open by onSubmit().
             bus_.poll(prices_subscription_, 32, options_.poll_timeout_ms);

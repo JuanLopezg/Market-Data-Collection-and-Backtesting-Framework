@@ -1,0 +1,82 @@
+nats-1  | [1] 2026/09/22 12:17:05.001893 [INF] Starting nats-server
+nats-1  | [1] 2026/09/22 12:17:05.002291 [INF]   Version:  2.10.29
+nats-1  | [1] 2026/09/22 12:17:05.002317 [INF]   Git:      [f91ddd8]
+nats-1  | [1] 2026/09/22 12:17:05.002321 [INF]   Name:     NCND2AKRLJ35VPV4R2ROH24FZS3EJ6MHUYYR6NNS2ROVDE3MUZG3ODKX
+nats-1  | [1] 2026/09/22 12:17:05.002334 [INF]   Node:     rI2A0rkj
+nats-1  | [1] 2026/09/22 12:17:05.002335 [INF]   ID:       NCND2AKRLJ35VPV4R2ROH24FZS3EJ6MHUYYR6NNS2ROVDE3MUZG3ODKX
+nats-1  | [1] 2026/09/22 12:17:05.006959 [INF] Starting http monitor on 0.0.0.0:8222
+nats-1  | [1] 2026/09/22 12:17:05.007317 [INF] Starting JetStream
+nats-1  | [1] 2026/09/22 12:17:05.008924 [INF]     _ ___ _____ ___ _____ ___ ___   _   __  __
+nats-1  | [1] 2026/09/22 12:17:05.008977 [INF]  _ | | __|_   _/ __|_   _| _ \ __| /_\ |  \/  |
+nats-1  | [1] 2026/09/22 12:17:05.008980 [INF] | || | _|  | | \__ \ | | |   / _| / _ \| |\/| |
+nats-1  | [1] 2026/09/22 12:17:05.008981 [INF]  \__/|___| |_| |___/ |_| |_|_\___/_/ \_\_|  |_|
+nats-1  | [1] 2026/09/22 12:17:05.008983 [INF] 
+nats-1  | [1] 2026/09/22 12:17:05.008985 [INF]          https://docs.nats.io/jetstream
+nats-1  | [1] 2026/09/22 12:17:05.008986 [INF] 
+nats-1  | [1] 2026/09/22 12:17:05.009017 [INF] ---------------- JETSTREAM ----------------
+nats-1  | [1] 2026/09/22 12:17:05.009026 [INF]   Max Memory:      4.23 GB
+nats-1  | [1] 2026/09/22 12:17:05.009029 [INF]   Max Storage:     712.46 GB
+nats-1  | [1] 2026/09/22 12:17:05.009030 [INF]   Store Directory: "/data/jetstream"
+nats-1  | [1] 2026/09/22 12:17:05.009032 [INF] -------------------------------------------
+nats-1  | [1] 2026/09/22 12:17:05.010980 [INF] Listening for client connections on 0.0.0.0:4222
+nats-1  | [1] 2026/09/22 12:17:05.011603 [INF] Server is ready
+postgres-1  | The files belonging to this database system will be owned by user "postgres".
+postgres-1  | This user must also own the server process.
+postgres-1  | 
+postgres-1  | The database cluster will be initialized with locale "en_US.utf8".
+postgres-1  | The default database encoding has accordingly been set to "UTF8".
+postgres-1  | The default text search configuration will be set to "english".
+postgres-1  | 
+postgres-1  | Data page checksums are disabled.
+postgres-1  | 
+postgres-1  | fixing permissions on existing directory /var/lib/postgresql/data ... ok
+postgres-1  | creating subdirectories ... ok
+postgres-1  | selecting dynamic shared memory implementation ... posix
+postgres-1  | selecting default max_connections ... 100
+postgres-1  | selecting default shared_buffers ... 128MB
+postgres-1  | selecting default time zone ... UTC
+postgres-1  | creating configuration files ... ok
+postgres-1  | running bootstrap script ... ok
+postgres-1  | sh: locale: not found
+postgres-1  | 2026-09-22 12:17:05.823 UTC [37] WARNING:  no usable system locales were found
+postgres-1  | performing post-bootstrap initialization ... ok
+postgres-1  | initdb: warning: enabling "trust" authentication for local connections
+postgres-1  | initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+postgres-1  | syncing data to disk ... ok
+postgres-1  | 
+postgres-1  | 
+postgres-1  | Success. You can now start the database server using:
+postgres-1  | 
+postgres-1  |     pg_ctl -D /var/lib/postgresql/data -l logfile start
+postgres-1  | 
+postgres-1  | waiting for server to start....2026-09-22 12:17:06.725 UTC [43] LOG:  starting PostgreSQL 16.15 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+postgres-1  | 2026-09-22 12:17:06.727 UTC [43] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1  | 2026-09-22 12:17:06.740 UTC [46] LOG:  database system was shut down at 2026-09-22 12:17:06 UTC
+postgres-1  | 2026-09-22 12:17:06.747 UTC [43] LOG:  database system is ready to accept connections
+postgres-1  |  done
+postgres-1  | server started
+postgres-1  | CREATE DATABASE
+postgres-1  | 
+postgres-1  | 
+postgres-1  | /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+postgres-1  | 
+postgres-1  | waiting for server to shut down....2026-09-22 12:17:06.870 UTC [43] LOG:  received fast shutdown request
+postgres-1  | 2026-09-22 12:17:06.872 UTC [43] LOG:  aborting any active transactions
+postgres-1  | 2026-09-22 12:17:06.874 UTC [43] LOG:  background worker "logical replication launcher" (PID 49) exited with exit code 1
+postgres-1  | 2026-09-22 12:17:06.875 UTC [44] LOG:  shutting down
+postgres-1  | 2026-09-22 12:17:06.877 UTC [44] LOG:  checkpoint starting: shutdown immediate
+postgres-1  | 2026-09-22 12:17:06.941 UTC [44] LOG:  checkpoint complete: wrote 926 buffers (5.7%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.015 s, sync=0.044 s, total=0.066 s; sync files=301, longest=0.004 s, average=0.001 s; distance=4283 kB, estimate=4283 kB; lsn=0/1925D78, redo lsn=0/1925D78
+postgres-1  | 2026-09-22 12:17:06.946 UTC [43] LOG:  database system is shut down
+postgres-1  |  done
+postgres-1  | server stopped
+postgres-1  | 
+postgres-1  | PostgreSQL init process complete; ready for start up.
+postgres-1  | 
+postgres-1  | 2026-09-22 12:17:07.002 UTC [1] LOG:  starting PostgreSQL 16.15 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+postgres-1  | 2026-09-22 12:17:07.003 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+postgres-1  | 2026-09-22 12:17:07.003 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+postgres-1  | 2026-09-22 12:17:07.008 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1  | 2026-09-22 12:17:07.013 UTC [59] LOG:  database system was shut down at 2026-09-22 12:17:06 UTC
+postgres-1  | 2026-09-22 12:17:07.019 UTC [1] LOG:  database system is ready to accept connections
+postgres-1  | 2026-09-22 12:22:07.998 UTC [57] LOG:  checkpoint starting: time
+postgres-1  | 2026-09-22 12:22:31.861 UTC [57] LOG:  checkpoint complete: wrote 240 buffers (1.5%); 0 WAL file(s) added, 0 removed, 0 recycled; write=23.808 s, sync=0.040 s, total=23.863 s; sync files=120, longest=0.006 s, average=0.001 s; distance=1648 kB, estimate=1648 kB; lsn=0/1ACD218, redo lsn=0/1AC1E70

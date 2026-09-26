@@ -1,0 +1,148 @@
+{
+  "activeCritical": 1,
+  "activeWarnings": 3,
+  "acknowledged": 1,
+  "resolved24h": 8,
+  "alerts": [
+    {
+      "id": "alert-2081",
+      "timestamp": "14:31:58 UTC",
+      "severity": "CRITICAL",
+      "status": "ACTIVE",
+      "service": "Reconciliation",
+      "eventType": "RECONCILIATION_BLOCKED",
+      "title": "Reconciliation block simulated",
+      "detail": "Mock alert demonstrating how a hard closed-loop mismatch remains sticky until resolved.",
+      "correlationId": "corr-recon-2081",
+      "linkedContext": "Open Reconciliation"
+    },
+    {
+      "id": "alert-2079",
+      "timestamp": "14:27:11 UTC",
+      "severity": "WARN",
+      "status": "ACTIVE",
+      "service": "ExchangeGateway",
+      "asset": "ATOM",
+      "eventType": "ORDER_REJECT",
+      "title": "Order rejected by venue",
+      "detail": "Quantity precision was not accepted. Remediation is pending planner normalization.",
+      "correlationId": "corr-atom-20260923-1427-d812",
+      "linkedContext": "Open Execution"
+    },
+    {
+      "id": "alert-2077",
+      "timestamp": "14:24:42 UTC",
+      "severity": "WARN",
+      "status": "ACKNOWLEDGED",
+      "service": "MarketData",
+      "eventType": "STALE_DATA",
+      "title": "Transient stale market data",
+      "detail": "One asset exceeded the freshness warning threshold before recovering.",
+      "correlationId": "corr-md-2077",
+      "linkedContext": "Open Market Data"
+    },
+    {
+      "id": "alert-2074",
+      "timestamp": "14:18:03 UTC",
+      "severity": "WARN",
+      "status": "ACTIVE",
+      "service": "NATS",
+      "eventType": "CONSUMER_LAG",
+      "title": "Consumer lag elevated",
+      "detail": "Execution consumer reached lag 8 before returning below the operational threshold.",
+      "linkedContext": "Open Infrastructure"
+    },
+    {
+      "id": "alert-2068",
+      "timestamp": "14:02:19 UTC",
+      "severity": "INFO",
+      "status": "RESOLVED",
+      "service": "Infrastructure",
+      "eventType": "RECOVERY",
+      "title": "ExecutionState recovered",
+      "detail": "Service heartbeat and durable state returned healthy after a controlled restart.",
+      "correlationId": "corr-exec-recovery-2068",
+      "linkedContext": "Open Infrastructure"
+    },
+    {
+      "id": "alert-2059",
+      "timestamp": "13:44:10 UTC",
+      "severity": "INFO",
+      "status": "RESOLVED",
+      "service": "Reconciliation",
+      "eventType": "RECONCILIATION_CLEAN",
+      "title": "Reconciliation returned CLEAN",
+      "detail": "Local and exchange quantities converged inside configured tolerance.",
+      "correlationId": "corr-recon-2059",
+      "linkedContext": "Open Reconciliation"
+    }
+  ],
+  "audit": [
+    {
+      "id": "audit-991",
+      "timestamp": "14:28:12 UTC",
+      "actor": "system",
+      "actorType": "SYSTEM",
+      "action": "RECONCILIATION_CHECK",
+      "target": "portfolio",
+      "result": "SUCCESS",
+      "correlationId": "corr-recon-2079",
+      "detail": "Periodic closed-loop verification completed."
+    },
+    {
+      "id": "audit-990",
+      "timestamp": "14:27:11 UTC",
+      "actor": "system",
+      "actorType": "SYSTEM",
+      "action": "ORDER_REJECT_RECORDED",
+      "target": "ATOM / ord-1838",
+      "result": "SUCCESS",
+      "correlationId": "corr-atom-20260923-1427-d812",
+      "detail": "Venue rejection persisted with exchange reason and remediation state."
+    },
+    {
+      "id": "audit-989",
+      "timestamp": "14:20:04 UTC",
+      "actor": "operator@example",
+      "actorType": "OPERATOR",
+      "action": "ALERT_ACKNOWLEDGE",
+      "target": "alert-2077",
+      "result": "SUCCESS",
+      "requestHash": "sha256:7fd1…ca92",
+      "correlationId": "corr-md-2077",
+      "detail": "Operator acknowledged transient market-data warning."
+    },
+    {
+      "id": "audit-987",
+      "timestamp": "14:02:20 UTC",
+      "actor": "system",
+      "actorType": "SYSTEM",
+      "action": "SERVICE_RECOVERY",
+      "target": "ExecutionState",
+      "result": "SUCCESS",
+      "correlationId": "corr-exec-recovery-2068",
+      "detail": "Readiness dependency changed from WARN to HEALTHY."
+    },
+    {
+      "id": "audit-984",
+      "timestamp": "13:51:44 UTC",
+      "actor": "operator@example",
+      "actorType": "OPERATOR",
+      "action": "PAUSE_REQUEST_PREVIEW",
+      "target": "trading",
+      "result": "NOOP",
+      "requestHash": "sha256:11a2…90ff",
+      "detail": "Preview only. Step 06 does not send control commands."
+    },
+    {
+      "id": "audit-981",
+      "timestamp": "13:42:31 UTC",
+      "actor": "system",
+      "actorType": "SYSTEM",
+      "action": "CONFIG_VERSION_OBSERVED",
+      "target": "cfg-2026.09.23-07",
+      "result": "SUCCESS",
+      "detail": "Dashboard mock observed active configuration version."
+    }
+  ]
+}

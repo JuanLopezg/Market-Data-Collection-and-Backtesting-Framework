@@ -1,0 +1,11 @@
+{
+  "mode": "REPLAY",
+  "exchange": "BINANCE",
+  "exchangeConnected": true,
+  "dataHealthy": true,
+  "tradingEnabled": true,
+  "reconciliation": "CLEAN",
+  "readiness": "READY",
+  "alertCount": 3,
+  "utcLabel": "UTC 2026-09-23 14:32:18"
+}

@@ -1,0 +1,87 @@
+{
+  "status": "CLEAN",
+  "lastChecked": "14:32:11 UTC",
+  "tolerance": "0.05% value / exchange lot tolerance",
+  "targetPortfolioValue": "$1,248,321",
+  "localPortfolioValue": "$1,248,318",
+  "exchangePortfolioValue": "$1,248,317",
+  "rows": [
+    {
+      "asset": "BTC",
+      "targetQty": 2.3126,
+      "effectiveQty": 2.3456,
+      "localQty": 2.3456,
+      "exchangeQty": 2.3456,
+      "deltaQty": 0,
+      "pendingQty": 0,
+      "status": "ALIGNED",
+      "explanation": "Target, local execution state and exchange position agree within configured tolerance."
+    },
+    {
+      "asset": "ETH",
+      "targetQty": 12.4,
+      "effectiveQty": 12.4,
+      "localQty": 12.4,
+      "exchangeQty": 12.4,
+      "deltaQty": 0,
+      "pendingQty": 0,
+      "status": "ALIGNED",
+      "explanation": "Target, local execution state and exchange position agree within configured tolerance."
+    },
+    {
+      "asset": "SOL",
+      "targetQty": 530,
+      "effectiveQty": 530,
+      "localQty": 530,
+      "exchangeQty": 530,
+      "deltaQty": 0,
+      "pendingQty": 0,
+      "status": "ALIGNED",
+      "explanation": "Target, local execution state and exchange position agree within configured tolerance."
+    },
+    {
+      "asset": "LINK",
+      "targetQty": -2400,
+      "effectiveQty": -2400,
+      "localQty": -2400,
+      "exchangeQty": -2400,
+      "deltaQty": 0,
+      "pendingQty": 0,
+      "status": "ALIGNED",
+      "explanation": "Target, local execution state and exchange position agree within configured tolerance."
+    },
+    {
+      "asset": "BNB",
+      "targetQty": 18.5,
+      "effectiveQty": 18.5,
+      "localQty": 18.5,
+      "exchangeQty": 18.5,
+      "deltaQty": 0,
+      "pendingQty": 0,
+      "status": "ALIGNED",
+      "explanation": "Target, local execution state and exchange position agree within configured tolerance."
+    }
+  ],
+  "openOrders": [
+    {
+      "orderId": "ord-1842",
+      "asset": "BTC",
+      "side": "BUY",
+      "quantity": 0.12,
+      "remaining": 0.04,
+      "age": "18s",
+      "state": "PARTIAL",
+      "exchangeId": "BN-9841102"
+    },
+    {
+      "orderId": "ord-1843",
+      "asset": "SOL",
+      "side": "SELL",
+      "quantity": 15,
+      "remaining": 15,
+      "age": "7s",
+      "state": "NEW",
+      "exchangeId": "BN-9841109"
+    }
+  ]
+}

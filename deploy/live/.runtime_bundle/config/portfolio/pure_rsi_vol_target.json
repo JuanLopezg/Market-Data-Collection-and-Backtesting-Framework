@@ -1,0 +1,23 @@
+{
+  "strategies": [
+    {
+      "id": 1,
+      "name": "Pure_RSI",
+      "allocation_weight": 1.0,
+      "sizer": {
+        "type": "volatility_target",
+        "covariance_lookback": 5,
+        "periods_per_year": 365.0,
+        "target_volatility": 0.20
+      },
+      "risk": {
+        "max_gross_leverage": 1.50,
+        "max_asset_weight": 1.50
+      },
+      "rebalance": {
+        "type": "threshold",
+        "threshold": 0.02
+      }
+    }
+  ]
+}

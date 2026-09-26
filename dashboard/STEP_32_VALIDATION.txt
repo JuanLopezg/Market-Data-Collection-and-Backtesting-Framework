@@ -1,0 +1,44 @@
+CONTROL DASHBOARD STEP 32 — GENERATION-TIME VALIDATION
+Date: 2026-09-25
+
+PASS  Go: go test ./...
+PASS  Go: go vet ./...
+PASS  Go: go build ./...
+PASS  Source contract audit: 33 audited markers
+PASS  Shell syntax: scripts/*.sh
+PASS  Python syntax: scripts/*.py
+PASS  Compose YAML parse: docker-compose*.yml
+PASS  Static Step 32 safety audit phases 1-6
+PASS  ZIP source tree contains no real production secrets in .env.production (template placeholders only)
+
+DISCOVERED + FIXED DURING REVIEW
+- dashboard-api/cmd/dashboard-real-smoke was stale and did not compile against the current provider.NewReal signature.
+- Its old Step 14 expectation also assumed provider Ready=true / resourceCount=2, which no longer matches the cumulative real-provider design.
+- Step 32 repairs this helper and restores go test/vet/build for the entire Go module.
+
+NOT EXECUTED IN GENERATION ENVIRONMENT
+- Docker runtime / compose execution: Docker CLI is not available in the generation environment.
+- Final live WSL Step 32 gate: requires the user's running PostgreSQL/NATS/SQLite/dashboard stack.
+- Full npm/Vite build: package dependencies are not installed in the generation environment and network install timed out/unavailable. Modified TypeScript was syntax-parsed by TypeScript up to missing external modules; final npm build should be executed in the user's normal dashboard Docker build.
+
+USER-SIDE FINAL ACCEPTANCE
+1. Build/recreate the normal local WSL dashboard stack.
+2. Open Infrastructure and inspect the Step 32 safety panel.
+3. Run: ./scripts/step32-live-safety-gate.sh
+4. STOP if the gate reports BLOCKED.
+
+Step 32.2 WSL/Docker Desktop gate fix
+-------------------------------------
+The Go regression fallback no longer runs `golang:1.23-alpine` directly.
+Instead it builds the existing dashboard-api Dockerfile `build` stage as a
+local image and runs go test/vet/build inside that image. This avoids false
+failures caused by Docker Desktop credential helpers during an implicit pull
+while preserving the same Go 1.23 Alpine toolchain used by the API image.
+
+
+STEP 32.3 correction
+- Regression gate now explicitly runs with CGO_ENABLED=0, matching dashboard-api production Docker build.
+- internal/integration/postgres/store_test.go is tagged cgo because it tests store.go, a cgo/libpq-only implementation that is excluded from the production CGO_ENABLED=0 binary.
+- This avoids a false compile failure where cgo-only tests referenced symbols from a file Go correctly excluded.
+
+Step 32.4: runtime blocker diagnostics now surface shell-status.blockers/readinessDetail; no safety condition bypassed.

@@ -1,24 +1,23 @@
+#include <algorithm>
 #include <atomic>
-#include <cmath>
+#include <chrono>
 #include <csignal>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
-#include <memory>
 #include <stdexcept>
 #include <string>
-#include <utility>
+#include <thread>
 
-#include "contract_json_codec.h"
-#include "database_utils.h"
-#include "execution_price_snapshot.h"
-#include "market_data_release.h"
-#include "market_slice_snapshot.h"
-#include "nats_jetstream_message_bus.h"
+#include <curl/curl.h>
+
+#include "market_data_config.h"
+#include "market_data_ingestor.h"
+#include "market_data_update_publisher.h"
 #include "service_logging.h"
-#include "service_clock.h"
+#include "time_handler_factory.h"
+#include "time_utils.h"
 #include "transport_subjects.h"
-
 
 namespace {
 
@@ -29,331 +28,107 @@ void stopHandler(int)
     running.store(false);
 }
 
-
 struct Options {
-    std::string nats_url = "nats://127.0.0.1:4222";
-    std::string stream = "ALGOTRADING_RUNTIME";
-    std::filesystem::path historical_data;
-    RuntimeMode runtime_mode = RuntimeMode::Live;
-    std::string simulation_id;
-    int poll_timeout_ms = 250;
+    std::filesystem::path config = "config/market_data/market_data_config.json";
+    bool run_once = false;
 };
-
 
 Options parseOptions(int argc, char** argv)
 {
-    Options options;
-
+    Options result;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
-        const auto requireValue = [&](const char* option) -> std::string {
+        auto requireValue = [&](const char* option) -> std::string {
             if (i + 1 >= argc)
-                throw std::invalid_argument(std::string("Missing value for ") + option);
+                throw std::invalid_argument(std::string(option) + " requires a value");
             return argv[++i];
         };
 
-        if (arg == "--nats-url")
-            options.nats_url = requireValue("--nats-url");
-        else if (arg == "--stream")
-            options.stream = requireValue("--stream");
-        else if (arg == "--historical-data")
-            options.historical_data = requireValue("--historical-data");
-        else if (arg == "--runtime-mode")
-            options.runtime_mode = parseRuntimeMode(requireValue("--runtime-mode"));
-        else if (arg == "--simulation-id")
-            options.simulation_id = requireValue("--simulation-id");
-        else if (arg == "--poll-timeout-ms")
-            options.poll_timeout_ms = std::stoi(requireValue("--poll-timeout-ms"));
+        if (arg == "--config")
+            result.config = requireValue("--config");
+        else if (arg == "--run-once")
+            result.run_once = true;
         else if (arg == "--help" || arg == "-h") {
             std::cout
-                << "Market-data service options:\n"
-                << "  --nats-url URL\n"
-                << "  --stream NAME\n"
-                << "  --historical-data PATH   CSV/SQLite historical source (required)\n"
-                << "  --runtime-mode live|testnet|replay\n"
-                << "  --simulation-id ID   optional REPLAY identity guard\n"
-                << "  --poll-timeout-ms N\n";
+                << "Usage: algotrading_market_data_service [options]\n"
+                << "  --config PATH   default: config/market_data/market_data_config.json\n"
+                << "  --run-once      update previous completed BUSINESS UTC day and exit\n";
             std::exit(0);
         }
         else
             throw std::invalid_argument("Unknown option: " + arg);
     }
-
-    if (options.stream.empty())
-        throw std::invalid_argument("Market-data stream cannot be empty");
-    if (options.historical_data.empty())
-        throw std::invalid_argument("--historical-data is required");
-    if (!std::filesystem::exists(options.historical_data))
-        throw std::invalid_argument("Historical market-data path does not exist");
-    if (options.poll_timeout_ms <= 0)
-        throw std::invalid_argument("--poll-timeout-ms must be positive");
-
-    return options;
+    return result;
 }
 
-
-bool validBar(const OHLCV& bar)
+std::chrono::year_month_day newestCompletedBusinessUtcDate(const TimeHandler& timeHandler)
 {
-    return std::isfinite(bar.open) && bar.open > 0.0 &&
-           std::isfinite(bar.high) && bar.high > 0.0 &&
-           std::isfinite(bar.low) && bar.low > 0.0 &&
-           std::isfinite(bar.close) && bar.close > 0.0 &&
-           std::isfinite(bar.volume) && bar.volume >= 0.0;
+    return getPreviousDayDate(getCurrentUtcDate(timeHandler.getTime()));
 }
 
+std::chrono::system_clock::time_point nextScheduledBusinessRun(
+    const TimeHandler& timeHandler,
+    int delaySeconds)
+{
+    return computeNextMidnightUTC(timeHandler.getTime()) + std::chrono::seconds(delaySeconds);
+}
 
-class HistoricalReleaseSource {
-private:
-    OHLCVData history_;
+// TECHNICAL wait: used only for retry/backoff. It deliberately follows real wall time
+// and must not be accelerated by TimeHandler speed.
+void interruptibleTechnicalWaitUntil(std::chrono::system_clock::time_point deadline)
+{
+    while (running.load()) {
+        const auto now = std::chrono::system_clock::now();
+        if (now >= deadline)
+            return;
+        const auto remaining = deadline - now;
+        const auto chunk = std::min(
+            std::chrono::duration_cast<std::chrono::milliseconds>(remaining),
+            std::chrono::milliseconds(1000));
+        if (chunk.count() > 0)
+            std::this_thread::sleep_for(chunk);
+    }
+}
 
-public:
-    explicit HistoricalReleaseSource(const std::filesystem::path& path)
-        : history_(loadDatabase(path, 0, 0))
-    {
-        if (history_.data.empty())
-            throw std::runtime_error("Historical market-data source is empty");
+// BUSINESS wait: correctness is defined by TimeHandler business time. The short real-time
+// sleep is only a technical polling cadence so SIGINT/SIGTERM remain responsive; it is not
+// an economic timeout and changing TimeHandler speed changes when the business deadline is
+// reached without changing this technical cadence.
+void interruptibleBusinessWaitUntil(
+    const TimeHandler& timeHandler,
+    std::chrono::system_clock::time_point businessDeadline)
+{
+    constexpr auto technicalPollInterval = std::chrono::milliseconds(250);
 
-        LG_INFO(
-            "service=market-data event=historical_source_loaded source={} instruments={}",
-            path.string(),
-            history_.data.size()
+    while (running.load()) {
+        if (timeHandler.getTime() >= businessDeadline)
+            return;
+        std::this_thread::sleep_for(technicalPollInterval);
+    }
+}
+
+bool runTarget(
+    MarketDataIngestor& ingestor,
+    const MarketDataUpdatePublisher& publisher,
+    std::chrono::year_month_day targetDate)
+{
+    try {
+        // The ingestor returns only after the SQLite transaction has committed.
+        // The notification is intentionally the next step.
+        const MarketDataIngestionSummary summary = ingestor.run(targetDate);
+        publisher.publish(summary);
+        return true;
+    }
+    catch (const std::exception& error) {
+        LG_ERROR(
+            "service=market-data event=daily_cycle_failed target_date={} error={}",
+            formatYMD(targetDate), error.what()
         );
+        return false;
     }
-
-    MarketSliceSnapshot closedSlice(Timestamp timestamp) const
-    {
-        MarketSliceSnapshot result;
-        result.timestamp = timestamp;
-
-        for (const auto& [coin, bars] : history_.data) {
-            const auto it = bars.find(timestamp);
-            if (it == bars.end())
-                continue;
-            if (!validBar(it->second))
-                throw std::runtime_error("Invalid historical OHLCV bar for " + coin);
-            result.bars.push_back({coin, it->second});
-        }
-
-        if (result.bars.empty())
-            throw std::out_of_range("No closed market slice for requested timestamp");
-        return result;
-    }
-
-    ExecutionPriceSnapshot executionOpen(
-        Timestamp timestamp,
-        Timestamp decisionTimestamp
-    ) const
-    {
-        ExecutionPriceSnapshot result;
-        result.timestamp = timestamp;
-        result.decision_timestamp = decisionTimestamp;
-
-        for (const auto& [coin, bars] : history_.data) {
-            const auto it = bars.find(timestamp);
-            if (it == bars.end())
-                continue;
-            if (!std::isfinite(it->second.open) || it->second.open <= 0.0)
-                throw std::runtime_error("Invalid historical execution open for " + coin);
-            result.prices.emplace(coin, it->second.open);
-        }
-
-        if (result.prices.empty())
-            throw std::out_of_range("No execution opens for requested timestamp");
-        return result;
-    }
-};
-
-
-class MarketDataServiceRuntime {
-private:
-    const Options options_;
-    NatsJetStreamMessageBus bus_;
-    std::unique_ptr<ServiceClockContext> clock_;
-    std::unique_ptr<HistoricalReleaseSource> source_;
-    DurableMessageBus::SubscriptionID release_subscription_ = 0;
-
-    DurableConsumerOptions consumer() const
-    {
-        DurableConsumerOptions result;
-        result.stream = options_.stream;
-        result.durable_name = "market-data-release";
-        result.subject = TransportSubjects::MARKET_DATA_RELEASE;
-        result.ack_wait_ms = 30000;
-        result.max_deliver = 20;
-        result.max_ack_pending = 64;
-        return result;
-    }
-
-    static bool validMetadata(const ContractMetadata& metadata)
-    {
-        return metadata.schema_version == 1 && !metadata.message_id.empty();
-    }
-
-    static ContractMetadata outputMetadata(
-        std::string messageId,
-        const MarketDataReleaseRequest& request
-    )
-    {
-        ContractMetadata metadata;
-        metadata.schema_version = 1;
-        metadata.message_id = std::move(messageId);
-        metadata.correlation_id = request.metadata.message_id;
-        metadata.produced_at = request.timestamp;
-        return metadata;
-    }
-
-    DurableMessageDisposition onRelease(const BusMessage& message)
-    {
-        try {
-            const MarketDataReleaseRequest request =
-                ContractJsonCodec::decodeMarketDataReleaseRequest(message.payload);
-
-            LG_DEBUG(
-                "service=market-data event=release_received timestamp={} decision_timestamp={} message_id={}",
-                request.timestamp,
-                request.decision_timestamp,
-                request.metadata.message_id
-            );
-
-            if (!validMetadata(request.metadata) || request.timestamp == 0) {
-                LG_WARN(
-                    "service=market-data event=release_terminated reason=invalid_metadata timestamp={} message_id={}",
-                    request.timestamp,
-                    request.metadata.message_id
-                );
-                return DurableMessageDisposition::Terminate;
-            }
-
-            if (request.kind == MarketDataReleaseKind::ClosedSlice) {
-                if (request.decision_timestamp != 0)
-                    return DurableMessageDisposition::Terminate;
-
-                MarketSliceSnapshot slice = source_->closedSlice(request.timestamp);
-                slice.metadata = outputMetadata(
-                    "market-slice:" + std::to_string(request.timestamp),
-                    request
-                );
-                bus_.publish(
-                    TransportSubjects::MARKET_SLICE_SNAPSHOT,
-                    ContractJsonCodec::encode(slice),
-                    slice.metadata.message_id
-                );
-                LG_INFO(
-                    "service=market-data event=market_slice_published timestamp={} bars={} message_id={} correlation_id={}",
-                    slice.timestamp,
-                    slice.bars.size(),
-                    slice.metadata.message_id,
-                    slice.metadata.correlation_id
-                );
-                return DurableMessageDisposition::Ack;
-            }
-
-            if (request.kind == MarketDataReleaseKind::ExecutionOpen) {
-                if (request.decision_timestamp == 0 ||
-                    request.timestamp <= request.decision_timestamp)
-                    return DurableMessageDisposition::Terminate;
-
-                ExecutionPriceSnapshot prices = source_->executionOpen(
-                    request.timestamp,
-                    request.decision_timestamp
-                );
-                prices.metadata = outputMetadata(
-                    "execution-prices:" + std::to_string(request.decision_timestamp) + ":" +
-                        std::to_string(request.timestamp),
-                    request
-                );
-                bus_.publish(
-                    TransportSubjects::EXECUTION_PRICES,
-                    ContractJsonCodec::encode(prices),
-                    prices.metadata.message_id
-                );
-                LG_INFO(
-                    "service=market-data event=execution_prices_published decision_timestamp={} execution_timestamp={} prices={} message_id={}",
-                    prices.decision_timestamp,
-                    prices.timestamp,
-                    prices.prices.size(),
-                    prices.metadata.message_id
-                );
-                return DurableMessageDisposition::Ack;
-            }
-
-            return DurableMessageDisposition::Terminate;
-        }
-        catch (const std::out_of_range& error) {
-            LG_WARN("service=market-data event=release_rejected disposition=terminate error={}", error.what());
-            return DurableMessageDisposition::Terminate;
-        }
-        catch (const std::invalid_argument& error) {
-            LG_WARN("service=market-data event=release_invalid disposition=terminate error={}", error.what());
-            return DurableMessageDisposition::Terminate;
-        }
-        catch (const std::exception& error) {
-            LG_ERROR("service=market-data event=release_failed disposition=retry error={}", error.what());
-            return DurableMessageDisposition::Retry;
-        }
-    }
-
-public:
-    explicit MarketDataServiceRuntime(Options options)
-        : options_(std::move(options)),
-          bus_(options_.nats_url)
-    {
-        // Restart-critical control plane comes first.  Historical source reconstruction can
-        // touch a large bind-mounted CSV and must never delay the ClockSyncRequest emitted by
-        // ServiceClockContext after a hard container recreation.
-        bus_.ensureStream(
-            options_.stream,
-            options_.runtime_mode == RuntimeMode::Replay
-                ? TransportSubjects::runtimeSubjects()
-                : TransportSubjects::tradingRuntimeSubjects()
-        );
-        clock_ = std::make_unique<ServiceClockContext>(
-            ServiceClockContext::Options{
-                options_.runtime_mode, options_.stream, "market-data", options_.simulation_id
-            },
-            bus_
-        );
-
-        source_ = std::make_unique<HistoricalReleaseSource>(options_.historical_data);
-        release_subscription_ = bus_.subscribe(
-            consumer(),
-            clock_->guard(
-                "market_data_release",
-                [this](const BusMessage& message) { return onRelease(message); }
-            )
-        );
-    }
-
-    ~MarketDataServiceRuntime()
-    {
-        bus_.close(release_subscription_);
-    }
-
-    void run()
-    {
-        LG_INFO(
-            "service=market-data event=service_ready stream={} source={} runtime_mode={} clock_sync={} poll_timeout_ms={}",
-            options_.stream,
-            options_.historical_data.string(),
-            runtimeModeName(options_.runtime_mode),
-            clock_->synchronized() ? "ready" : "pending",
-            options_.poll_timeout_ms
-        );
-        std::cout.flush();
-
-        while (running.load()) {
-            clock_->poll(32, 1);
-            bus_.poll(release_subscription_, 16, options_.poll_timeout_ms);
-        }
-
-        LG_INFO("service=market-data event=shutdown_requested");
-        bus_.flush();
-        LG_INFO("service=market-data event=shutdown_complete");
-    }
-};
+}
 
 } // namespace
-
 
 int main(int argc, char** argv)
 {
@@ -362,12 +137,84 @@ int main(int argc, char** argv)
     try {
         std::signal(SIGINT, stopHandler);
         std::signal(SIGTERM, stopHandler);
-        MarketDataServiceRuntime runtime(parseOptions(argc, argv));
-        runtime.run();
+
+        const Options options = parseOptions(argc, argv);
+        const MarketDataConfig config = loadMarketDataConfig(options.config);
+        const TimeHandlerConfig timeConfig = TimeHandlerFactory::loadConfigFromEnvironment();
+        const TimeHandler timeHandler = TimeHandlerFactory::create(timeConfig);
+
+        if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK)
+            throw std::runtime_error("curl_global_init failed");
+
+        MarketDataIngestor ingestor(config);
+        MarketDataUpdatePublisher publisher(config);
+
+        LG_INFO(
+            "service=market-data event=service_ready source=binance storage=sqlite database={} ranking_size={} active_top_n={} retention_days={} minimum_history_days={} nats_url={} stream={} update_subject={} time_speed={} time_identity={}",
+            config.database_path.string(), config.ranking_size, config.active_top_n,
+            config.retain_after_top_n_days, config.minimum_history_days,
+            config.nats_url, config.stream, TransportSubjects::MARKET_DATA_UPDATED,
+            timeConfig.speed, timeConfig.identity()
+        );
+        std::cout.flush();
+
+        // Catch-up is BUSINESS-time based. In normal LIVE the default TimeHandler is identity
+        // (speed=1, bias=0), so this remains the previous completed real UTC day. In replay-like
+        // configurations it becomes the previous completed simulated/business UTC day.
+        auto targetDate = newestCompletedBusinessUtcDate(timeHandler);
+        bool success = runTarget(ingestor, publisher, targetDate);
+
+        if (options.run_once) {
+            curl_global_cleanup();
+            return success ? 0 : 1;
+        }
+
+        while (running.load()) {
+            if (!success) {
+                // Retry/backoff is TECHNICAL time. Do not scale it with replay speed.
+                const auto retryAt = std::chrono::system_clock::now() +
+                    std::chrono::seconds(config.retry_after_failure_seconds);
+                LG_WARN(
+                    "service=market-data event=retry_scheduled target_date={} retry_seconds={} time_domain=technical",
+                    formatYMD(targetDate), config.retry_after_failure_seconds
+                );
+                interruptibleTechnicalWaitUntil(retryAt);
+                if (!running.load())
+                    break;
+                success = runTarget(ingestor, publisher, targetDate);
+                continue;
+            }
+
+            // If ingestion/retry crossed one or more BUSINESS UTC boundaries, observe the newest
+            // completed business day immediately instead of sleeping until another boundary.
+            const auto newestCompletedDate = newestCompletedBusinessUtcDate(timeHandler);
+            if (std::chrono::sys_days{newestCompletedDate} > std::chrono::sys_days{targetDate}) {
+                targetDate = newestCompletedDate;
+                success = runTarget(ingestor, publisher, targetDate);
+                continue;
+            }
+
+            const auto scheduled = nextScheduledBusinessRun(
+                timeHandler, config.midnight_delay_seconds);
+            LG_INFO(
+                "service=market-data event=next_daily_run_scheduled business_midnight_delay_seconds={} time_domain=business",
+                config.midnight_delay_seconds
+            );
+            interruptibleBusinessWaitUntil(timeHandler, scheduled);
+            if (!running.load())
+                break;
+
+            targetDate = newestCompletedBusinessUtcDate(timeHandler);
+            success = runTarget(ingestor, publisher, targetDate);
+        }
+
+        LG_INFO("service=market-data event=shutdown_complete");
+        curl_global_cleanup();
         return 0;
     }
     catch (const std::exception& error) {
         LG_ALERT("service=market-data event=fatal error={}", error.what());
+        curl_global_cleanup();
         return 1;
     }
 }

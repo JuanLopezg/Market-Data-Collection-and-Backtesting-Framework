@@ -1,0 +1,17 @@
+STEP 44 FIX 0.44.5 VALIDATION
+=============================
+
+Static/local validation:
+- gofmt on modified Go files: PASS
+- CGO_ENABLED=0 go test ./...: PASS
+- CGO_ENABLED=0 go vet ./...: PASS
+- CGO_ENABLED=0 go build ./...: PASS
+- provider read-coalescing regression tests: PASS
+- bash -n scripts/step44-global-readiness.sh: PASS
+- frontend files changed: NO
+- private wallet/signing/order surface added: NO
+
+Runtime validation still required on Juan's local WSL/Docker stack:
+  ./scripts/step44-global-readiness.sh
+
+Do not mark Step 44 PASS until that runtime gate prints the final PASS banner.

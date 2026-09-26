@@ -1,0 +1,18 @@
+STEP 44 FIX 0.44.3 — VALIDATION
+
+Scope:
+- preserve concrete NATS/PostgreSQL readiness diagnostic detail;
+- classify only known transient manual/NATS/Postgres read failures as retryable;
+- keep every failed snapshot BLOCKED/fail-closed;
+- no trading/private surface changes.
+
+Validated locally:
+- CGO_ENABLED=0 go test ./... : PASS
+- CGO_ENABLED=0 go vet ./...  : PASS
+- CGO_ENABLED=0 go build ./...: PASS
+- bash/sh syntax for scripts   : PASS
+- manual timeout retry regression: PASS
+- transient NATS retry regression: PASS
+- semantic NATS config failure non-retry regression: PASS
+- observed five-blocker Step44 regression: PASS
+- no wallet/signing/order command surface introduced: PASS

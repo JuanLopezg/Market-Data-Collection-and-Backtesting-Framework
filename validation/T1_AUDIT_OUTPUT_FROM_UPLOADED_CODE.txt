@@ -1,0 +1,378 @@
+============================================================
+T1 — TIME USAGE AUDIT (READ-ONLY)
+============================================================
+
+[A] DIRECT REAL-TIME SOURCES / SLEEPS
+research/src/testing_xhbreakout.cpp:100:        : totalRuns_(totalRuns), start_(std::chrono::steady_clock::now())
+research/src/testing_xhbreakout.cpp:165:        const auto now = std::chrono::steady_clock::now();
+research/src/testing_xhbreakout.cpp:719:    const std::time_t now = std::time(nullptr);
+live_trading/replay_controller/src/replay_controller_main.cpp:767:            std::chrono::steady_clock::now() + CLOCK_REFRESH_INTERVAL;
+live_trading/replay_controller/src/replay_controller_main.cpp:775:        const auto now = std::chrono::steady_clock::now();
+live_trading/replay_controller/src/replay_controller_main.cpp:1045:        auto lastWall = std::chrono::steady_clock::now();
+live_trading/replay_controller/src/replay_controller_main.cpp:1052:            const auto nowWall = std::chrono::steady_clock::now();
+live_trading/replay_controller/src/replay_controller_main.cpp:1163:        auto lastWall = std::chrono::steady_clock::now();
+live_trading/replay_controller/src/replay_controller_main.cpp:1172:            const auto nowWall = std::chrono::steady_clock::now();
+tools/distributed_compare/distributed_fast_compare.cpp:354:    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(options.timeout_seconds);
+tools/distributed_compare/distributed_fast_compare.cpp:356:    while (std::chrono::steady_clock::now() < deadline) {
+live_trading/order_planner_service/src/order_planner_service_main.cpp:44:    const auto todayUtc = getCurrentUtcDate(std::chrono::system_clock::now());
+live_trading/order_planner_service/src/order_planner_service_main.cpp:50:    const auto deadline = std::chrono::steady_clock::now() + duration;
+live_trading/order_planner_service/src/order_planner_service_main.cpp:52:        const auto now = std::chrono::steady_clock::now();
+live_trading/order_planner_service/src/order_planner_service_main.cpp:60:            std::this_thread::sleep_for(chunk);
+live_trading/order_planner_service/src/order_planner_service_main.cpp:67:        const auto now = std::chrono::system_clock::now();
+live_trading/order_planner_service/src/order_planner_service_main.cpp:75:            std::this_thread::sleep_for(chunk);
+live_trading/order_planner_service/src/order_planner_service_main.cpp:548:                    computeNextMidnightUTC(std::chrono::system_clock::now()));
+live_trading/order_planner_service/src/order_planner_service_main.cpp:554:            const auto cycleStart = std::chrono::steady_clock::now();
+live_trading/order_planner_service/src/order_planner_service_main.cpp:557:            const auto elapsed = std::chrono::steady_clock::now() - cycleStart;
+research/src/btc_moving_average.cpp:100:        : totalRuns_(totalRuns), start_(std::chrono::steady_clock::now())
+research/src/btc_moving_average.cpp:165:        const auto now = std::chrono::steady_clock::now();
+research/src/btc_moving_average.cpp:721:    const std::time_t now = std::time(nullptr);
+research/src/initial_strategy_parameters.cpp:78:        : totalRuns_(totalRuns), start_(std::chrono::steady_clock::now())
+research/src/initial_strategy_parameters.cpp:143:        const auto now = std::chrono::steady_clock::now();
+live_trading/strategy_service/src/strategy_service_main.cpp:139:    const auto todayUtc = getCurrentUtcDate(std::chrono::system_clock::now());
+live_trading/strategy_service/src/strategy_service_main.cpp:145:    const auto deadline = std::chrono::steady_clock::now() + duration;
+live_trading/strategy_service/src/strategy_service_main.cpp:147:        const auto now = std::chrono::steady_clock::now();
+live_trading/strategy_service/src/strategy_service_main.cpp:155:            std::this_thread::sleep_for(chunk);
+live_trading/strategy_service/src/strategy_service_main.cpp:162:        const auto now = std::chrono::system_clock::now();
+live_trading/strategy_service/src/strategy_service_main.cpp:170:            std::this_thread::sleep_for(chunk);
+live_trading/strategy_service/src/strategy_service_main.cpp:888:                    computeNextMidnightUTC(std::chrono::system_clock::now())
+live_trading/strategy_service/src/strategy_service_main.cpp:899:            const auto iterationStarted = std::chrono::steady_clock::now();
+live_trading/strategy_service/src/strategy_service_main.cpp:902:            const auto elapsed = std::chrono::steady_clock::now() - iterationStarted;
+research/src/backtesting_metrics_main_html_reports.cpp:100:        : totalRuns_(totalRuns), start_(std::chrono::steady_clock::now())
+research/src/backtesting_metrics_main_html_reports.cpp:165:        const auto now = std::chrono::steady_clock::now();
+research/src/backtesting_metrics_main_html_reports.cpp:793:    const std::time_t now = std::time(nullptr);
+live_trading/market_data_service/src/binance_market_data_client.cpp:94:        std::this_thread::sleep_for(std::chrono::milliseconds(backoff));
+live_trading/market_data_service/src/market_data_service_main.cpp:73:        const auto now = std::chrono::system_clock::now();
+live_trading/market_data_service/src/market_data_service_main.cpp:81:            std::this_thread::sleep_for(chunk);
+live_trading/market_data_service/src/market_data_service_main.cpp:135:        auto targetDate = getPreviousDayDate(getCurrentUtcDate(std::chrono::system_clock::now()));
+live_trading/market_data_service/src/market_data_service_main.cpp:145:                const auto retryAt = std::chrono::system_clock::now() +
+live_trading/market_data_service/src/market_data_service_main.cpp:161:                getCurrentUtcDate(std::chrono::system_clock::now()));
+live_trading/market_data_service/src/market_data_service_main.cpp:169:                std::chrono::system_clock::now(), config.midnight_delay_seconds);
+live_trading/market_data_service/src/market_data_service_main.cpp:178:            targetDate = getPreviousDayDate(getCurrentUtcDate(std::chrono::system_clock::now()));
+live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp:122:    const auto todayUtc = getCurrentUtcDate(std::chrono::system_clock::now());
+live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp:128:    const auto deadline = std::chrono::steady_clock::now() + duration;
+live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp:130:        const auto now = std::chrono::steady_clock::now();
+live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp:138:            std::this_thread::sleep_for(chunk);
+live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp:145:        const auto now = std::chrono::system_clock::now();
+live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp:153:            std::this_thread::sleep_for(chunk);
+live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp:846:                interruptibleWaitUntilUtc(computeNextMidnightUTC(std::chrono::system_clock::now()));
+live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp:851:            const auto iterationStarted = std::chrono::steady_clock::now();
+live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp:858:            const auto elapsed = std::chrono::steady_clock::now() - iterationStarted;
+live_trading/execution_state_service/src/execution_state_service_main.cpp:61:    const auto todaySys = std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now());
+live_trading/execution_state_service/src/execution_state_service_main.cpp:526:        const auto nonce = std::chrono::system_clock::now().time_since_epoch().count();
+live_trading/execution_state_service/src/execution_state_service_main.cpp:944:            const auto cycleStart = std::chrono::steady_clock::now();
+live_trading/execution_state_service/src/execution_state_service_main.cpp:953:            const auto elapsed = std::chrono::steady_clock::now() - cycleStart;
+live_trading/execution_state_service/src/execution_state_service_main.cpp:956:                std::this_thread::sleep_for(interval - elapsed);
+lib/src/runtime/service_clock.h:116:        const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
+lib/src/runtime/service_clock.h:279:        next_sync_request_at_ = std::chrono::steady_clock::now() + SYNC_REQUEST_RETRY_INTERVAL;
+lib/src/runtime/service_clock.h:300:                std::chrono::steady_clock::now() + SYNC_REQUEST_RETRY_INTERVAL;
+lib/src/runtime/service_clock.h:312:        const auto deadline = std::chrono::steady_clock::now() + STARTUP_SYNC_TIMEOUT;
+lib/src/runtime/service_clock.h:327:            const auto now = std::chrono::steady_clock::now();
+lib/src/runtime/service_clock.h:503:        if (!synchronized() && std::chrono::steady_clock::now() >= next_sync_request_at_)
+lib/src/runtime/clock.h:29:        return std::chrono::system_clock::now();
+lib/src/common_types/scheduler.h:57:        using clock = std::chrono::high_resolution_clock;
+lib/src/common_types/scheduler.h:61:            std::this_thread::sleep_for(secondsToStart);
+lib/src/common_types/config_handler.h:72:                ftime - decltype(ftime)::clock::now() + std::chrono::system_clock::now()
+lib/src/common_types/config_handler.h:121:        auto now = system_clock::now();
+lib/src/common_types/config_handler.h:125:            ftime - decltype(ftime)::clock::now() + system_clock::now()
+lib/src/utils/database_utils.cpp:72:    auto now = std::chrono::system_clock::now();
+lib/src/utils/time_utils.h:41:std::chrono::year_month_day getCurrentUtcDate();
+lib/src/utils/time_utils.h:63:std::chrono::system_clock::time_point computeNextMidnightUTC();
+lib/src/utils/time_utils.cpp:11:    auto now = system_clock::now();
+lib/src/utils/time_utils.cpp:28:    return currentUtcTimestamp(std::chrono::system_clock::now());
+lib/src/utils/time_utils.cpp:51:    return timeUntilUtcMidnight(std::chrono::system_clock::now());
+lib/src/utils/time_utils.cpp:79:std::chrono::year_month_day getCurrentUtcDate()
+lib/src/utils/time_utils.cpp:81:    return getCurrentUtcDate(std::chrono::system_clock::now());
+lib/src/utils/time_utils.cpp:134:std::chrono::system_clock::time_point computeNextMidnightUTC() {
+lib/src/utils/time_utils.cpp:135:    return computeNextMidnightUTC(std::chrono::system_clock::now());
+
+[B] LEGACY CLOCK CONTROL PLANE
+live_trading/replay_controller/src/replay_controller_main.cpp:49:    std::string simulation_id;
+live_trading/replay_controller/src/replay_controller_main.cpp:166:        else if (arg == "--simulation-id")
+live_trading/replay_controller/src/replay_controller_main.cpp:167:            options.simulation_id = requireValue("--simulation-id");
+live_trading/replay_controller/src/replay_controller_main.cpp:187:                << "  --simulation-id ID        stable logical-clock identity (optional)\n"
+live_trading/replay_controller/src/replay_controller_main.cpp:210:    if (options.simulation_id.empty())
+live_trading/replay_controller/src/replay_controller_main.cpp:211:        options.simulation_id = "replay:" + options.start_date + ":" + options.end_date;
+live_trading/replay_controller/src/replay_controller_main.cpp:355:            "simulation_id TEXT NOT NULL, "
+live_trading/replay_controller/src/replay_controller_main.cpp:475:    std::optional<ClockState> loadClockState() const
+live_trading/replay_controller/src/replay_controller_main.cpp:478:            "SELECT simulation_id, logical_time, revision, mode, speed_multiplier, "
+live_trading/replay_controller/src/replay_controller_main.cpp:489:        ClockState value;
+live_trading/replay_controller/src/replay_controller_main.cpp:493:        value.simulation_id = PQgetvalue(result.get(), 0, 0);
+live_trading/replay_controller/src/replay_controller_main.cpp:509:    void recordClockState(const ClockState& value) const
+live_trading/replay_controller/src/replay_controller_main.cpp:512:            "SELECT simulation_id, logical_time, revision, mode, speed_multiplier, paused, "
+live_trading/replay_controller/src/replay_controller_main.cpp:530:            if (storedSimulation != value.simulation_id)
+live_trading/replay_controller/src/replay_controller_main.cpp:531:                throw std::runtime_error("Replay clock simulation_id conflicts with durable state");
+live_trading/replay_controller/src/replay_controller_main.cpp:552:            "state_key, simulation_id, logical_time, revision, mode, speed_multiplier, paused, "
+live_trading/replay_controller/src/replay_controller_main.cpp:555:            "simulation_id = EXCLUDED.simulation_id, logical_time = EXCLUDED.logical_time, "
+live_trading/replay_controller/src/replay_controller_main.cpp:561:                value.simulation_id,
+live_trading/replay_controller/src/replay_controller_main.cpp:639:    SimulatedClock authority_clock_;
+live_trading/replay_controller/src/replay_controller_main.cpp:642:    std::optional<ClockState> clock_state_;
+live_trading/replay_controller/src/replay_controller_main.cpp:745:    void publishClockState(const ClockState& state)
+live_trading/replay_controller/src/replay_controller_main.cpp:748:            TransportSubjects::CLOCK_STATE,
+live_trading/replay_controller/src/replay_controller_main.cpp:753:            "service=replay-controller event=clock_state_published simulation_id={} logical_time={} revision={} mode={} speed_multiplier={} paused={} message_id={}",
+live_trading/replay_controller/src/replay_controller_main.cpp:754:            state.simulation_id,
+live_trading/replay_controller/src/replay_controller_main.cpp:770:    void maybeRefreshClockState()
+live_trading/replay_controller/src/replay_controller_main.cpp:783:        ClockState snapshot = *clock_state_;
+live_trading/replay_controller/src/replay_controller_main.cpp:786:            "replay-clock-refresh:" + options_.simulation_id + ":" +
+live_trading/replay_controller/src/replay_controller_main.cpp:790:        publishClockState(snapshot);
+live_trading/replay_controller/src/replay_controller_main.cpp:794:            "service=replay-controller event=clock_state_refresh simulation_id={} logical_time={} revision={} message_id={}",
+live_trading/replay_controller/src/replay_controller_main.cpp:795:            snapshot.simulation_id,
+live_trading/replay_controller/src/replay_controller_main.cpp:802:    DurableMessageDisposition onClockSyncRequest(const BusMessage& message)
+live_trading/replay_controller/src/replay_controller_main.cpp:805:            const ClockSyncRequest request =
+live_trading/replay_controller/src/replay_controller_main.cpp:806:                ContractJsonCodec::decodeClockSyncRequest(message.payload);
+live_trading/replay_controller/src/replay_controller_main.cpp:808:            if (!request.simulation_id.empty() && request.simulation_id != options_.simulation_id) {
+live_trading/replay_controller/src/replay_controller_main.cpp:810:                    "service=replay-controller event=clock_sync_request_rejected disposition=terminate requester={} requested_simulation_id={} active_simulation_id={}",
+live_trading/replay_controller/src/replay_controller_main.cpp:812:                    request.simulation_id,
+live_trading/replay_controller/src/replay_controller_main.cpp:813:                    options_.simulation_id
+live_trading/replay_controller/src/replay_controller_main.cpp:818:            // On a brand-new replay the first normal ClockState is published immediately before
+live_trading/replay_controller/src/replay_controller_main.cpp:820:            // early request is safe; the follower's CLOCK_STATE durable will receive that first tick.
+live_trading/replay_controller/src/replay_controller_main.cpp:829:            ClockState snapshot = *clock_state_;
+live_trading/replay_controller/src/replay_controller_main.cpp:831:                "replay-clock-sync:" + options_.simulation_id + ":" +
+live_trading/replay_controller/src/replay_controller_main.cpp:834:            publishClockState(snapshot);
+live_trading/replay_controller/src/replay_controller_main.cpp:838:                "service=replay-controller event=clock_sync_response requester={} simulation_id={} logical_time={} revision={} requester_known_revision={} correlation_id={}",
+live_trading/replay_controller/src/replay_controller_main.cpp:840:                snapshot.simulation_id,
+live_trading/replay_controller/src/replay_controller_main.cpp:880:    DurableMessageDisposition onClockControl(const BusMessage& message)
+live_trading/replay_controller/src/replay_controller_main.cpp:883:            const ClockControl command = ContractJsonCodec::decodeClockControl(message.payload);
+live_trading/replay_controller/src/replay_controller_main.cpp:885:            if (command.simulation_id != options_.simulation_id) {
+live_trading/replay_controller/src/replay_controller_main.cpp:887:                    "service=replay-controller event=clock_control_rejected reason=simulation_id_mismatch disposition=terminate command_simulation_id={} active_simulation_id={} message_id={}",
+live_trading/replay_controller/src/replay_controller_main.cpp:888:                    command.simulation_id,
+live_trading/replay_controller/src/replay_controller_main.cpp:889:                    options_.simulation_id,
+live_trading/replay_controller/src/replay_controller_main.cpp:905:            // the recovered ClockState message id still carries the command id.  Treat that transport
+live_trading/replay_controller/src/replay_controller_main.cpp:928:            ClockState next = *clock_state_;
+live_trading/replay_controller/src/replay_controller_main.cpp:933:            case ClockControlAction::Pause:
+live_trading/replay_controller/src/replay_controller_main.cpp:940:            case ClockControlAction::Resume:
+live_trading/replay_controller/src/replay_controller_main.cpp:947:            case ClockControlAction::SetSpeed:
+live_trading/replay_controller/src/replay_controller_main.cpp:960:                    "service=replay-controller event=clock_control_noop action={} simulation_id={} logical_time={} revision={} mode={} speed_multiplier={} paused={} message_id={}",
+live_trading/replay_controller/src/replay_controller_main.cpp:962:                    next.simulation_id,
+live_trading/replay_controller/src/replay_controller_main.cpp:978:                next.simulation_id,
+live_trading/replay_controller/src/replay_controller_main.cpp:984:                checkpoint_store_->recordClockState(next); // COMMIT before publish/ACK
+live_trading/replay_controller/src/replay_controller_main.cpp:988:            publishClockState(*clock_state_);
+live_trading/replay_controller/src/replay_controller_main.cpp:992:                "service=replay-controller event=clock_control_applied action={} simulation_id={} logical_time={} revision={} mode={} speed_multiplier={} paused={} command_message_id={}",
+live_trading/replay_controller/src/replay_controller_main.cpp:994:                clock_state_->simulation_id,
+live_trading/replay_controller/src/replay_controller_main.cpp:1021:    void pollClockControlPlane(int timeoutMs)
+live_trading/replay_controller/src/replay_controller_main.cpp:1024:        maybeRefreshClockState();
+live_trading/replay_controller/src/replay_controller_main.cpp:1051:            pollClockControlPlane(controlPollMs);
+live_trading/replay_controller/src/replay_controller_main.cpp:1094:            publishClockState(*clock_state_);
+live_trading/replay_controller/src/replay_controller_main.cpp:1099:        ClockState next;
+live_trading/replay_controller/src/replay_controller_main.cpp:1102:        next.simulation_id = options_.simulation_id;
+live_trading/replay_controller/src/replay_controller_main.cpp:1111:        next.metadata.message_id = clockMessageId(next.simulation_id, next.revision);
+live_trading/replay_controller/src/replay_controller_main.cpp:1114:            checkpoint_store_->recordClockState(next); // COMMIT before publish
+live_trading/replay_controller/src/replay_controller_main.cpp:1118:        publishClockState(*clock_state_);
+live_trading/replay_controller/src/replay_controller_main.cpp:1166:            maybeRefreshClockState();
+live_trading/replay_controller/src/replay_controller_main.cpp:1207:            clock_state_ = checkpoint_store_->loadClockState();
+live_trading/replay_controller/src/replay_controller_main.cpp:1208:            if (clock_state_ && clock_state_->simulation_id != options_.simulation_id)
+live_trading/replay_controller/src/replay_controller_main.cpp:1209:                throw std::runtime_error("Recovered logical clock simulation_id does not match --simulation-id");
+live_trading/replay_controller/src/replay_controller_main.cpp:1216:                "service=replay-controller event=replay_recovery_completed recovered_decisions={} recovered_executions={} clock_recovered={} clock_time={} clock_revision={} clock_mode={} speed_multiplier={} paused={} simulation_id={} range_start={} range_end={}",
+live_trading/replay_controller/src/replay_controller_main.cpp:1225:                options_.simulation_id,
+live_trading/replay_controller/src/replay_controller_main.cpp:1250:                TransportSubjects::CLOCK_SYNC_REQUEST
+live_trading/replay_controller/src/replay_controller_main.cpp:1252:            [this](const BusMessage& message) { return onClockSyncRequest(message); }
+live_trading/replay_controller/src/replay_controller_main.cpp:1257:                TransportSubjects::CLOCK_CONTROL
+live_trading/replay_controller/src/replay_controller_main.cpp:1259:            [this](const BusMessage& message) { return onClockControl(message); }
+live_trading/replay_controller/src/replay_controller_main.cpp:1266:            publishClockState(*clock_state_);
+live_trading/replay_controller/src/replay_controller_main.cpp:1293:            "service=replay-controller event=service_ready range_start={} range_end={} stream={} simulation_id={} clock_mode={} speed_multiplier={} paused={} clock_wall_scale={} barrier_timeout_ms={} poll_timeout_ms={}",
+live_trading/replay_controller/src/replay_controller_main.cpp:1297:            options_.simulation_id,
+live_trading/simulated_exchange_service/src/simulated_exchange_service_main.cpp:68:    RuntimeMode runtime_mode = RuntimeMode::Live;
+live_trading/simulated_exchange_service/src/simulated_exchange_service_main.cpp:69:    std::string simulation_id;
+live_trading/simulated_exchange_service/src/simulated_exchange_service_main.cpp:96:        else if (arg == "--runtime-mode")
+live_trading/simulated_exchange_service/src/simulated_exchange_service_main.cpp:97:            options.runtime_mode = parseRuntimeMode(requireValue("--runtime-mode"));
+live_trading/simulated_exchange_service/src/simulated_exchange_service_main.cpp:98:        else if (arg == "--simulation-id")
+live_trading/simulated_exchange_service/src/simulated_exchange_service_main.cpp:99:            options.simulation_id = requireValue("--simulation-id");
+live_trading/simulated_exchange_service/src/simulated_exchange_service_main.cpp:113:                << "  --runtime-mode live|testnet|replay\n"
+live_trading/simulated_exchange_service/src/simulated_exchange_service_main.cpp:114:                << "  --simulation-id ID   optional REPLAY identity guard\n"
+live_trading/simulated_exchange_service/src/simulated_exchange_service_main.cpp:746:    std::unique_ptr<ServiceClockContext> clock_;
+live_trading/simulated_exchange_service/src/simulated_exchange_service_main.cpp:1334:            options_.runtime_mode == RuntimeMode::Replay
+live_trading/simulated_exchange_service/src/simulated_exchange_service_main.cpp:1339:        clock_ = std::make_unique<ServiceClockContext>(
+live_trading/simulated_exchange_service/src/simulated_exchange_service_main.cpp:1340:            ServiceClockContext::Options{
+live_trading/simulated_exchange_service/src/simulated_exchange_service_main.cpp:1341:                options_.runtime_mode, options_.runtime_stream, "simulated-exchange",
+live_trading/simulated_exchange_service/src/simulated_exchange_service_main.cpp:1342:                options_.simulation_id
+live_trading/simulated_exchange_service/src/simulated_exchange_service_main.cpp:1421:            "service=simulated-exchange event=service_ready runtime_stream={} backend_stream={} initial_cash={} commission_rate={} persistence={} runtime_mode={} clock_sync={} poll_timeout_ms={}",
+live_trading/simulated_exchange_service/src/simulated_exchange_service_main.cpp:1427:            runtimeModeName(options_.runtime_mode),
+live_trading/exchange_gateway/src/exchange_gateway_main.cpp:408:        // dependency on replay-controller, ClockState, simulation_id, or fake time.
+deploy/distributed_replay/docker-compose.yml:61:      - --runtime-mode
+deploy/distributed_replay/docker-compose.yml:63:      - --simulation-id
+deploy/distributed_replay/docker-compose.yml:81:      - --runtime-mode
+deploy/distributed_replay/docker-compose.yml:83:      - --simulation-id
+deploy/distributed_replay/docker-compose.yml:103:      - --runtime-mode
+deploy/distributed_replay/docker-compose.yml:105:      - --simulation-id
+deploy/distributed_replay/docker-compose.yml:125:      - --runtime-mode
+deploy/distributed_replay/docker-compose.yml:127:      - --simulation-id
+deploy/distributed_replay/docker-compose.yml:141:      - --runtime-mode
+deploy/distributed_replay/docker-compose.yml:143:      - --simulation-id
+deploy/distributed_replay/docker-compose.yml:157:      - --runtime-mode
+deploy/distributed_replay/docker-compose.yml:159:      - --simulation-id
+deploy/distributed_replay/docker-compose.yml:181:      - --runtime-mode
+deploy/distributed_replay/docker-compose.yml:183:      - --simulation-id
+deploy/distributed_replay/docker-compose.yml:211:      - --simulation-id
+lib/src/transport/transport_subjects.h:12:inline constexpr const char* CLOCK_STATE = "simulation.clock.state.v1";
+lib/src/transport/transport_subjects.h:13:inline constexpr const char* CLOCK_CONTROL = "simulation.clock.control.v1";
+lib/src/transport/transport_subjects.h:14:inline constexpr const char* CLOCK_SYNC_REQUEST = "simulation.clock.sync.request.v1";
+lib/src/transport/transport_subjects.h:74:    std::vector<std::string> result{CLOCK_STATE, CLOCK_SYNC_REQUEST, CLOCK_CONTROL};
+lib/src/transport/contract_json_codec.h:32:std::string encode(const ClockState& value);
+lib/src/transport/contract_json_codec.h:33:ClockState decodeClockState(const std::string& payload);
+lib/src/transport/contract_json_codec.h:35:std::string encode(const ClockControl& value);
+lib/src/transport/contract_json_codec.h:36:ClockControl decodeClockControl(const std::string& payload);
+lib/src/transport/contract_json_codec.h:38:std::string encode(const ClockSyncRequest& value);
+lib/src/transport/contract_json_codec.h:39:ClockSyncRequest decodeClockSyncRequest(const std::string& payload);
+lib/src/transport/contract_json_codec.cpp:162:std::string encode(const ClockState& value)
+lib/src/transport/contract_json_codec.cpp:166:        {"simulation_id", value.simulation_id},
+lib/src/transport/contract_json_codec.cpp:175:ClockState decodeClockState(const std::string& payload)
+lib/src/transport/contract_json_codec.cpp:178:    ClockState result;
+lib/src/transport/contract_json_codec.cpp:180:    result.simulation_id = value.at("simulation_id").get<std::string>();
+lib/src/transport/contract_json_codec.cpp:187:    if (result.simulation_id.empty() || result.logical_time == 0 || result.revision == 0)
+lib/src/transport/contract_json_codec.cpp:203:std::string encode(const ClockControl& value)
+lib/src/transport/contract_json_codec.cpp:207:        {"simulation_id", value.simulation_id},
+lib/src/transport/contract_json_codec.cpp:215:ClockControl decodeClockControl(const std::string& payload)
+lib/src/transport/contract_json_codec.cpp:218:    ClockControl result;
+lib/src/transport/contract_json_codec.cpp:220:    result.simulation_id = value.at("simulation_id").get<std::string>();
+lib/src/transport/contract_json_codec.cpp:221:    result.action = static_cast<ClockControlAction>(value.at("action").get<int>());
+lib/src/transport/contract_json_codec.cpp:229:        result.simulation_id.empty())
+lib/src/transport/contract_json_codec.cpp:231:    if (result.action != ClockControlAction::Pause &&
+lib/src/transport/contract_json_codec.cpp:232:        result.action != ClockControlAction::Resume &&
+lib/src/transport/contract_json_codec.cpp:233:        result.action != ClockControlAction::SetSpeed)
+lib/src/transport/contract_json_codec.cpp:236:    if (result.action == ClockControlAction::SetSpeed) {
+lib/src/transport/contract_json_codec.cpp:252:std::string encode(const ClockSyncRequest& value)
+lib/src/transport/contract_json_codec.cpp:257:        {"simulation_id", value.simulation_id},
+lib/src/transport/contract_json_codec.cpp:262:ClockSyncRequest decodeClockSyncRequest(const std::string& payload)
+lib/src/transport/contract_json_codec.cpp:265:    ClockSyncRequest result;
+lib/src/transport/contract_json_codec.cpp:268:    result.simulation_id = value.value("simulation_id", std::string{});
+lib/src/contracts/clock_control.h:11: * Type    : ClockControlAction
+lib/src/contracts/clock_control.h:14:enum class ClockControlAction : int {
+lib/src/contracts/clock_control.h:22: * Type    : ClockControl
+lib/src/contracts/clock_control.h:36:struct ClockControl {
+lib/src/contracts/clock_control.h:38:    std::string simulation_id;
+lib/src/contracts/clock_control.h:39:    ClockControlAction action = ClockControlAction::Pause;
+lib/src/contracts/clock_sync_request.h:10: * Type    : ClockSyncRequest
+lib/src/contracts/clock_sync_request.h:12: *           durable ClockState so a restarted follower can re-synchronize immediately.
+lib/src/contracts/clock_sync_request.h:14: * simulation_id may be empty when the follower has not learned the active simulation
+lib/src/contracts/clock_sync_request.h:18:struct ClockSyncRequest {
+lib/src/contracts/clock_sync_request.h:21:    std::string simulation_id;
+lib/src/contracts/clock_state.h:25: * Type    : ClockState
+lib/src/contracts/clock_state.h:32:struct ClockState {
+lib/src/contracts/clock_state.h:34:    std::string simulation_id;
+lib/src/runtime/runtime_mode.h:27:    throw std::invalid_argument("--runtime-mode must be live, testnet or replay");
+lib/src/runtime/service_clock.h:21:#include "runtime_mode.h"
+lib/src/runtime/service_clock.h:53: * Type    : ServiceClockContext
+lib/src/runtime/service_clock.h:57: *   - owns only SystemClock;
+lib/src/runtime/service_clock.h:58: *   - creates no ClockState consumer;
+lib/src/runtime/service_clock.h:63: *   - owns SimulatedClock;
+lib/src/runtime/service_clock.h:64: *   - follows simulation.clock.state.v1 through a service-specific durable consumer;
+lib/src/runtime/service_clock.h:69:class ServiceClockContext final {
+lib/src/runtime/service_clock.h:72:        RuntimeMode runtime_mode = RuntimeMode::Live;
+lib/src/runtime/service_clock.h:75:        std::string expected_simulation_id;
+lib/src/runtime/service_clock.h:81:    SystemClock system_clock_;
+lib/src/runtime/service_clock.h:82:    std::unique_ptr<SimulatedClock> simulated_clock_;
+lib/src/runtime/service_clock.h:83:    std::optional<ClockState> state_;
+lib/src/runtime/service_clock.h:100:        result.subject = TransportSubjects::CLOCK_STATE;
+lib/src/runtime/service_clock.h:111:        // postpone the very ClockSyncRequest needed to make the process operational.
+lib/src/runtime/service_clock.h:122:    static bool sameSemanticState(const ClockState& lhs, const ClockState& rhs)
+lib/src/runtime/service_clock.h:124:        return lhs.simulation_id == rhs.simulation_id &&
+lib/src/runtime/service_clock.h:132:    DurableMessageDisposition onClockState(const BusMessage& message)
+lib/src/runtime/service_clock.h:135:            const ClockState value = ContractJsonCodec::decodeClockState(message.payload);
+lib/src/runtime/service_clock.h:152:            if (!options_.expected_simulation_id.empty() &&
+lib/src/runtime/service_clock.h:153:                value.simulation_id != options_.expected_simulation_id) {
+lib/src/runtime/service_clock.h:155:                    "service={} event=clock_state_rejected reason=simulation_id_mismatch expected={} actual={} revision={}",
+lib/src/runtime/service_clock.h:157:                    options_.expected_simulation_id,
+lib/src/runtime/service_clock.h:158:                    value.simulation_id,
+lib/src/runtime/service_clock.h:164:            if (state_ && value.simulation_id != state_->simulation_id) {
+lib/src/runtime/service_clock.h:168:                    state_->simulation_id,
+lib/src/runtime/service_clock.h:169:                    value.simulation_id,
+lib/src/runtime/service_clock.h:177:                    "service={} event=clock_state_rejected reason=same_revision_conflict simulation_id={} revision={}",
+lib/src/runtime/service_clock.h:179:                    value.simulation_id,
+lib/src/runtime/service_clock.h:189:                    "service={} event=clock_state_stale disposition=terminate simulation_id={} incoming_revision={} current_revision={}",
+lib/src/runtime/service_clock.h:191:                    value.simulation_id,
+lib/src/runtime/service_clock.h:209:                    "service={} event=clock_synchronized simulation_id={} logical_time={} revision={} paused={}",
+lib/src/runtime/service_clock.h:211:                    value.simulation_id,
+lib/src/runtime/service_clock.h:220:                    "service={} event=clock_state_applied simulation_id={} logical_time={} revision={} paused={}",
+lib/src/runtime/service_clock.h:222:                    value.simulation_id,
+lib/src/runtime/service_clock.h:250:        ClockSyncRequest request;
+lib/src/runtime/service_clock.h:257:        request.simulation_id = state_ ? state_->simulation_id : options_.expected_simulation_id;
+lib/src/runtime/service_clock.h:261:            "service={} event=clock_sync_request_attempt expected_simulation_id={} known_revision={} message_id={}",
+lib/src/runtime/service_clock.h:263:            request.simulation_id.empty() ? "<active>" : request.simulation_id,
+lib/src/runtime/service_clock.h:275:            TransportSubjects::CLOCK_SYNC_REQUEST,
+lib/src/runtime/service_clock.h:281:            "service={} event=clock_sync_requested expected_simulation_id={} known_revision={} message_id={}",
+lib/src/runtime/service_clock.h:283:            request.simulation_id.empty() ? "<active>" : request.simulation_id,
+lib/src/runtime/service_clock.h:314:            "service={} event=clock_bootstrap_wait_started timeout_ms=120000 expected_simulation_id={}",
+lib/src/runtime/service_clock.h:316:            options_.expected_simulation_id.empty() ? "<active>" : options_.expected_simulation_id
+lib/src/runtime/service_clock.h:335:                    "Timed out waiting for authoritative REPLAY ClockState bootstrap"
+lib/src/runtime/service_clock.h:341:            "service={} event=clock_bootstrap_ready simulation_id={} logical_time={} revision={} paused={}",
+lib/src/runtime/service_clock.h:343:            state_->simulation_id,
+lib/src/runtime/service_clock.h:352:    ServiceClockContext(Options options, DurableMessageBus& bus)
+lib/src/runtime/service_clock.h:357:            throw std::invalid_argument("ServiceClockContext stream/service_id cannot be empty");
+lib/src/runtime/service_clock.h:359:        if (options_.runtime_mode != RuntimeMode::Replay)
+lib/src/runtime/service_clock.h:362:        simulated_clock_ = std::make_unique<SimulatedClock>();
+lib/src/runtime/service_clock.h:373:        // normal first ClockState is published after the subscription is installed.
+lib/src/runtime/service_clock.h:378:            [this](const BusMessage& message) { return onClockState(message); }
+lib/src/runtime/service_clock.h:384:    ~ServiceClockContext()
+lib/src/runtime/service_clock.h:390:    ServiceClockContext(const ServiceClockContext&) = delete;
+lib/src/runtime/service_clock.h:391:    ServiceClockContext& operator=(const ServiceClockContext&) = delete;
+lib/src/runtime/service_clock.h:407:    RuntimeMode runtimeMode() const { return options_.runtime_mode; }
+lib/src/runtime/service_clock.h:408:    bool replay() const { return options_.runtime_mode == RuntimeMode::Replay; }
+lib/src/runtime/service_clock.h:415:    std::optional<ClockState> state() const { return state_; }
+lib/src/runtime/clock.h:25:class SystemClock final : public Clock {
+lib/src/runtime/clock.h:36:class FixedClock final : public Clock {
+lib/src/runtime/clock.h:38:    explicit FixedClock(std::chrono::system_clock::time_point fixedTime)
+lib/src/runtime/clock.h:59:class SimulatedClock final : public Clock {
+lib/src/runtime/clock.h:66:            throw std::invalid_argument("SimulatedClock revision must be positive");
+lib/src/runtime/clock.h:78:            throw std::invalid_argument("SimulatedClock revision cannot move backwards");
+lib/src/runtime/clock.h:82:                throw std::invalid_argument("SimulatedClock same revision has conflicting time");
+lib/src/runtime/clock.h:87:            throw std::invalid_argument("SimulatedClock logical time cannot move backwards");
+lib/src/runtime/clock.h:97:            throw std::logic_error("SimulatedClock has not received logical time yet");
+
+[C] TIME/DATE HELPERS THAT MAY HIDE HOST NOW()
+live_trading/order_planner_service/src/order_planner_service_main.cpp:42:Timestamp newestCompletedUtcDate()
+live_trading/order_planner_service/src/order_planner_service_main.cpp:44:    const auto todayUtc = getCurrentUtcDate(std::chrono::system_clock::now());
+live_trading/order_planner_service/src/order_planner_service_main.cpp:382:            const Timestamp newestCompleted = newestCompletedUtcDate();
+live_trading/order_planner_service/src/order_planner_service_main.cpp:537:            const Timestamp target = newestCompletedUtcDate();
+live_trading/order_planner_service/src/order_planner_service_main.cpp:548:                    computeNextMidnightUTC(std::chrono::system_clock::now()));
+live_trading/strategy_service/src/strategy_service_main.cpp:137:Timestamp newestCompletedUtcDate()
+live_trading/strategy_service/src/strategy_service_main.cpp:139:    const auto todayUtc = getCurrentUtcDate(std::chrono::system_clock::now());
+live_trading/strategy_service/src/strategy_service_main.cpp:632:            const Timestamp newestCompleted = newestCompletedUtcDate();
+live_trading/strategy_service/src/strategy_service_main.cpp:872:            const Timestamp newestCompleted = newestCompletedUtcDate();
+live_trading/strategy_service/src/strategy_service_main.cpp:888:                    computeNextMidnightUTC(std::chrono::system_clock::now())
+live_trading/execution_state_service/src/execution_state_service_main.cpp:59:Timestamp newestCompletedUtcDate()
+live_trading/execution_state_service/src/execution_state_service_main.cpp:507:        const Timestamp newestCompleted = newestCompletedUtcDate();
+live_trading/execution_state_service/src/execution_state_service_main.cpp:635:            const Timestamp newestCompleted = newestCompletedUtcDate();
+live_trading/execution_state_service/src/execution_state_service_main.cpp:681:            const Timestamp newestCompleted = newestCompletedUtcDate();
+live_trading/execution_state_service/src/execution_state_service_main.cpp:947:            // gated by newestCompletedUtcDate() inside their handlers.
+live_trading/market_data_service/src/market_data_service_main.cpp:67:    return computeNextMidnightUTC(now) + std::chrono::seconds(delaySeconds);
+live_trading/market_data_service/src/market_data_service_main.cpp:135:        auto targetDate = getPreviousDayDate(getCurrentUtcDate(std::chrono::system_clock::now()));
+live_trading/market_data_service/src/market_data_service_main.cpp:161:                getCurrentUtcDate(std::chrono::system_clock::now()));
+live_trading/market_data_service/src/market_data_service_main.cpp:178:            targetDate = getPreviousDayDate(getCurrentUtcDate(std::chrono::system_clock::now()));
+live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp:120:Timestamp newestCompletedUtcDate()
+live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp:122:    const auto todayUtc = getCurrentUtcDate(std::chrono::system_clock::now());
+live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp:569:            const Timestamp newestCompleted = newestCompletedUtcDate();
+live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp:644:            const Timestamp newestCompleted = newestCompletedUtcDate();
+live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp:836:            const Timestamp newestCompleted = newestCompletedUtcDate();
+live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp:846:                interruptibleWaitUntilUtc(computeNextMidnightUTC(std::chrono::system_clock::now()));
+lib/src/utils/time_utils.h:18:std::string nowString();
+lib/src/utils/time_utils.h:25:std::string currentUtcTimestamp();
+lib/src/utils/time_utils.h:26:std::string currentUtcTimestamp(std::chrono::system_clock::time_point now);
+lib/src/utils/time_utils.h:33:std::string timeUntilUtcMidnight();
+lib/src/utils/time_utils.h:34:std::string timeUntilUtcMidnight(std::chrono::system_clock::time_point now);
+lib/src/utils/time_utils.h:41:std::chrono::year_month_day getCurrentUtcDate();
+lib/src/utils/time_utils.h:42:std::chrono::year_month_day getCurrentUtcDate(std::chrono::system_clock::time_point now);
+lib/src/utils/time_utils.h:63:std::chrono::system_clock::time_point computeNextMidnightUTC();
+lib/src/utils/time_utils.h:64:std::chrono::system_clock::time_point computeNextMidnightUTC(std::chrono::system_clock::time_point now);
+lib/src/utils/time_utils.cpp:8:std::string nowString() {
+lib/src/utils/time_utils.cpp:26:std::string currentUtcTimestamp()
+lib/src/utils/time_utils.cpp:28:    return currentUtcTimestamp(std::chrono::system_clock::now());
+lib/src/utils/time_utils.cpp:31:std::string currentUtcTimestamp(std::chrono::system_clock::time_point now)
+lib/src/utils/time_utils.cpp:49:std::string timeUntilUtcMidnight()
+lib/src/utils/time_utils.cpp:51:    return timeUntilUtcMidnight(std::chrono::system_clock::now());
+lib/src/utils/time_utils.cpp:54:std::string timeUntilUtcMidnight(std::chrono::system_clock::time_point now)
+lib/src/utils/time_utils.cpp:79:std::chrono::year_month_day getCurrentUtcDate()
+lib/src/utils/time_utils.cpp:81:    return getCurrentUtcDate(std::chrono::system_clock::now());
+lib/src/utils/time_utils.cpp:84:std::chrono::year_month_day getCurrentUtcDate(std::chrono::system_clock::time_point now)
+lib/src/utils/time_utils.cpp:134:std::chrono::system_clock::time_point computeNextMidnightUTC() {
+lib/src/utils/time_utils.cpp:135:    return computeNextMidnightUTC(std::chrono::system_clock::now());
+lib/src/utils/time_utils.cpp:138:std::chrono::system_clock::time_point computeNextMidnightUTC(std::chrono::system_clock::time_point now) {
+
+[D] LEGACY CLOCK FILES PRESENT
+FOUND  lib/src/runtime/clock.h
+FOUND  lib/src/runtime/service_clock.h
+FOUND  lib/src/runtime/runtime_mode.h
+FOUND  lib/src/contracts/clock_state.h
+FOUND  lib/src/contracts/clock_control.h
+FOUND  lib/src/contracts/clock_sync_request.h
+FOUND  live_trading/replay_controller/src/replay_controller_main.cpp
+
+Audit complete. This script intentionally does not modify the repository.

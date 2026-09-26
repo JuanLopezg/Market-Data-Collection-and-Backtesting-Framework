@@ -1,0 +1,912 @@
+{
+  "capacity_armed_at": 20200425,
+  "capacity_check": true,
+  "capacity_max_lag_days_allowed": 2,
+  "capacity_max_lag_days_observed": 1,
+  "capacity_min_samples_required": 6,
+  "capacity_min_span_days_required": 10,
+  "capacity_observation_start": 20200420,
+  "capacity_ok": true,
+  "capacity_samples": [
+    {
+      "canonical": 20200425,
+      "lag_days": 0,
+      "pipeline_latest": 20200425,
+      "raw_lag_days": 0
+    },
+    {
+      "canonical": 20200426,
+      "lag_days": 0,
+      "pipeline_latest": 20200426,
+      "raw_lag_days": 0
+    },
+    {
+      "canonical": 20200427,
+      "lag_days": 1,
+      "pipeline_latest": 20200426,
+      "raw_lag_days": 1
+    },
+    {
+      "canonical": 20200427,
+      "lag_days": 0,
+      "pipeline_latest": 20200427,
+      "raw_lag_days": 0
+    },
+    {
+      "canonical": 20200428,
+      "lag_days": 0,
+      "pipeline_latest": 20200428,
+      "raw_lag_days": 0
+    },
+    {
+      "canonical": 20200429,
+      "lag_days": 1,
+      "pipeline_latest": 20200428,
+      "raw_lag_days": 1
+    },
+    {
+      "canonical": 20200430,
+      "lag_days": 1,
+      "pipeline_latest": 20200429,
+      "raw_lag_days": 1
+    },
+    {
+      "canonical": 20200430,
+      "lag_days": 0,
+      "pipeline_latest": 20200430,
+      "raw_lag_days": 0
+    },
+    {
+      "canonical": 20200501,
+      "lag_days": 0,
+      "pipeline_latest": 20200501,
+      "raw_lag_days": 0
+    },
+    {
+      "canonical": 20200502,
+      "lag_days": 1,
+      "pipeline_latest": 20200501,
+      "raw_lag_days": 1
+    },
+    {
+      "canonical": 20200502,
+      "lag_days": 0,
+      "pipeline_latest": 20200502,
+      "raw_lag_days": 0
+    },
+    {
+      "canonical": 20200503,
+      "lag_days": 0,
+      "pipeline_latest": 20200503,
+      "raw_lag_days": 0
+    },
+    {
+      "canonical": 20200504,
+      "lag_days": 0,
+      "pipeline_latest": 20200504,
+      "raw_lag_days": 0
+    },
+    {
+      "canonical": 20200505,
+      "lag_days": 1,
+      "pipeline_latest": 20200504,
+      "raw_lag_days": 1
+    },
+    {
+      "canonical": 20200505,
+      "lag_days": 0,
+      "pipeline_latest": 20200505,
+      "raw_lag_days": 0
+    },
+    {
+      "canonical": 20200506,
+      "lag_days": 0,
+      "pipeline_latest": 20200506,
+      "raw_lag_days": 0
+    },
+    {
+      "canonical": 20200507,
+      "lag_days": 0,
+      "pipeline_latest": 20200507,
+      "raw_lag_days": 0
+    },
+    {
+      "canonical": 20200508,
+      "lag_days": 1,
+      "pipeline_latest": 20200507,
+      "raw_lag_days": 1
+    },
+    {
+      "canonical": 20200509,
+      "lag_days": 1,
+      "pipeline_latest": 20200508,
+      "raw_lag_days": 1
+    },
+    {
+      "canonical": 20200509,
+      "lag_days": 0,
+      "pipeline_latest": 20200509,
+      "raw_lag_days": 0
+    },
+    {
+      "canonical": 20200510,
+      "lag_days": 1,
+      "pipeline_latest": 20200509,
+      "raw_lag_days": 1
+    },
+    {
+      "canonical": 20200511,
+      "lag_days": 1,
+      "pipeline_latest": 20200510,
+      "raw_lag_days": 1
+    },
+    {
+      "canonical": 20200512,
+      "lag_days": 1,
+      "pipeline_latest": 20200511,
+      "raw_lag_days": 1
+    },
+    {
+      "canonical": 20200512,
+      "lag_days": 0,
+      "pipeline_latest": 20200512,
+      "raw_lag_days": 0
+    },
+    {
+      "canonical": 20200513,
+      "lag_days": 0,
+      "pipeline_latest": 20200513,
+      "raw_lag_days": 0
+    }
+  ],
+  "capacity_span_days_observed": 18,
+  "cash": 97991.02370779582,
+  "critical_log_lines": [],
+  "execution_last_decision": 20200513,
+  "execution_last_execution": 20200514,
+  "expected_clock_wall_seconds": 263.52,
+  "expected_fingerprint_sha256": null,
+  "fault_profile": "none",
+  "fault_state": {},
+  "fills": 24,
+  "fingerprint": {
+    "cash": 97991.0237078,
+    "fills": [
+      {
+        "coin": "XLM",
+        "commission": 0.0,
+        "fill_id": 1,
+        "order_id": 1,
+        "price": 0.062009,
+        "quantity": 160893.279488,
+        "side": 0,
+        "strategy_id": 1,
+        "timestamp": 20200426
+      },
+      {
+        "coin": "XTZ",
+        "commission": 0.0,
+        "fill_id": 2,
+        "order_id": 2,
+        "price": 2.868188,
+        "quantity": 3486.70171964,
+        "side": 0,
+        "strategy_id": 1,
+        "timestamp": 20200426
+      },
+      {
+        "coin": "DOGE",
+        "commission": 0.0,
+        "fill_id": 3,
+        "order_id": 3,
+        "price": 0.00241,
+        "quantity": 4139479.31112,
+        "side": 0,
+        "strategy_id": 1,
+        "timestamp": 20200427
+      },
+      {
+        "coin": "TRX",
+        "commission": 0.0,
+        "fill_id": 4,
+        "order_id": 4,
+        "price": 0.015389,
+        "quantity": 652410.903198,
+        "side": 0,
+        "strategy_id": 1,
+        "timestamp": 20200429
+      },
+      {
+        "coin": "XRP",
+        "commission": 0.0,
+        "fill_id": 5,
+        "order_id": 5,
+        "price": 0.215562,
+        "quantity": 46610.7268045,
+        "side": 0,
+        "strategy_id": 1,
+        "timestamp": 20200429
+      },
+      {
+        "coin": "BTC",
+        "commission": 0.0,
+        "fill_id": 6,
+        "order_id": 6,
+        "price": 8797.67005,
+        "quantity": 1.17653953024,
+        "side": 0,
+        "strategy_id": 1,
+        "timestamp": 20200430
+      },
+      {
+        "coin": "EOS",
+        "commission": 0.0,
+        "fill_id": 7,
+        "order_id": 7,
+        "price": 3.017634,
+        "quantity": 3431.16275771,
+        "side": 0,
+        "strategy_id": 1,
+        "timestamp": 20200430
+      },
+      {
+        "coin": "ETH",
+        "commission": 0.0,
+        "fill_id": 8,
+        "order_id": 8,
+        "price": 216.909134,
+        "quantity": 47.7248172524,
+        "side": 0,
+        "strategy_id": 1,
+        "timestamp": 20200430
+      },
+      {
+        "coin": "HT",
+        "commission": 0.0,
+        "fill_id": 9,
+        "order_id": 9,
+        "price": 4.316245,
+        "quantity": 2397.65153183,
+        "side": 0,
+        "strategy_id": 1,
+        "timestamp": 20200430
+      },
+      {
+        "coin": "LTC",
+        "commission": 0.0,
+        "fill_id": 10,
+        "order_id": 10,
+        "price": 49.147854,
+        "quantity": 210.542796121,
+        "side": 0,
+        "strategy_id": 1,
+        "timestamp": 20200430
+      },
+      {
+        "coin": "EOS",
+        "commission": 0.0,
+        "fill_id": 11,
+        "order_id": 11,
+        "price": 2.834251,
+        "quantity": 3431.16275771,
+        "side": 1,
+        "strategy_id": 1,
+        "timestamp": 20200501
+      },
+      {
+        "coin": "ETH",
+        "commission": 0.0,
+        "fill_id": 12,
+        "order_id": 12,
+        "price": 207.901731,
+        "quantity": 47.7248172524,
+        "side": 1,
+        "strategy_id": 1,
+        "timestamp": 20200501
+      },
+      {
+        "coin": "HT",
+        "commission": 0.0,
+        "fill_id": 13,
+        "order_id": 13,
+        "price": 4.209035,
+        "quantity": 2397.65153183,
+        "side": 1,
+        "strategy_id": 1,
+        "timestamp": 20200501
+      },
+      {
+        "coin": "LTC",
+        "commission": 0.0,
+        "fill_id": 14,
+        "order_id": 14,
+        "price": 46.714263,
+        "quantity": 210.542796121,
+        "side": 1,
+        "strategy_id": 1,
+        "timestamp": 20200501
+      },
+      {
+        "coin": "TRX",
+        "commission": 0.0,
+        "fill_id": 15,
+        "order_id": 15,
+        "price": 0.015276,
+        "quantity": 652410.903198,
+        "side": 1,
+        "strategy_id": 1,
+        "timestamp": 20200501
+      },
+      {
+        "coin": "XLM",
+        "commission": 0.0,
+        "fill_id": 16,
+        "order_id": 16,
+        "price": 0.067782,
+        "quantity": 160893.279488,
+        "side": 1,
+        "strategy_id": 1,
+        "timestamp": 20200501
+      },
+      {
+        "coin": "XRP",
+        "commission": 0.0,
+        "fill_id": 17,
+        "order_id": 17,
+        "price": 0.212858,
+        "quantity": 46610.7268045,
+        "side": 1,
+        "strategy_id": 1,
+        "timestamp": 20200501
+      },
+      {
+        "coin": "XTZ",
+        "commission": 0.0,
+        "fill_id": 18,
+        "order_id": 18,
+        "price": 2.760988,
+        "quantity": 3486.70171964,
+        "side": 1,
+        "strategy_id": 1,
+        "timestamp": 20200501
+      },
+      {
+        "coin": "ETC",
+        "commission": 0.0,
+        "fill_id": 19,
+        "order_id": 19,
+        "price": 7.479534,
+        "quantity": 1328.38202436,
+        "side": 0,
+        "strategy_id": 1,
+        "timestamp": 20200503
+      },
+      {
+        "coin": "DOGE",
+        "commission": 0.0,
+        "fill_id": 20,
+        "order_id": 20,
+        "price": 0.002481,
+        "quantity": 4139479.31112,
+        "side": 1,
+        "strategy_id": 1,
+        "timestamp": 20200505
+      },
+      {
+        "coin": "ETC",
+        "commission": 0.0,
+        "fill_id": 21,
+        "order_id": 21,
+        "price": 6.983987,
+        "quantity": 1328.38202436,
+        "side": 1,
+        "strategy_id": 1,
+        "timestamp": 20200507
+      },
+      {
+        "coin": "NEO",
+        "commission": 0.0,
+        "fill_id": 22,
+        "order_id": 22,
+        "price": 9.901803,
+        "quantity": 1005.70143297,
+        "side": 0,
+        "strategy_id": 1,
+        "timestamp": 20200508
+      },
+      {
+        "coin": "BTC",
+        "commission": 0.0,
+        "fill_id": 23,
+        "order_id": 23,
+        "price": 8755.535639,
+        "quantity": 1.17653953024,
+        "side": 1,
+        "strategy_id": 1,
+        "timestamp": 20200511
+      },
+      {
+        "coin": "NEO",
+        "commission": 0.0,
+        "fill_id": 24,
+        "order_id": 24,
+        "price": 9.780679,
+        "quantity": 1005.70143297,
+        "side": 1,
+        "strategy_id": 1,
+        "timestamp": 20200511
+      }
+    ],
+    "horizon": {
+      "target_completed": 20200510,
+      "target_execution_day": 20200511
+    },
+    "plans": [
+      {
+        "cancel_order_ids": [],
+        "submit_orders": [
+          {
+            "coin": "XLM",
+            "created_at": 20200425,
+            "current_notional_usd": 0.0,
+            "decision_timestamp": 20200425,
+            "delta_notional_usd": 10000.0,
+            "economic_order_id": "planned-notional-order:20200425:9842758960429053956:1",
+            "notional_usd": 10000.0,
+            "order_id": 1,
+            "pending_notional_usd": 0.0,
+            "reference_close": 0.062153,
+            "side": 0,
+            "state_revision": 9842758960429053956,
+            "strategy_id": 1,
+            "target_notional_usd": 10000.0
+          },
+          {
+            "coin": "XTZ",
+            "created_at": 20200425,
+            "current_notional_usd": 0.0,
+            "decision_timestamp": 20200425,
+            "delta_notional_usd": 10000.0,
+            "economic_order_id": "planned-notional-order:20200425:9842758960429053956:2",
+            "notional_usd": 10000.0,
+            "order_id": 2,
+            "pending_notional_usd": 0.0,
+            "reference_close": 2.86804,
+            "side": 0,
+            "state_revision": 9842758960429053956,
+            "strategy_id": 1,
+            "target_notional_usd": 10000.0
+          }
+        ],
+        "timestamp": 20200425
+      },
+      {
+        "cancel_order_ids": [],
+        "submit_orders": [
+          {
+            "coin": "DOGE",
+            "created_at": 20200426,
+            "current_notional_usd": 0.0,
+            "decision_timestamp": 20200426,
+            "delta_notional_usd": 9972.0056605,
+            "economic_order_id": "planned-notional-order:20200426:17648026516807272539:3",
+            "notional_usd": 9972.0056605,
+            "order_id": 3,
+            "pending_notional_usd": 0.0,
+            "reference_close": 0.002409,
+            "side": 0,
+            "state_revision": 17648026516807272539,
+            "strategy_id": 1,
+            "target_notional_usd": 9972.0056605
+          }
+        ],
+        "timestamp": 20200426
+      },
+      {
+        "cancel_order_ids": [],
+        "submit_orders": [
+          {
+            "coin": "TRX",
+            "created_at": 20200428,
+            "current_notional_usd": 0.0,
+            "decision_timestamp": 20200428,
+            "delta_notional_usd": 10043.8658547,
+            "economic_order_id": "planned-notional-order:20200428:15078811461947537227:4",
+            "notional_usd": 10043.8658547,
+            "order_id": 4,
+            "pending_notional_usd": 0.0,
+            "reference_close": 0.015395,
+            "side": 0,
+            "state_revision": 15078811461947537227,
+            "strategy_id": 1,
+            "target_notional_usd": 10043.8658547
+          },
+          {
+            "coin": "XRP",
+            "created_at": 20200428,
+            "current_notional_usd": 0.0,
+            "decision_timestamp": 20200428,
+            "delta_notional_usd": 10043.8658547,
+            "economic_order_id": "planned-notional-order:20200428:15078811461947537227:5",
+            "notional_usd": 10043.8658547,
+            "order_id": 5,
+            "pending_notional_usd": 0.0,
+            "reference_close": 0.215484,
+            "side": 0,
+            "state_revision": 15078811461947537227,
+            "strategy_id": 1,
+            "target_notional_usd": 10043.8658547
+          }
+        ],
+        "timestamp": 20200428
+      },
+      {
+        "cancel_order_ids": [],
+        "submit_orders": [
+          {
+            "coin": "BTC",
+            "created_at": 20200429,
+            "current_notional_usd": 0.0,
+            "decision_timestamp": 20200429,
+            "delta_notional_usd": 10354.76884,
+            "economic_order_id": "planned-notional-order:20200429:7900304723918899508:6",
+            "notional_usd": 10354.76884,
+            "order_id": 6,
+            "pending_notional_usd": 0.0,
+            "reference_close": 8801.037767,
+            "side": 0,
+            "state_revision": 7900304723918899508,
+            "strategy_id": 1,
+            "target_notional_usd": 10354.76884
+          },
+          {
+            "coin": "EOS",
+            "created_at": 20200429,
+            "current_notional_usd": 0.0,
+            "decision_timestamp": 20200429,
+            "delta_notional_usd": 10354.76884,
+            "economic_order_id": "planned-notional-order:20200429:7900304723918899508:7",
+            "notional_usd": 10354.76884,
+            "order_id": 7,
+            "pending_notional_usd": 0.0,
+            "reference_close": 3.01786,
+            "side": 0,
+            "state_revision": 7900304723918899508,
+            "strategy_id": 1,
+            "target_notional_usd": 10354.76884
+          },
+          {
+            "coin": "ETH",
+            "created_at": 20200429,
+            "current_notional_usd": 0.0,
+            "decision_timestamp": 20200429,
+            "delta_notional_usd": 10354.76884,
+            "economic_order_id": "planned-notional-order:20200429:7900304723918899508:8",
+            "notional_usd": 10354.76884,
+            "order_id": 8,
+            "pending_notional_usd": 0.0,
+            "reference_close": 216.968224,
+            "side": 0,
+            "state_revision": 7900304723918899508,
+            "strategy_id": 1,
+            "target_notional_usd": 10354.76884
+          },
+          {
+            "coin": "HT",
+            "created_at": 20200429,
+            "current_notional_usd": 0.0,
+            "decision_timestamp": 20200429,
+            "delta_notional_usd": 10354.76884,
+            "economic_order_id": "planned-notional-order:20200429:7900304723918899508:9",
+            "notional_usd": 10354.76884,
+            "order_id": 9,
+            "pending_notional_usd": 0.0,
+            "reference_close": 4.318713,
+            "side": 0,
+            "state_revision": 7900304723918899508,
+            "strategy_id": 1,
+            "target_notional_usd": 10354.76884
+          },
+          {
+            "coin": "LTC",
+            "created_at": 20200429,
+            "current_notional_usd": 0.0,
+            "decision_timestamp": 20200429,
+            "delta_notional_usd": 10354.76884,
+            "economic_order_id": "planned-notional-order:20200429:7900304723918899508:10",
+            "notional_usd": 10354.76884,
+            "order_id": 10,
+            "pending_notional_usd": 0.0,
+            "reference_close": 49.181302,
+            "side": 0,
+            "state_revision": 7900304723918899508,
+            "strategy_id": 1,
+            "target_notional_usd": 10354.76884
+          }
+        ],
+        "timestamp": 20200429
+      },
+      {
+        "cancel_order_ids": [],
+        "submit_orders": [
+          {
+            "coin": "EOS",
+            "created_at": 20200430,
+            "current_notional_usd": 9721.76734745,
+            "decision_timestamp": 20200430,
+            "delta_notional_usd": -9721.76734745,
+            "economic_order_id": "planned-notional-order:20200430:5234913692477325341:11",
+            "notional_usd": 9721.76734745,
+            "order_id": 11,
+            "pending_notional_usd": 0.0,
+            "reference_close": 2.833374,
+            "side": 1,
+            "state_revision": 5234913692477325341,
+            "strategy_id": 1,
+            "target_notional_usd": 0.0
+          },
+          {
+            "coin": "ETH",
+            "created_at": 20200430,
+            "current_notional_usd": 9907.77018382,
+            "decision_timestamp": 20200430,
+            "delta_notional_usd": -9907.77018382,
+            "economic_order_id": "planned-notional-order:20200430:5234913692477325341:12",
+            "notional_usd": 9907.77018382,
+            "order_id": 12,
+            "pending_notional_usd": 0.0,
+            "reference_close": 207.602056,
+            "side": 1,
+            "state_revision": 5234913692477325341,
+            "strategy_id": 1,
+            "target_notional_usd": 0.0
+          },
+          {
+            "coin": "HT",
+            "created_at": 20200430,
+            "current_notional_usd": 10091.7992153,
+            "decision_timestamp": 20200430,
+            "delta_notional_usd": -10091.7992153,
+            "economic_order_id": "planned-notional-order:20200430:5234913692477325341:13",
+            "notional_usd": 10091.7992153,
+            "order_id": 13,
+            "pending_notional_usd": 0.0,
+            "reference_close": 4.209035,
+            "side": 1,
+            "state_revision": 5234913692477325341,
+            "strategy_id": 1,
+            "target_notional_usd": 0.0
+          },
+          {
+            "coin": "LTC",
+            "created_at": 20200430,
+            "current_notional_usd": 9835.30038887,
+            "decision_timestamp": 20200430,
+            "delta_notional_usd": -9835.30038887,
+            "economic_order_id": "planned-notional-order:20200430:5234913692477325341:14",
+            "notional_usd": 9835.30038887,
+            "order_id": 14,
+            "pending_notional_usd": 0.0,
+            "reference_close": 46.71402,
+            "side": 1,
+            "state_revision": 5234913692477325341,
+            "strategy_id": 1,
+            "target_notional_usd": 0.0
+          },
+          {
+            "coin": "TRX",
+            "created_at": 20200430,
+            "current_notional_usd": 9967.53377906,
+            "decision_timestamp": 20200430,
+            "delta_notional_usd": -9967.53377906,
+            "economic_order_id": "planned-notional-order:20200430:5234913692477325341:15",
+            "notional_usd": 9967.53377906,
+            "order_id": 15,
+            "pending_notional_usd": 0.0,
+            "reference_close": 0.015278,
+            "side": 1,
+            "state_revision": 5234913692477325341,
+            "strategy_id": 1,
+            "target_notional_usd": 0.0
+          },
+          {
+            "coin": "XLM",
+            "created_at": 20200430,
+            "current_notional_usd": 10891.9923415,
+            "decision_timestamp": 20200430,
+            "delta_notional_usd": -10891.9923415,
+            "economic_order_id": "planned-notional-order:20200430:5234913692477325341:16",
+            "notional_usd": 10891.9923415,
+            "order_id": 16,
+            "pending_notional_usd": 0.0,
+            "reference_close": 0.067697,
+            "side": 1,
+            "state_revision": 5234913692477325341,
+            "strategy_id": 1,
+            "target_notional_usd": 0.0
+          },
+          {
+            "coin": "XRP",
+            "created_at": 20200430,
+            "current_notional_usd": 9916.94484565,
+            "decision_timestamp": 20200430,
+            "delta_notional_usd": -9916.94484565,
+            "economic_order_id": "planned-notional-order:20200430:5234913692477325341:17",
+            "notional_usd": 9916.94484565,
+            "order_id": 17,
+            "pending_notional_usd": 0.0,
+            "reference_close": 0.212761,
+            "side": 1,
+            "state_revision": 5234913692477325341,
+            "strategy_id": 1,
+            "target_notional_usd": 0.0
+          },
+          {
+            "coin": "XTZ",
+            "created_at": 20200430,
+            "current_notional_usd": 9626.74160751,
+            "decision_timestamp": 20200430,
+            "delta_notional_usd": -9626.74160751,
+            "economic_order_id": "planned-notional-order:20200430:5234913692477325341:18",
+            "notional_usd": 9626.74160751,
+            "order_id": 18,
+            "pending_notional_usd": 0.0,
+            "reference_close": 2.760988,
+            "side": 1,
+            "state_revision": 5234913692477325341,
+            "strategy_id": 1,
+            "target_notional_usd": 0.0
+          }
+        ],
+        "timestamp": 20200430
+      },
+      {
+        "cancel_order_ids": [],
+        "submit_orders": [
+          {
+            "coin": "ETC",
+            "created_at": 20200502,
+            "current_notional_usd": 0.0,
+            "decision_timestamp": 20200502,
+            "delta_notional_usd": 9932.68035795,
+            "economic_order_id": "planned-notional-order:20200502:4316346296380177596:19",
+            "notional_usd": 9932.68035795,
+            "order_id": 19,
+            "pending_notional_usd": 0.0,
+            "reference_close": 7.477277,
+            "side": 0,
+            "state_revision": 4316346296380177596,
+            "strategy_id": 1,
+            "target_notional_usd": 9932.68035795
+          }
+        ],
+        "timestamp": 20200502
+      },
+      {
+        "cancel_order_ids": [],
+        "submit_orders": [
+          {
+            "coin": "DOGE",
+            "created_at": 20200504,
+            "current_notional_usd": 10270.0481709,
+            "decision_timestamp": 20200504,
+            "delta_notional_usd": -10270.0481709,
+            "economic_order_id": "planned-notional-order:20200504:14764427361373119390:20",
+            "notional_usd": 10270.0481709,
+            "order_id": 20,
+            "pending_notional_usd": 0.0,
+            "reference_close": 0.002481,
+            "side": 1,
+            "state_revision": 14764427361373119390,
+            "strategy_id": 1,
+            "target_notional_usd": 0.0
+          }
+        ],
+        "timestamp": 20200504
+      },
+      {
+        "cancel_order_ids": [],
+        "submit_orders": [
+          {
+            "coin": "ETC",
+            "created_at": 20200506,
+            "current_notional_usd": 9231.14852707,
+            "decision_timestamp": 20200506,
+            "delta_notional_usd": -9231.14852707,
+            "economic_order_id": "planned-notional-order:20200506:12437606797773389972:21",
+            "notional_usd": 9231.14852707,
+            "order_id": 21,
+            "pending_notional_usd": 0.0,
+            "reference_close": 6.949167,
+            "side": 1,
+            "state_revision": 12437606797773389972,
+            "strategy_id": 1,
+            "target_notional_usd": 0.0
+          }
+        ],
+        "timestamp": 20200506
+      },
+      {
+        "cancel_order_ids": [],
+        "submit_orders": [
+          {
+            "coin": "NEO",
+            "created_at": 20200507,
+            "current_notional_usd": 0.0,
+            "decision_timestamp": 20200507,
+            "delta_notional_usd": 9951.99596899,
+            "economic_order_id": "planned-notional-order:20200507:7500673027133115213:22",
+            "notional_usd": 9951.99596899,
+            "order_id": 22,
+            "pending_notional_usd": 0.0,
+            "reference_close": 9.895577,
+            "side": 0,
+            "state_revision": 7500673027133115213,
+            "strategy_id": 1,
+            "target_notional_usd": 9951.99596899
+          }
+        ],
+        "timestamp": 20200507
+      },
+      {
+        "cancel_order_ids": [],
+        "submit_orders": [
+          {
+            "coin": "BTC",
+            "created_at": 20200510,
+            "current_notional_usd": 10302.2873824,
+            "decision_timestamp": 20200510,
+            "delta_notional_usd": -10302.2873824,
+            "economic_order_id": "planned-notional-order:20200510:5066420513712004144:23",
+            "notional_usd": 10302.2873824,
+            "order_id": 23,
+            "pending_notional_usd": 0.0,
+            "reference_close": 8756.431142,
+            "side": 1,
+            "state_revision": 5066420513712004144,
+            "strategy_id": 1,
+            "target_notional_usd": 0.0
+          },
+          {
+            "coin": "NEO",
+            "created_at": 20200510,
+            "current_notional_usd": 9831.27056327,
+            "decision_timestamp": 20200510,
+            "delta_notional_usd": -9831.27056327,
+            "economic_order_id": "planned-notional-order:20200510:5066420513712004144:24",
+            "notional_usd": 9831.27056327,
+            "order_id": 24,
+            "pending_notional_usd": 0.0,
+            "reference_close": 9.775536,
+            "side": 1,
+            "state_revision": 5066420513712004144,
+            "strategy_id": 1,
+            "target_notional_usd": 0.0
+          }
+        ],
+        "timestamp": 20200510
+      }
+    ],
+    "positions": {}
+  },
+  "fingerprint_match": true,
+  "fingerprint_sha256": "308e78dd5e789a895b9f41d052c2c4addc8ff0ca9f06970a76948f9e06cfc814",
+  "full_baseline": null,
+  "gap_catchup_observed": true,
+  "label": "t19a_capacity_10000",
+  "planner_days": 19,
+  "planner_latest": 20200513,
+  "positions": {},
+  "result": "PASS",
+  "risk_days": 21,
+  "risk_latest": 20200514,
+  "sim_exchange_latest": 20200515,
+  "simulated_start": "2020-04-10T12:00:00Z",
+  "speed": 10000.0,
+  "strategy_days": 21,
+  "strategy_latest": 20200514,
+  "target_completed": 20200510,
+  "target_execution_day": 20200511,
+  "tracked_orders": 24,
+  "wall_seconds": 287.403
+}

@@ -1,0 +1,12 @@
+Control Dashboard Step 33.1 validation
+======================================
+
+Scope: acceptance-script robustness only. Runtime/API semantics from Step 33 are unchanged.
+
+Expected behavior:
+- Step 32 PASS/WARN safeToProceed=true -> continue immediately.
+- Sole blocker = canonical market-data diagnostics unavailable -> retry boundedly.
+- Any other blocker -> fail closed immediately.
+- Persistent market-data failure -> fail closed and print source-status + market-data diagnostics.
+
+No exchange secrets, private auth, signing, submit/cancel or capital movement are introduced.

@@ -9,10 +9,8 @@
  * them as subjects while tests/in-process adapters use the exact same contract names.
  **************************************************************************************/
 namespace TransportSubjects {
-inline constexpr const char* CLOCK_STATE = "simulation.clock.state.v1";
-inline constexpr const char* CLOCK_CONTROL = "simulation.clock.control.v1";
-inline constexpr const char* CLOCK_SYNC_REQUEST = "simulation.clock.sync.request.v1";
 inline constexpr const char* MARKET_DATA_RELEASE = "market.release.v1";
+inline constexpr const char* MARKET_DATA_UPDATED = "market.data.updated.v1";
 inline constexpr const char* MARKET_SLICE_CLOSED = "market.slice.closed.v1";
 inline constexpr const char* MARKET_SLICE_SNAPSHOT = "market.slice.snapshot.v1";
 inline constexpr const char* STRATEGY_INTENTS = "strategy.intents.v1";
@@ -29,6 +27,8 @@ inline constexpr const char* EXCHANGE_SNAPSHOT = "execution.exchange.snapshot.v1
 inline constexpr const char* EXCHANGE_SNAPSHOT_REQUEST = "execution.exchange.snapshot.request.v1";
 inline constexpr const char* ORDER_PLANNING_REQUEST = "execution.plan.request.v1";
 inline constexpr const char* ORDER_PLAN = "execution.plan.v1";
+inline constexpr const char* NOTIONAL_ORDER_PLANNING_REQUEST = "execution.plan.notional.request.v1";
+inline constexpr const char* NOTIONAL_ORDER_PLAN = "execution.plan.notional.v1";
 
 // Private southbound gateway subjects used by the replay/test exchange backend.
 inline constexpr const char* BACKEND_SUBMIT_ORDER = "gateway.backend.command.submit.v1";
@@ -43,6 +43,7 @@ inline std::vector<std::string> tradingRuntimeSubjects()
 {
     return {
         MARKET_DATA_RELEASE,
+        MARKET_DATA_UPDATED,
         MARKET_SLICE_CLOSED,
         MARKET_SLICE_SNAPSHOT,
         STRATEGY_INTENTS,
@@ -56,21 +57,18 @@ inline std::vector<std::string> tradingRuntimeSubjects()
         EXECUTION_CYCLE_COMPLETE,
         EXCHANGE_SNAPSHOT,
         ORDER_PLANNING_REQUEST,
-        ORDER_PLAN
+        ORDER_PLAN,
+        NOTIONAL_ORDER_PLANNING_REQUEST,
+        NOTIONAL_ORDER_PLAN
     };
 }
 
-// REPLAY adds logical-clock transport to the normal trading subjects. LIVE/TESTNET
-// services deliberately call tradingRuntimeSubjects() so fake-clock subjects are not
-// required or installed as part of their bootstrap path.
+// Compatibility alias for non-clock services. Runtime subjects are purely
+// trading subjects; temporal authority is local TimeHandler configuration.
 inline std::vector<std::string> runtimeSubjects()
 {
-    std::vector<std::string> result{CLOCK_STATE, CLOCK_SYNC_REQUEST, CLOCK_CONTROL};
-    const auto trading = tradingRuntimeSubjects();
-    result.insert(result.end(), trading.begin(), trading.end());
-    return result;
+    return tradingRuntimeSubjects();
 }
-
 inline std::vector<std::string> exchangeGatewayControlSubjects()
 {
     return {

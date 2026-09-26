@@ -1,0 +1,24 @@
+{
+  "backup": "/mnt/c/Users/Juan/Documents/Python/algoTrading/deploy/historical_replay/run/t23_current_safe_backup_20260924_090523",
+  "deleted_dirs": [
+    "live_trading/replay_controller",
+    "deploy/distributed_replay",
+    "tools/distributed_compare"
+  ],
+  "deleted_files": [
+    "lib/src/contracts/clock_state.h",
+    "lib/src/contracts/clock_control.h",
+    "lib/src/contracts/clock_sync_request.h",
+    "lib/src/runtime/clock.h",
+    "lib/src/runtime/service_clock.h",
+    "lib/src/runtime/runtime_mode.h"
+  ],
+  "edited_in_place": [
+    "lib/src/transport/contract_json_codec.h",
+    "lib/src/transport/contract_json_codec.cpp",
+    "lib/src/transport/transport_subjects.h",
+    "live_trading/meson.build"
+  ],
+  "result": "PASS",
+  "rollback_on_cleanup_failure": true
+}

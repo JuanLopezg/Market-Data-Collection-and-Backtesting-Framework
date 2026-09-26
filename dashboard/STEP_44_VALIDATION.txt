@@ -1,0 +1,20 @@
+CONTROL DASHBOARD STEP 44 — VALIDATION TARGET
+
+Gate:
+  ./scripts/step44-global-readiness.sh
+
+Expected terminal line:
+  STEP 44: PASS — FULL GLOBAL READINESS CONTRACT VALIDATED
+
+Required semantics:
+- contractVersion=step44-v1
+- contractComplete=true
+- safeToContinueDashboard=true
+- privateTestnetReady=false
+- tradingReady=false
+- liveReady=false
+- orderRouting=DISABLED
+- manualRouting=DISABLED
+- private auth remains DEFERRED/DISABLED
+- Step 37 and Steps 38–41 remain deferred
+- future MockExchangeAdapter boundary remains explicit

@@ -1,0 +1,8 @@
+Step 31 validation
+- go test ./...: PASS
+- go vet ./...: PASS
+- go build ./...: PASS
+- TS/TSX syntax transpile (TypeScript ES2020): PASS
+- shell scripts syntax: PASS
+- Compose YAML parse: PASS
+- Docker runtime compose validation: NOT RUN (docker binary unavailable in build environment)

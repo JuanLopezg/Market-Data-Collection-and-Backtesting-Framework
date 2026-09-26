@@ -1,8 +1,4 @@
-subdir('database')
 subdir('binance_simulator')
-
-subdir('replay_controller')
-
 subdir('execution_service')
 
 subdir('strategy_service')
@@ -18,3 +14,5 @@ subdir('exchange_gateway')
 subdir('simulated_exchange_service')
 
 subdir('market_data_service')
+
+subdir('historical_market_data_service')

@@ -1,0 +1,21 @@
+[Unit]
+Description=AlgoTrading Control Dashboard
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/algotrading/dashboard
+ExecStartPre=/opt/algotrading/dashboard/scripts/production-preflight.sh .env.production
+ExecStart=/usr/bin/docker compose --env-file .env.production -f docker-compose.production.yml -f docker-compose.production.real.yml up -d --build --remove-orphans
+ExecStop=/usr/bin/docker compose --env-file .env.production -f docker-compose.production.yml -f docker-compose.production.real.yml down
+TimeoutStartSec=0
+TimeoutStopSec=30
+
+# Do not run the unit as a random unprivileged account unless that account is
+# deliberately authorized to access Docker. Docker daemon access is root-equivalent.
+
+[Install]
+WantedBy=multi-user.target

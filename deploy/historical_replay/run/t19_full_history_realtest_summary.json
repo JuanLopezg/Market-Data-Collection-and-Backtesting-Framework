@@ -1,0 +1,11 @@
+{
+  "accepted_difference_policy": "locked exact identities from tools/distributed_compare/realtest_known_baseline.json",
+  "comparison_csv": "/mnt/c/Users/Juan/Documents/Python/algoTrading/deploy/historical_replay/run/t19_full_history_realtest_comparison.csv",
+  "fill_count": 1269,
+  "historical_data": "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/databases/1d_cmc.csv",
+  "log": "/mnt/c/Users/Juan/Documents/Python/algoTrading/deploy/historical_replay/run/t19_full_history_realtest.log",
+  "mode": "equal-weight",
+  "policy": "exact research/src/realtest.cpp",
+  "realtest_csv": "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/final_tests/pureRSI.csv",
+  "result": "PASS"
+}

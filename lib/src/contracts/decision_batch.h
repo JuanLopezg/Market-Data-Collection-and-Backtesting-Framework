@@ -11,13 +11,17 @@
  * Type    : StrategyDecisionIntent
  * Purpose : Approved strategy intent produced at close T
  *
- * This deliberately contains weights/reference capital and HOLD/FLAT/TARGET semantics,
- * never final executable quantity. Quantity remains an Execution responsibility at T+1.
+ * This contains approved economic targets (USD/notional) plus the original rebalance
+ * semantics for audit. It never contains an exchange-specific executable quantity.
  **************************************************************************************/
 struct StrategyDecisionIntent {
     StrategyID strategy_id = 0;
     Timestamp decision_timestamp = 0;
     double reference_capital = 0.0;
+
+    // Explicit LIVE economic targets in USD/notional for every non-HOLD decision.
+    // Exchange-specific quantity conversion is intentionally deferred downstream.
+    std::unordered_map<Coin, double> target_notional_usd;
     std::unordered_map<Coin, RebalanceDecision> decisions;
 };
 

@@ -1,0 +1,23 @@
+STEP 44.1 VALIDATION
+
+Observed reproduction:
+- Step 44 -> Step 43 -> Step 42 -> Step 37A -> Step 36 -> Step 35
+- canonical strategy SQLite read returned: database is locked (5)
+- endpoint remained BLOCKED/fail-closed, but Step 35 retry classifier only accepted timeout.
+
+Fix validation:
+- CGO_ENABLED=0 go test ./...: PASS
+- CGO_ENABLED=0 go vet ./...: PASS
+- CGO_ENABLED=0 go build ./...: PASS
+- scripts/step35-symbol-mapping.sh syntax: PASS
+- scripts/step44-global-readiness.sh syntax: PASS
+- read-only SQLite CLIRunner includes PRAGMA busy_timeout=1000: PASS
+- Step 35 bounded transient classifier includes database is locked/busy: PASS
+- Step 44 retryability classifier includes database is locked/busy: PASS
+- semantic registry divergence remains non-retryable in tests: PASS
+- SQLite locked readiness test remains BLOCKED but retryable: PASS
+
+Safety boundary unchanged:
+- SQLite remains -readonly and query_only=ON.
+- No wallet/private auth/signing/order submission/cancellation added.
+- Order routing and manual routing remain fail-closed.

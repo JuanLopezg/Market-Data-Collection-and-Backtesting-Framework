@@ -1,0 +1,24 @@
+:80 {
+  # SSE must not be response-compressed/buffered or browser invalidations can
+  # arrive in batches instead of immediately.
+  handle /api/stream {
+    reverse_proxy dashboard-api:8080 {
+      flush_interval -1
+    }
+  }
+
+  handle /api/* {
+    reverse_proxy dashboard-api:8080
+  }
+
+  handle {
+    encode zstd gzip
+    root * /srv
+    try_files {path} /index.html
+    file_server
+
+    @assets path /assets/*
+    header @assets Cache-Control "public, max-age=31536000, immutable"
+    header /index.html Cache-Control "no-cache"
+  }
+}

@@ -1,0 +1,99 @@
+# Step 43 production real-data overlay.
+# The trading stack must already be running and expose its internal Docker
+# network (default: algotrading-live_live). No trading/NATS/PostgreSQL port is
+# published by this dashboard compose. The watchdog persists only observability
+# alert lifecycle transitions in its own volume; it never writes trading state.
+services:
+  dashboard-api:
+    environment:
+      DASHBOARD_DATA_PROVIDER: "real"
+      DASHBOARD_POSTGRES_DSN: ${DASHBOARD_POSTGRES_DSN:?Set DASHBOARD_POSTGRES_DSN in .env.production}
+      DASHBOARD_NATS_URL: ${DASHBOARD_NATS_URL:-nats://nats:4222}
+      DASHBOARD_NATS_MONITOR_URL: ${DASHBOARD_NATS_MONITOR_URL:-http://nats:8222}
+      DASHBOARD_NATS_STREAM: ${DASHBOARD_NATS_STREAM:-ALGOTRADING_RUNTIME}
+      DASHBOARD_RUNTIME_MODE: ${DASHBOARD_RUNTIME_MODE:-LIVE}
+      DASHBOARD_MARKET_DATA_DB: /data/market/database.db
+      DASHBOARD_MARKET_TOP_N: ${DASHBOARD_MARKET_TOP_N:-50}
+      DASHBOARD_MARKET_HISTORY_DAYS: ${DASHBOARD_MARKET_HISTORY_DAYS:-100}
+      DASHBOARD_STRATEGY_UNIVERSE_N: ${DASHBOARD_STRATEGY_UNIVERSE_N:-20}
+      DASHBOARD_SOURCE_PROBE_TIMEOUT: ${DASHBOARD_SOURCE_PROBE_TIMEOUT:-1s}
+      DASHBOARD_EXECUTION_VENUE: ${DASHBOARD_EXECUTION_VENUE:-HYPERLIQUID}
+      DASHBOARD_VENUE_TARGET_ENVIRONMENT: ${DASHBOARD_VENUE_TARGET_ENVIRONMENT:-TESTNET}
+      DASHBOARD_EXCHANGE_GATEWAY_MODE: ${DASHBOARD_EXCHANGE_GATEWAY_MODE:-hyperliquid-dry-run}
+      DASHBOARD_HYPERLIQUID_PUBLIC_INFO_URL: ${DASHBOARD_HYPERLIQUID_PUBLIC_INFO_URL:-https://api.hyperliquid-testnet.xyz/info}
+      DASHBOARD_HYPERLIQUID_PUBLIC_TIMEOUT: ${DASHBOARD_HYPERLIQUID_PUBLIC_TIMEOUT:-3s}
+      DASHBOARD_ALERT_STORE_DIR: /data/watchdog
+      DASHBOARD_MANUAL_AUDIT_DIR: /data/manual-audit
+    volumes:
+      - ${DASHBOARD_MARKET_DATA_HOST_DIR:?Set DASHBOARD_MARKET_DATA_HOST_DIR in .env.production}:/data/market
+      - ${DASHBOARD_MARKET_DATA_DB_HOST_FILE:?Set DASHBOARD_MARKET_DATA_DB_HOST_FILE in .env.production}:/data/market/database.db:ro
+      - dashboard-watchdog-data:/data/watchdog:ro
+      - dashboard-manual-audit-data:/data/manual-audit
+    networks:
+      - dashboard-private
+      - algotrading-live
+
+  dashboard-watchdog:
+    build:
+      context: ./dashboard-api
+    container_name: control-dashboard-watchdog
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 10s
+    entrypoint: ["/dashboard-watchdog"]
+    environment:
+      DASHBOARD_POSTGRES_DSN: ${DASHBOARD_POSTGRES_DSN:?Set DASHBOARD_POSTGRES_DSN in .env.production}
+      DASHBOARD_NATS_URL: ${DASHBOARD_NATS_URL:-nats://nats:4222}
+      DASHBOARD_NATS_MONITOR_URL: ${DASHBOARD_NATS_MONITOR_URL:-http://nats:8222}
+      DASHBOARD_NATS_STREAM: ${DASHBOARD_NATS_STREAM:-ALGOTRADING_RUNTIME}
+      DASHBOARD_RUNTIME_MODE: ${DASHBOARD_RUNTIME_MODE:-LIVE}
+      DASHBOARD_MARKET_DATA_DB: /data/market/database.db
+      DASHBOARD_MARKET_TOP_N: ${DASHBOARD_MARKET_TOP_N:-50}
+      DASHBOARD_MARKET_HISTORY_DAYS: ${DASHBOARD_MARKET_HISTORY_DAYS:-100}
+      DASHBOARD_STRATEGY_UNIVERSE_N: ${DASHBOARD_STRATEGY_UNIVERSE_N:-20}
+      DASHBOARD_SOURCE_PROBE_TIMEOUT: ${DASHBOARD_SOURCE_PROBE_TIMEOUT:-1s}
+      DASHBOARD_EXECUTION_VENUE: ${DASHBOARD_EXECUTION_VENUE:-HYPERLIQUID}
+      DASHBOARD_VENUE_TARGET_ENVIRONMENT: ${DASHBOARD_VENUE_TARGET_ENVIRONMENT:-TESTNET}
+      DASHBOARD_EXCHANGE_GATEWAY_MODE: ${DASHBOARD_EXCHANGE_GATEWAY_MODE:-hyperliquid-dry-run}
+      DASHBOARD_HYPERLIQUID_PUBLIC_INFO_URL: ${DASHBOARD_HYPERLIQUID_PUBLIC_INFO_URL:-https://api.hyperliquid-testnet.xyz/info}
+      DASHBOARD_HYPERLIQUID_PUBLIC_TIMEOUT: ${DASHBOARD_HYPERLIQUID_PUBLIC_TIMEOUT:-3s}
+      DASHBOARD_ALERT_STORE_DIR: /data/watchdog
+      DASHBOARD_WATCHDOG_INTERVAL: ${DASHBOARD_WATCHDOG_INTERVAL:-15s}
+      DASHBOARD_WATCHDOG_SWEEP_TIMEOUT: ${DASHBOARD_WATCHDOG_SWEEP_TIMEOUT:-8s}
+    volumes:
+      - ${DASHBOARD_MARKET_DATA_HOST_DIR:?Set DASHBOARD_MARKET_DATA_HOST_DIR in .env.production}:/data/market
+      - ${DASHBOARD_MARKET_DATA_DB_HOST_FILE:?Set DASHBOARD_MARKET_DATA_DB_HOST_FILE in .env.production}:/data/market/database.db:ro
+      - dashboard-watchdog-data:/data/watchdog
+    mem_limit: 64m
+    cpus: 0.20
+    pids_limit: 64
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /data/watchdog/status.json"]
+      interval: 30s
+      timeout: 3s
+      start_period: 15s
+      retries: 3
+    networks:
+      - dashboard-private
+      - algotrading-live
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  algotrading-live:
+    external: true
+    name: ${ALGOTRADING_LIVE_NETWORK:-algotrading-live_live}
+
+volumes:
+  dashboard-watchdog-data:
+  dashboard-manual-audit-data:

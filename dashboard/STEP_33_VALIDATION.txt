@@ -1,0 +1,30 @@
+CONTROL DASHBOARD STEP 33 — GENERATION-TIME VALIDATION
+Date: 2026-09-25
+
+PASS  CGO_ENABLED=0 go test ./...
+PASS  CGO_ENABLED=0 go vet ./...
+PASS  CGO_ENABLED=0 go build ./...
+PASS  Step 14 source-contract audit (33 markers) against supplied current lib/live_trading/deploy sources
+PASS  Current ExchangeGateway source contains Hyperliquid dry-run / NotionalOrderPlan / real_submission=false safety markers
+PASS  Authenticated /api/venue-foundation local API smoke
+PASS  Venue foundation reports HYPERLIQUID / TESTNET / hyperliquid-dry-run
+PASS  Venue foundation reports publicConnectivity=NOT_CHECKED
+PASS  Venue foundation reports privateAuth=DISABLED and orderRouting=DISABLED
+PASS  Venue foundation requires neither secrets nor real capital
+PASS  Shell syntax: scripts/step33-testnet-foundation.sh
+PASS  Python source-audit syntax
+PASS  Compose YAML parse: local, local-real, production, production-real
+PASS  TS/TSX syntax parse across frontend
+PASS  Frontend TypeScript semantic check with local external-module stubs
+
+Environment limitation:
+- Docker is not available in the generation environment, and npm dependencies are not cached locally.
+- Therefore the real `npm run build`/Docker Compose build is intentionally left to the user's WSL + Docker Desktop environment.
+- No external venue network call was made during Step 33 generation; that is deliberate and is part of the Step 33 safety boundary.
+
+Required WSL acceptance:
+1. Replace dashboard/ completely with this cumulative package.
+2. Start the normal local real stack with docker-compose.yml + docker-compose.real.yml.
+3. Open Infrastructure and inspect "Step 33 · Testnet Integration Foundation".
+4. Run: ./scripts/step33-testnet-foundation.sh
+5. STOP on any FAIL. Do not continue to Step 34 until Step 33 reports PASS.

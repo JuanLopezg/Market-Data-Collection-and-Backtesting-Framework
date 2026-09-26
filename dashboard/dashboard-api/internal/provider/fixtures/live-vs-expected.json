@@ -1,0 +1,1327 @@
+{
+  "baselineLabel": "Accepted replay baseline",
+  "baselineWindow": "Rolling historical distributions · mock until backend mapping",
+  "latestObservation": "14:30 UTC",
+  "metricCount": 10,
+  "normalCount": 6,
+  "elevatedCount": 2,
+  "abnormalCount": 2,
+  "criticalCount": 0,
+  "metrics": [
+    {
+      "id": "turnover",
+      "family": "ACTIVITY",
+      "label": "Portfolio Turnover",
+      "currentLabel": "18.7% / day",
+      "historicalMeanLabel": "12.4% / day",
+      "historicalRangeLabel": "8.1–16.9%",
+      "zScore": 1.9,
+      "classification": "ELEVATED",
+      "description": "Daily notional turnover is above the centre of its historical distribution, driven mainly by recent BTC and LINK target changes.",
+      "trend": [
+        {
+          "label": "09:00",
+          "live": 11.9,
+          "mean": 12.4,
+          "lower": 7.9,
+          "upper": 16.9
+        },
+        {
+          "label": "09:30",
+          "live": 12.8,
+          "mean": 12.4,
+          "lower": 7.9,
+          "upper": 16.9
+        },
+        {
+          "label": "10:00",
+          "live": 13.1,
+          "mean": 12.4,
+          "lower": 7.9,
+          "upper": 16.9
+        },
+        {
+          "label": "10:30",
+          "live": 14.2,
+          "mean": 12.4,
+          "lower": 7.9,
+          "upper": 16.9
+        },
+        {
+          "label": "11:00",
+          "live": 13.8,
+          "mean": 12.4,
+          "lower": 7.9,
+          "upper": 16.9
+        },
+        {
+          "label": "11:30",
+          "live": 15.1,
+          "mean": 12.4,
+          "lower": 7.9,
+          "upper": 16.9
+        },
+        {
+          "label": "12:00",
+          "live": 14.9,
+          "mean": 12.4,
+          "lower": 7.9,
+          "upper": 16.9
+        },
+        {
+          "label": "12:30",
+          "live": 16,
+          "mean": 12.4,
+          "lower": 7.9,
+          "upper": 16.9
+        },
+        {
+          "label": "13:00",
+          "live": 16.4,
+          "mean": 12.4,
+          "lower": 7.9,
+          "upper": 16.9
+        },
+        {
+          "label": "13:30",
+          "live": 17.1,
+          "mean": 12.4,
+          "lower": 7.9,
+          "upper": 16.9
+        },
+        {
+          "label": "14:00",
+          "live": 17.8,
+          "mean": 12.4,
+          "lower": 7.9,
+          "upper": 16.9
+        },
+        {
+          "label": "14:30",
+          "live": 18.7,
+          "mean": 12.4,
+          "lower": 7.9,
+          "upper": 16.9
+        }
+      ],
+      "distribution": [
+        2,
+        5,
+        11,
+        19,
+        31,
+        42,
+        51,
+        56,
+        52,
+        41,
+        28,
+        17,
+        9,
+        4,
+        2
+      ],
+      "contributingCycles": [
+        {
+          "timestamp": "14:30:14",
+          "asset": "BTC",
+          "cycleId": "cycle-btc-20260923-1430",
+          "valueLabel": "+3.0% delta",
+          "deviationLabel": "+0.8σ"
+        },
+        {
+          "timestamp": "14:32:00",
+          "asset": "LINK",
+          "cycleId": "cycle-link-20260923-1430",
+          "valueLabel": "+2.4% delta",
+          "deviationLabel": "+0.6σ"
+        },
+        {
+          "timestamp": "14:27:34",
+          "asset": "SOL",
+          "cycleId": "cycle-sol-20260923-1430",
+          "valueLabel": "-1.6% delta",
+          "deviationLabel": "+0.3σ"
+        }
+      ]
+    },
+    {
+      "id": "signal-frequency",
+      "family": "ACTIVITY",
+      "label": "Signal Frequency",
+      "currentLabel": "4.8 / day",
+      "historicalMeanLabel": "4.4 / day",
+      "historicalRangeLabel": "2.8–6.0",
+      "zScore": 0.5,
+      "classification": "NORMAL",
+      "description": "Number of strategy signal transitions remains close to the historical centre.",
+      "trend": [
+        {
+          "label": "09:00",
+          "live": 4.2,
+          "mean": 4.4,
+          "lower": 2.8000000000000003,
+          "upper": 6
+        },
+        {
+          "label": "09:30",
+          "live": 4.5,
+          "mean": 4.4,
+          "lower": 2.8000000000000003,
+          "upper": 6
+        },
+        {
+          "label": "10:00",
+          "live": 4.1,
+          "mean": 4.4,
+          "lower": 2.8000000000000003,
+          "upper": 6
+        },
+        {
+          "label": "10:30",
+          "live": 4.6,
+          "mean": 4.4,
+          "lower": 2.8000000000000003,
+          "upper": 6
+        },
+        {
+          "label": "11:00",
+          "live": 4.9,
+          "mean": 4.4,
+          "lower": 2.8000000000000003,
+          "upper": 6
+        },
+        {
+          "label": "11:30",
+          "live": 4.4,
+          "mean": 4.4,
+          "lower": 2.8000000000000003,
+          "upper": 6
+        },
+        {
+          "label": "12:00",
+          "live": 4.6,
+          "mean": 4.4,
+          "lower": 2.8000000000000003,
+          "upper": 6
+        },
+        {
+          "label": "12:30",
+          "live": 4.2,
+          "mean": 4.4,
+          "lower": 2.8000000000000003,
+          "upper": 6
+        },
+        {
+          "label": "13:00",
+          "live": 4.7,
+          "mean": 4.4,
+          "lower": 2.8000000000000003,
+          "upper": 6
+        },
+        {
+          "label": "13:30",
+          "live": 4.8,
+          "mean": 4.4,
+          "lower": 2.8000000000000003,
+          "upper": 6
+        },
+        {
+          "label": "14:00",
+          "live": 4.5,
+          "mean": 4.4,
+          "lower": 2.8000000000000003,
+          "upper": 6
+        },
+        {
+          "label": "14:30",
+          "live": 4.8,
+          "mean": 4.4,
+          "lower": 2.8000000000000003,
+          "upper": 6
+        }
+      ],
+      "distribution": [
+        1,
+        4,
+        9,
+        18,
+        29,
+        43,
+        55,
+        61,
+        58,
+        45,
+        30,
+        17,
+        8,
+        3,
+        1
+      ],
+      "contributingCycles": [
+        {
+          "timestamp": "14:30:00",
+          "asset": "BTC",
+          "cycleId": "cycle-btc-20260923-1430",
+          "valueLabel": "LONG retained",
+          "deviationLabel": "+0.2σ"
+        },
+        {
+          "timestamp": "13:58:00",
+          "asset": "ETH",
+          "cycleId": "cycle-eth-20260923-1358",
+          "valueLabel": "LONG retained",
+          "deviationLabel": "+0.1σ"
+        }
+      ]
+    },
+    {
+      "id": "active-positions",
+      "family": "ACTIVITY",
+      "label": "Active Positions",
+      "currentLabel": "5",
+      "historicalMeanLabel": "5.4",
+      "historicalRangeLabel": "3–8",
+      "zScore": -0.3,
+      "classification": "NORMAL",
+      "description": "The current number of open strategy positions is typical for the historical baseline.",
+      "trend": [
+        {
+          "label": "09:00",
+          "live": 5,
+          "mean": 5.4,
+          "lower": 3.0000000000000004,
+          "upper": 7.800000000000001
+        },
+        {
+          "label": "09:30",
+          "live": 5,
+          "mean": 5.4,
+          "lower": 3.0000000000000004,
+          "upper": 7.800000000000001
+        },
+        {
+          "label": "10:00",
+          "live": 5,
+          "mean": 5.4,
+          "lower": 3.0000000000000004,
+          "upper": 7.800000000000001
+        },
+        {
+          "label": "10:30",
+          "live": 6,
+          "mean": 5.4,
+          "lower": 3.0000000000000004,
+          "upper": 7.800000000000001
+        },
+        {
+          "label": "11:00",
+          "live": 6,
+          "mean": 5.4,
+          "lower": 3.0000000000000004,
+          "upper": 7.800000000000001
+        },
+        {
+          "label": "11:30",
+          "live": 5,
+          "mean": 5.4,
+          "lower": 3.0000000000000004,
+          "upper": 7.800000000000001
+        },
+        {
+          "label": "12:00",
+          "live": 5,
+          "mean": 5.4,
+          "lower": 3.0000000000000004,
+          "upper": 7.800000000000001
+        },
+        {
+          "label": "12:30",
+          "live": 5,
+          "mean": 5.4,
+          "lower": 3.0000000000000004,
+          "upper": 7.800000000000001
+        },
+        {
+          "label": "13:00",
+          "live": 5,
+          "mean": 5.4,
+          "lower": 3.0000000000000004,
+          "upper": 7.800000000000001
+        },
+        {
+          "label": "13:30",
+          "live": 5,
+          "mean": 5.4,
+          "lower": 3.0000000000000004,
+          "upper": 7.800000000000001
+        },
+        {
+          "label": "14:00",
+          "live": 5,
+          "mean": 5.4,
+          "lower": 3.0000000000000004,
+          "upper": 7.800000000000001
+        },
+        {
+          "label": "14:30",
+          "live": 5,
+          "mean": 5.4,
+          "lower": 3.0000000000000004,
+          "upper": 7.800000000000001
+        }
+      ],
+      "distribution": [
+        2,
+        7,
+        16,
+        29,
+        44,
+        55,
+        58,
+        51,
+        39,
+        24,
+        12,
+        5,
+        2
+      ],
+      "contributingCycles": [
+        {
+          "timestamp": "14:30:00",
+          "asset": "BTC",
+          "cycleId": "cycle-btc-20260923-1430",
+          "valueLabel": "Position active",
+          "deviationLabel": "0.0σ"
+        },
+        {
+          "timestamp": "14:25:00",
+          "asset": "ETH",
+          "cycleId": "cycle-eth-20260923-1425",
+          "valueLabel": "Position active",
+          "deviationLabel": "0.0σ"
+        }
+      ]
+    },
+    {
+      "id": "holding-time",
+      "family": "HOLDING",
+      "label": "Average Holding Time",
+      "currentLabel": "2.7 days",
+      "historicalMeanLabel": "3.1 days",
+      "historicalRangeLabel": "2.2–4.0 days",
+      "zScore": -0.8,
+      "classification": "NORMAL",
+      "description": "Average holding duration is slightly shorter than baseline but remains inside the historical envelope.",
+      "trend": [
+        {
+          "label": "09:00",
+          "live": 3.2,
+          "mean": 3.1,
+          "lower": 2.2,
+          "upper": 4
+        },
+        {
+          "label": "09:30",
+          "live": 3.1,
+          "mean": 3.1,
+          "lower": 2.2,
+          "upper": 4
+        },
+        {
+          "label": "10:00",
+          "live": 3,
+          "mean": 3.1,
+          "lower": 2.2,
+          "upper": 4
+        },
+        {
+          "label": "10:30",
+          "live": 3.2,
+          "mean": 3.1,
+          "lower": 2.2,
+          "upper": 4
+        },
+        {
+          "label": "11:00",
+          "live": 3,
+          "mean": 3.1,
+          "lower": 2.2,
+          "upper": 4
+        },
+        {
+          "label": "11:30",
+          "live": 2.9,
+          "mean": 3.1,
+          "lower": 2.2,
+          "upper": 4
+        },
+        {
+          "label": "12:00",
+          "live": 2.8,
+          "mean": 3.1,
+          "lower": 2.2,
+          "upper": 4
+        },
+        {
+          "label": "12:30",
+          "live": 2.9,
+          "mean": 3.1,
+          "lower": 2.2,
+          "upper": 4
+        },
+        {
+          "label": "13:00",
+          "live": 2.8,
+          "mean": 3.1,
+          "lower": 2.2,
+          "upper": 4
+        },
+        {
+          "label": "13:30",
+          "live": 2.7,
+          "mean": 3.1,
+          "lower": 2.2,
+          "upper": 4
+        },
+        {
+          "label": "14:00",
+          "live": 2.8,
+          "mean": 3.1,
+          "lower": 2.2,
+          "upper": 4
+        },
+        {
+          "label": "14:30",
+          "live": 2.7,
+          "mean": 3.1,
+          "lower": 2.2,
+          "upper": 4
+        }
+      ],
+      "distribution": [
+        1,
+        3,
+        8,
+        15,
+        27,
+        43,
+        54,
+        59,
+        54,
+        44,
+        29,
+        16,
+        8,
+        3,
+        1
+      ],
+      "contributingCycles": [
+        {
+          "timestamp": "13:42:18",
+          "asset": "SOL",
+          "cycleId": "cycle-sol-20260923-1342",
+          "valueLabel": "2.4 days",
+          "deviationLabel": "-0.4σ"
+        },
+        {
+          "timestamp": "12:18:51",
+          "asset": "AVAX",
+          "cycleId": "cycle-avax-20260923-1218",
+          "valueLabel": "2.1 days",
+          "deviationLabel": "-0.6σ"
+        }
+      ]
+    },
+    {
+      "id": "portfolio-vol",
+      "family": "RISK",
+      "label": "Portfolio Volatility",
+      "currentLabel": "14.8%",
+      "historicalMeanLabel": "14.1%",
+      "historicalRangeLabel": "10.8–17.4%",
+      "zScore": 0.4,
+      "classification": "NORMAL",
+      "description": "Realized portfolio volatility is close to its historical baseline and below the configured risk limit.",
+      "trend": [
+        {
+          "label": "09:00",
+          "live": 13.7,
+          "mean": 14.1,
+          "lower": 10.8,
+          "upper": 17.4
+        },
+        {
+          "label": "09:30",
+          "live": 13.8,
+          "mean": 14.1,
+          "lower": 10.8,
+          "upper": 17.4
+        },
+        {
+          "label": "10:00",
+          "live": 14,
+          "mean": 14.1,
+          "lower": 10.8,
+          "upper": 17.4
+        },
+        {
+          "label": "10:30",
+          "live": 14.2,
+          "mean": 14.1,
+          "lower": 10.8,
+          "upper": 17.4
+        },
+        {
+          "label": "11:00",
+          "live": 14,
+          "mean": 14.1,
+          "lower": 10.8,
+          "upper": 17.4
+        },
+        {
+          "label": "11:30",
+          "live": 14.3,
+          "mean": 14.1,
+          "lower": 10.8,
+          "upper": 17.4
+        },
+        {
+          "label": "12:00",
+          "live": 14.6,
+          "mean": 14.1,
+          "lower": 10.8,
+          "upper": 17.4
+        },
+        {
+          "label": "12:30",
+          "live": 14.5,
+          "mean": 14.1,
+          "lower": 10.8,
+          "upper": 17.4
+        },
+        {
+          "label": "13:00",
+          "live": 14.7,
+          "mean": 14.1,
+          "lower": 10.8,
+          "upper": 17.4
+        },
+        {
+          "label": "13:30",
+          "live": 14.8,
+          "mean": 14.1,
+          "lower": 10.8,
+          "upper": 17.4
+        },
+        {
+          "label": "14:00",
+          "live": 14.7,
+          "mean": 14.1,
+          "lower": 10.8,
+          "upper": 17.4
+        },
+        {
+          "label": "14:30",
+          "live": 14.8,
+          "mean": 14.1,
+          "lower": 10.8,
+          "upper": 17.4
+        }
+      ],
+      "distribution": [
+        2,
+        5,
+        11,
+        19,
+        31,
+        42,
+        51,
+        56,
+        52,
+        41,
+        28,
+        17,
+        9,
+        4,
+        2
+      ],
+      "contributingCycles": [
+        {
+          "timestamp": "14:30:14",
+          "asset": "BTC",
+          "cycleId": "cycle-btc-20260923-1430",
+          "valueLabel": "28.4% weight",
+          "deviationLabel": "+0.2σ"
+        },
+        {
+          "timestamp": "14:25:00",
+          "asset": "ETH",
+          "cycleId": "cycle-eth-20260923-1425",
+          "valueLabel": "22.1% weight",
+          "deviationLabel": "+0.1σ"
+        }
+      ]
+    },
+    {
+      "id": "gross-exposure",
+      "family": "RISK",
+      "label": "Gross Exposure",
+      "currentLabel": "76.2%",
+      "historicalMeanLabel": "72.8%",
+      "historicalRangeLabel": "58–87%",
+      "zScore": 0.5,
+      "classification": "NORMAL",
+      "description": "Absolute portfolio exposure remains within the central part of the historical operating range.",
+      "trend": [
+        {
+          "label": "09:00",
+          "live": 72,
+          "mean": 72.8,
+          "lower": 58.3,
+          "upper": 87.3
+        },
+        {
+          "label": "09:30",
+          "live": 73,
+          "mean": 72.8,
+          "lower": 58.3,
+          "upper": 87.3
+        },
+        {
+          "label": "10:00",
+          "live": 74,
+          "mean": 72.8,
+          "lower": 58.3,
+          "upper": 87.3
+        },
+        {
+          "label": "10:30",
+          "live": 72,
+          "mean": 72.8,
+          "lower": 58.3,
+          "upper": 87.3
+        },
+        {
+          "label": "11:00",
+          "live": 73,
+          "mean": 72.8,
+          "lower": 58.3,
+          "upper": 87.3
+        },
+        {
+          "label": "11:30",
+          "live": 74,
+          "mean": 72.8,
+          "lower": 58.3,
+          "upper": 87.3
+        },
+        {
+          "label": "12:00",
+          "live": 75,
+          "mean": 72.8,
+          "lower": 58.3,
+          "upper": 87.3
+        },
+        {
+          "label": "12:30",
+          "live": 75,
+          "mean": 72.8,
+          "lower": 58.3,
+          "upper": 87.3
+        },
+        {
+          "label": "13:00",
+          "live": 76,
+          "mean": 72.8,
+          "lower": 58.3,
+          "upper": 87.3
+        },
+        {
+          "label": "13:30",
+          "live": 75,
+          "mean": 72.8,
+          "lower": 58.3,
+          "upper": 87.3
+        },
+        {
+          "label": "14:00",
+          "live": 76,
+          "mean": 72.8,
+          "lower": 58.3,
+          "upper": 87.3
+        },
+        {
+          "label": "14:30",
+          "live": 76.2,
+          "mean": 72.8,
+          "lower": 58.3,
+          "upper": 87.3
+        }
+      ],
+      "distribution": [
+        1,
+        4,
+        10,
+        20,
+        34,
+        48,
+        57,
+        60,
+        54,
+        41,
+        27,
+        15,
+        7,
+        3,
+        1
+      ],
+      "contributingCycles": [
+        {
+          "timestamp": "14:32:00",
+          "asset": "LINK",
+          "cycleId": "cycle-link-20260923-1430",
+          "valueLabel": "+2.4% target",
+          "deviationLabel": "+0.2σ"
+        },
+        {
+          "timestamp": "14:30:14",
+          "asset": "BTC",
+          "cycleId": "cycle-btc-20260923-1430",
+          "valueLabel": "+3.0% target",
+          "deviationLabel": "+0.2σ"
+        }
+      ]
+    },
+    {
+      "id": "rolling-sharpe",
+      "family": "PERFORMANCE",
+      "label": "Rolling Sharpe",
+      "currentLabel": "1.42",
+      "historicalMeanLabel": "1.18",
+      "historicalRangeLabel": "0.35–1.95",
+      "zScore": 0.6,
+      "classification": "NORMAL",
+      "description": "Rolling risk-adjusted performance shape is inside its historical range. This is descriptive and not a forward return estimate.",
+      "trend": [
+        {
+          "label": "09:00",
+          "live": 1.1,
+          "mean": 1.18,
+          "lower": 0.3799999999999999,
+          "upper": 1.98
+        },
+        {
+          "label": "09:30",
+          "live": 1.14,
+          "mean": 1.18,
+          "lower": 0.3799999999999999,
+          "upper": 1.98
+        },
+        {
+          "label": "10:00",
+          "live": 1.2,
+          "mean": 1.18,
+          "lower": 0.3799999999999999,
+          "upper": 1.98
+        },
+        {
+          "label": "10:30",
+          "live": 1.18,
+          "mean": 1.18,
+          "lower": 0.3799999999999999,
+          "upper": 1.98
+        },
+        {
+          "label": "11:00",
+          "live": 1.25,
+          "mean": 1.18,
+          "lower": 0.3799999999999999,
+          "upper": 1.98
+        },
+        {
+          "label": "11:30",
+          "live": 1.29,
+          "mean": 1.18,
+          "lower": 0.3799999999999999,
+          "upper": 1.98
+        },
+        {
+          "label": "12:00",
+          "live": 1.31,
+          "mean": 1.18,
+          "lower": 0.3799999999999999,
+          "upper": 1.98
+        },
+        {
+          "label": "12:30",
+          "live": 1.34,
+          "mean": 1.18,
+          "lower": 0.3799999999999999,
+          "upper": 1.98
+        },
+        {
+          "label": "13:00",
+          "live": 1.36,
+          "mean": 1.18,
+          "lower": 0.3799999999999999,
+          "upper": 1.98
+        },
+        {
+          "label": "13:30",
+          "live": 1.39,
+          "mean": 1.18,
+          "lower": 0.3799999999999999,
+          "upper": 1.98
+        },
+        {
+          "label": "14:00",
+          "live": 1.4,
+          "mean": 1.18,
+          "lower": 0.3799999999999999,
+          "upper": 1.98
+        },
+        {
+          "label": "14:30",
+          "live": 1.42,
+          "mean": 1.18,
+          "lower": 0.3799999999999999,
+          "upper": 1.98
+        }
+      ],
+      "distribution": [
+        2,
+        5,
+        11,
+        21,
+        34,
+        49,
+        57,
+        60,
+        53,
+        40,
+        26,
+        14,
+        7,
+        3,
+        1
+      ],
+      "contributingCycles": [
+        {
+          "timestamp": "14:02:19",
+          "asset": "PORTFOLIO",
+          "cycleId": "window-30d-1402",
+          "valueLabel": "1.40",
+          "deviationLabel": "+0.5σ"
+        },
+        {
+          "timestamp": "13:32:19",
+          "asset": "PORTFOLIO",
+          "cycleId": "window-30d-1332",
+          "valueLabel": "1.39",
+          "deviationLabel": "+0.5σ"
+        }
+      ]
+    },
+    {
+      "id": "slippage",
+      "family": "EXECUTION",
+      "label": "Execution Slippage",
+      "currentLabel": "+1.4 bps",
+      "historicalMeanLabel": "+0.7 bps",
+      "historicalRangeLabel": "-0.8–2.2 bps",
+      "zScore": 1.1,
+      "classification": "ELEVATED",
+      "description": "Realized execution prices are modestly worse than the historical centre but remain inside the broad baseline envelope.",
+      "trend": [
+        {
+          "label": "09:00",
+          "live": 0.6,
+          "mean": 0.7,
+          "lower": -0.8,
+          "upper": 2.2
+        },
+        {
+          "label": "09:30",
+          "live": 0.8,
+          "mean": 0.7,
+          "lower": -0.8,
+          "upper": 2.2
+        },
+        {
+          "label": "10:00",
+          "live": 0.7,
+          "mean": 0.7,
+          "lower": -0.8,
+          "upper": 2.2
+        },
+        {
+          "label": "10:30",
+          "live": 0.9,
+          "mean": 0.7,
+          "lower": -0.8,
+          "upper": 2.2
+        },
+        {
+          "label": "11:00",
+          "live": 0.8,
+          "mean": 0.7,
+          "lower": -0.8,
+          "upper": 2.2
+        },
+        {
+          "label": "11:30",
+          "live": 1,
+          "mean": 0.7,
+          "lower": -0.8,
+          "upper": 2.2
+        },
+        {
+          "label": "12:00",
+          "live": 1.1,
+          "mean": 0.7,
+          "lower": -0.8,
+          "upper": 2.2
+        },
+        {
+          "label": "12:30",
+          "live": 1,
+          "mean": 0.7,
+          "lower": -0.8,
+          "upper": 2.2
+        },
+        {
+          "label": "13:00",
+          "live": 1.2,
+          "mean": 0.7,
+          "lower": -0.8,
+          "upper": 2.2
+        },
+        {
+          "label": "13:30",
+          "live": 1.2,
+          "mean": 0.7,
+          "lower": -0.8,
+          "upper": 2.2
+        },
+        {
+          "label": "14:00",
+          "live": 1.3,
+          "mean": 0.7,
+          "lower": -0.8,
+          "upper": 2.2
+        },
+        {
+          "label": "14:30",
+          "live": 1.4,
+          "mean": 0.7,
+          "lower": -0.8,
+          "upper": 2.2
+        }
+      ],
+      "distribution": [
+        1,
+        4,
+        10,
+        19,
+        31,
+        46,
+        57,
+        61,
+        55,
+        42,
+        28,
+        16,
+        8,
+        3,
+        1
+      ],
+      "contributingCycles": [
+        {
+          "timestamp": "14:30:14",
+          "asset": "BTC",
+          "cycleId": "cycle-btc-20260923-1430",
+          "valueLabel": "+1.7 bps",
+          "deviationLabel": "+0.7σ"
+        },
+        {
+          "timestamp": "14:25:00",
+          "asset": "ETH",
+          "cycleId": "cycle-eth-20260923-1425",
+          "valueLabel": "+0.9 bps",
+          "deviationLabel": "+0.2σ"
+        }
+      ]
+    },
+    {
+      "id": "fill-latency",
+      "family": "EXECUTION",
+      "label": "Fill Latency",
+      "currentLabel": "612 ms",
+      "historicalMeanLabel": "280 ms",
+      "historicalRangeLabel": "120–510 ms",
+      "zScore": 2.4,
+      "classification": "ABNORMAL",
+      "description": "Recent fill completion latency is outside the usual historical envelope. Network, venue state and order lifecycle context should be inspected before drawing conclusions.",
+      "trend": [
+        {
+          "label": "09:00",
+          "live": 245,
+          "mean": 280,
+          "lower": 50,
+          "upper": 510
+        },
+        {
+          "label": "09:30",
+          "live": 270,
+          "mean": 280,
+          "lower": 50,
+          "upper": 510
+        },
+        {
+          "label": "10:00",
+          "live": 265,
+          "mean": 280,
+          "lower": 50,
+          "upper": 510
+        },
+        {
+          "label": "10:30",
+          "live": 310,
+          "mean": 280,
+          "lower": 50,
+          "upper": 510
+        },
+        {
+          "label": "11:00",
+          "live": 288,
+          "mean": 280,
+          "lower": 50,
+          "upper": 510
+        },
+        {
+          "label": "11:30",
+          "live": 340,
+          "mean": 280,
+          "lower": 50,
+          "upper": 510
+        },
+        {
+          "label": "12:00",
+          "live": 360,
+          "mean": 280,
+          "lower": 50,
+          "upper": 510
+        },
+        {
+          "label": "12:30",
+          "live": 390,
+          "mean": 280,
+          "lower": 50,
+          "upper": 510
+        },
+        {
+          "label": "13:00",
+          "live": 420,
+          "mean": 280,
+          "lower": 50,
+          "upper": 510
+        },
+        {
+          "label": "13:30",
+          "live": 475,
+          "mean": 280,
+          "lower": 50,
+          "upper": 510
+        },
+        {
+          "label": "14:00",
+          "live": 540,
+          "mean": 280,
+          "lower": 50,
+          "upper": 510
+        },
+        {
+          "label": "14:30",
+          "live": 612,
+          "mean": 280,
+          "lower": 50,
+          "upper": 510
+        }
+      ],
+      "distribution": [
+        2,
+        8,
+        19,
+        37,
+        56,
+        68,
+        63,
+        47,
+        29,
+        15,
+        7,
+        3,
+        1
+      ],
+      "contributingCycles": [
+        {
+          "timestamp": "14:31:41",
+          "asset": "BTC",
+          "cycleId": "cycle-btc-20260923-1430",
+          "valueLabel": "1,648 ms",
+          "deviationLabel": "+1.4σ"
+        },
+        {
+          "timestamp": "14:25:00",
+          "asset": "ETH",
+          "cycleId": "cycle-eth-20260923-1425",
+          "valueLabel": "344 ms",
+          "deviationLabel": "+0.3σ"
+        },
+        {
+          "timestamp": "14:27:34",
+          "asset": "SOL",
+          "cycleId": "cycle-sol-20260923-1430",
+          "valueLabel": "214 ms",
+          "deviationLabel": "-0.2σ"
+        }
+      ]
+    },
+    {
+      "id": "entry-rsi",
+      "family": "STRATEGY INPUTS",
+      "label": "Entry RSI",
+      "currentLabel": "89.1 median",
+      "historicalMeanLabel": "84.2 median",
+      "historicalRangeLabel": "80.3–88.0",
+      "zScore": 2.2,
+      "classification": "ABNORMAL",
+      "description": "Recent entries are occurring at higher RSI levels than the historical entry distribution, while still respecting the configured entry rule.",
+      "trend": [
+        {
+          "label": "09:00",
+          "live": 83.1,
+          "mean": 84.2,
+          "lower": 80.4,
+          "upper": 88
+        },
+        {
+          "label": "09:30",
+          "live": 83.7,
+          "mean": 84.2,
+          "lower": 80.4,
+          "upper": 88
+        },
+        {
+          "label": "10:00",
+          "live": 84.2,
+          "mean": 84.2,
+          "lower": 80.4,
+          "upper": 88
+        },
+        {
+          "label": "10:30",
+          "live": 84.6,
+          "mean": 84.2,
+          "lower": 80.4,
+          "upper": 88
+        },
+        {
+          "label": "11:00",
+          "live": 85,
+          "mean": 84.2,
+          "lower": 80.4,
+          "upper": 88
+        },
+        {
+          "label": "11:30",
+          "live": 85.5,
+          "mean": 84.2,
+          "lower": 80.4,
+          "upper": 88
+        },
+        {
+          "label": "12:00",
+          "live": 86,
+          "mean": 84.2,
+          "lower": 80.4,
+          "upper": 88
+        },
+        {
+          "label": "12:30",
+          "live": 86.8,
+          "mean": 84.2,
+          "lower": 80.4,
+          "upper": 88
+        },
+        {
+          "label": "13:00",
+          "live": 87.4,
+          "mean": 84.2,
+          "lower": 80.4,
+          "upper": 88
+        },
+        {
+          "label": "13:30",
+          "live": 88.1,
+          "mean": 84.2,
+          "lower": 80.4,
+          "upper": 88
+        },
+        {
+          "label": "14:00",
+          "live": 88.7,
+          "mean": 84.2,
+          "lower": 80.4,
+          "upper": 88
+        },
+        {
+          "label": "14:30",
+          "live": 89.1,
+          "mean": 84.2,
+          "lower": 80.4,
+          "upper": 88
+        }
+      ],
+      "distribution": [
+        1,
+        5,
+        14,
+        29,
+        48,
+        62,
+        68,
+        61,
+        43,
+        25,
+        12,
+        5,
+        2
+      ],
+      "contributingCycles": [
+        {
+          "timestamp": "14:30:00",
+          "asset": "BTC",
+          "cycleId": "cycle-btc-20260923-1430",
+          "valueLabel": "RSI 91.4",
+          "deviationLabel": "+1.0σ"
+        },
+        {
+          "timestamp": "14:10:00",
+          "asset": "LINK",
+          "cycleId": "cycle-link-20260923-1410",
+          "valueLabel": "RSI 89.7",
+          "deviationLabel": "+0.7σ"
+        },
+        {
+          "timestamp": "13:50:00",
+          "asset": "SOL",
+          "cycleId": "cycle-sol-20260923-1350",
+          "valueLabel": "RSI 86.2",
+          "deviationLabel": "+0.3σ"
+        }
+      ]
+    }
+  ]
+}

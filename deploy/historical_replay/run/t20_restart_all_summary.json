@@ -1,0 +1,121 @@
+{
+  "capacity_armed_at": 0,
+  "capacity_check": false,
+  "capacity_max_lag_days_allowed": 2,
+  "capacity_max_lag_days_observed": 0,
+  "capacity_min_samples_required": 6,
+  "capacity_min_span_days_required": 0,
+  "capacity_observation_start": 0,
+  "capacity_ok": true,
+  "capacity_samples": [],
+  "capacity_span_days_observed": 0,
+  "cash": 99858.90437627368,
+  "critical_log_lines": [],
+  "execution_last_decision": 20200417,
+  "execution_last_execution": 20200418,
+  "expected_clock_wall_seconds": 316.8,
+  "expected_fingerprint_sha256": "7b6ce4b4e9e196f6eeb1677188a278a8ac27e4a362950bc35d1a29c1c19c7943",
+  "fault_profile": "restart-all",
+  "fault_state": {
+    "restart": true
+  },
+  "fills": 2,
+  "fingerprint": {
+    "cash": 99858.9043763,
+    "fills": [
+      {
+        "coin": "LINK",
+        "commission": 0.0,
+        "fill_id": 1,
+        "order_id": 1,
+        "price": 3.287005,
+        "quantity": 3046.6320549,
+        "side": 0,
+        "strategy_id": 1,
+        "timestamp": 20200412
+      },
+      {
+        "coin": "LINK",
+        "commission": 0.0,
+        "fill_id": 2,
+        "order_id": 2,
+        "price": 3.240693,
+        "quantity": 3046.6320549,
+        "side": 1,
+        "strategy_id": 1,
+        "timestamp": 20200415
+      }
+    ],
+    "horizon": {
+      "target_completed": 20200415,
+      "target_execution_day": 20200416
+    },
+    "plans": [
+      {
+        "cancel_order_ids": [],
+        "submit_orders": [
+          {
+            "coin": "LINK",
+            "created_at": 20200411,
+            "current_notional_usd": 0.0,
+            "decision_timestamp": 20200411,
+            "delta_notional_usd": 10000.0,
+            "economic_order_id": "planned-notional-order:20200411:9842758960429053956:1",
+            "notional_usd": 10000.0,
+            "order_id": 1,
+            "pending_notional_usd": 0.0,
+            "reference_close": 3.282313,
+            "side": 0,
+            "state_revision": 9842758960429053956,
+            "strategy_id": 1,
+            "target_notional_usd": 10000.0
+          }
+        ],
+        "timestamp": 20200411
+      },
+      {
+        "cancel_order_ids": [],
+        "submit_orders": [
+          {
+            "coin": "LINK",
+            "created_at": 20200414,
+            "current_notional_usd": 9861.61892543,
+            "decision_timestamp": 20200414,
+            "delta_notional_usd": -9861.61892543,
+            "economic_order_id": "planned-notional-order:20200414:13379896179383682174:2",
+            "notional_usd": 9861.61892543,
+            "order_id": 2,
+            "pending_notional_usd": 0.0,
+            "reference_close": 3.236892,
+            "side": 1,
+            "state_revision": 13379896179383682174,
+            "strategy_id": 1,
+            "target_notional_usd": 0.0
+          }
+        ],
+        "timestamp": 20200414
+      }
+    ],
+    "positions": {}
+  },
+  "fingerprint_match": true,
+  "fingerprint_sha256": "7b6ce4b4e9e196f6eeb1677188a278a8ac27e4a362950bc35d1a29c1c19c7943",
+  "full_baseline": null,
+  "gap_catchup_observed": true,
+  "label": "t20_restart_all",
+  "planner_days": 7,
+  "planner_latest": 20200417,
+  "positions": {},
+  "result": "PASS",
+  "risk_days": 7,
+  "risk_latest": 20200417,
+  "sim_exchange_latest": 20200418,
+  "simulated_start": "2020-04-10T12:00:00Z",
+  "speed": 1500.0,
+  "strategy_days": 7,
+  "strategy_latest": 20200417,
+  "target_completed": 20200415,
+  "target_execution_day": 20200416,
+  "tracked_orders": 2,
+  "wall_seconds": 430.346
+}

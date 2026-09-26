@@ -1,0 +1,339 @@
+{
+  "lastUpdated": "14:32:18 UTC",
+  "openOrders": 3,
+  "partialOrders": 1,
+  "pendingCancels": 1,
+  "filledOrders": 5,
+  "fillCount": 7,
+  "rejectCount": 1,
+  "avgSubmitLatencyMs": 42,
+  "avgFillLatencyMs": 318,
+  "avgSlippageBpsLabel": "-0.2 bps",
+  "submitLatencyP95Ms": 71,
+  "fillLatencyP95Ms": 622,
+  "bestSlippageBpsLabel": "-1.4 bps",
+  "worstSlippageBpsLabel": "+3.1 bps",
+  "totalFeesLabel": "$31.72",
+  "rejectRateLabel": "1.4%",
+  "orders": [
+    {
+      "orderId": "ord-1844",
+      "exchangeOrderId": "bn-94710284",
+      "cycleId": "cycle-link-20260923-1430",
+      "correlationId": "corr-link-20260923-1430-c880",
+      "asset": "LINK",
+      "side": "BUY",
+      "quantity": 2400,
+      "filledQty": 0,
+      "remainingQty": 2400,
+      "state": "NEW",
+      "age": "18s",
+      "expectedPriceLabel": "$14.21",
+      "avgFillPriceLabel": "—",
+      "feesLabel": "$0.00",
+      "slippageBps": 0,
+      "slippageBpsLabel": "Pending",
+      "submitLatencyMs": 38,
+      "fillLatencyMs": null,
+      "submittedAt": "14:32:00.118",
+      "lastUpdateAt": "14:32:00.156",
+      "lifecycle": [
+        {
+          "time": "14:32:00.101",
+          "state": "PLANNED",
+          "detail": "BUY 2,400 LINK generated to flatten approved target.",
+          "tone": "info"
+        },
+        {
+          "time": "14:32:00.118",
+          "state": "SUBMITTED",
+          "detail": "Order handed to ExchangeGateway.",
+          "tone": "info"
+        },
+        {
+          "time": "14:32:00.156",
+          "state": "NEW",
+          "detail": "Venue acknowledged order bn-94710284.",
+          "tone": "warn"
+        }
+      ]
+    },
+    {
+      "orderId": "ord-1842",
+      "exchangeOrderId": "bn-94710071",
+      "cycleId": "cycle-btc-20260923-1430",
+      "correlationId": "corr-btc-20260923-1430-a91f",
+      "asset": "BTC",
+      "side": "BUY",
+      "quantity": 0.7026,
+      "filledQty": 0.4684,
+      "remainingQty": 0.2342,
+      "state": "PARTIAL",
+      "age": "2m 04s",
+      "expectedPriceLabel": "$37,420.00",
+      "avgFillPriceLabel": "$37,426.36",
+      "feesLabel": "$9.84",
+      "slippageBps": 1.7,
+      "slippageBpsLabel": "+1.7 bps",
+      "submitLatencyMs": 45,
+      "fillLatencyMs": 286,
+      "submittedAt": "14:30:14.042",
+      "lastUpdateAt": "14:31:41.908",
+      "lifecycle": [
+        {
+          "time": "14:30:14.002",
+          "state": "PLANNED",
+          "detail": "BUY 0.7026 BTC generated from +3.0% required delta.",
+          "tone": "info"
+        },
+        {
+          "time": "14:30:14.042",
+          "state": "SUBMITTED",
+          "detail": "Order submitted to ExchangeGateway.",
+          "tone": "info"
+        },
+        {
+          "time": "14:30:14.087",
+          "state": "NEW",
+          "detail": "Venue accepted the order.",
+          "tone": "warn"
+        },
+        {
+          "time": "14:30:14.328",
+          "state": "PARTIAL FILL",
+          "detail": "0.2400 BTC filled at $37,425.90.",
+          "tone": "warn"
+        },
+        {
+          "time": "14:31:41.908",
+          "state": "PARTIAL FILL",
+          "detail": "Cumulative filled quantity reached 0.4684 BTC.",
+          "tone": "warn"
+        }
+      ]
+    },
+    {
+      "orderId": "ord-1841",
+      "exchangeOrderId": "bn-94709902",
+      "cycleId": "cycle-avax-20260923-1430",
+      "correlationId": "corr-avax-20260923-1430-2441",
+      "asset": "AVAX",
+      "side": "SELL",
+      "quantity": 280,
+      "filledQty": 0,
+      "remainingQty": 280,
+      "state": "PENDING_CANCEL",
+      "age": "3m 12s",
+      "expectedPriceLabel": "$41.82",
+      "avgFillPriceLabel": "—",
+      "feesLabel": "$0.00",
+      "slippageBps": 0,
+      "slippageBpsLabel": "Pending",
+      "submitLatencyMs": 41,
+      "fillLatencyMs": null,
+      "submittedAt": "14:29:06.114",
+      "lastUpdateAt": "14:31:52.020",
+      "lifecycle": [
+        {
+          "time": "14:29:06.071",
+          "state": "PLANNED",
+          "detail": "SELL 280 AVAX submitted for target reduction.",
+          "tone": "info"
+        },
+        {
+          "time": "14:29:06.114",
+          "state": "SUBMITTED",
+          "detail": "Venue order created.",
+          "tone": "info"
+        },
+        {
+          "time": "14:31:51.982",
+          "state": "CANCEL REQUESTED",
+          "detail": "Planner produced replacement after target revision.",
+          "tone": "warn"
+        },
+        {
+          "time": "14:31:52.020",
+          "state": "PENDING_CANCEL",
+          "detail": "Awaiting venue cancel acknowledgement.",
+          "tone": "warn"
+        }
+      ]
+    },
+    {
+      "orderId": "ord-1839",
+      "exchangeOrderId": "bn-94709461",
+      "cycleId": "cycle-sol-20260923-1430",
+      "correlationId": "corr-sol-20260923-1430-b705",
+      "asset": "SOL",
+      "side": "SELL",
+      "quantity": 101.65,
+      "filledQty": 101.65,
+      "remainingQty": 0,
+      "state": "FILLED",
+      "age": "4m 44s",
+      "expectedPriceLabel": "$138.20",
+      "avgFillPriceLabel": "$138.19",
+      "feesLabel": "$4.18",
+      "slippageBps": -0.6,
+      "slippageBpsLabel": "-0.6 bps",
+      "submitLatencyMs": 39,
+      "fillLatencyMs": 214,
+      "submittedAt": "14:27:34.602",
+      "lastUpdateAt": "14:27:34.816",
+      "lifecycle": [
+        {
+          "time": "14:27:34.561",
+          "state": "PLANNED",
+          "detail": "SELL 101.65 SOL generated from overweight position.",
+          "tone": "info"
+        },
+        {
+          "time": "14:27:34.602",
+          "state": "SUBMITTED",
+          "detail": "Order submitted to venue.",
+          "tone": "info"
+        },
+        {
+          "time": "14:27:34.816",
+          "state": "FILLED",
+          "detail": "Order fully filled in one venue execution.",
+          "tone": "good"
+        }
+      ]
+    },
+    {
+      "orderId": "ord-1838",
+      "exchangeOrderId": "",
+      "cycleId": "cycle-atom-20260923-1427",
+      "correlationId": "corr-atom-20260923-1427-d812",
+      "asset": "ATOM",
+      "side": "BUY",
+      "quantity": 850,
+      "filledQty": 0,
+      "remainingQty": 850,
+      "state": "REJECTED",
+      "age": "5m 07s",
+      "expectedPriceLabel": "$8.52",
+      "avgFillPriceLabel": "—",
+      "feesLabel": "$0.00",
+      "slippageBps": 0,
+      "slippageBpsLabel": "—",
+      "submitLatencyMs": 54,
+      "fillLatencyMs": null,
+      "submittedAt": "14:27:11.209",
+      "lastUpdateAt": "14:27:11.263",
+      "lifecycle": [
+        {
+          "time": "14:27:11.156",
+          "state": "PLANNED",
+          "detail": "BUY 850 ATOM generated by target delta.",
+          "tone": "info"
+        },
+        {
+          "time": "14:27:11.209",
+          "state": "SUBMITTED",
+          "detail": "Request sent through ExchangeGateway.",
+          "tone": "info"
+        },
+        {
+          "time": "14:27:11.263",
+          "state": "REJECTED",
+          "detail": "Venue rejected order: quantity precision invalid.",
+          "tone": "bad"
+        }
+      ]
+    },
+    {
+      "orderId": "ord-1836",
+      "exchangeOrderId": "bn-94708741",
+      "cycleId": "cycle-eth-20260923-1425",
+      "correlationId": "corr-eth-20260923-1425-f001",
+      "asset": "ETH",
+      "side": "BUY",
+      "quantity": 1.8,
+      "filledQty": 1.8,
+      "remainingQty": 0,
+      "state": "FILLED",
+      "age": "7m 18s",
+      "expectedPriceLabel": "$2,480.20",
+      "avgFillPriceLabel": "$2,480.42",
+      "feesLabel": "$2.68",
+      "slippageBps": 0.9,
+      "slippageBpsLabel": "+0.9 bps",
+      "submitLatencyMs": 36,
+      "fillLatencyMs": 344,
+      "submittedAt": "14:25:00.406",
+      "lastUpdateAt": "14:25:00.750",
+      "lifecycle": [
+        {
+          "time": "14:25:00.370",
+          "state": "PLANNED",
+          "detail": "BUY 1.8 ETH generated from portfolio delta.",
+          "tone": "info"
+        },
+        {
+          "time": "14:25:00.406",
+          "state": "SUBMITTED",
+          "detail": "Venue order created.",
+          "tone": "info"
+        },
+        {
+          "time": "14:25:00.750",
+          "state": "FILLED",
+          "detail": "Order fully filled.",
+          "tone": "good"
+        }
+      ]
+    }
+  ],
+  "partialFills": [
+    {
+      "fillId": "fill-7712",
+      "orderId": "ord-1842",
+      "asset": "BTC",
+      "quantity": 0.24,
+      "priceLabel": "$37,425.90",
+      "cumulativeLabel": "0.2400 / 0.7026",
+      "feesLabel": "$5.04",
+      "timestamp": "14:30:14.328"
+    },
+    {
+      "fillId": "fill-7715",
+      "orderId": "ord-1842",
+      "asset": "BTC",
+      "quantity": 0.2284,
+      "priceLabel": "$37,426.84",
+      "cumulativeLabel": "0.4684 / 0.7026",
+      "feesLabel": "$4.80",
+      "timestamp": "14:31:41.908"
+    }
+  ],
+  "rejects": [
+    {
+      "orderId": "ord-1838",
+      "asset": "ATOM",
+      "code": "LOT_SIZE / -1013",
+      "reason": "Requested quantity did not satisfy venue precision constraints.",
+      "remediation": "Blocked from blind retry. Planner must normalize quantity and produce a new auditable order."
+    }
+  ],
+  "replacements": [
+    {
+      "asset": "AVAX",
+      "originalOrderId": "ord-1841",
+      "cancelRequestedAt": "14:31:51.982",
+      "canceledAt": "Pending",
+      "replacementOrderId": "ord-1845",
+      "replacementState": "NEW"
+    },
+    {
+      "asset": "BTC",
+      "originalOrderId": "ord-1832",
+      "cancelRequestedAt": "14:23:20.011",
+      "canceledAt": "14:23:20.104",
+      "replacementOrderId": "ord-1833",
+      "replacementState": "FILLED"
+    }
+  ]
+}

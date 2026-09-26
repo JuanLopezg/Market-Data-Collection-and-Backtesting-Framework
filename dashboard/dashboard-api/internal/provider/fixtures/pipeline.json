@@ -1,0 +1,597 @@
+{
+  "cycleLabel": "Decision cycle · 2026-09-23 / 14:30 UTC",
+  "latestDecision": "14:30:00 UTC",
+  "universeSize": 20,
+  "activeSignals": 4,
+  "actionablePlans": 3,
+  "rows": [
+    {
+      "cycleId": "cycle-btc-20260923-1430",
+      "asset": "BTC",
+      "decisionTime": "14:30:00",
+      "rank": 4,
+      "rsi": 84.3,
+      "signal": "LONG",
+      "rawTargetPct": 15.2,
+      "volTargetPct": 11.8,
+      "approvedTargetPct": 10,
+      "currentWeightPct": 7,
+      "requiredDeltaPct": 3,
+      "plannedAction": "BUY +3.0%",
+      "exchangeState": "PARTIAL",
+      "stages": [
+        {
+          "id": "market",
+          "label": "Market / Universe",
+          "value": "Rank #4",
+          "detail": "Top-20 liquidity universe · fresh",
+          "state": "OK"
+        },
+        {
+          "id": "indicators",
+          "label": "Indicators",
+          "value": "RSI(7) 84.3",
+          "detail": "SMA Volume(25) qualified",
+          "state": "OK"
+        },
+        {
+          "id": "signal",
+          "label": "Signal",
+          "value": "LONG",
+          "detail": "Persistent LEVEL intent",
+          "state": "CHANGED"
+        },
+        {
+          "id": "raw-target",
+          "label": "Raw target",
+          "value": "15.2%",
+          "detail": "Pre-risk portfolio target",
+          "state": "OK"
+        },
+        {
+          "id": "vol-target",
+          "label": "Vol targeting",
+          "value": "11.8%",
+          "detail": "Scaled by current volatility",
+          "state": "CHANGED"
+        },
+        {
+          "id": "risk",
+          "label": "Risk constraints",
+          "value": "10.0%",
+          "detail": "Asset cap reduced target",
+          "state": "CHANGED"
+        },
+        {
+          "id": "approved-target",
+          "label": "Approved target",
+          "value": "10.0%",
+          "detail": "Final risk-approved target",
+          "state": "OK"
+        },
+        {
+          "id": "current-position",
+          "label": "Current position",
+          "value": "7.0%",
+          "detail": "Effective position before plan",
+          "state": "OK"
+        },
+        {
+          "id": "delta",
+          "label": "Required delta",
+          "value": "+3.0%",
+          "detail": "Target minus effective state",
+          "state": "CHANGED"
+        },
+        {
+          "id": "order-plan",
+          "label": "Order plan",
+          "value": "BUY +3.0%",
+          "detail": "One order generated",
+          "state": "OK"
+        },
+        {
+          "id": "exchange",
+          "label": "Exchange",
+          "value": "PARTIAL",
+          "detail": "Order ord-1842 · 66.7% filled",
+          "state": "PENDING"
+        }
+      ]
+    },
+    {
+      "cycleId": "cycle-eth-20260923-1430",
+      "asset": "ETH",
+      "decisionTime": "14:30:00",
+      "rank": 7,
+      "rsi": 78.1,
+      "signal": "LONG",
+      "rawTargetPct": 12.5,
+      "volTargetPct": 10.2,
+      "approvedTargetPct": 10.2,
+      "currentWeightPct": 10.1,
+      "requiredDeltaPct": 0.1,
+      "plannedAction": "HOLD",
+      "exchangeState": "NONE",
+      "stages": [
+        {
+          "id": "market",
+          "label": "Market / Universe",
+          "value": "Rank #7",
+          "detail": "Top-20 liquidity universe · fresh",
+          "state": "OK"
+        },
+        {
+          "id": "indicators",
+          "label": "Indicators",
+          "value": "RSI(7) 78.1",
+          "detail": "Below entry threshold, existing signal persists",
+          "state": "OK"
+        },
+        {
+          "id": "signal",
+          "label": "Signal",
+          "value": "LONG",
+          "detail": "Persistent LEVEL state",
+          "state": "OK"
+        },
+        {
+          "id": "raw-target",
+          "label": "Raw target",
+          "value": "12.5%",
+          "detail": "Pre-risk portfolio target",
+          "state": "OK"
+        },
+        {
+          "id": "vol-target",
+          "label": "Vol targeting",
+          "value": "10.2%",
+          "detail": "Volatility scaling applied",
+          "state": "CHANGED"
+        },
+        {
+          "id": "risk",
+          "label": "Risk constraints",
+          "value": "10.2%",
+          "detail": "No additional cap modification",
+          "state": "OK"
+        },
+        {
+          "id": "approved-target",
+          "label": "Approved target",
+          "value": "10.2%",
+          "detail": "Final target",
+          "state": "OK"
+        },
+        {
+          "id": "current-position",
+          "label": "Current position",
+          "value": "10.1%",
+          "detail": "Effective current position",
+          "state": "OK"
+        },
+        {
+          "id": "delta",
+          "label": "Required delta",
+          "value": "+0.1%",
+          "detail": "Inside rebalance tolerance",
+          "state": "OK"
+        },
+        {
+          "id": "order-plan",
+          "label": "Order plan",
+          "value": "HOLD",
+          "detail": "No actionable order",
+          "state": "OK"
+        },
+        {
+          "id": "exchange",
+          "label": "Exchange",
+          "value": "NONE",
+          "detail": "No order submitted",
+          "state": "OK"
+        }
+      ]
+    },
+    {
+      "cycleId": "cycle-sol-20260923-1430",
+      "asset": "SOL",
+      "decisionTime": "14:30:00",
+      "rank": 9,
+      "rsi": 86.8,
+      "signal": "LONG",
+      "rawTargetPct": 14.4,
+      "volTargetPct": 9.7,
+      "approvedTargetPct": 9.7,
+      "currentWeightPct": 12,
+      "requiredDeltaPct": -2.3,
+      "plannedAction": "SELL -2.3%",
+      "exchangeState": "FILLED",
+      "stages": [
+        {
+          "id": "market",
+          "label": "Market / Universe",
+          "value": "Rank #9",
+          "detail": "Top-20 liquidity universe · fresh",
+          "state": "OK"
+        },
+        {
+          "id": "indicators",
+          "label": "Indicators",
+          "value": "RSI(7) 86.8",
+          "detail": "SMA Volume(25) qualified",
+          "state": "OK"
+        },
+        {
+          "id": "signal",
+          "label": "Signal",
+          "value": "LONG",
+          "detail": "Persistent LEVEL intent",
+          "state": "OK"
+        },
+        {
+          "id": "raw-target",
+          "label": "Raw target",
+          "value": "14.4%",
+          "detail": "Pre-risk target",
+          "state": "OK"
+        },
+        {
+          "id": "vol-target",
+          "label": "Vol targeting",
+          "value": "9.7%",
+          "detail": "High realized vol reduced target",
+          "state": "CHANGED"
+        },
+        {
+          "id": "risk",
+          "label": "Risk constraints",
+          "value": "9.7%",
+          "detail": "No further reduction",
+          "state": "OK"
+        },
+        {
+          "id": "approved-target",
+          "label": "Approved target",
+          "value": "9.7%",
+          "detail": "Final target",
+          "state": "OK"
+        },
+        {
+          "id": "current-position",
+          "label": "Current position",
+          "value": "12.0%",
+          "detail": "Effective current position",
+          "state": "OK"
+        },
+        {
+          "id": "delta",
+          "label": "Required delta",
+          "value": "-2.3%",
+          "detail": "Portfolio overweight vs approved target",
+          "state": "CHANGED"
+        },
+        {
+          "id": "order-plan",
+          "label": "Order plan",
+          "value": "SELL -2.3%",
+          "detail": "One reduction order generated",
+          "state": "OK"
+        },
+        {
+          "id": "exchange",
+          "label": "Exchange",
+          "value": "FILLED",
+          "detail": "Order ord-1839 completed",
+          "state": "OK"
+        }
+      ]
+    },
+    {
+      "cycleId": "cycle-link-20260923-1430",
+      "asset": "LINK",
+      "decisionTime": "14:30:00",
+      "rank": 12,
+      "rsi": 68.9,
+      "signal": "FLAT",
+      "rawTargetPct": 0,
+      "volTargetPct": 0,
+      "approvedTargetPct": 0,
+      "currentWeightPct": -8,
+      "requiredDeltaPct": 8,
+      "plannedAction": "BUY TO FLAT",
+      "exchangeState": "PENDING",
+      "stages": [
+        {
+          "id": "market",
+          "label": "Market / Universe",
+          "value": "Rank #12",
+          "detail": "Top-20 liquidity universe · fresh",
+          "state": "OK"
+        },
+        {
+          "id": "indicators",
+          "label": "Indicators",
+          "value": "RSI(7) 68.9",
+          "detail": "Below exit threshold 70",
+          "state": "CHANGED"
+        },
+        {
+          "id": "signal",
+          "label": "Signal",
+          "value": "FLAT",
+          "detail": "Exit transition from active state",
+          "state": "CHANGED"
+        },
+        {
+          "id": "raw-target",
+          "label": "Raw target",
+          "value": "0.0%",
+          "detail": "Strategy exited position",
+          "state": "CHANGED"
+        },
+        {
+          "id": "vol-target",
+          "label": "Vol targeting",
+          "value": "0.0%",
+          "detail": "No scaling required",
+          "state": "OK"
+        },
+        {
+          "id": "risk",
+          "label": "Risk constraints",
+          "value": "0.0%",
+          "detail": "No risk modification",
+          "state": "OK"
+        },
+        {
+          "id": "approved-target",
+          "label": "Approved target",
+          "value": "0.0%",
+          "detail": "Flat approved",
+          "state": "OK"
+        },
+        {
+          "id": "current-position",
+          "label": "Current position",
+          "value": "-8.0%",
+          "detail": "Short still effective until fill",
+          "state": "PENDING"
+        },
+        {
+          "id": "delta",
+          "label": "Required delta",
+          "value": "+8.0%",
+          "detail": "Buy required to flatten",
+          "state": "CHANGED"
+        },
+        {
+          "id": "order-plan",
+          "label": "Order plan",
+          "value": "BUY TO FLAT",
+          "detail": "Close order submitted",
+          "state": "OK"
+        },
+        {
+          "id": "exchange",
+          "label": "Exchange",
+          "value": "PENDING",
+          "detail": "Awaiting exchange fill",
+          "state": "PENDING"
+        }
+      ]
+    }
+  ],
+  "traces": {
+    "cycle-btc-20260923-1430": {
+      "cycleId": "cycle-btc-20260923-1430",
+      "asset": "BTC",
+      "market": {
+        "price": "$37,420.00",
+        "universe": "Top-20 SMA(Volume,25)",
+        "liquidityRank": "#4",
+        "freshness": "0.8s · HEALTHY"
+      },
+      "strategy": {
+        "rsi": "84.3",
+        "signal": "LONG / +1",
+        "transition": "LONG → LONG",
+        "intent": "Maintain long exposure"
+      },
+      "portfolio": {
+        "rawTarget": "15.2%",
+        "volTarget": "11.8%",
+        "riskChanges": [
+          "Asset cap: 11.8% → 10.0%"
+        ],
+        "approvedTarget": "10.0%"
+      },
+      "planning": {
+        "effectiveQty": "1.6400 BTC",
+        "pendingQty": "0.0800 BTC",
+        "delta": "+0.7026 BTC",
+        "stateRevision": "rev-88214"
+      },
+      "execution": {
+        "orderIds": [
+          "ord-1842"
+        ],
+        "side": "BUY",
+        "quantity": "0.7026 BTC",
+        "fillState": "PARTIAL · 0.4684 filled",
+        "fees": "$9.84",
+        "slippage": "+1.7 bps"
+      },
+      "reconciliation": {
+        "localQty": "2.1084 BTC",
+        "exchangeQty": "2.1084 BTC",
+        "status": "PENDING"
+      },
+      "audit": {
+        "correlationId": "corr-btc-20260923-1430-a91f",
+        "configVersion": "cfg-2026.09.23-07",
+        "mode": "REPLAY",
+        "exchange": "BINANCE",
+        "decisionTimestamp": "2026-09-23 14:30:00 UTC",
+        "executionTimestamp": "2026-09-23 14:30:02 UTC"
+      }
+    },
+    "cycle-eth-20260923-1430": {
+      "cycleId": "cycle-eth-20260923-1430",
+      "asset": "ETH",
+      "market": {
+        "price": "$2,484.00",
+        "universe": "Top-20 SMA(Volume,25)",
+        "liquidityRank": "#7",
+        "freshness": "0.8s · HEALTHY"
+      },
+      "strategy": {
+        "rsi": "78.1",
+        "signal": "LONG / +1",
+        "transition": "LONG → LONG",
+        "intent": "Maintain long exposure"
+      },
+      "portfolio": {
+        "rawTarget": "12.5%",
+        "volTarget": "10.2%",
+        "riskChanges": [
+          "No portfolio cap changes"
+        ],
+        "approvedTarget": "10.2%"
+      },
+      "planning": {
+        "effectiveQty": "12.4000 ETH",
+        "pendingQty": "0",
+        "delta": "+0.0400 ETH",
+        "stateRevision": "rev-88215"
+      },
+      "execution": {
+        "orderIds": [],
+        "side": "—",
+        "quantity": "—",
+        "fillState": "No actionable order",
+        "fees": "$0.00",
+        "slippage": "—"
+      },
+      "reconciliation": {
+        "localQty": "12.4000 ETH",
+        "exchangeQty": "12.4000 ETH",
+        "status": "ALIGNED"
+      },
+      "audit": {
+        "correlationId": "corr-eth-20260923-1430-f214",
+        "configVersion": "cfg-2026.09.23-07",
+        "mode": "REPLAY",
+        "exchange": "BINANCE",
+        "decisionTimestamp": "2026-09-23 14:30:00 UTC",
+        "executionTimestamp": "—"
+      }
+    },
+    "cycle-sol-20260923-1430": {
+      "cycleId": "cycle-sol-20260923-1430",
+      "asset": "SOL",
+      "market": {
+        "price": "$138.20",
+        "universe": "Top-20 SMA(Volume,25)",
+        "liquidityRank": "#9",
+        "freshness": "0.8s · HEALTHY"
+      },
+      "strategy": {
+        "rsi": "86.8",
+        "signal": "LONG / +1",
+        "transition": "LONG → LONG",
+        "intent": "Maintain long exposure"
+      },
+      "portfolio": {
+        "rawTarget": "14.4%",
+        "volTarget": "9.7%",
+        "riskChanges": [
+          "Vol target scaling: 14.4% → 9.7%"
+        ],
+        "approvedTarget": "9.7%"
+      },
+      "planning": {
+        "effectiveQty": "530.0000 SOL",
+        "pendingQty": "0",
+        "delta": "-101.6500 SOL",
+        "stateRevision": "rev-88216"
+      },
+      "execution": {
+        "orderIds": [
+          "ord-1839"
+        ],
+        "side": "SELL",
+        "quantity": "101.6500 SOL",
+        "fillState": "FILLED",
+        "fees": "$4.18",
+        "slippage": "-0.6 bps"
+      },
+      "reconciliation": {
+        "localQty": "428.3500 SOL",
+        "exchangeQty": "428.3500 SOL",
+        "status": "ALIGNED"
+      },
+      "audit": {
+        "correlationId": "corr-sol-20260923-1430-b705",
+        "configVersion": "cfg-2026.09.23-07",
+        "mode": "REPLAY",
+        "exchange": "BINANCE",
+        "decisionTimestamp": "2026-09-23 14:30:00 UTC",
+        "executionTimestamp": "2026-09-23 14:30:03 UTC"
+      }
+    },
+    "cycle-link-20260923-1430": {
+      "cycleId": "cycle-link-20260923-1430",
+      "asset": "LINK",
+      "market": {
+        "price": "$14.21",
+        "universe": "Top-20 SMA(Volume,25)",
+        "liquidityRank": "#12",
+        "freshness": "0.8s · HEALTHY"
+      },
+      "strategy": {
+        "rsi": "68.9",
+        "signal": "FLAT / 0",
+        "transition": "SHORT → FLAT",
+        "intent": "Exit position"
+      },
+      "portfolio": {
+        "rawTarget": "0.0%",
+        "volTarget": "0.0%",
+        "riskChanges": [
+          "No risk modification"
+        ],
+        "approvedTarget": "0.0%"
+      },
+      "planning": {
+        "effectiveQty": "-2400 LINK",
+        "pendingQty": "+2400 LINK",
+        "delta": "+2400 LINK",
+        "stateRevision": "rev-88217"
+      },
+      "execution": {
+        "orderIds": [
+          "ord-1844"
+        ],
+        "side": "BUY",
+        "quantity": "2400 LINK",
+        "fillState": "PENDING",
+        "fees": "Pending",
+        "slippage": "Pending"
+      },
+      "reconciliation": {
+        "localQty": "-2400 LINK",
+        "exchangeQty": "-2400 LINK",
+        "status": "PENDING"
+      },
+      "audit": {
+        "correlationId": "corr-link-20260923-1430-c880",
+        "configVersion": "cfg-2026.09.23-07",
+        "mode": "REPLAY",
+        "exchange": "BINANCE",
+        "decisionTimestamp": "2026-09-23 14:30:00 UTC",
+        "executionTimestamp": "Pending"
+      }
+    }
+  }
+}

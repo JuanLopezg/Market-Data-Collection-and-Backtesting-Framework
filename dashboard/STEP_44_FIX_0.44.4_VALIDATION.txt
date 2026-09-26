@@ -1,0 +1,15 @@
+STEP 44 FIX 0.44.4 VALIDATION
+
+CGO_ENABLED=0 go test ./...   PASS
+CGO_ENABLED=0 go vet ./...    PASS
+CGO_ENABLED=0 go build ./...  PASS
+bash -n step44/43/42 gates     PASS
+
+Targeted regressions:
+- transient NATS SOURCE_CRITICAL => BLOCKED + retryable: PASS
+- semantic NATS SOURCE_CRITICAL => BLOCKED + non-retryable: PASS
+- mixed transient + semantic CRITICAL => non-retryable: PASS
+- exact 5-blocker snapshot => blocking=5 retryable=5 safe=false: PASS
+
+No frontend files changed in this fix.
+No wallet/signing/order route added.

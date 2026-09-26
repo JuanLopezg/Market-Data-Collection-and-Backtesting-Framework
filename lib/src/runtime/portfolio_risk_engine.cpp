@@ -194,8 +194,17 @@ DecisionBatch PortfolioRiskEngine::onSignals(
 
             // RebalancePlan semantics define a missing coin as HOLD. Keep the distributed
             // DecisionBatch boundary identical: explicit HOLD entries must not be emitted.
-            if (decision.action != RebalanceAction::Hold)
+            if (decision.action != RebalanceAction::Hold) {
                 decisionIntent.decisions.emplace(coin, decision);
+
+                // From this boundary forward the LIVE pipeline carries economic USD
+                // notionals, not exchange-specific quantities. FLAT is explicitly zero.
+                const double targetNotional =
+                    decision.action == RebalanceAction::Flat
+                        ? 0.0
+                        : decision.target_weight * strategyCapital;
+                decisionIntent.target_notional_usd.emplace(coin, targetNotional);
+            }
         }
 
         if (!decisionIntent.decisions.empty())

@@ -1,0 +1,262 @@
+name: algotrading-historical-replay
+
+x-runtime: &runtime
+  image: algotrading-runtime:historical-replay
+  build:
+    context: ./.runtime_bundle
+  init: true
+  restart: on-failure
+  env_file:
+    - ./run/time.env
+  environment:
+    ALGOTRADING_LOG_DEBUG: "${ALGOTRADING_LOG_DEBUG:-0}"
+    ALGOTRADING_LOG_QUIET: "${ALGOTRADING_LOG_QUIET:-0}"
+    ALGOTRADING_LOG_DIR: "${ALGOTRADING_LOG_DIR:-}"
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+  networks: [historical-replay]
+  profiles: ["runtime"]
+
+x-postgres-connection: &postgres_connection "host=postgres port=5432 dbname=${POSTGRES_DB:-algotrading_historical_replay} user=${POSTGRES_USER:-algotrading} password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/historical_replay/.env}"
+
+services:
+  nats:
+    image: nats:2.10-alpine
+    command: ["-js", "-m", "8222", "--store_dir", "/data"]
+    volumes:
+      - nats-data:/data
+    ports:
+      - "127.0.0.1:${HISTORICAL_REPLAY_NATS_PORT:-64228}:4222"
+      - "127.0.0.1:${HISTORICAL_REPLAY_NATS_MONITOR_PORT:-65228}:8222"
+    networks: [historical-replay]
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-algotrading_historical_replay}"
+      POSTGRES_USER: "${POSTGRES_USER:-algotrading}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/historical_replay/.env}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-algotrading} -d ${POSTGRES_DB:-algotrading_historical_replay}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${HISTORICAL_REPLAY_POSTGRES_PORT:-65438}:5432"
+    networks: [historical-replay]
+
+  # One-shot ownership initializer for the named SQLite volume. Runtime images run as UID 10001.
+  market-data-volume-init:
+    image: alpine:3.20
+    command: ["sh", "-c", "mkdir -p /data/market && chown -R 10001:10001 /data/market && chmod 0775 /data/market"]
+    volumes:
+      - market-data-db:/data/market:rw
+    restart: "no"
+
+  # One-shot canonical SQLite schema initializer. Publishes nothing.
+  market-data-db-init:
+    <<: *runtime
+    command:
+      - algotrading_historical_market_data_service
+      - --market-data-db
+      - /data/market/database.db
+      - --init-only
+    volumes:
+      - market-data-db:/data/market:rw
+    depends_on:
+      market-data-volume-init:
+        condition: service_completed_successfully
+    restart: "no"
+    profiles: ["runtime"]
+
+  # Historical feeder: releases only business-time-visible source days into canonical SQLite.
+  historical-market-data:
+    <<: *runtime
+    command:
+      - algotrading_historical_market_data_service
+      - --nats-url
+      - nats://nats:4222
+      - --stream
+      - ALGOTRADING_HISTORICAL_RUNTIME
+      - --historical-data
+      - /data/historical/1d_cmc.csv
+      - --market-data-db
+      - /data/market/database.db
+      - --source-id
+      - "${HISTORICAL_MARKET_DATA_SOURCE:-historical-cmc}"
+      - --market-top-n
+      - "${HISTORICAL_MARKET_TOP_N:-1000000}"
+      - --poll-timeout-ms
+      - "50"
+    volumes:
+      - "${HISTORICAL_DATA_PATH:-../../storage/databases/1d_cmc.csv}:/data/historical/1d_cmc.csv:ro"
+      - market-data-db:/data/market:rw
+    depends_on:
+      nats:
+        condition: service_started
+      market-data-db-init:
+        condition: service_completed_successfully
+    profiles: ["runtime"]
+
+  strategy:
+    <<: *runtime
+    command:
+      - algotrading_strategy_service
+      - --nats-url
+      - nats://nats:4222
+      - --stream
+      - ALGOTRADING_HISTORICAL_RUNTIME
+      - --strategy-config
+      - "${STRATEGY_CONFIG:-/opt/algotrading/config/strategies/pure_rsi_signal.json}"
+      - --market-data-db
+      - /data/market/database.db
+      - --market-warmup-days
+      - "${MARKET_WARMUP_DAYS:-100}"
+      - --market-top-n
+      - "${HISTORICAL_MARKET_TOP_N:-1000000}"
+      - --market-data-source
+      - "${HISTORICAL_MARKET_DATA_SOURCE:-historical-cmc}"
+      - --postgres
+      - *postgres_connection
+    volumes:
+      - market-data-db:/data/market:rw
+    depends_on:
+      nats:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      market-data-db-init:
+        condition: service_completed_successfully
+
+  portfolio-risk:
+    <<: *runtime
+    command:
+      - algotrading_portfolio_risk_service
+      - --nats-url
+      - nats://nats:4222
+      - --stream
+      - ALGOTRADING_HISTORICAL_RUNTIME
+      - --portfolio-config
+      - "${PORTFOLIO_CONFIG:-/opt/algotrading/config/portfolio/pure_rsi_equal_weight.json}"
+      - --market-data-db
+      - /data/market/database.db
+      - --market-history-buffer-days
+      - "${MARKET_HISTORY_BUFFER_DAYS:-5}"
+      - --postgres
+      - *postgres_connection
+    volumes:
+      - market-data-db:/data/market:rw
+    depends_on:
+      nats:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      market-data-db-init:
+        condition: service_completed_successfully
+
+  execution-state:
+    <<: *runtime
+    command:
+      - algotrading_execution_state_service
+      - --nats-url
+      - nats://nats:4222
+      - --postgres
+      - *postgres_connection
+      - --stream
+      - ALGOTRADING_HISTORICAL_RUNTIME
+      - --exchange-control-stream
+      - ALGOTRADING_HISTORICAL_EXCHANGE_CONTROL
+      - --market-data-db
+      - /data/market/database.db
+      - --market-data-source
+      - "${HISTORICAL_MARKET_DATA_SOURCE:-historical-cmc}"
+      - --initial-cash
+      - "${INITIAL_CASH:-100000}"
+      - --strategy
+      - 1:Pure_RSI
+    volumes:
+      - market-data-db:/data/market:rw
+    depends_on:
+      nats:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      market-data-db-init:
+        condition: service_completed_successfully
+
+  order-planner:
+    <<: *runtime
+    command:
+      - algotrading_order_planner_service
+      - --nats-url
+      - nats://nats:4222
+      - --stream
+      - ALGOTRADING_HISTORICAL_RUNTIME
+      - --postgres
+      - *postgres_connection
+    depends_on:
+      nats:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+
+  exchange-gateway:
+    <<: *runtime
+    command:
+      - algotrading_exchange_gateway
+      - --nats-url
+      - nats://nats:4222
+      - --stream
+      - ALGOTRADING_HISTORICAL_RUNTIME
+      - --control-stream
+      - ALGOTRADING_HISTORICAL_EXCHANGE_CONTROL
+      - --backend-stream
+      - ALGOTRADING_HISTORICAL_EXCHANGE_BACKEND
+      - --mode
+      - backend
+      - --poll-timeout-ms
+      - "50"
+    depends_on:
+      nats:
+        condition: service_started
+
+  simulated-exchange:
+    <<: *runtime
+    command:
+      - algotrading_simulated_exchange_service
+      - --nats-url
+      - nats://nats:4222
+      - --stream
+      - ALGOTRADING_HISTORICAL_RUNTIME
+      - --backend-stream
+      - ALGOTRADING_HISTORICAL_EXCHANGE_BACKEND
+      - --postgres
+      - *postgres_connection
+      - --initial-cash
+      - "${INITIAL_CASH:-100000}"
+      - --commission-rate
+      - "${COMMISSION_RATE:-0.0}"
+      - --poll-timeout-ms
+      - "50"
+    depends_on:
+      nats:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+
+networks:
+  historical-replay:
+    name: "${HISTORICAL_REPLAY_NETWORK:-algotrading-historical-replay-net}"
+
+volumes:
+  nats-data:
+    name: "${HISTORICAL_REPLAY_NATS_VOLUME:-algotrading-historical-replay-nats}"
+  postgres-data:
+    name: "${HISTORICAL_REPLAY_POSTGRES_VOLUME:-algotrading-historical-replay-postgres}"
+  market-data-db:
+    name: "${HISTORICAL_REPLAY_MARKET_VOLUME:-algotrading-historical-replay-market}"

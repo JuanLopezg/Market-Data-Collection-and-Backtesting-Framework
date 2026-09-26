@@ -1,31 +1,20 @@
-// ============================================================================
-// LEARNING VERSION — Strategy service orchestrator
-// ============================================================================
-//
-// Mental model:
-//   NATS MarketSliceSnapshot
-//          ↓
-//   this service orchestrator
-//          ↓
-//   RollingMarketState → StrategySignalEngine / PureRSI
-//          ↓
-//   StrategyIntentBatch → NATS
-//          ↓
-//   PostgreSQL checkpoint → ACK input
-//
-// ============================================================================
-
+#include <algorithm>
 #include <atomic>
 #include <csignal>
+#include <chrono>
 #include <cstdlib>
+#include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -33,16 +22,18 @@
 #include <libpq-fe.h>
 #include <nlohmann/json.hpp>
 
+#include "canonical_market_data_reader.h"
 #include "contract_json_codec.h"
 #include "indicator_ranker.h"
 #include "liquidity_universe.h"
+#include "market_data_updated.h"
 #include "nats_jetstream_message_bus.h"
 #include "pureRSI.h"
-#include "rolling_market_state.h"
 #include "service_logging.h"
-#include "service_clock.h"
 #include "strategy_signal_engine.h"
 #include "strategy_signal_instance.h"
+#include "time_handler_factory.h"
+#include "time_utils.h"
 #include "transport_subjects.h"
 
 namespace {
@@ -50,23 +41,19 @@ namespace {
 using json = nlohmann::json;
 std::atomic<bool> running{true};
 
-// Called by the operating system when the process receives SIGINT/SIGTERM.
-// It does not immediately destroy anything; it simply flips `running` to false.
-// The main polling loop sees that flag and performs a clean shutdown.
 void stopHandler(int) { running.store(false); }
 
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
     std::string stream = "ALGOTRADING_RUNTIME";
     std::string strategy_config = "config/strategies/pure_rsi_signal.json";
+    std::filesystem::path market_data_db = "storage/databases/database.db";
+    unsigned int market_warmup_days = 100;
+    unsigned int market_top_n = 50;
+    std::string market_data_source = "binance";
     std::string postgres;
-    RuntimeMode runtime_mode = RuntimeMode::Live;
-    std::string simulation_id;
-    int poll_timeout_ms = 250;
 };
 
-// Prints the command-line options supported by this executable.
-// This is only user/operator help; it does not participate in trading logic.
 void printUsage()
 {
     std::cout
@@ -74,26 +61,19 @@ void printUsage()
         << "  --nats-url URL\n"
         << "  --stream NAME\n"
         << "  --strategy-config PATH\n"
+        << "  --market-data-db PATH       canonical SQLite market database\n"
+        << "  --market-warmup-days N      default 100\n"
+        << "  --market-top-n N            canonical entry candidate cap, default 50\n"
+        << "  --market-data-source NAME   expected MarketDataUpdated source, default binance\n"
         << "  --postgres CONNECTION_STRING\n"
-        << "  --runtime-mode live|testnet|replay\n"
-        << "  --simulation-id ID   optional REPLAY identity guard\n"
-        << "  --poll-timeout-ms N\n";
+        << "  Business time is provided by TimeHandler (identity UTC by default)\n";
 }
 
-// Reads command-line arguments supplied when the Docker/process starts.
-// It builds one `Options` object containing things such as:
-// NATS address, PostgreSQL connection, strategy config, runtime mode and timeout.
-// It also rejects unknown/invalid arguments early so the service does not start
-// with an ambiguous configuration.
 Options parseOptions(int argc, char** argv)
 {
     Options options;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
-        // Small helper used only inside parseOptions().
-        // It means: "this flag must have another argument after it".
-        // Example: `--nats-url nats://nats:4222`.
-        // If the value is missing, startup fails with a clear error.
         auto requireValue = [&](const char* option) -> std::string {
             if (i + 1 >= argc)
                 throw std::invalid_argument(std::string(option) + " requires a value");
@@ -109,14 +89,18 @@ Options parseOptions(int argc, char** argv)
             options.stream = requireValue("--stream");
         } else if (arg == "--strategy-config") {
             options.strategy_config = requireValue("--strategy-config");
+        } else if (arg == "--market-data-db") {
+            options.market_data_db = requireValue("--market-data-db");
+        } else if (arg == "--market-warmup-days") {
+            options.market_warmup_days = static_cast<unsigned int>(
+                std::stoul(requireValue("--market-warmup-days")));
+        } else if (arg == "--market-top-n") {
+            options.market_top_n = static_cast<unsigned int>(
+                std::stoul(requireValue("--market-top-n")));
+        } else if (arg == "--market-data-source") {
+            options.market_data_source = requireValue("--market-data-source");
         } else if (arg == "--postgres") {
             options.postgres = requireValue("--postgres");
-        } else if (arg == "--runtime-mode") {
-            options.runtime_mode = parseRuntimeMode(requireValue("--runtime-mode"));
-        } else if (arg == "--simulation-id") {
-            options.simulation_id = requireValue("--simulation-id");
-        } else if (arg == "--poll-timeout-ms") {
-            options.poll_timeout_ms = std::stoi(requireValue("--poll-timeout-ms"));
         } else {
             throw std::invalid_argument("Unknown option: " + arg);
         }
@@ -124,14 +108,19 @@ Options parseOptions(int argc, char** argv)
 
     if (options.nats_url.empty() || options.stream.empty() || options.strategy_config.empty())
         throw std::invalid_argument("Strategy-service required string options cannot be empty");
-    if (options.poll_timeout_ms <= 0)
-        throw std::invalid_argument("--poll-timeout-ms must be positive");
+    if (options.market_data_db.empty())
+        throw std::invalid_argument("--market-data-db cannot be empty");
+    if (!std::filesystem::exists(options.market_data_db))
+        throw std::invalid_argument("Canonical market-data SQLite database does not exist");
+    if (options.market_warmup_days == 0)
+        throw std::invalid_argument("--market-warmup-days must be positive");
+    if (options.market_top_n == 0)
+        throw std::invalid_argument("--market-top-n must be positive");
+    if (options.market_data_source.empty())
+        throw std::invalid_argument("--market-data-source cannot be empty");
     return options;
 }
 
-// Loads an entire text file into a std::string.
-// In this service it is used to read the strategy configuration so the exact
-// config can be associated with PostgreSQL recovery state.
 std::string readTextFile(const std::string& path)
 {
     std::ifstream input(path, std::ios::binary);
@@ -144,38 +133,87 @@ std::string readTextFile(const std::string& path)
     );
 }
 
-// RAII wrapper around PostgreSQL's raw `PGresult*`.
-// libpq requires every result to be released with PQclear(). This wrapper makes
-// that automatic, reducing the chance of memory leaks when exceptions occur.
+std::string checkpointIdentity(const Options& options)
+{
+    return readTextFile(options.strategy_config) +
+        "\nmarket_data_mode=canonical-sqlite-v1" +
+        "\nmarket_warmup_days=" + std::to_string(options.market_warmup_days) +
+        "\nmarket_top_n=" + std::to_string(options.market_top_n) +
+        "\nmarket_data_source=" + options.market_data_source;
+}
+
+Timestamp newestCompletedBusinessUtcDate(const TimeHandler& timeHandler)
+{
+    const auto todayUtc = getCurrentUtcDate(timeHandler.getTime());
+    return static_cast<Timestamp>(toYYYYMMDD(getPreviousDayDate(todayUtc)));
+}
+
+std::optional<Timestamp> configuredBootstrapCompletedUtcDate(const TimeHandlerConfig& config)
+{
+    // An explicit shared simulated reference defines the immutable economic start of
+    // accelerated/historical runs.  Derive the first completed UTC day from that
+    // reference itself, not from getTime() sampled after process/container startup.
+    //
+    // Identity LIVE mode intentionally leaves both reference env vars absent; in that
+    // case bootstrap remains anchored to the current canonical frontier as before.
+    const char* simulatedReference = std::getenv(TimeHandlerFactory::SIMULATED_REFERENCE_ENV);
+    if (!simulatedReference || *simulatedReference == '\0')
+        return std::nullopt;
+
+    const auto referenceUtcDate = getCurrentUtcDate(config.simulated_reference_utc);
+    return static_cast<Timestamp>(toYYYYMMDD(getPreviousDayDate(referenceUtcDate)));
+}
+
+void interruptibleSleepFor(std::chrono::steady_clock::duration duration)
+{
+    const auto deadline = std::chrono::steady_clock::now() + duration;
+    while (running.load()) {
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= deadline)
+            return;
+        const auto remaining = deadline - now;
+        const auto chunk = std::min(
+            std::chrono::duration_cast<std::chrono::milliseconds>(remaining),
+            std::chrono::milliseconds(100));
+        if (chunk.count() > 0)
+            std::this_thread::sleep_for(chunk);
+    }
+}
+
+// BUSINESS wait: the deadline is evaluated against TimeHandler business time.
+// The short real sleep is only a TECHNICAL polling cadence so shutdown remains responsive.
+void interruptibleBusinessWaitUntil(
+    const TimeHandler& timeHandler,
+    std::chrono::system_clock::time_point businessDeadline)
+{
+    constexpr auto technicalPollInterval = std::chrono::milliseconds(250);
+
+    while (running.load()) {
+        if (timeHandler.getTime() >= businessDeadline)
+            return;
+        std::this_thread::sleep_for(technicalPollInterval);
+    }
+}
+
 class PgResult {
 private:
     PGresult* result_ = nullptr;
 
 public:
-    // Takes ownership of a raw PostgreSQL query result.
-// From this point onward this object is responsible for calling PQclear().
     explicit PgResult(PGresult* result) : result_(result) {}
-    // Destructor: automatically frees the PostgreSQL result when the wrapper
-// leaves scope, including when an exception is thrown.
     ~PgResult()
     {
         if (result_)
             PQclear(result_);
     }
 
-    // Copying is forbidden because two wrappers must never believe they both
-// own the same PGresult*. That could cause a double-free.
     PgResult(const PgResult&) = delete;
     PgResult& operator=(const PgResult&) = delete;
 
-    // Move constructor: transfers ownership of the PostgreSQL result from
-// another PgResult without copying the underlying pointer.
     PgResult(PgResult&& other) noexcept
         : result_(std::exchange(other.result_, nullptr))
     {}
 
-    // Move assignment: releases any result currently owned here, then takes
-// ownership of the other object's result.
     PgResult& operator=(PgResult&& other) noexcept
     {
         if (this != &other) {
@@ -186,31 +224,20 @@ public:
         return *this;
     }
 
-    // Gives callers access to the underlying libpq result without transferring
-// ownership. The PgResult wrapper still remains responsible for freeing it.
     PGresult* get() const { return result_; }
 };
 
-// PostgreSQL persistence layer used specifically by the strategy service.
-// Its job is to store enough durable information to recover after a crash:
-//   timestamp + input MarketSliceSnapshot + resulting StrategyIntentBatch.
-// It also stores the exact strategy configuration associated with that history.
 class StrategyCheckpointStore {
 private:
     PGconn* connection_ = nullptr;
-    static constexpr const char* STATE_KEY = "strategy-service";
+    static constexpr const char* STATE_KEY = "strategy-service-market-db-v1";
 
-    // Safety check used before every SQL operation.
-// It refuses to execute a query unless the PostgreSQL connection is healthy.
     void requireConnection() const
     {
         if (connection_ == nullptr || PQstatus(connection_) != CONNECTION_OK)
             throw std::runtime_error("Strategy checkpoint PostgreSQL connection is not ready");
     }
 
-    // Executes a normal SQL statement with no external parameters.
-// It verifies PostgreSQL returned the expected result type and converts database
-// failures into C++ exceptions. The returned PgResult cleans itself up.
     PgResult exec(const std::string& sql, ExecStatusType expected) const
     {
         requireConnection();
@@ -222,9 +249,6 @@ private:
         return result;
     }
 
-    // Executes parameterized SQL (`$1`, `$2`, ...).
-// Parameterized queries keep values separate from SQL text and are safer and
-// easier to reason about than manually concatenating values into a query.
     PgResult execParams(
         const std::string& sql,
         const std::vector<std::string>& parameters,
@@ -239,14 +263,8 @@ private:
             values.push_back(parameter.c_str());
 
         PgResult result(PQexecParams(
-            connection_,
-            sql.c_str(),
-            static_cast<int>(values.size()),
-            nullptr,
-            values.data(),
-            nullptr,
-            nullptr,
-            0
+            connection_, sql.c_str(), static_cast<int>(values.size()), nullptr,
+            values.data(), nullptr, nullptr, 0
         ));
 
         if (result.get() == nullptr || PQresultStatus(result.get()) != expected) {
@@ -256,11 +274,7 @@ private:
         return result;
     }
 
-    // Ensures the two strategy checkpoint tables exist.
-// It also records the exact strategy configuration and checks that an existing
-// checkpoint was produced with the SAME config. If the config changed, recovery
-// is refused rather than silently mixing old state with new strategy rules.
-    void ensureSchema(const std::string& strategyConfig)
+    void ensureSchema(const std::string& identity)
     {
         exec(
             "CREATE TABLE IF NOT EXISTS strategy_service_metadata ("
@@ -270,11 +284,13 @@ private:
             PGRES_COMMAND_OK
         );
 
+        // New Step-3 table.  The old strategy_market_slice_checkpoint table is left
+        // untouched so previous REPLAY validation data is not silently reinterpreted.
         exec(
-            "CREATE TABLE IF NOT EXISTS strategy_market_slice_checkpoint ("
+            "CREATE TABLE IF NOT EXISTS strategy_market_update_checkpoint ("
             "state_key TEXT NOT NULL, "
             "timestamp BIGINT NOT NULL, "
-            "slice_payload TEXT NOT NULL, "
+            "update_payload TEXT NOT NULL, "
             "intent_payload TEXT NOT NULL, "
             "PRIMARY KEY(state_key, timestamp)"
             ")",
@@ -284,7 +300,7 @@ private:
         execParams(
             "INSERT INTO strategy_service_metadata(state_key, strategy_config) "
             "VALUES($1, $2) ON CONFLICT(state_key) DO NOTHING",
-            {STATE_KEY, strategyConfig},
+            {STATE_KEY, identity},
             PGRES_COMMAND_OK
         );
 
@@ -297,20 +313,24 @@ private:
         if (PQntuples(metadata.get()) != 1)
             throw std::runtime_error("Strategy checkpoint metadata row is missing");
 
-        const std::string persistedConfig = PQgetvalue(metadata.get(), 0, 0);
-        if (persistedConfig != strategyConfig)
+        const std::string persistedIdentity = PQgetvalue(metadata.get(), 0, 0);
+        if (persistedIdentity != identity)
             throw std::runtime_error(
-                "Persisted strategy checkpoint belongs to a different strategy configuration"
-            );
+                "Persisted strategy checkpoint belongs to a different strategy/market-window configuration");
+    }
+
+    static Timestamp parseTimestamp(const char* text)
+    {
+        const unsigned long long value = std::stoull(text ? text : "0");
+        if (value > static_cast<unsigned long long>(std::numeric_limits<Timestamp>::max()))
+            throw std::runtime_error("Persisted strategy checkpoint timestamp is out of range");
+        return static_cast<Timestamp>(value);
     }
 
 public:
-    // Opens the PostgreSQL connection for strategy recovery/checkpointing.
-// Startup fails if PostgreSQL cannot be reached. Once connected it also calls
-// ensureSchema() to create/validate the durable storage structure.
     StrategyCheckpointStore(
         const std::string& connectionString,
-        const std::string& strategyConfig
+        const std::string& identity
     )
     {
         connection_ = PQconnectdb(connectionString.c_str());
@@ -323,70 +343,50 @@ public:
             throw std::runtime_error("Cannot connect strategy checkpoint store to PostgreSQL: " + error);
         }
 
-        ensureSchema(strategyConfig);
+        ensureSchema(identity);
     }
 
-    // Closes the PostgreSQL connection when the checkpoint store is destroyed.
     ~StrategyCheckpointStore()
     {
         if (connection_)
             PQfinish(connection_);
     }
 
-    // Copying is disabled because a live PostgreSQL connection has a single
-// clear owner in this object.
     StrategyCheckpointStore(const StrategyCheckpointStore&) = delete;
     StrategyCheckpointStore& operator=(const StrategyCheckpointStore&) = delete;
 
     struct Row {
         Timestamp timestamp = 0;
-        std::string slice_payload;
+        std::string update_payload;
         std::string intent_payload;
     };
 
-    // Loads ALL committed strategy checkpoints in chronological order.
-// On restart, recoverFromCheckpoint() uses these rows to rebuild the in-memory
-// RollingMarketState and restore the latest strategy signal state.
-//
-// NOTE FOR FUTURE DESIGN:
-// This currently grows with history. We have already identified that production
-// may later prefer "latest checkpoint + only the required warmup history" from
-// the canonical market-data database instead of reloading unlimited history.
-    std::vector<Row> loadAll() const
+    std::optional<Row> latest() const
     {
         const PgResult result = execParams(
-            "SELECT timestamp, slice_payload, intent_payload FROM strategy_market_slice_checkpoint "
-            "WHERE state_key = $1 ORDER BY timestamp ASC",
+            "SELECT timestamp, update_payload, intent_payload "
+            "FROM strategy_market_update_checkpoint "
+            "WHERE state_key = $1 ORDER BY timestamp DESC LIMIT 1",
             {STATE_KEY},
             PGRES_TUPLES_OK
         );
 
-        std::vector<Row> rows;
-        rows.reserve(static_cast<std::size_t>(PQntuples(result.get())));
+        if (PQntuples(result.get()) == 0)
+            return std::nullopt;
+        if (PQntuples(result.get()) != 1)
+            throw std::runtime_error("Latest strategy checkpoint query returned multiple rows");
 
-        for (int row = 0; row < PQntuples(result.get()); ++row) {
-            const std::string timestampText = PQgetvalue(result.get(), row, 0);
-            const unsigned long long timestampValue = std::stoull(timestampText);
-            if (timestampValue > static_cast<unsigned long long>(std::numeric_limits<Timestamp>::max()))
-                throw std::runtime_error("Persisted strategy checkpoint timestamp is out of range");
-
-            Row value;
-            value.timestamp = static_cast<Timestamp>(timestampValue);
-            value.slice_payload = PQgetvalue(result.get(), row, 1);
-            value.intent_payload = PQgetvalue(result.get(), row, 2);
-            rows.push_back(std::move(value));
-        }
-
-        return rows;
+        Row value;
+        value.timestamp = parseTimestamp(PQgetvalue(result.get(), 0, 0));
+        value.update_payload = PQgetvalue(result.get(), 0, 1);
+        value.intent_payload = PQgetvalue(result.get(), 0, 2);
+        return value;
     }
 
-    // Looks up the durable checkpoint for one exact timestamp.
-// Returns no value if that timestamp has never been committed.
-// This is used to recognize safe redeliveries/duplicates.
     std::optional<Row> rowFor(Timestamp timestamp) const
     {
         const PgResult result = execParams(
-            "SELECT slice_payload, intent_payload FROM strategy_market_slice_checkpoint "
+            "SELECT update_payload, intent_payload FROM strategy_market_update_checkpoint "
             "WHERE state_key = $1 AND timestamp = $2",
             {STATE_KEY, std::to_string(timestamp)},
             PGRES_TUPLES_OK
@@ -399,42 +399,32 @@ public:
 
         Row value;
         value.timestamp = timestamp;
-        value.slice_payload = PQgetvalue(result.get(), 0, 0);
+        value.update_payload = PQgetvalue(result.get(), 0, 0);
         value.intent_payload = PQgetvalue(result.get(), 0, 1);
         return value;
     }
 
-    // Persists one completed strategy step:
-//   input market slice + output strategy intent for the same timestamp.
-//
-// The insert deliberately does nothing on a duplicate primary key, then reads
-// the existing row back and verifies it is IDENTICAL. Therefore receiving the
-// same event again is safe, but conflicting history is treated as an error.
     void save(
         Timestamp timestamp,
-        const std::string& slicePayload,
+        const std::string& updatePayload,
         const std::string& intentPayload
     )
     {
         execParams(
-            "INSERT INTO strategy_market_slice_checkpoint("
-            "state_key, timestamp, slice_payload, intent_payload"
+            "INSERT INTO strategy_market_update_checkpoint("
+            "state_key, timestamp, update_payload, intent_payload"
             ") VALUES($1, $2, $3, $4) "
             "ON CONFLICT(state_key, timestamp) DO NOTHING",
-            {STATE_KEY, std::to_string(timestamp), slicePayload, intentPayload},
+            {STATE_KEY, std::to_string(timestamp), updatePayload, intentPayload},
             PGRES_COMMAND_OK
         );
 
         const std::optional<Row> persisted = rowFor(timestamp);
-        if (!persisted.has_value() ||
-            persisted->slice_payload != slicePayload ||
-            persisted->intent_payload != intentPayload)
+        if (!persisted.has_value() || persisted->intent_payload != intentPayload)
             throw std::logic_error("Conflicting persisted strategy checkpoint");
     }
 };
 
-// Converts an indicator name from JSON ("SMA", "RSI", "ATR", ...)
-// into the C++ IndicatorKind enum understood by the indicator engine.
 IndicatorKind parseIndicatorKind(const std::string& value)
 {
     if (value == "SMA") return IndicatorKind::SMA;
@@ -450,8 +440,6 @@ IndicatorKind parseIndicatorKind(const std::string& value)
     throw std::invalid_argument("Unsupported indicator kind: " + value);
 }
 
-// Converts the configured indicator input ("Open", "Close", "Volume", ...)
-// into the C++ PriceField enum used by indicator calculations.
 PriceField parsePriceField(const std::string& value)
 {
     if (value == "Open") return PriceField::Open;
@@ -462,9 +450,6 @@ PriceField parsePriceField(const std::string& value)
     throw std::invalid_argument("Unsupported indicator source: " + value);
 }
 
-// Builds one complete IndicatorSpec from JSON.
-// Example: RSI of Close with length 7, or SMA of Volume with length 25.
-// It also validates that the requested lookback length is not zero.
 IndicatorSpec parseIndicatorSpec(const json& value)
 {
     IndicatorSpec spec{
@@ -478,9 +463,6 @@ IndicatorSpec parseIndicatorSpec(const json& value)
     return spec;
 }
 
-// Builds the configured market-universe selector.
-// For the current strategy this creates TopNLiquidityUniverse: rank coins by a
-// configured liquidity indicator and keep only the top N eligible assets.
 std::unique_ptr<UniverseSelector> makeUniverse(const json& value)
 {
     const std::string type = value.at("type").get<std::string>();
@@ -499,10 +481,6 @@ std::unique_ptr<UniverseSelector> makeUniverse(const json& value)
     );
 }
 
-// Builds the ranking rule used after the universe is selected.
-// The current configuration uses an indicator-based ranker (for PureRSI this is
-// the RSI ranking), but this factory keeps the construction separate from the
-// orchestration code.
 std::unique_ptr<Ranker> makeRanker(const json& value)
 {
     const std::string type = value.at("type").get<std::string>();
@@ -516,10 +494,6 @@ std::unique_ptr<Ranker> makeRanker(const json& value)
     );
 }
 
-// Reads the strategy JSON config and constructs the actual strategy objects.
-// Today this service accepts strategies of type PureRSI. Parameters such as
-// max signals, universe, ranking, RSI length, entry and exit thresholds come
-// from the JSON file rather than being hardcoded in this orchestrator.
 StrategySignalPortfolio loadStrategies(const std::string& path)
 {
     std::ifstream input(path);
@@ -565,171 +539,320 @@ StrategySignalPortfolio loadStrategies(const std::string& path)
     return strategies;
 }
 
-// Creates a deterministic message ID for the strategy output of one timestamp.
-// If the same candle must be recomputed after a crash, the same timestamp creates
-// the same ID, allowing JetStream to deduplicate the republished logical message.
 std::string intentMessageId(Timestamp timestamp)
 {
     return "strategy-intents:" + std::to_string(timestamp);
 }
 
-// The main ORCHESTRATOR for the strategy Docker/process.
-// It owns the communication bus, clock context, PostgreSQL checkpoint store,
-// in-memory rolling market history, strategy engine and NATS subscription.
+
 class StrategyServiceRuntime {
 private:
     const Options options_;
+    const TimeHandlerConfig time_config_;
+    const TimeHandler time_handler_;
+    const std::optional<Timestamp> bootstrap_completed_date_;
     NatsJetStreamMessageBus bus_;
-    std::unique_ptr<ServiceClockContext> clock_;
+    CanonicalMarketDataReader market_reader_;
+    Timestamp durable_checkpoint_timestamp_ = 0;
     std::unique_ptr<StrategyCheckpointStore> checkpoint_store_;
-    RollingMarketState market_state_;
     std::unique_ptr<StrategySignalEngine> engine_;
-    DurableMessageBus::SubscriptionID market_subscription_ = 0;
+    DurableMessageBus::SubscriptionID market_update_subscription_ = 0;
 
-    // Clears volatile strategy state in RAM and rebuilds a fresh strategy engine
-// from the configured strategy JSON. This does NOT delete durable PostgreSQL data.
-// Recovery calls this first, then reconstructs RAM from committed checkpoints.
     void resetRuntimeState()
     {
-        market_state_ = RollingMarketState{};
         engine_ = std::make_unique<StrategySignalEngine>(loadStrategies(options_.strategy_config));
     }
 
-    // Reconstructs the strategy service after a restart or when RAM can no longer
-// be trusted. It loads committed rows from PostgreSQL in timestamp order,
-// rebuilds RollingMarketState from the saved market slices, and restores the
-// latest strategy intent so persistent signals continue correctly.
     void recoverFromCheckpoint()
     {
+        resetRuntimeState();
+        durable_checkpoint_timestamp_ = 0;
         if (!checkpoint_store_)
             return;
 
-        resetRuntimeState();
-        const auto rows = checkpoint_store_->loadAll();
-
-        Timestamp latest = 0;
-        std::optional<StrategyIntentBatch> latestIntent;
-        for (const StrategyCheckpointStore::Row& row : rows) {
-            const MarketSliceSnapshot slice = ContractJsonCodec::decodeMarketSliceSnapshot(row.slice_payload);
-            if (slice.timestamp != row.timestamp)
-                throw std::logic_error("Persisted strategy checkpoint timestamp/slice mismatch");
-            if (!market_state_.append(slice))
-                throw std::logic_error("Duplicate slice found inside persisted strategy checkpoint");
-
-            StrategyIntentBatch intent = ContractJsonCodec::decodeStrategyIntentBatch(row.intent_payload);
-            if (intent.timestamp != row.timestamp)
-                throw std::logic_error("Persisted strategy checkpoint timestamp/intent mismatch");
-
-            latest = row.timestamp;
-            latestIntent = std::move(intent);
+        const std::optional<StrategyCheckpointStore::Row> row = checkpoint_store_->latest();
+        if (!row.has_value()) {
+            LG_INFO("service=strategy event=strategy_recovery_completed checkpoint=empty");
+            return;
         }
 
-        if (latestIntent.has_value())
-            engine_->restore(*latestIntent);
+        StrategyIntentBatch intent = ContractJsonCodec::decodeStrategyIntentBatch(row->intent_payload);
+        if (intent.timestamp != row->timestamp)
+            throw std::logic_error("Persisted strategy checkpoint timestamp/intent mismatch");
+        engine_->restore(intent);
+        durable_checkpoint_timestamp_ = row->timestamp;
 
         LG_INFO(
-            "service=strategy event=strategy_recovery_completed recovered_slices={} latest_timestamp={}",
-            rows.size(),
-            latest
+            "service=strategy event=strategy_recovery_completed checkpoint=latest-only latest_timestamp={}",
+            row->timestamp
         );
     }
 
-    // Core event handler: called whenever NATS delivers a MarketSliceSnapshot.
-//
-// High-level sequence:
-//   1. Decode and validate the incoming market slice.
-//   2. Check PostgreSQL for an already-committed copy of this timestamp.
-//   3. Repair volatile RAM from PostgreSQL if a previous attempt died mid-step.
-//   4. Append the new slice to RollingMarketState.
-//   5. Run StrategySignalEngine / PureRSI for this close.
-//   6. Publish StrategyIntentBatch to NATS.
-//   7. Save input + output in PostgreSQL.
-//   8. ACK the input.
-//
-// Return value tells JetStream what to do:
-//   Ack       = successfully completed / known duplicate.
-//   Retry     = temporary failure; please redeliver.
-//   Terminate = permanently invalid/conflicting message; retrying will not help.
-    DurableMessageDisposition onMarketSlice(const BusMessage& message)
+    std::set<Coin> activeSignalCoins() const
+    {
+        std::set<Coin> result;
+        for (const StrategySignalInstance& strategy : engine_->strategies()) {
+            for (const auto& [coin, signal] : strategy.signalState().values()) {
+                if (signal != 0.0)
+                    result.insert(coin);
+            }
+        }
+        return result;
+    }
+
+    static bool sameLogicalUpdate(
+        const MarketDataUpdated& left,
+        const MarketDataUpdated& right)
+    {
+        return left.completed_through == right.completed_through &&
+               left.source == right.source &&
+               left.timeframe == right.timeframe &&
+               left.active_top_n == right.active_top_n;
+    }
+
+    StrategyIntentBatch calculateForDate(Timestamp date)
+    {
+        const std::set<Coin> activeBefore = activeSignalCoins();
+        const CanonicalMarketDataWindow window = market_reader_.loadWindow(
+            date,
+            options_.market_warmup_days,
+            options_.market_top_n,
+            activeBefore
+        );
+
+        LG_INFO(
+            "service=strategy event=market_window_loaded timestamp={} warmup_days={} ranked_symbols={} active_history_symbols={} history_symbols={} history_rows={}",
+            date,
+            options_.market_warmup_days,
+            window.ranked_symbols,
+            activeBefore.size(),
+            window.history_symbols,
+            window.history_rows
+        );
+
+        return engine_->onBarClose(window.raw_data, window.market_data, date);
+    }
+
+    DurableMessageDisposition onMarketDataUpdated(const BusMessage& message)
     {
         try {
-            const MarketSliceSnapshot slice = ContractJsonCodec::decodeMarketSliceSnapshot(message.payload);
-            if (slice.timestamp == 0 || slice.bars.empty()) {
+            const MarketDataUpdated update = ContractJsonCodec::decodeMarketDataUpdated(message.payload);
+
+            if (update.source != options_.market_data_source || update.timeframe != "1d") {
                 LG_WARN(
-                    "service=strategy event=market_slice_terminated reason=invalid_slice timestamp={} bars={} message_id={}",
-                    slice.timestamp,
-                    slice.bars.size(),
-                    slice.metadata.message_id
+                    "service=strategy event=market_update_terminated reason=unsupported_source_or_timeframe source={} timeframe={}",
+                    update.source,
+                    update.timeframe
+                );
+                return DurableMessageDisposition::Terminate;
+            }
+            if (update.active_top_n != options_.market_top_n) {
+                LG_ALERT(
+                    "service=strategy event=market_update_terminated reason=top_n_config_mismatch event_top_n={} strategy_top_n={}",
+                    update.active_top_n,
+                    options_.market_top_n
                 );
                 return DurableMessageDisposition::Terminate;
             }
 
-            LG_DEBUG(
-                "service=strategy event=market_slice_received timestamp={} bars={} message_id={} correlation_id={}",
-                slice.timestamp,
-                slice.bars.size(),
-                slice.metadata.message_id,
-                slice.metadata.correlation_id
-            );
+            const Timestamp target = update.completed_through;
+            const Timestamp newestCompleted = newestCompletedBusinessUtcDate(time_handler_);
+            if (target > newestCompleted) {
+                LG_ALERT(
+                    "service=strategy event=market_update_terminated reason=future_completed_date timestamp={} newest_completed_utc={} disposition=terminate",
+                    target,
+                    newestCompleted
+                );
+                return DurableMessageDisposition::Terminate;
+            }
 
-            if (checkpoint_store_) {
-                const std::optional<StrategyCheckpointStore::Row> persisted = checkpoint_store_->rowFor(slice.timestamp);
-                if (persisted.has_value()) {
-                    if (persisted->slice_payload != message.payload) {
-                        LG_ALERT(
-                            "service=strategy event=checkpoint_conflict timestamp={} disposition=terminate",
-                            slice.timestamp
-                        );
-                        return DurableMessageDisposition::Terminate;
-                    }
+            // Restart/catch-up is anchored to market data that is actually canonical,
+            // not merely to simulated time. During a Strategy outage TimeHandler may
+            // advance beyond the newest SQLite commit. If stale detection used
+            // newestCompleted directly, retained JetStream notifications could all be
+            // ACKed away before the durable signal state has a chance to catch up.
+            const std::optional<Timestamp> canonicalFrontierOpt =
+                market_reader_.latestRankingDateAtOrBefore(newestCompleted);
+            if (!canonicalFrontierOpt.has_value()) {
+                LG_WARN(
+                    "service=strategy event=market_update_failed reason=no_canonical_frontier timestamp={} newest_completed_utc={} disposition=retry",
+                    target,
+                    newestCompleted
+                );
+                return DurableMessageDisposition::Retry;
+            }
+            const Timestamp canonicalFrontier = *canonicalFrontierOpt;
 
-                    if (market_state_.empty() || market_state_.latestTimestamp() < slice.timestamp)
-                        recoverFromCheckpoint();
+            // Fresh historical/accelerated bootstrap must be invariant to wall-clock
+            // startup latency and replay speed.  The immutable shared simulated reference
+            // defines which UTC day was already complete at T_ref.  Retained notifications
+            // before that day are warm-up backlog; the anchor day itself must be processed
+            // even if the moving canonical frontier has advanced while the process starts.
+            const bool freshBootstrap =
+                engine_->lastTimestamp() == 0 && durable_checkpoint_timestamp_ == 0;
+            const bool anchoredBootstrapTarget =
+                freshBootstrap && bootstrap_completed_date_.has_value() &&
+                target == *bootstrap_completed_date_;
 
+            if (freshBootstrap && bootstrap_completed_date_.has_value()) {
+                if (target < *bootstrap_completed_date_) {
                     LG_INFO(
-                        "service=strategy event=market_slice_checkpoint_duplicate timestamp={} disposition=ack",
-                        slice.timestamp
+                        "service=strategy event=pre_bootstrap_market_update_skipped timestamp={} bootstrap_completed_date={} canonical_frontier={} disposition=ack",
+                        target,
+                        *bootstrap_completed_date_,
+                        canonicalFrontier
                     );
                     return DurableMessageDisposition::Ack;
                 }
 
-                // A previous attempt may have advanced RAM but failed before the durable
-                // checkpoint. Rebuild only from committed slices before retrying so the
-                // strategy engine again processes this timestamp exactly once locally.
-                if (!market_state_.empty() && slice.timestamp <= market_state_.latestTimestamp()) {
+                if (target > *bootstrap_completed_date_) {
                     LG_WARN(
-                        "service=strategy event=volatile_state_ahead_of_checkpoint timestamp={} latest_runtime_timestamp={} action=recover",
-                        slice.timestamp,
-                        market_state_.latestTimestamp()
+                        "service=strategy event=market_update_failed reason=awaiting_immutable_bootstrap_date timestamp={} bootstrap_completed_date={} canonical_frontier={} disposition=retry",
+                        target,
+                        *bootstrap_completed_date_,
+                        canonicalFrontier
+                    );
+                    return DurableMessageDisposition::Retry;
+                }
+            }
+
+            // Historical feeder is commit-before-publish. A notification newer than the
+            // canonical SQLite frontier is therefore transient/inconsistent and must be
+            // retried instead of ACKed. The frontier is capped by newestCompleted above,
+            // so this cannot introduce lookahead.
+            if (target > canonicalFrontier) {
+                LG_WARN(
+                    "service=strategy event=market_update_failed reason=canonical_frontier_not_visible timestamp={} canonical_frontier={} newest_completed_utc={} disposition=retry",
+                    target,
+                    canonicalFrontier,
+                    newestCompleted
+                );
+                return DurableMessageDisposition::Retry;
+            }
+
+            // Drain retained notifications older than the latest canonical day without
+            // emitting late economic output. The notification for canonicalFrontier then
+            // runs calculateForDate() for every missing date since the durable checkpoint
+            // and publishes only the frontier day's intent.
+            if (target < canonicalFrontier && !anchoredBootstrapTarget) {
+                LG_INFO(
+                    "service=strategy event=stale_market_update_skipped timestamp={} canonical_frontier={} newest_completed_utc={} disposition=ack",
+                    target,
+                    canonicalFrontier,
+                    newestCompleted
+                );
+                return DurableMessageDisposition::Ack;
+            }
+
+            LG_INFO(
+                "service=strategy event=market_data_updated_received timestamp={} message_id={} database={}",
+                target,
+                update.metadata.message_id,
+                options_.market_data_db.string()
+            );
+
+            if (checkpoint_store_) {
+                const std::optional<StrategyCheckpointStore::Row> persisted = checkpoint_store_->rowFor(target);
+                if (persisted.has_value()) {
+                    const MarketDataUpdated persistedUpdate =
+                        ContractJsonCodec::decodeMarketDataUpdated(persisted->update_payload);
+                    if (!sameLogicalUpdate(persistedUpdate, update)) {
+                        LG_ALERT(
+                            "service=strategy event=market_update_checkpoint_conflict timestamp={} disposition=terminate",
+                            target
+                        );
+                        return DurableMessageDisposition::Terminate;
+                    }
+
+                    if (engine_->lastTimestamp() < target)
+                        recoverFromCheckpoint();
+                    durable_checkpoint_timestamp_ = std::max(durable_checkpoint_timestamp_, target);
+
+                    LG_INFO(
+                        "service=strategy event=market_update_checkpoint_duplicate timestamp={} disposition=ack",
+                        target
+                    );
+                    return DurableMessageDisposition::Ack;
+                }
+
+                // A failed previous attempt may have advanced volatile signal state before
+                // PostgreSQL was committed.  Restore only the latest durable intent before
+                // reprocessing the market update.
+                if (engine_->lastTimestamp() >= target) {
+                    LG_WARN(
+                        "service=strategy event=volatile_state_ahead_of_checkpoint timestamp={} engine_timestamp={} action=recover",
+                        target,
+                        engine_->lastTimestamp()
                     );
                     recoverFromCheckpoint();
                 }
             }
 
-            if (!market_state_.append(slice)) {
-                LG_INFO(
-                    "service=strategy event=market_slice_duplicate timestamp={} disposition=ack",
-                    slice.timestamp
+            if (engine_->lastTimestamp() > target) {
+                LG_WARN(
+                    "service=strategy event=stale_market_update timestamp={} engine_timestamp={} disposition=ack",
+                    target,
+                    engine_->lastTimestamp()
                 );
                 return DurableMessageDisposition::Ack;
             }
 
-            StrategyIntentBatch output = engine_->onBarClose(
-                market_state_.rawData(),
-                market_state_.marketData(),
-                slice.timestamp
-            );
+            std::vector<Timestamp> datesToProcess;
+            if (engine_->lastTimestamp() == 0) {
+                // First LIVE bootstrap: use bounded history to calculate indicators for the
+                // newest completed day, but intentionally start persistent signal state empty.
+                datesToProcess.push_back(target);
+                LG_WARN(
+                    "service=strategy event=live_signal_bootstrap timestamp={} policy=fresh_signal_state warmup_days={}",
+                    target,
+                    options_.market_warmup_days
+                );
+            } else {
+                Timestamp date = nextDay(engine_->lastTimestamp());
+                std::size_t guard = 0;
+                while (date <= target) {
+                    datesToProcess.push_back(date);
+                    if (date == target)
+                        break;
+                    date = nextDay(date);
+                    if (++guard > 3660)
+                        throw std::logic_error("Strategy catch-up gap is unexpectedly large");
+                }
+            }
+
+            if (datesToProcess.empty()) {
+                LG_INFO(
+                    "service=strategy event=market_update_duplicate_in_memory timestamp={} disposition=ack",
+                    target
+                );
+                return DurableMessageDisposition::Ack;
+            }
+
+            StrategyIntentBatch output;
+            for (const Timestamp date : datesToProcess) {
+                if (!market_reader_.hasRankingDate(date))
+                    throw std::logic_error(
+                        "Canonical market database is missing market ranking for required date " +
+                        std::to_string(date));
+
+                output = calculateForDate(date);
+                if (date != target) {
+                    LG_INFO(
+                        "service=strategy event=signal_state_catchup_processed timestamp={} published=false",
+                        date
+                    );
+                }
+            }
 
             output.metadata.schema_version = 1;
-            output.metadata.message_id = intentMessageId(slice.timestamp);
-            output.metadata.correlation_id = !slice.metadata.correlation_id.empty()
-                ? slice.metadata.correlation_id
-                : slice.metadata.message_id;
-            output.metadata.produced_at = slice.timestamp;
+            output.metadata.message_id = intentMessageId(target);
+            output.metadata.correlation_id = !update.metadata.correlation_id.empty()
+                ? update.metadata.correlation_id
+                : update.metadata.message_id;
+            output.metadata.produced_at = target;
 
-            // Publish first, then checkpoint, then ACK. Because the output MessageID is
-            // deterministic, a crash after publish but before checkpoint safely republishes
-            // the same logical message after recovery and JetStream deduplicates it.
+            // Same crash contract as before: deterministic publish first, durable checkpoint
+            // second, ACK third. A crash after publish is safe to republish with the same ID.
             const std::string encodedIntent = ContractJsonCodec::encode(output);
             bus_.publish(
                 TransportSubjects::STRATEGY_INTENTS,
@@ -742,123 +865,145 @@ private:
                 activeSignals += strategy.signals.size();
 
             LG_INFO(
-                "service=strategy event=strategy_intents_published timestamp={} strategies={} active_signals={} message_id={} correlation_id={}",
+                "service=strategy event=strategy_intents_published timestamp={} strategies={} active_signals={} catchup_days={} message_id={} correlation_id={}",
                 output.timestamp,
                 output.strategies.size(),
                 activeSignals,
+                datesToProcess.size(),
                 output.metadata.message_id,
                 output.metadata.correlation_id
             );
 
             if (checkpoint_store_) {
-                checkpoint_store_->save(slice.timestamp, message.payload, encodedIntent);
-                LG_DEBUG(
-                    "service=strategy event=strategy_checkpoint_committed timestamp={} message_id={}",
-                    slice.timestamp,
-                    slice.metadata.message_id
+                checkpoint_store_->save(target, message.payload, encodedIntent);
+                durable_checkpoint_timestamp_ = target;
+                LG_INFO(
+                    "service=strategy event=strategy_checkpoint_committed timestamp={} checkpoint=latest-state-plus-bounded-market-db",
+                    target
                 );
             }
 
             return DurableMessageDisposition::Ack;
         }
         catch (const std::logic_error& error) {
-            LG_WARN("service=strategy event=market_slice_rejected disposition=terminate error={}", error.what());
+            LG_ALERT(
+                "service=strategy event=market_update_rejected disposition=terminate error={}",
+                error.what()
+            );
             return DurableMessageDisposition::Terminate;
         }
         catch (const std::exception& error) {
-            LG_ERROR("service=strategy event=market_slice_failed disposition=retry error={}", error.what());
+            LG_ERROR(
+                "service=strategy event=market_update_failed disposition=retry error={}",
+                error.what()
+            );
             return DurableMessageDisposition::Retry;
         }
     }
 
 public:
-    // Starts and wires the whole strategy service.
-//
-// It:
-//   - connects to NATS/JetStream,
-//   - sets up LIVE/TESTNET/REPLAY clock behaviour,
-//   - creates the PureRSI strategy engine,
-//   - connects to PostgreSQL and performs crash recovery when configured,
-//   - creates the durable MarketSlice consumer,
-//   - registers onMarketSlice() as the callback.
-//
-// After this constructor succeeds, the service is ready for run().
     explicit StrategyServiceRuntime(Options options)
         : options_(std::move(options)),
-          bus_(options_.nats_url)
+          time_config_(TimeHandlerFactory::loadConfigFromEnvironment()),
+          time_handler_(TimeHandlerFactory::create(time_config_)),
+          bootstrap_completed_date_(configuredBootstrapCompletedUtcDate(time_config_)),
+          bus_(options_.nats_url),
+          market_reader_(options_.market_data_db)
     {
-        // Bind the REPLAY clock control plane before checkpoint reconstruction.  Database
-        // recovery is business-state work and must not postpone restart re-synchronization.
-        bus_.ensureStream(
-            options_.stream,
-            options_.runtime_mode == RuntimeMode::Replay
-                ? TransportSubjects::runtimeSubjects()
-                : TransportSubjects::tradingRuntimeSubjects()
-        );
-        clock_ = std::make_unique<ServiceClockContext>(
-            ServiceClockContext::Options{
-                options_.runtime_mode, options_.stream, "strategy", options_.simulation_id
-            },
-            bus_
-        );
+        bus_.ensureStream(options_.stream, TransportSubjects::tradingRuntimeSubjects());
 
         resetRuntimeState();
 
-        if (!options_.postgres.empty()) {
-            checkpoint_store_ = std::make_unique<StrategyCheckpointStore>(
-                options_.postgres,
-                readTextFile(options_.strategy_config)
-            );
-            recoverFromCheckpoint();
-        } else {
-            LG_WARN(
-                "service=strategy event=restart_checkpoint_disabled reason=postgres_not_configured"
-            );
-        }
+        if (options_.postgres.empty())
+            throw std::invalid_argument(
+                "--postgres is required in LIVE strategy mode because the daily checkpoint is the durable processing gate");
+
+        checkpoint_store_ = std::make_unique<StrategyCheckpointStore>(
+            options_.postgres,
+            checkpointIdentity(options_)
+        );
+        recoverFromCheckpoint();
 
         DurableConsumerOptions consumer;
         consumer.stream = options_.stream;
-        consumer.durable_name = "strategy-service-market-slices";
-        consumer.subject = TransportSubjects::MARKET_SLICE_SNAPSHOT;
+        consumer.durable_name = "strategy-service-market-updates";
+        consumer.subject = TransportSubjects::MARKET_DATA_UPDATED;
         consumer.ack_wait_ms = 30000;
         consumer.max_deliver = 20;
         consumer.max_ack_pending = 64;
 
-        market_subscription_ = bus_.subscribe(
+        market_update_subscription_ = bus_.subscribe(
             consumer,
-            clock_->guard(
-                "market_slice",
-                // Callback given to NATS: whenever a market-slice message arrives,
-                // forward it to this StrategyServiceRuntime's onMarketSlice().
-                [this](const BusMessage& message) { return onMarketSlice(message); }
-            )
+            [this](const BusMessage& message) { return onMarketDataUpdated(message); }
         );
     }
 
-    // Destructor: closes the durable NATS subscription owned by this service.
-    ~StrategyServiceRuntime() { bus_.close(market_subscription_); }
+    ~StrategyServiceRuntime()
+    {
+        bus_.close(market_update_subscription_);
+    }
 
-    // Main event loop of the Docker/process.
-// Most of the time the strategy service simply waits for events.
-// Each iteration lets the clock context process any clock/control messages and
-// lets NATS deliver available MarketSlice messages to onMarketSlice().
-// When stopHandler() flips `running` to false, it flushes NATS and exits cleanly.
     void run()
     {
+        constexpr auto loopPeriod = std::chrono::milliseconds(1000);
+        constexpr std::int64_t fetchTimeoutMs = 100;
+
         LG_INFO(
-            "service=strategy event=service_ready stream={} config={} restart_checkpoint={} runtime_mode={} clock_sync={} poll_timeout_ms={}",
+            "service=strategy event=service_ready time_source=time_handler stream={} config={} market_database={} market_warmup_days={} market_top_n={} market_data_source={} input_subject={} restart_checkpoint=postgres-latest-intent loop_period_ms={} time_speed={} time_identity={}",
             options_.stream,
             options_.strategy_config,
-            checkpoint_store_ ? "postgres" : "disabled",
-            runtimeModeName(options_.runtime_mode),
-            clock_->synchronized() ? "ready" : "pending",
-            options_.poll_timeout_ms
+            options_.market_data_db.string(),
+            options_.market_warmup_days,
+            options_.market_top_n,
+            options_.market_data_source,
+            TransportSubjects::MARKET_DATA_UPDATED,
+            loopPeriod.count(),
+            time_config_.speed,
+            time_config_.identity()
         );
+        if (bootstrap_completed_date_.has_value()) {
+            LG_INFO(
+                "service=strategy event=immutable_bootstrap_business_anchor completed_date={} source=simulated_reference",
+                *bootstrap_completed_date_
+            );
+        }
         std::cout.flush();
 
+        bool waitingForNextUtcDayLogged = false;
+        Timestamp loggedCompletedDate = 0;
+
         while (running.load()) {
-            clock_->poll(32, 1);
-            bus_.poll(market_subscription_, 16, options_.poll_timeout_ms);
+            const Timestamp newestCompleted = newestCompletedBusinessUtcDate(time_handler_);
+
+            // Once the required BUSINESS date has a durable PostgreSQL checkpoint,
+            // Strategy does no more market work until TimeHandler advances to the next
+            // business UTC day. No shared/distributed clock participates in this decision.
+            if (durable_checkpoint_timestamp_ >= newestCompleted) {
+                if (!waitingForNextUtcDayLogged || loggedCompletedDate != newestCompleted) {
+                    LG_INFO(
+                        "service=strategy event=daily_checkpoint_complete timestamp={} action=wait_until_next_business_utc_day",
+                        durable_checkpoint_timestamp_
+                    );
+                    waitingForNextUtcDayLogged = true;
+                    loggedCompletedDate = newestCompleted;
+                }
+
+                interruptibleBusinessWaitUntil(
+                    time_handler_,
+                    computeNextMidnightUTC(time_handler_.getTime())
+                );
+                continue;
+            }
+
+            waitingForNextUtcDayLogged = false;
+
+            // When Strategy is behind its durable checkpoint, drain retained JetStream
+            // notifications at TECHNICAL speed.  A 1-second sleep here is incorrect under
+            // accelerated business time: at 1500x a large retained backlog can consume
+            // multiple simulated days before the latest canonical notification is reached.
+            // poll() itself blocks for fetchTimeoutMs when no message is available, so this
+            // remains a bounded technical wait rather than a busy-spin.
+            bus_.poll(market_update_subscription_, 32, fetchTimeoutMs);
         }
 
         LG_INFO("service=strategy event=shutdown_requested");
@@ -869,10 +1014,6 @@ public:
 
 } // namespace
 
-// Program entry point.
-// It sets up logging and clean-shutdown signal handlers, parses startup options,
-// constructs the StrategyServiceRuntime orchestrator and then runs it.
-// Any unrecoverable startup/runtime exception is logged as fatal and returns 1.
 int main(int argc, char** argv)
 {
     ServiceLogging::setup("strategy");
