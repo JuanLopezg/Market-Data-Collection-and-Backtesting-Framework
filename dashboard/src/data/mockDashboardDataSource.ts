@@ -1,6 +1,6 @@
 import type { DashboardDataSource } from './dashboardDataSource'
 import { runtimeConfig } from '../config/runtime'
-import type { AlertsAuditData, DashboardDiagnostics, ExecutionData, InfrastructureData, LiveVsExpectedData, ManualControlData, MarketDataData, OverviewData, PipelineData, Position, PositionsData, ReconciliationData, RiskData, ShellStatus, ProviderStatus, SafetyGateData, GlobalReadinessData, VenueFoundationData, VenuePublicData, VenueSymbolMappingData, VenueTradingRulesData, SymbolRegistryData, LedgerData } from '../types/dashboard'
+import type { AlertAcknowledgementInput, AlertAcknowledgementResult, AlertsAuditData, DashboardDiagnostics, ExecutionData, InfrastructureData, LiveVsExpectedData, ManualControlData, MarketDataData, OverviewData, PipelineData, Position, PositionsData, ReconciliationData, RiskData, ShellStatus, ProviderStatus, SafetyGateData, GlobalReadinessData, VenueFoundationData, VenuePublicData, VenueSymbolMappingData, VenueTradingRulesData, SymbolRegistryData, LedgerData } from '../types/dashboard'
 
 const wait = (ms = runtimeConfig.mockLatencyMs) => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -10,7 +10,7 @@ const labels = ['Sep 03','Sep 04','Sep 05','Sep 06','Sep 07','Sep 08','Sep 09','
 
 
 const diagnosticsData: DashboardDiagnostics = {
-  version: '0.46.0-mock',
+  version: '0.46.1-mock',
   startedAt: '2026-09-25T08:00:00Z',
   uptimeSeconds: 3600,
   provider: { name: 'frontend-local-mocks', mode: 'mock', ready: true },
@@ -586,6 +586,8 @@ const alertsAuditData: AlertsAuditData = {
   acknowledgementAvailable: true,
   durableAlertHistoryAvailable: true,
   humanAuditAvailable: true,
+  auditMode: 'DURABLE_ALERT_ACK+DURABLE_MANUAL_INTENT+DURABLE_ALERT_LIFECYCLE+DERIVED_SYSTEM_EVIDENCE',
+  acknowledgementEventCount: 1,
   watchdogAvailable: true,
   watchdogState: 'HEALTHY',
   watchdogLastSweepAt: '2026-09-26T10:00:00Z',
@@ -593,10 +595,10 @@ const alertsAuditData: AlertsAuditData = {
   durableEventCount: 12,
   durableLifecycleEvents: [],
   alerts: [
-    { id: 'alert-2081', timestamp: '14:31:58 UTC', severity: 'CRITICAL', status: 'ACTIVE', service: 'Reconciliation', eventType: 'RECONCILIATION_BLOCKED', title: 'Reconciliation block simulated', detail: 'Mock alert demonstrating how a hard closed-loop mismatch remains sticky until resolved.', correlationId: 'corr-recon-2081', linkedContext: 'Open Reconciliation' },
-    { id: 'alert-2079', timestamp: '14:27:11 UTC', severity: 'WARN', status: 'ACTIVE', service: 'ExchangeGateway', asset: 'ATOM', eventType: 'ORDER_REJECT', title: 'Order rejected by venue', detail: 'Quantity precision was not accepted. Remediation is pending planner normalization.', correlationId: 'corr-atom-20260923-1427-d812', linkedContext: 'Open Execution' },
-    { id: 'alert-2077', timestamp: '14:24:42 UTC', severity: 'WARN', status: 'ACKNOWLEDGED', service: 'MarketData', eventType: 'STALE_DATA', title: 'Transient stale market data', detail: 'One asset exceeded the freshness warning threshold before recovering.', correlationId: 'corr-md-2077', linkedContext: 'Open Market Data' },
-    { id: 'alert-2074', timestamp: '14:18:03 UTC', severity: 'WARN', status: 'ACTIVE', service: 'NATS', eventType: 'CONSUMER_LAG', title: 'Consumer lag elevated', detail: 'Execution consumer reached lag 8 before returning below the operational threshold.', linkedContext: 'Open Infrastructure' },
+    { id: 'alert-2081', timestamp: '14:31:58 UTC', severity: 'CRITICAL', status: 'ACTIVE', service: 'Reconciliation', eventType: 'RECONCILIATION_BLOCKED', title: 'Reconciliation block simulated', detail: 'Mock alert demonstrating how a hard closed-loop mismatch remains sticky until resolved.', correlationId: 'corr-recon-2081', linkedContext: 'Open Reconciliation', acknowledgementKey: 'mock-life-2081' },
+    { id: 'alert-2079', timestamp: '14:27:11 UTC', severity: 'WARN', status: 'ACTIVE', service: 'ExchangeGateway', asset: 'ATOM', eventType: 'ORDER_REJECT', title: 'Order rejected by venue', detail: 'Quantity precision was not accepted. Remediation is pending planner normalization.', correlationId: 'corr-atom-20260923-1427-d812', linkedContext: 'Open Execution', acknowledgementKey: 'mock-life-2079' },
+    { id: 'alert-2077', timestamp: '14:24:42 UTC', severity: 'WARN', status: 'ACKNOWLEDGED', service: 'MarketData', eventType: 'STALE_DATA', title: 'Transient stale market data', detail: 'One asset exceeded the freshness warning threshold before recovering.', correlationId: 'corr-md-2077', linkedContext: 'Open Market Data', acknowledgementKey: 'mock-life-2077', acknowledgedAt: '14:20:04 UTC', acknowledgedBy: 'operator@example', acknowledgementComment: 'Investigating' },
+    { id: 'alert-2074', timestamp: '14:18:03 UTC', severity: 'WARN', status: 'ACTIVE', service: 'NATS', eventType: 'CONSUMER_LAG', title: 'Consumer lag elevated', detail: 'Execution consumer reached lag 8 before returning below the operational threshold.', linkedContext: 'Open Infrastructure', acknowledgementKey: 'mock-life-2074' },
     { id: 'alert-2068', timestamp: '14:02:19 UTC', severity: 'INFO', status: 'RESOLVED', service: 'Infrastructure', eventType: 'RECOVERY', title: 'ExecutionState recovered', detail: 'Service heartbeat and durable state returned healthy after a controlled restart.', correlationId: 'corr-exec-recovery-2068', linkedContext: 'Open Infrastructure' },
     { id: 'alert-2059', timestamp: '13:44:10 UTC', severity: 'INFO', status: 'RESOLVED', service: 'Reconciliation', eventType: 'RECONCILIATION_CLEAN', title: 'Reconciliation returned CLEAN', detail: 'Local and exchange quantities converged inside configured tolerance.', correlationId: 'corr-recon-2059', linkedContext: 'Open Reconciliation' },
   ],
@@ -874,6 +876,48 @@ export const mockDashboardDataSource: DashboardDataSource = {
   async getAlertsAudit() {
     await wait(90)
     return alertsAuditData
+  },
+  async acknowledgeAlert(input: AlertAcknowledgementInput, _csrfToken: string): Promise<AlertAcknowledgementResult> {
+    await wait(60)
+    const alert = alertsAuditData.alerts.find(row => row.id === input.alertId)
+    if (!alert || alert.status === 'RESOLVED') throw new Error('Mock alert is no longer active.')
+    if (!alert.acknowledgementKey || alert.acknowledgementKey !== input.acknowledgementKey) throw new Error('Mock acknowledgement key is stale.')
+    const alreadyAcknowledged = alert.status === 'ACKNOWLEDGED'
+    const recordedAt = alreadyAcknowledged && alert.acknowledgedAt ? alert.acknowledgedAt : new Date().toISOString()
+    const correlationId = `mock-ack-${input.alertId}`
+    if (!alreadyAcknowledged) {
+      alert.status = 'ACKNOWLEDGED'
+      alert.acknowledgedAt = recordedAt
+      alert.acknowledgedBy = 'mock-operator / OPERATOR'
+      alert.acknowledgementComment = input.comment
+      alertsAuditData.acknowledged += 1
+      alertsAuditData.acknowledgementEventCount = (alertsAuditData.acknowledgementEventCount ?? 0) + 1
+      alertsAuditData.audit.unshift({
+        id: correlationId,
+        timestamp: recordedAt,
+        actor: 'mock-operator / OPERATOR',
+        actorType: 'HUMAN',
+        action: 'ALERT_ACKNOWLEDGE',
+        target: input.alertId,
+        result: 'SUCCESS',
+        correlationId,
+        detail: 'Mock acknowledgement persisted as observability evidence; alert remains unresolved.',
+      })
+    }
+    return {
+      status: 'ACKNOWLEDGED',
+      persisted: true,
+      alreadyAcknowledged,
+      alertId: input.alertId,
+      acknowledgementKey: input.acknowledgementKey,
+      actor: 'mock-operator / OPERATOR',
+      recordedAt,
+      correlationId,
+      comment: input.comment,
+      resolutionState: 'UNRESOLVED',
+      tradingStateMutated: false,
+      note: 'Mock acknowledgement only; no trading state is mutated.',
+    }
   },
   async getLiveVsExpected() {
     await wait(90)

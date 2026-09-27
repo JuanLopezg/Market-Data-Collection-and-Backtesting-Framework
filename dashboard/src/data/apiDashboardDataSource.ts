@@ -1,6 +1,8 @@
 import type { DashboardDataSource } from './dashboardDataSource'
 import { DashboardApiClient } from './apiClient'
 import type {
+  AlertAcknowledgementInput,
+  AlertAcknowledgementResult,
   AlertsAuditData,
   DashboardDiagnostics,
   ExecutionData,
@@ -51,6 +53,7 @@ export class ApiDashboardDataSource implements DashboardDataSource {
   getMarketData() { return this.client.get<MarketDataData>('/market-data') }
   getInfrastructure() { return this.client.get<InfrastructureData>('/infrastructure') }
   getAlertsAudit() { return this.client.get<AlertsAuditData>('/alerts-audit') }
+  acknowledgeAlert(input: AlertAcknowledgementInput, csrfToken: string) { return this.client.post<AlertAcknowledgementResult>('/alerts-audit/acknowledge', input, { 'X-CSRF-Token': csrfToken }) }
   getLiveVsExpected() { return this.client.get<LiveVsExpectedData>('/live-vs-expected') }
   getManualControl() { return this.client.get<ManualControlData>('/manual-control') }
   previewManualControl(input: ManualControlPreviewInput, csrfToken: string) { return this.client.post<ManualControlData>('/manual-control/preview', input, { 'X-CSRF-Token': csrfToken }) }

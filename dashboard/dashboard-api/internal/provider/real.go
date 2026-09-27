@@ -42,6 +42,7 @@ type RealConfig struct {
 	VenueAPIWalletAddress string
 	AlertStoreDir         string
 	ManualAuditDir        string
+	AlertAckDir           string
 }
 
 type Real struct {

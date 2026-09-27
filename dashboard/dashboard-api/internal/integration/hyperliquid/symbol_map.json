@@ -660,6 +660,10 @@
       "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
     },
     {
+      "internal": "MARSCOINUSDT",
+      "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-27, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+    },
+    {
       "internal": "MUBARAKUSDT",
       "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-26, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
     },
@@ -686,6 +690,14 @@
     {
       "internal": "SAGAUSDT",
       "reason": "No approved Hyperliquid TESTNET execution mapping; block order routing until explicitly mapped or excluded by final venue policy."
+    },
+    {
+      "internal": "SOONUSDT",
+      "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-27, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+    },
+    {
+      "internal": "USUSDT",
+      "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-27, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
     },
     {
       "internal": "XAIUSDT",

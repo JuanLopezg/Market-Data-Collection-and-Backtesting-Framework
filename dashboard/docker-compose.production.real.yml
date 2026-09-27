@@ -1,8 +1,8 @@
-# Step 43 production real-data overlay.
+# Step 46B production real-data overlay.
 # The trading stack must already be running and expose its internal Docker
 # network (default: algotrading-live_live). No trading/NATS/PostgreSQL port is
 # published by this dashboard compose. The watchdog persists only observability
-# alert lifecycle transitions in its own volume; it never writes trading state.
+# alert lifecycle transitions in its own volume; human ACK and manual intent use separate observability volumes. None write trading state.
 services:
   dashboard-api:
     environment:
@@ -24,11 +24,13 @@ services:
       DASHBOARD_HYPERLIQUID_PUBLIC_TIMEOUT: ${DASHBOARD_HYPERLIQUID_PUBLIC_TIMEOUT:-3s}
       DASHBOARD_ALERT_STORE_DIR: /data/watchdog
       DASHBOARD_MANUAL_AUDIT_DIR: /data/manual-audit
+      DASHBOARD_ALERT_ACK_DIR: /data/alert-ack
     volumes:
       - ${DASHBOARD_MARKET_DATA_HOST_DIR:?Set DASHBOARD_MARKET_DATA_HOST_DIR in .env.production}:/data/market
       - ${DASHBOARD_MARKET_DATA_DB_HOST_FILE:?Set DASHBOARD_MARKET_DATA_DB_HOST_FILE in .env.production}:/data/market/database.db:ro
       - dashboard-watchdog-data:/data/watchdog:ro
       - dashboard-manual-audit-data:/data/manual-audit
+      - dashboard-alert-ack-data:/data/alert-ack
     networks:
       - dashboard-private
       - algotrading-live
@@ -89,7 +91,60 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  dashboard-alert-notifier:
+    build:
+      context: ./dashboard-api
+    container_name: control-dashboard-alert-notifier
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 10s
+    entrypoint: ["/dashboard-alert-notifier"]
+    environment:
+      DASHBOARD_ALERT_STORE_DIR: "/data/watchdog"
+      DASHBOARD_NOTIFIER_STORE_DIR: "${DASHBOARD_NOTIFIER_STORE_DIR:-}"
+      DASHBOARD_NOTIFIER_TEST_SINK_FILE: "/data/notifier/test-sink.jsonl"
+      DASHBOARD_NOTIFIER_SINK: "${DASHBOARD_NOTIFIER_SINK:-TEST_FILE}"
+      DASHBOARD_TELEGRAM_BOT_TOKEN: "${DASHBOARD_TELEGRAM_BOT_TOKEN:-}"
+      DASHBOARD_TELEGRAM_BOT_TOKEN_FILE: "${DASHBOARD_TELEGRAM_BOT_TOKEN_FILE:-}"
+      DASHBOARD_TELEGRAM_CHAT_ID: "${DASHBOARD_TELEGRAM_CHAT_ID:-}"
+      DASHBOARD_TELEGRAM_CHAT_ID_FILE: "${DASHBOARD_TELEGRAM_CHAT_ID_FILE:-}"
+      DASHBOARD_TELEGRAM_RECEIPT_FILE: "${DASHBOARD_TELEGRAM_RECEIPT_FILE:-}"
+      DASHBOARD_TELEGRAM_REQUEST_TIMEOUT: "${DASHBOARD_TELEGRAM_REQUEST_TIMEOUT:-8s}"
+      DASHBOARD_NOTIFIER_MIN_SEVERITY: "${DASHBOARD_NOTIFIER_MIN_SEVERITY:-WARN}"
+      DASHBOARD_NOTIFIER_INTERVAL: "${DASHBOARD_NOTIFIER_INTERVAL:-5s}"
+      DASHBOARD_NOTIFIER_COOLDOWN: "${DASHBOARD_NOTIFIER_COOLDOWN:-5m}"
+      DASHBOARD_NOTIFIER_SWEEP_TIMEOUT: "${DASHBOARD_NOTIFIER_SWEEP_TIMEOUT:-10s}"
+      DASHBOARD_NOTIFIER_SOURCE_MAX_BYTES: "${DASHBOARD_NOTIFIER_SOURCE_MAX_BYTES:-67108864}"
+    volumes:
+      - dashboard-watchdog-data:/data/watchdog:ro
+      - dashboard-alert-notifier-data:/data/notifier
+    mem_limit: 48m
+    cpus: 0.15
+    pids_limit: 48
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "store=$${DASHBOARD_NOTIFIER_STORE_DIR:-}; if [ -z \"$$store\" ]; then if [ \"$${DASHBOARD_NOTIFIER_SINK:-TEST_FILE}\" = TELEGRAM ]; then store=/data/notifier/telegram; else store=/data/notifier; fi; fi; test -s \"$$store/status.json\" && grep -q '\"lastSuccessAt\"' \"$$store/status.json\""]
+      interval: 30s
+      timeout: 3s
+      start_period: 15s
+      retries: 3
+    networks:
+      - dashboard-notifier-egress
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 networks:
+  dashboard-notifier-egress:
+    driver: bridge
   algotrading-live:
     external: true
     name: ${ALGOTRADING_LIVE_NETWORK:-algotrading-live_live}
@@ -97,3 +152,5 @@ networks:
 volumes:
   dashboard-watchdog-data:
   dashboard-manual-audit-data:
+  dashboard-alert-ack-data:
+  dashboard-alert-notifier-data:

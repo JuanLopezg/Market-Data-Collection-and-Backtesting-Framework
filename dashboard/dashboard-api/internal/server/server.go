@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"control-dashboard-api/internal/alertack"
+	"control-dashboard-api/internal/alertstore"
 	"control-dashboard-api/internal/integration/catalog"
 	"control-dashboard-api/internal/integration/probe"
 	"control-dashboard-api/internal/manualaudit"
@@ -32,6 +34,8 @@ type Config struct {
 	ResourceTimeout time.Duration
 	SSEMaxClients   int
 	ManualAuditDir  string
+	AlertAckDir     string
+	AlertStoreDir   string
 }
 
 type Server struct {
@@ -43,6 +47,7 @@ type Server struct {
 	metrics      *runtimeMetrics
 	streamSlots  chan struct{}
 	manualAudit  *manualaudit.Store
+	alertAck     *alertack.Store
 	handler      http.Handler
 }
 
@@ -51,7 +56,7 @@ func New(cfg Config) (*Server, error) {
 		cfg.Addr = ":8080"
 	}
 	if cfg.Version == "" {
-		cfg.Version = "0.46.0"
+		cfg.Version = "0.46.1"
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
@@ -96,6 +101,7 @@ func New(cfg Config) (*Server, error) {
 		metrics:      newRuntimeMetrics(),
 		streamSlots:  make(chan struct{}, cfg.SSEMaxClients),
 		manualAudit:  manualaudit.New(cfg.ManualAuditDir),
+		alertAck:     alertack.New(cfg.AlertAckDir),
 	}
 	s.handler = s.routes()
 	return s, nil
@@ -138,6 +144,7 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("POST /api/auth/logout", s.authRequired(http.HandlerFunc(s.logout)))
 	mux.Handle("POST /api/manual-control/preview", s.authRequired(http.HandlerFunc(s.manualControlPreview)))
 	mux.Handle("POST /api/manual-control/route", s.authRequired(http.HandlerFunc(s.manualControlRoute)))
+	mux.Handle("POST /api/alerts-audit/acknowledge", s.authRequired(http.HandlerFunc(s.acknowledgeAlert)))
 
 	routes := map[string]provider.Resource{
 		"/api/shell-status":     provider.ResourceShellStatus,
@@ -351,6 +358,177 @@ func (s *Server) manualControlPreview(w http.ResponseWriter, r *http.Request) {
 	// This is intentionally a non-mutating endpoint. A successful preview never
 	// implies risk approval, routing, order creation or audit persistence.
 	s.writeJSON(w, http.StatusOK, result)
+}
+
+type alertAcknowledgementResponse struct {
+	Status              string `json:"status"`
+	Persisted           bool   `json:"persisted"`
+	AlreadyAcknowledged bool   `json:"alreadyAcknowledged"`
+	AlertID             string `json:"alertId"`
+	AcknowledgementKey  string `json:"acknowledgementKey"`
+	Actor               string `json:"actor"`
+	RecordedAt          string `json:"recordedAt"`
+	CorrelationID       string `json:"correlationId"`
+	Comment             string `json:"comment,omitempty"`
+	ResolutionState     string `json:"resolutionState"`
+	TradingStateMutated bool   `json:"tradingStateMutated"`
+	Note                string `json:"note"`
+}
+
+type ackReadableAlert struct {
+	ID                 string `json:"id"`
+	Status             string `json:"status"`
+	Severity           string `json:"severity"`
+	Service            string `json:"service"`
+	EventType          string `json:"eventType"`
+	Title              string `json:"title"`
+	AcknowledgementKey string `json:"acknowledgementKey"`
+}
+
+func (s *Server) acknowledgeAlert(w http.ResponseWriter, r *http.Request) {
+	value, ok := sessionFromContext(r.Context())
+	if !ok {
+		s.writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+		return
+	}
+	if value.Role != RoleOperator {
+		s.writeJSON(w, http.StatusForbidden, map[string]string{"error": "OPERATOR role required"})
+		return
+	}
+	if !secureEqual(r.Header.Get("X-CSRF-Token"), value.CSRFToken) {
+		s.writeJSON(w, http.StatusForbidden, map[string]string{"error": "invalid CSRF token"})
+		return
+	}
+
+	var input struct {
+		AlertID            string `json:"alertId"`
+		AcknowledgementKey string `json:"acknowledgementKey"`
+		Comment            string `json:"comment"`
+	}
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 8*1024))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid alert acknowledgement request"})
+		return
+	}
+	input.AlertID = strings.TrimSpace(input.AlertID)
+	input.AcknowledgementKey = strings.TrimSpace(input.AcknowledgementKey)
+	input.Comment = strings.TrimSpace(input.Comment)
+	if input.AlertID == "" || input.AcknowledgementKey == "" {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "alertId and acknowledgementKey are required"})
+		return
+	}
+	if len(input.Comment) > 500 {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "acknowledgement comment exceeds 500 characters"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.ResourceTimeout)
+	defer cancel()
+	raw, err := s.provider.Read(ctx, provider.ResourceAlertsAudit)
+	if err != nil {
+		s.writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "current alert state is unavailable"})
+		return
+	}
+	var current struct {
+		AcknowledgementAvailable bool               `json:"acknowledgementAvailable"`
+		Alerts                   []ackReadableAlert `json:"alerts"`
+	}
+	if err := json.Unmarshal(raw, &current); err != nil {
+		s.writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "current alert state is invalid"})
+		return
+	}
+	if !current.AcknowledgementAvailable {
+		s.writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "durable alert acknowledgement store is unavailable"})
+		return
+	}
+
+	var alert *ackReadableAlert
+	for i := range current.Alerts {
+		if current.Alerts[i].ID == input.AlertID {
+			alert = &current.Alerts[i]
+			break
+		}
+	}
+	if alert == nil {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"error": "alert is no longer active"})
+		return
+	}
+	if alert.Status == "RESOLVED" {
+		s.writeJSON(w, http.StatusConflict, map[string]string{"error": "resolved alerts cannot be acknowledged"})
+		return
+	}
+	if strings.TrimSpace(alert.AcknowledgementKey) == "" {
+		s.writeJSON(w, http.StatusConflict, map[string]string{"error": "alert has not yet been bound to a durable watchdog lifecycle event"})
+		return
+	}
+	if !secureEqual(input.AcknowledgementKey, alert.AcknowledgementKey) {
+		s.writeJSON(w, http.StatusConflict, map[string]string{"error": "stale alert acknowledgement key; refresh alert state"})
+		return
+	}
+
+	lifecycle := alertstore.ReadSnapshot(s.cfg.AlertStoreDir, 1)
+	if !lifecycle.Available {
+		s.writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "durable alert lifecycle store is unavailable"})
+		return
+	}
+	activeLifecycle, ok := lifecycle.Active[alert.ID]
+	if !ok || !secureEqual(activeLifecycle.LifecycleEventID, alert.AcknowledgementKey) {
+		s.writeJSON(w, http.StatusConflict, map[string]string{"error": "alert lifecycle changed before acknowledgement; refresh alert state"})
+		return
+	}
+
+	snapshot := alertack.ReadSnapshot(s.cfg.AlertAckDir, 100)
+	if !snapshot.Available {
+		s.writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "durable alert acknowledgement store is unavailable"})
+		return
+	}
+	actor := value.Username + " / " + string(value.Role)
+	if existing, ok := snapshot.LatestByLifecycle[alert.AcknowledgementKey]; ok && existing.AlertID == alert.ID {
+		s.writeJSON(w, http.StatusOK, alertAcknowledgementResponse{
+			Status: "ACKNOWLEDGED", Persisted: true, AlreadyAcknowledged: true,
+			AlertID: alert.ID, AcknowledgementKey: alert.AcknowledgementKey, Actor: existing.Actor,
+			RecordedAt: existing.RecordedAt, CorrelationID: existing.CorrelationID, Comment: existing.Comment,
+			ResolutionState: "UNRESOLVED", TradingStateMutated: false,
+			Note: "The exact durable alert lifecycle instance was already acknowledged. ACK does not resolve the alert or change trading readiness.",
+		})
+		return
+	}
+
+	correlationID, err := newAlertAckCorrelationID()
+	if err != nil {
+		s.writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "could not create acknowledgement correlation id"})
+		return
+	}
+	recordedAt := time.Now().UTC().Format(time.RFC3339Nano)
+	event := alertack.Event{
+		Version: alertack.StoreVersion, EventID: correlationID, RecordedAt: recordedAt,
+		Actor: actor, Action: "ALERT_ACKNOWLEDGE", AlertID: alert.ID,
+		LifecycleEventID: alert.AcknowledgementKey, Severity: alert.Severity, Service: alert.Service,
+		EventType: alert.EventType, Title: alert.Title, Comment: input.Comment,
+		CorrelationID: correlationID, Result: "SUCCESS",
+	}
+	if err := s.alertAck.Append(event); err != nil {
+		s.cfg.Logger.Error("alert acknowledgement persistence failed", "actor", value.Username, "alert_id", alert.ID, "error", err)
+		s.writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "durable alert acknowledgement persistence failed"})
+		return
+	}
+	s.cfg.Logger.Info("alert acknowledged", "actor", value.Username, "alert_id", alert.ID, "lifecycle_event_id", alert.AcknowledgementKey, "correlation_id", correlationID)
+	s.writeJSON(w, http.StatusOK, alertAcknowledgementResponse{
+		Status: "ACKNOWLEDGED", Persisted: true, AlreadyAcknowledged: false,
+		AlertID: alert.ID, AcknowledgementKey: alert.AcknowledgementKey, Actor: actor,
+		RecordedAt: recordedAt, CorrelationID: correlationID, Comment: input.Comment,
+		ResolutionState: "UNRESOLVED", TradingStateMutated: false,
+		Note: "Human acknowledgement was appended to the dedicated observability store. ACK does not resolve the alert, suppress critical readiness, publish trading commands or move capital.",
+	})
+}
+
+func newAlertAckCorrelationID() (string, error) {
+	var raw [12]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
+	}
+	return "ack-" + hex.EncodeToString(raw[:]), nil
 }
 
 type manualControlRouteResponse struct {

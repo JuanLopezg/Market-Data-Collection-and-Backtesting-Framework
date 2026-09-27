@@ -421,3 +421,7 @@ The contract also records the future replay boundary: a `MockExchangeAdapter` mu
 Step 46 adds a dashboard-owned **admission contract**, not an execution route. `POST /api/manual-control/route` is OPERATOR + CSRF protected, requires an explicit confirmation token, recomputes the CSV preview/hash server-side, verifies the current target reference, and rechecks explicit registry/public venue-rule evidence. Every request remains `submitted=false` and `routeEnabled=false` until a separate trading-control/PortfolioRisk/private-venue lifecycle exists.
 
 Operator intent is written only to the isolated append-only `/data/manual-audit/events.jsonl` volume owned by `dashboard-api`; it is projected into Alerts & Audit as HUMAN evidence. This store is observability/audit state only and is not trading state. The dashboard still has no NATS trading publish, exchange submit/cancel, signing or order mutation path.
+
+## Step 46A update — durable human acknowledgement
+
+Alert acknowledgement is now a separate observability-owned append-only source: `/data/alert-ack/events.jsonl` in `dashboard-alert-ack-data`. It is written only by `dashboard-api` after OPERATOR + CSRF validation and an exact match to the current durable watchdog lifecycle event. The watchdog does not mount this volume. ACK changes presentation/audit state only; unresolved severity continues to count toward readiness and no trading database, NATS subject, exchange endpoint, signer or order state is mutated.

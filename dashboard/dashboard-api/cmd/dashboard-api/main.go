@@ -19,7 +19,7 @@ import (
 	"control-dashboard-api/internal/server"
 )
 
-const version = "0.46.0"
+const version = "0.46.1"
 
 func main() {
 	var healthcheck bool
@@ -76,6 +76,8 @@ func main() {
 		ResourceTimeout: resourceTimeout,
 		SSEMaxClients:   sseMaxClients,
 		ManualAuditDir:  strings.TrimSpace(os.Getenv("DASHBOARD_MANUAL_AUDIT_DIR")),
+		AlertAckDir:     strings.TrimSpace(os.Getenv("DASHBOARD_ALERT_ACK_DIR")),
+		AlertStoreDir:   strings.TrimSpace(envOr("DASHBOARD_ALERT_STORE_DIR", "/data/watchdog")),
 	})
 	if err != nil {
 		logger.Error("failed to initialize dashboard api", "error", err)
@@ -184,6 +186,7 @@ func configuredProvider() (provider.Provider, error) {
 			VenuePublicTimeout:     venuePublicTimeout,
 			AlertStoreDir:          strings.TrimSpace(envOr("DASHBOARD_ALERT_STORE_DIR", "/data/watchdog")),
 			ManualAuditDir:         strings.TrimSpace(os.Getenv("DASHBOARD_MANUAL_AUDIT_DIR")),
+			AlertAckDir:            strings.TrimSpace(os.Getenv("DASHBOARD_ALERT_ACK_DIR")),
 		}), nil
 	default:
 		return nil, fmt.Errorf("unsupported DASHBOARD_DATA_PROVIDER %q; expected mock or real", mode)

@@ -383,3 +383,13 @@ Expected fail-closed blockers include `MANUAL_RISK_CONTRACT_UNAVAILABLE`, `TRADI
 ### Manual operator-intent audit
 
 `dashboard-api` owns the isolated append-only `/data/manual-audit/events.jsonl` store (`step46-v1`). It records actor, action, timestamp, request hash, correlation ID, reference target, blockers, result and `submitted=false`. `GET /api/manual-control` exposes a bounded recent view; `GET /api/alerts-audit` projects these records as HUMAN audit evidence. Alert acknowledgement remains separately deferred.
+
+## Step 46A — durable human alert acknowledgement
+
+### `POST /api/alerts-audit/acknowledge`
+
+Authenticated `OPERATOR` + CSRF endpoint. It accepts `alertId`, the current `acknowledgementKey` exposed by `GET /api/alerts-audit`, and an optional comment of at most 500 characters.
+
+The acknowledgement key is the latest durable watchdog `OPENED`/`UPDATED` lifecycle event ID for the exact current alert material. If the alert changes, resolves, or the key is stale, acknowledgement fails closed and the operator must refresh. Repeating the same acknowledgement is idempotent and does not append a duplicate event.
+
+Successful ACK is persisted to the isolated append-only `/data/alert-ack/events.jsonl` store (`step46a-v1`) and projected back into `GET /api/alerts-audit` as HUMAN audit evidence. `ACKNOWLEDGED` means only that an operator has seen that exact unresolved alert lifecycle instance. It does **not** resolve the alert, reduce unresolved CRITICAL/WARN counters, change global readiness, publish to NATS, sign, submit/cancel orders, or move capital.

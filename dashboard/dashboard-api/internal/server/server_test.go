@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"control-dashboard-api/internal/alertack"
+	"control-dashboard-api/internal/alertstore"
 	"control-dashboard-api/internal/manualaudit"
 	"control-dashboard-api/internal/provider"
 )
@@ -35,6 +37,8 @@ func newTestServer(t *testing.T) *Server {
 		SessionTTL:     time.Hour,
 		Provider:       newMockProvider(t),
 		ManualAuditDir: t.TempDir(),
+		AlertAckDir:    t.TempDir(),
+		AlertStoreDir:  t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -457,6 +461,137 @@ func TestManualControlRouteRequiresOperatorCSRFConfirmationAndPersistsBlockedInt
 	event := snapshot.Events[0]
 	if event.CorrelationID != result.CorrelationID || event.Actor != "operator / OPERATOR" || event.Submitted || event.Action != "MANUAL_ROUTE_ADMISSION" {
 		t.Fatalf("unexpected manual audit event: %+v", event)
+	}
+}
+
+type ackTestProvider struct {
+	base         provider.Provider
+	lifecycleKey string
+}
+
+func (p ackTestProvider) Read(ctx context.Context, resource provider.Resource) (json.RawMessage, error) {
+	if resource != provider.ResourceAlertsAudit {
+		return p.base.Read(ctx, resource)
+	}
+	return json.RawMessage(`{
+		"activeCritical":0,
+		"activeWarnings":1,
+		"acknowledged":0,
+		"resolved24h":0,
+		"acknowledgementAvailable":true,
+		"alerts":[{
+			"id":"derived-nats-warn",
+			"timestamp":"2026-09-26T20:00:00Z",
+			"severity":"WARN",
+			"status":"ACTIVE",
+			"service":"NATS",
+			"eventType":"SOURCE_DEGRADED",
+			"title":"NATS source is degraded",
+			"detail":"test",
+			"acknowledgementKey":"` + p.lifecycleKey + `"
+		}],
+		"audit":[]
+	}`), nil
+}
+
+func (p ackTestProvider) Health(ctx context.Context) provider.Health { return p.base.Health(ctx) }
+
+func TestAlertAcknowledgementRequiresOperatorCSRFCurrentLifecycleAndIsIdempotent(t *testing.T) {
+	ackDir := t.TempDir()
+	lifecycleDir := t.TempDir()
+	lifecycleStore, err := alertstore.Open(lifecycleDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lifecycleStore.Apply(time.Date(2026, 9, 26, 20, 0, 0, 0, time.UTC), []alertstore.Alert{{
+		ID: "derived-nats-warn", Status: "ACTIVE", Severity: "WARN", Service: "NATS",
+		EventType: "SOURCE_DEGRADED", Title: "NATS source is degraded", Detail: "test",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	lifecycle := alertstore.ReadSnapshot(lifecycleDir, 10)
+	bound := lifecycle.Active["derived-nats-warn"].LifecycleEventID
+	api, err := New(Config{
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Users: []AuthUser{
+			{Username: "viewer", Password: "viewer-pass", Role: RoleViewer},
+			{Username: "operator", Password: "operator-pass", Role: RoleOperator},
+		},
+		SessionTTL:     time.Hour,
+		Provider:       ackTestProvider{base: newMockProvider(t), lifecycleKey: bound},
+		ManualAuditDir: t.TempDir(),
+		AlertAckDir:    ackDir,
+		AlertStoreDir:  lifecycleDir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewerCookie, viewerCSRF := loginAs(t, api, "viewer", "viewer-pass")
+	operatorCookie, operatorCSRF := loginAs(t, api, "operator", "operator-pass")
+
+	viewerReq := httptest.NewRequest(http.MethodPost, "/api/alerts-audit/acknowledge", bytes.NewBufferString(`{"alertId":"derived-nats-warn","acknowledgementKey":"`+bound+`"}`))
+	viewerReq.AddCookie(viewerCookie)
+	viewerReq.Header.Set("X-CSRF-Token", viewerCSRF)
+	viewerRes := httptest.NewRecorder()
+	api.Handler().ServeHTTP(viewerRes, viewerReq)
+	if viewerRes.Code != http.StatusForbidden {
+		t.Fatalf("viewer acknowledgement = %d, want 403", viewerRes.Code)
+	}
+
+	missingCSRF := httptest.NewRequest(http.MethodPost, "/api/alerts-audit/acknowledge", bytes.NewBufferString(`{"alertId":"derived-nats-warn","acknowledgementKey":"`+bound+`"}`))
+	missingCSRF.AddCookie(operatorCookie)
+	missingCSRFRes := httptest.NewRecorder()
+	api.Handler().ServeHTTP(missingCSRFRes, missingCSRF)
+	if missingCSRFRes.Code != http.StatusForbidden {
+		t.Fatalf("missing CSRF acknowledgement = %d, want 403", missingCSRFRes.Code)
+	}
+
+	stale := httptest.NewRequest(http.MethodPost, "/api/alerts-audit/acknowledge", bytes.NewBufferString(`{"alertId":"derived-nats-warn","acknowledgementKey":"old-lifecycle"}`))
+	stale.AddCookie(operatorCookie)
+	stale.Header.Set("X-CSRF-Token", operatorCSRF)
+	staleRes := httptest.NewRecorder()
+	api.Handler().ServeHTTP(staleRes, stale)
+	if staleRes.Code != http.StatusConflict {
+		t.Fatalf("stale acknowledgement = %d, want 409; body=%s", staleRes.Code, staleRes.Body.String())
+	}
+
+	validBody := `{"alertId":"derived-nats-warn","acknowledgementKey":"` + bound + `","comment":"Investigating source lag"}`
+	valid := httptest.NewRequest(http.MethodPost, "/api/alerts-audit/acknowledge", bytes.NewBufferString(validBody))
+	valid.AddCookie(operatorCookie)
+	valid.Header.Set("X-CSRF-Token", operatorCSRF)
+	validRes := httptest.NewRecorder()
+	api.Handler().ServeHTTP(validRes, valid)
+	if validRes.Code != http.StatusOK {
+		t.Fatalf("valid acknowledgement = %d, want 200; body=%s", validRes.Code, validRes.Body.String())
+	}
+	var response alertAcknowledgementResponse
+	if err := json.Unmarshal(validRes.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Persisted || response.AlreadyAcknowledged || response.Status != "ACKNOWLEDGED" || response.ResolutionState != "UNRESOLVED" || response.TradingStateMutated {
+		t.Fatalf("unexpected acknowledgement response: %+v", response)
+	}
+	snapshot := alertack.ReadSnapshot(ackDir, 20)
+	if !snapshot.Available || snapshot.Count != 1 || len(snapshot.Events) != 1 {
+		t.Fatalf("unexpected acknowledgement store: %+v", snapshot)
+	}
+
+	again := httptest.NewRequest(http.MethodPost, "/api/alerts-audit/acknowledge", bytes.NewBufferString(validBody))
+	again.AddCookie(operatorCookie)
+	again.Header.Set("X-CSRF-Token", operatorCSRF)
+	againRes := httptest.NewRecorder()
+	api.Handler().ServeHTTP(againRes, again)
+	if againRes.Code != http.StatusOK {
+		t.Fatalf("idempotent acknowledgement = %d, want 200; body=%s", againRes.Code, againRes.Body.String())
+	}
+	if err := json.Unmarshal(againRes.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.AlreadyAcknowledged {
+		t.Fatalf("second acknowledgement should be idempotent: %+v", response)
+	}
+	if snapshot = alertack.ReadSnapshot(ackDir, 20); snapshot.Count != 1 {
+		t.Fatalf("idempotent acknowledgement appended duplicate: %+v", snapshot)
 	}
 }
 

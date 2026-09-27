@@ -1,4 +1,4 @@
-# Real-source/control-preview/streaming overlay through Step 43.
+# Real-source/control-preview/streaming overlay through Step 46B.
 # Start deploy/live first, then run this compose with deploy/live/.env.
 services:
   dashboard-api:
@@ -21,6 +21,7 @@ services:
       DASHBOARD_HYPERLIQUID_PUBLIC_TIMEOUT: "3s"
       DASHBOARD_ALERT_STORE_DIR: "/data/watchdog"
       DASHBOARD_MANUAL_AUDIT_DIR: "/data/manual-audit"
+      DASHBOARD_ALERT_ACK_DIR: "/data/alert-ack"
     # SQLite in WAL mode may need writable sidecar/locking files (-shm) even
     # for a SQLITE_OPEN_READONLY connection. The directory is therefore
     # writable for sidecar bookkeeping, while the canonical database file
@@ -31,6 +32,7 @@ services:
       - ../storage/databases/database.db:/data/market/database.db:ro
       - dashboard-watchdog-data:/data/watchdog:ro
       - dashboard-manual-audit-data:/data/manual-audit
+      - dashboard-alert-ack-data:/data/alert-ack
     networks:
       - dashboard-private
       - algotrading-live
@@ -86,7 +88,55 @@ services:
       - dashboard-private
       - algotrading-live
 
+  dashboard-alert-notifier:
+    build:
+      context: ./dashboard-api
+    container_name: control-dashboard-alert-notifier
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 10s
+    entrypoint: ["/dashboard-alert-notifier"]
+    environment:
+      DASHBOARD_ALERT_STORE_DIR: "/data/watchdog"
+      DASHBOARD_NOTIFIER_STORE_DIR: "${DASHBOARD_NOTIFIER_STORE_DIR:-}"
+      DASHBOARD_NOTIFIER_TEST_SINK_FILE: "/data/notifier/test-sink.jsonl"
+      DASHBOARD_NOTIFIER_SINK: "${DASHBOARD_NOTIFIER_SINK:-TEST_FILE}"
+      DASHBOARD_TELEGRAM_BOT_TOKEN: "${DASHBOARD_TELEGRAM_BOT_TOKEN:-}"
+      DASHBOARD_TELEGRAM_BOT_TOKEN_FILE: "${DASHBOARD_TELEGRAM_BOT_TOKEN_FILE:-}"
+      DASHBOARD_TELEGRAM_CHAT_ID: "${DASHBOARD_TELEGRAM_CHAT_ID:-}"
+      DASHBOARD_TELEGRAM_CHAT_ID_FILE: "${DASHBOARD_TELEGRAM_CHAT_ID_FILE:-}"
+      DASHBOARD_TELEGRAM_RECEIPT_FILE: "${DASHBOARD_TELEGRAM_RECEIPT_FILE:-}"
+      DASHBOARD_TELEGRAM_REQUEST_TIMEOUT: "${DASHBOARD_TELEGRAM_REQUEST_TIMEOUT:-8s}"
+      DASHBOARD_NOTIFIER_MIN_SEVERITY: "${DASHBOARD_NOTIFIER_MIN_SEVERITY:-WARN}"
+      DASHBOARD_NOTIFIER_INTERVAL: "${DASHBOARD_NOTIFIER_INTERVAL:-5s}"
+      DASHBOARD_NOTIFIER_COOLDOWN: "${DASHBOARD_NOTIFIER_COOLDOWN:-5m}"
+      DASHBOARD_NOTIFIER_SWEEP_TIMEOUT: "${DASHBOARD_NOTIFIER_SWEEP_TIMEOUT:-10s}"
+      DASHBOARD_NOTIFIER_SOURCE_MAX_BYTES: "${DASHBOARD_NOTIFIER_SOURCE_MAX_BYTES:-67108864}"
+    volumes:
+      - dashboard-watchdog-data:/data/watchdog:ro
+      - dashboard-alert-notifier-data:/data/notifier
+    mem_limit: 48m
+    cpus: 0.15
+    pids_limit: 48
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "store=$${DASHBOARD_NOTIFIER_STORE_DIR:-}; if [ -z \"$$store\" ]; then if [ \"$${DASHBOARD_NOTIFIER_SINK:-TEST_FILE}\" = TELEGRAM ]; then store=/data/notifier/telegram; else store=/data/notifier; fi; fi; test -s \"$$store/status.json\" && grep -q '\"lastSuccessAt\"' \"$$store/status.json\""]
+      interval: 30s
+      timeout: 3s
+      start_period: 15s
+      retries: 3
+    networks:
+      - dashboard-notifier-egress
+
 networks:
+  dashboard-notifier-egress:
+    driver: bridge
   algotrading-live:
     external: true
     name: algotrading-live_live
@@ -94,3 +144,5 @@ networks:
 volumes:
   dashboard-watchdog-data:
   dashboard-manual-audit-data:
+  dashboard-alert-ack-data:
+  dashboard-alert-notifier-data:

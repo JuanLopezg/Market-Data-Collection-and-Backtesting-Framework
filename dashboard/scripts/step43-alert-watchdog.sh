@@ -115,8 +115,18 @@ state=d.get('watchdogState')
 if state not in ('HEALTHY','DEGRADED'):
     print(json.dumps(d, indent=2, ensure_ascii=False), file=sys.stderr)
     raise SystemExit(f'STEP43: FAIL: watchdog state={state}')
-if d.get('acknowledgementAvailable') is not False:
-    raise SystemExit('STEP43: FAIL: acknowledgement must remain unavailable until a dedicated mutation/audit contract exists')
+ack_available=d.get('acknowledgementAvailable')
+if ack_available not in (False, True):
+    raise SystemExit('STEP43: FAIL: malformed acknowledgementAvailable flag')
+if ack_available is True:
+    mode=str(d.get('auditMode') or '')
+    note=str(d.get('sourceNote') or '')
+    if 'DURABLE_ALERT_ACK' not in mode:
+        raise SystemExit('STEP43: FAIL: acknowledgement is available without the dedicated durable ACK audit mode')
+    if 'Step 46A' not in note or 'ACK never resolves' not in note:
+        raise SystemExit('STEP43: FAIL: acknowledgement availability lacks the Step 46A non-resolution disclosure')
+    if not isinstance(d.get('acknowledged'), int) or d.get('acknowledged') < 0:
+        raise SystemExit('STEP43: FAIL: invalid acknowledged count')
 
 # Step 43 itself never fabricates human audit. A later Step 46 may legitimately
 # attach the dedicated append-only manual operator-intent store to this same
@@ -136,10 +146,15 @@ if human_available is True:
     for row in d.get('audit') or []:
         if row.get('actorType') != 'HUMAN':
             continue
-        if row.get('action') != 'MANUAL_ROUTE_ADMISSION':
-            raise SystemExit('STEP43: FAIL: unexpected HUMAN audit action in the Step 43/46 compatibility boundary')
-        if not str(row.get('correlationId') or '').strip() or not str(row.get('requestHash') or '').strip():
-            raise SystemExit('STEP43: FAIL: durable HUMAN audit row lacks correlation/hash evidence')
+        action=row.get('action')
+        if action == 'MANUAL_ROUTE_ADMISSION':
+            if not str(row.get('correlationId') or '').strip() or not str(row.get('requestHash') or '').strip():
+                raise SystemExit('STEP43: FAIL: durable manual-route HUMAN audit row lacks correlation/hash evidence')
+        elif action == 'ALERT_ACKNOWLEDGE' and ack_available is True:
+            if not str(row.get('correlationId') or '').strip() or not str(row.get('target') or '').strip():
+                raise SystemExit('STEP43: FAIL: durable alert-ack HUMAN audit row lacks correlation/target evidence')
+        else:
+            raise SystemExit('STEP43: FAIL: unexpected HUMAN audit action in the Step 43 forward-compatibility boundary')
 last=d.get('watchdogLastSuccessAt')
 try:
     ts=datetime.fromisoformat(last.replace('Z','+00:00'))
@@ -200,8 +215,8 @@ echo "STEP 43: PASS — DURABLE ALERTS / WATCHDOG FOUNDATION VALIDATED"
 echo "============================================================"
 echo "A separate watchdog persists alert OPENED/UPDATED/RESOLVED transitions"
 echo "to its own append-only observability store; the dashboard reads that history."
-echo "Symbol-registry and ledger-integrity alarms are included. Human acknowledgement"
-echo "and Telegram delivery are still deferred. A later Step 46 durable manual-intent"
-echo "audit store is permitted, but it never implies order submission or routing."
+echo "Symbol-registry and ledger-integrity alarms are included. A later Step 46A"
+echo "durable human-acknowledgement store is permitted, but ACK never resolves an"
+echo "alert or changes trading readiness. Telegram delivery remains deferred."
 echo "Step 37 private auth and Steps 38-41 remain DEFERRED; no wallet/funds required."
 echo "Next safe step: Step 44 Full Global Readiness Contract."

@@ -863,7 +863,7 @@ export interface MarketDataData {
 export type InfrastructureHealth = 'HEALTHY' | 'WARN' | 'CRITICAL' | 'UNKNOWN'
 export type ContainerState = 'RUNNING' | 'RESTARTING' | 'STOPPED'
 export type AlertStatus = 'ACTIVE' | 'ACKNOWLEDGED' | 'RESOLVED'
-export type AuditActorType = 'SYSTEM' | 'OPERATOR'
+export type AuditActorType = 'SYSTEM' | 'OPERATOR' | 'HUMAN'
 
 export interface VpsHealth {
   cpuPct: number
@@ -972,6 +972,10 @@ export interface OperationalAlert {
   detail: string
   correlationId?: string
   linkedContext?: string
+  acknowledgementKey?: string
+  acknowledgedAt?: string
+  acknowledgedBy?: string
+  acknowledgementComment?: string
 }
 
 export interface AuditRecord {
@@ -1014,6 +1018,28 @@ export interface AlertsAuditData {
   watchdogLastSuccessAt?: string
   durableEventCount?: number
   durableLifecycleEvents?: DurableAlertLifecycleEvent[]
+  acknowledgementEventCount?: number
+}
+
+export interface AlertAcknowledgementInput {
+  alertId: string
+  acknowledgementKey: string
+  comment?: string
+}
+
+export interface AlertAcknowledgementResult {
+  status: 'ACKNOWLEDGED'
+  persisted: boolean
+  alreadyAcknowledged: boolean
+  alertId: string
+  acknowledgementKey: string
+  actor: string
+  recordedAt: string
+  correlationId: string
+  comment?: string
+  resolutionState: 'UNRESOLVED'
+  tradingStateMutated: false
+  note: string
 }
 
 export type BehaviourClassification = 'NORMAL' | 'ELEVATED' | 'ABNORMAL' | 'CRITICAL'

@@ -1,7 +1,9 @@
 package provider
 
 import (
+	"control-dashboard-api/internal/alertack"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -168,5 +170,124 @@ func TestMergeManualAuditHistoryExposesDurableHumanIntent(t *testing.T) {
 	}
 	if got.AcknowledgementAvailable {
 		t.Fatal("Step 46 manual intent must not imply alert acknowledgement persistence")
+	}
+}
+
+func TestStep46AAcknowledgementBindsExactLifecycleAndDoesNotClearCritical(t *testing.T) {
+	ackDir := t.TempDir()
+	result := realAlertsAuditData{
+		Alerts: []realOperationalAlert{
+			{
+				ID: "critical-1", Timestamp: "2026-09-26T20:00:00Z", Severity: "CRITICAL", Status: "ACTIVE",
+				Service: "Reconciliation", EventType: "RECONCILIATION_BLOCKED", Title: "blocked", Detail: "mismatch",
+				AcknowledgementKey: "life-1",
+			},
+			{
+				ID: "warn-1", Timestamp: "2026-09-26T20:00:00Z", Severity: "WARN", Status: "ACTIVE",
+				Service: "NATS", EventType: "SOURCE_DEGRADED", Title: "degraded", Detail: "lag",
+				AcknowledgementKey: "life-2",
+			},
+		},
+		SourceMode: "REAL",
+		SourceNote: "base",
+	}
+	store := alertack.New(ackDir)
+	if err := store.Append(alertack.Event{
+		EventID: "ack-1", Actor: "operator / OPERATOR", AlertID: "critical-1", LifecycleEventID: "life-1",
+		Severity: "CRITICAL", Service: "Reconciliation", EventType: "RECONCILIATION_BLOCKED",
+		Title: "blocked", Comment: "seen", CorrelationID: "ack-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got := mergeAlertAcknowledgements(result, ackDir)
+	if !got.AcknowledgementAvailable || got.Acknowledged != 1 || got.Alerts[0].Status != "ACKNOWLEDGED" {
+		t.Fatalf("acknowledgement not projected: %+v", got)
+	}
+	if got.ActiveCritical != 1 || got.ActiveWarnings != 1 {
+		t.Fatalf("acknowledgement incorrectly suppressed unresolved severity counts: critical=%d warnings=%d", got.ActiveCritical, got.ActiveWarnings)
+	}
+	foundAudit := false
+	for _, row := range got.Audit {
+		if row.Action == "ALERT_ACKNOWLEDGE" && row.Target == "critical-1" && row.ActorType == "HUMAN" {
+			foundAudit = true
+		}
+	}
+	if !foundAudit {
+		t.Fatalf("ack audit evidence missing: %+v", got.Audit)
+	}
+}
+
+func TestStep46AOldLifecycleAcknowledgementDoesNotApplyToUpdatedAlert(t *testing.T) {
+	ackDir := t.TempDir()
+	if err := alertack.New(ackDir).Append(alertack.Event{
+		EventID: "ack-old", Actor: "operator / OPERATOR", AlertID: "warn-1", LifecycleEventID: "life-old",
+		CorrelationID: "ack-old",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result := realAlertsAuditData{
+		Alerts: []realOperationalAlert{{ID: "warn-1", Severity: "WARN", Status: "ACTIVE", AcknowledgementKey: "life-new"}},
+	}
+	got := mergeAlertAcknowledgements(result, ackDir)
+	if got.Acknowledged != 0 || got.Alerts[0].Status != "ACTIVE" {
+		t.Fatalf("stale lifecycle acknowledgement leaked into updated alert: %+v", got)
+	}
+}
+
+func TestStep46ACombinedManualIntentAndAlertAckPreserveBothAuditModes(t *testing.T) {
+	ackDir := t.TempDir()
+	manualDir := t.TempDir()
+
+	if err := alertack.New(ackDir).Append(alertack.Event{
+		EventID: "ack-combined-1", Actor: "operator / OPERATOR", AlertID: "critical-1",
+		LifecycleEventID: "life-combined-1", Severity: "CRITICAL", Service: "Reconciliation",
+		EventType: "RECONCILIATION_BLOCKED", Title: "blocked", CorrelationID: "ack-combined-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := manualaudit.New(manualDir).Append(manualaudit.Event{
+		EventID: "manual-combined-1", RecordedAt: "2026-09-27T07:00:00Z", Actor: "operator / OPERATOR",
+		Action: "MANUAL_ROUTE_ADMISSION", Target: "portfolio", Result: "REJECTED",
+		RequestHash: "sha256:combined", CorrelationID: "manual-combined-1",
+		ContractVersion: manualaudit.StoreVersion, Submitted: false,
+		Blockers: []string{"PRIVATE_AUTH_DEFERRED"}, Detail: "blocked safely",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	result := realAlertsAuditData{
+		Alerts: []realOperationalAlert{{
+			ID: "critical-1", Severity: "CRITICAL", Status: "ACTIVE",
+			AcknowledgementKey: "life-combined-1",
+		}},
+		Audit:      []realAuditRecord{},
+		SourceNote: "base",
+	}
+	got := mergeAlertAcknowledgements(result, ackDir)
+	got = mergeManualAuditHistory(got, manualDir)
+
+	if !got.AcknowledgementAvailable || !got.HumanAuditAvailable {
+		t.Fatalf("combined durable human evidence availability lost: %+v", got)
+	}
+	wantMode := "DURABLE_MANUAL_INTENT+DURABLE_ALERT_ACK+DURABLE_ALERT_LIFECYCLE+DERIVED_SYSTEM_EVIDENCE"
+	if got.AuditMode != wantMode {
+		t.Fatalf("combined audit mode lost a durable capability: got=%q want=%q", got.AuditMode, wantMode)
+	}
+	if !strings.Contains(got.SourceNote, "Step 46A") || !strings.Contains(got.SourceNote, "operator-intent audit store") {
+		t.Fatalf("combined source disclosure incomplete: %q", got.SourceNote)
+	}
+
+	ackFound, manualFound := false, false
+	for _, row := range got.Audit {
+		switch row.Action {
+		case "ALERT_ACKNOWLEDGE":
+			ackFound = row.ActorType == "HUMAN" && row.CorrelationID == "ack-combined-1"
+		case "MANUAL_ROUTE_ADMISSION":
+			manualFound = row.ActorType == "HUMAN" && row.CorrelationID == "manual-combined-1"
+		}
+	}
+	if !ackFound || !manualFound {
+		t.Fatalf("combined HUMAN audit evidence incomplete: %+v", got.Audit)
 	}
 }

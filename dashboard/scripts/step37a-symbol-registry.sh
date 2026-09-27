@@ -81,8 +81,8 @@ manifest=json.load(open(sys.argv[2], encoding='utf-8'))
 if registry.get('schemaVersion') != 1 or registry.get('policy') != 'EXPLICIT_ONLY' or registry.get('marketDataSource') != 'BINANCE':
     raise SystemExit('STEP37A: FAIL: registry identity/policy mismatch')
 entries=registry.get('entries') or []
-if len(entries) != 172:
-    raise SystemExit(f'STEP37A: FAIL: registry entry count={len(entries)} want=172')
+if len(entries) != 175:
+    raise SystemExit(f'STEP37A: FAIL: registry entry count={len(entries)} want=175')
 seen=set()
 idx={}
 for e in entries:

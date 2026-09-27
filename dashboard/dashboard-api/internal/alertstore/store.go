@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,9 +16,10 @@ import (
 )
 
 const (
-	eventsFileName = "events.jsonl"
-	statusFileName = "status.json"
-	storeVersion   = "step43-v1"
+	eventsFileName   = "events.jsonl"
+	statusFileName   = "status.json"
+	storeVersion     = "step43-v1"
+	maxLifecycleLine = 4 * 1024 * 1024
 )
 
 type Alert struct {
@@ -52,11 +54,17 @@ type Heartbeat struct {
 	LastError      string `json:"lastError,omitempty"`
 }
 
+type ActiveAlert struct {
+	LifecycleEventID string `json:"lifecycleEventId"`
+	Alert            Alert  `json:"alert"`
+}
+
 type Snapshot struct {
-	Available bool             `json:"available"`
-	Heartbeat Heartbeat        `json:"heartbeat"`
-	Events    []LifecycleEvent `json:"events"`
-	Error     string           `json:"error,omitempty"`
+	Available bool                   `json:"available"`
+	Heartbeat Heartbeat              `json:"heartbeat"`
+	Events    []LifecycleEvent       `json:"events"`
+	Active    map[string]ActiveAlert `json:"-"`
+	Error     string                 `json:"error,omitempty"`
 }
 
 type Store struct {
@@ -294,7 +302,7 @@ func ReadSnapshot(dir string, maxEvents int) Snapshot {
 		return Snapshot{Available: false, Error: fmt.Sprintf("unsupported alert watchdog store version %q", hb.Version)}
 	}
 
-	snapshot := Snapshot{Available: true, Heartbeat: hb, Events: []LifecycleEvent{}}
+	snapshot := Snapshot{Available: true, Heartbeat: hb, Events: []LifecycleEvent{}, Active: map[string]ActiveAlert{}}
 	rawEvents, err := os.ReadFile(filepath.Join(dir, eventsFileName))
 	if errors.Is(err, os.ErrNotExist) {
 		return snapshot
@@ -322,6 +330,12 @@ func ReadSnapshot(dir string, maxEvents int) Snapshot {
 			snapshot.Error = fmt.Sprintf("decode alert lifecycle event: %v", err)
 			return snapshot
 		}
+		switch event.Transition {
+		case "OPENED", "UPDATED":
+			snapshot.Active[event.Alert.ID] = ActiveAlert{LifecycleEventID: event.EventID, Alert: event.Alert}
+		case "RESOLVED":
+			delete(snapshot.Active, event.Alert.ID)
+		}
 		if len(events) == maxEvents {
 			copy(events, events[1:])
 			events[len(events)-1] = event
@@ -334,6 +348,92 @@ func ReadSnapshot(dir string, maxEvents int) Snapshot {
 	}
 	snapshot.Events = events
 	return snapshot
+}
+
+// ReadHeartbeat validates the durable watchdog status contract without reading
+// the lifecycle log. Independent consumers use it to distinguish a configured,
+// initialized source store from an accidentally empty/missing volume.
+func ReadHeartbeat(dir string) (Heartbeat, error) {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return Heartbeat{}, errors.New("alert watchdog store is not configured")
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, statusFileName))
+	if err != nil {
+		return Heartbeat{}, fmt.Errorf("read alert watchdog heartbeat: %w", err)
+	}
+	if len(raw) > 64*1024 {
+		return Heartbeat{}, errors.New("alert watchdog heartbeat exceeds bounded read limit")
+	}
+	var hb Heartbeat
+	if err := json.Unmarshal(raw, &hb); err != nil {
+		return Heartbeat{}, fmt.Errorf("decode alert watchdog heartbeat: %w", err)
+	}
+	if hb.Version != storeVersion {
+		return Heartbeat{}, fmt.Errorf("unsupported alert watchdog store version %q", hb.Version)
+	}
+	return hb, nil
+}
+
+// ReadLifecycleEvents returns the complete durable lifecycle stream in append
+// order. It is intended for independent consumers such as the Step 46B
+// notifier. The caller supplies a hard byte bound so a corrupt/unbounded store
+// fails closed instead of consuming arbitrary memory.
+func ReadLifecycleEvents(dir string, maxBytes int64) ([]LifecycleEvent, error) {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return nil, errors.New("alert watchdog store is not configured")
+	}
+	if maxBytes <= 0 {
+		return nil, errors.New("alert lifecycle maxBytes must be positive")
+	}
+	path := filepath.Join(dir, eventsFileName)
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return []LifecycleEvent{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("open alert lifecycle events: %w", err)
+	}
+	defer f.Close()
+	stat, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat alert lifecycle events: %w", err)
+	}
+	if stat.Size() > maxBytes {
+		return nil, fmt.Errorf("alert lifecycle store exceeds bounded read limit (%d bytes)", maxBytes)
+	}
+
+	scanner := bufio.NewScanner(io.LimitReader(f, maxBytes+1))
+	// Step43 historically allowed alert details larger than bufio.Scanner's
+	// default 64 KiB token limit. Keep a separate bounded per-record ceiling so
+	// independent consumers can replay those durable events without becoming
+	// unbounded. The whole file is still hard-bounded by maxBytes above.
+	scanner.Buffer(make([]byte, 64*1024), maxLifecycleLine)
+	events := make([]LifecycleEvent, 0)
+	for scanner.Scan() {
+		line := bytes.TrimSpace(scanner.Bytes())
+		if len(line) == 0 {
+			continue
+		}
+		var event LifecycleEvent
+		if err := json.Unmarshal(line, &event); err != nil {
+			return nil, fmt.Errorf("decode alert lifecycle event: %w", err)
+		}
+		if strings.TrimSpace(event.EventID) == "" || strings.TrimSpace(event.Alert.ID) == "" {
+			return nil, errors.New("invalid alert lifecycle event contract")
+		}
+		switch event.Transition {
+		case "OPENED", "UPDATED", "RESOLVED":
+		default:
+			return nil, fmt.Errorf("unsupported alert lifecycle transition %q", event.Transition)
+		}
+		events = append(events, event)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read alert lifecycle events: %w", err)
+	}
+	return events, nil
 }
 
 func minInt(a, b int) int {

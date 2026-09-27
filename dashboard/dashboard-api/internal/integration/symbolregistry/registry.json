@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "registryVersion": "2026-09-26-step37a.4",
+  "registryVersion": "2026-09-27-step37a.5",
   "policy": "EXPLICIT_ONLY",
   "marketDataSource": "BINANCE",
   "note": "Versioned multi-exchange symbol registry. Every internal asset must map explicitly to each market-data/execution symbol. Runtime suffix stripping, case conversion, fuzzy matching and automatic aliasing are forbidden. Missing, blocked or venue-absent mappings are non-routable.",
@@ -1815,6 +1815,27 @@
       ]
     },
     {
+      "internal": "MARSCOINUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "MARSCOINUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "",
+          "status": "BLOCKED_EXPLICIT",
+          "routingPolicy": "DENY",
+          "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-27, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+        }
+      ]
+    },
+    {
       "internal": "MATICUSDT",
       "marketData": [
         {
@@ -2682,6 +2703,27 @@
       ]
     },
     {
+      "internal": "SOONUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "SOONUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "",
+          "status": "BLOCKED_EXPLICIT",
+          "routingPolicy": "DENY",
+          "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-27, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
+        }
+      ]
+    },
+    {
       "internal": "STXUSDT",
       "marketData": [
         {
@@ -3018,6 +3060,27 @@
           "symbol": "UNI",
           "status": "MAPPED",
           "routingPolicy": "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"
+        }
+      ]
+    },
+    {
+      "internal": "USUSDT",
+      "marketData": [
+        {
+          "venue": "BINANCE",
+          "environment": "SOURCE",
+          "symbol": "USUSDT",
+          "status": "SUPPORTED"
+        }
+      ],
+      "execution": [
+        {
+          "venue": "HYPERLIQUID",
+          "environment": "TESTNET",
+          "symbol": "",
+          "status": "BLOCKED_EXPLICIT",
+          "routingPolicy": "DENY",
+          "reason": "Observed in the canonical BINANCE/SOURCE ranking on 2026-09-27, but no approved Hyperliquid TESTNET execution mapping has been reviewed. Explicitly blocked until a manual multi-exchange mapping decision is recorded; no heuristic aliasing is allowed."
         }
       ]
     },

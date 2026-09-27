@@ -171,10 +171,11 @@ SERVER_GO="$ROOT/dashboard-api/internal/server/server.go"
 
 # Audit the actual HTTP route registry, not descriptive strings such as
 # live_trading/exchange_gateway or documentation that merely mentions a future
-# venue command endpoint. Through Step 46 the only mutating dashboard routes
-# are authentication, manual-control PREVIEW, and fail-closed ROUTE ADMISSION.
+# venue command endpoint. Through Step 46A the only mutating dashboard routes
+# are authentication, manual-control PREVIEW/fail-closed ROUTE ADMISSION, and
+# append-only human alert acknowledgement. None can move capital.
 MUTATING_ROUTES=$(grep -nE 'mux\.Handle(Func)?\("(POST|PUT|PATCH|DELETE) /api/' "$SERVER_GO" \
-  | grep -vE 'POST /api/auth/(login|logout)|POST /api/manual-control/(preview|route)' || true)
+  | grep -vE 'POST /api/auth/(login|logout)|POST /api/manual-control/(preview|route)|POST /api/alerts-audit/acknowledge' || true)
 if [ -n "$MUTATING_ROUTES" ]; then
   printf '%s\n' "$MUTATING_ROUTES" >&2
   fail "unexpected mutating API route is registered"
@@ -202,7 +203,7 @@ if [ -f "$TOMBSTONE" ] && ! grep -q 'step44DeferredPrivateAuthTombstone' "$TOMBS
   fail "stale Step 37 private-auth provider detected; replace dashboard/ with the cumulative Step 44.6 package"
 fi
 
-pass "Step 44 route registry remains read/preview/admission-only; no capital-moving path or secret loader exists"
+pass "Step 44 route registry remains read/observability/admission-only; no capital-moving path or secret loader exists"
 
 echo "[8/8] Manual routing remains fail-closed"
 MANUAL=$(curl -fsS -b "$COOKIE_JAR" "$BASE_URL/api/manual-control") || fail "manual-control read model unavailable"

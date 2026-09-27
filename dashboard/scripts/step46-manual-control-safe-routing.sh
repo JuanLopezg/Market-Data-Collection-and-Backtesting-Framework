@@ -216,7 +216,7 @@ PY
   [ "$ATTEMPT" -lt 5 ] || { cat "$BODY" >&2 2>/dev/null || true; fail "Alerts & Audit did not expose durable manual intent"; }
   ATTEMPT=$((ATTEMPT + 1)); sleep 1
 done
-pass "Alerts & Audit exposes durable HUMAN manual-route intent; alert acknowledgement remains deferred"
+pass "Alerts & Audit exposes durable HUMAN manual-route intent; Step 46A alert acknowledgement may coexist independently"
 
 echo "[8/10] Global readiness marks dashboard phase complete without enabling trading"
 ATTEMPT=1
@@ -269,7 +269,7 @@ grep -q 'Step 46 · Routing Admission Contract' "$ROOT/src/pages/ManualControlPa
 grep -q 'Evaluate safe route admission' "$ROOT/src/pages/ManualControlPage.tsx" || fail "Manual Control admission action missing"
 grep -q 'Durable Operator-Intent Audit' "$ROOT/src/pages/ManualControlPage.tsx" || fail "Manual Control durable audit panel missing"
 grep -q 'routeManualControl' "$ROOT/src/data/dashboardDataSource.ts" || fail "frontend route-admission data-source contract missing"
-grep -q 'durable manual intent' "$ROOT/src/pages/AlertsAuditPage.tsx" || fail "Alerts/Audit durable manual-intent UI label missing"
+grep -Eq 'durable manual intent|durable human actions' "$ROOT/src/pages/AlertsAuditPage.tsx" || fail "Alerts/Audit durable human-audit UI label missing"
 pass "operator UI exposes confirmation/admission/audit evidence without implying execution"
 
 echo

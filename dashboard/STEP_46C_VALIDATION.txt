@@ -1,0 +1,27 @@
+Step 46C validation scope
+=========================
+
+Offline/package validation expected before delivery:
+- CGO_ENABLED=0 go test ./internal/notifier ./cmd/dashboard-alert-notifier
+- CGO_ENABLED=0 go vet ./internal/notifier ./cmd/dashboard-alert-notifier
+- CGO_ENABLED=0 go build ./cmd/dashboard-alert-notifier
+- Telegram sendMessage mock success test
+- durable Telegram receipt/restart dedup test
+- 4000-rune plain-text message bound test
+- Telegram API rejection + retry_after parsing test
+- transport/API secret-redaction tests
+- timeout/config/secret-file tests
+- compose YAML parse for local and production real overlays
+- static isolation scan: notifier has no PostgreSQL/NATS/exchange/signing/trading command surface
+- ZIP integrity and clean delta application
+
+Runtime authoritative gate:
+  ./scripts/step46c-telegram-adapter.sh
+
+The authoritative gate does NOT require a real Telegram bot token or chat id.
+TEST_FILE remains the default runtime sink; the Telegram HTTP contract is exercised
+against local Go httptest mocks. If TELEGRAM is explicitly enabled in deployment,
+the gate additionally requires a successful TELEGRAM notifier heartbeat.
+
+Expected final banner:
+  STEP 46C: PASS — TELEGRAM NOTIFICATION ADAPTER VALIDATED

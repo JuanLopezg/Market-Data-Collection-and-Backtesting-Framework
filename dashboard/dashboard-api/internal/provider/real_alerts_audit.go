@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"control-dashboard-api/internal/alertack"
 	"control-dashboard-api/internal/alertstore"
 	"control-dashboard-api/internal/manualaudit"
 )
@@ -35,20 +36,25 @@ type realAlertsAuditData struct {
 	WatchdogLastSuccessAt        string                      `json:"watchdogLastSuccessAt,omitempty"`
 	DurableEventCount            int64                       `json:"durableEventCount"`
 	DurableLifecycleEvents       []alertstore.LifecycleEvent `json:"durableLifecycleEvents"`
+	AcknowledgementEventCount    int                         `json:"acknowledgementEventCount"`
 }
 
 type realOperationalAlert struct {
-	ID            string `json:"id"`
-	Timestamp     string `json:"timestamp"`
-	Severity      string `json:"severity"`
-	Status        string `json:"status"`
-	Service       string `json:"service"`
-	Asset         string `json:"asset,omitempty"`
-	EventType     string `json:"eventType"`
-	Title         string `json:"title"`
-	Detail        string `json:"detail"`
-	CorrelationID string `json:"correlationId,omitempty"`
-	LinkedContext string `json:"linkedContext,omitempty"`
+	ID                     string `json:"id"`
+	Timestamp              string `json:"timestamp"`
+	Severity               string `json:"severity"`
+	Status                 string `json:"status"`
+	Service                string `json:"service"`
+	Asset                  string `json:"asset,omitempty"`
+	EventType              string `json:"eventType"`
+	Title                  string `json:"title"`
+	Detail                 string `json:"detail"`
+	CorrelationID          string `json:"correlationId,omitempty"`
+	LinkedContext          string `json:"linkedContext,omitempty"`
+	AcknowledgementKey     string `json:"acknowledgementKey,omitempty"`
+	AcknowledgedAt         string `json:"acknowledgedAt,omitempty"`
+	AcknowledgedBy         string `json:"acknowledgedBy,omitempty"`
+	AcknowledgementComment string `json:"acknowledgementComment,omitempty"`
 }
 
 type realAuditRecord struct {
@@ -135,6 +141,7 @@ func (p *Real) loadAlertsAudit(ctx context.Context) realAlertsAuditData {
 	result = mergeLedgerAlerts(result, ledger)
 	result = mergeSymbolRegistryAlerts(result, registry)
 	result = mergeDurableAlertHistory(result, p.cfg.AlertStoreDir, time.Now().UTC())
+	result = mergeAlertAcknowledgements(result, p.cfg.AlertAckDir)
 	return mergeManualAuditHistory(result, p.cfg.ManualAuditDir)
 }
 
@@ -444,7 +451,7 @@ func mergeSymbolRegistryAlerts(result realAlertsAuditData, registry SymbolRegist
 
 	critical, warnings := 0, 0
 	for _, alert := range result.Alerts {
-		if alert.Status != "ACTIVE" {
+		if alert.Status == "RESOLVED" {
 			continue
 		}
 		switch alert.Severity {
@@ -548,6 +555,20 @@ func mergeDurableAlertHistory(result realAlertsAuditData, dir string, now time.T
 	}
 	result.Resolved24h = resolved24h
 
+	// Acknowledgement is bound to the latest durable OPENED/UPDATED lifecycle
+	// event, not merely the alert ID. If the alert materially changes, the
+	// watchdog emits a new lifecycle event and the old acknowledgement no longer
+	// applies. Refuse to expose an acknowledgement key until the watchdog has
+	// persisted the exact current alert material.
+	for i := range result.Alerts {
+		current := &result.Alerts[i]
+		active, ok := snapshot.Active[current.ID]
+		if !ok || !sameDurableAlertMaterial(*current, active.Alert) {
+			continue
+		}
+		current.AcknowledgementKey = active.LifecycleEventID
+	}
+
 	if snapshot.Heartbeat.LastError != "" {
 		result.WatchdogState = "DEGRADED"
 		result.Alerts = append(result.Alerts, realOperationalAlert{
@@ -565,8 +586,68 @@ func mergeDurableAlertHistory(result realAlertsAuditData, dir string, now time.T
 		})
 	}
 
-	result.SourceNote = "Step 43 keeps current operational alerts derived read-only from canonical sources while a separate watchdog process persists OPENED/UPDATED/RESOLVED alert lifecycle transitions to its own append-only observability store. Acknowledgement and human-action audit remain intentionally unavailable; the watchdog does not write trading databases, publish trading commands or route orders."
+	result.SourceNote = "Step 43 keeps current operational alerts derived read-only from canonical sources while a separate watchdog process persists OPENED/UPDATED/RESOLVED alert lifecycle transitions to its own append-only observability store. Human acknowledgement is a separate Step 46A store and never mutates watchdog lifecycle or trading state."
 	recountAlerts(&result)
+	return result
+}
+
+func sameDurableAlertMaterial(current realOperationalAlert, durable alertstore.Alert) bool {
+	return current.Severity == durable.Severity &&
+		current.Service == durable.Service &&
+		current.Asset == durable.Asset &&
+		current.EventType == durable.EventType &&
+		current.Title == durable.Title &&
+		current.Detail == durable.Detail &&
+		current.CorrelationID == durable.CorrelationID &&
+		current.LinkedContext == durable.LinkedContext
+}
+
+func mergeAlertAcknowledgements(result realAlertsAuditData, dir string) realAlertsAuditData {
+	snapshot := alertack.ReadSnapshot(dir, 100)
+	if !snapshot.Available {
+		result.AcknowledgementAvailable = false
+		result.Acknowledged = 0
+		if strings.TrimSpace(dir) != "" {
+			result.SourceNote += " Step 46A alert acknowledgement store is unavailable: " + snapshot.Error
+		}
+		return result
+	}
+
+	result.AcknowledgementAvailable = true
+	result.AcknowledgementEventCount = snapshot.Count
+	acknowledged := 0
+	for i := range result.Alerts {
+		alert := &result.Alerts[i]
+		if alert.Status == "RESOLVED" || strings.TrimSpace(alert.AcknowledgementKey) == "" {
+			continue
+		}
+		event, ok := snapshot.LatestByLifecycle[alert.AcknowledgementKey]
+		if !ok || event.AlertID != alert.ID {
+			continue
+		}
+		alert.Status = "ACKNOWLEDGED"
+		alert.AcknowledgedAt = event.RecordedAt
+		alert.AcknowledgedBy = event.Actor
+		alert.AcknowledgementComment = event.Comment
+		acknowledged++
+	}
+	result.Acknowledged = acknowledged
+
+	for _, event := range snapshot.Events {
+		detail := "Alert acknowledged without changing resolution state."
+		if strings.TrimSpace(event.Comment) != "" {
+			detail += " Comment: " + event.Comment
+		}
+		result.Audit = append(result.Audit, realAuditRecord{
+			ID: event.EventID, Timestamp: event.RecordedAt, Actor: event.Actor, ActorType: "HUMAN",
+			Action: "ALERT_ACKNOWLEDGE", Target: event.AlertID, Result: "SUCCESS",
+			CorrelationID: event.CorrelationID, Detail: detail,
+		})
+	}
+	result.AuditMode = "DURABLE_ALERT_ACK+DURABLE_ALERT_LIFECYCLE+DERIVED_SYSTEM_EVIDENCE"
+	result.SourceNote += " Step 46A persists human acknowledgements in a separate append-only store, bound to the exact durable alert lifecycle event. ACK never resolves an alert, suppresses critical readiness, or writes trading state."
+	recountAlerts(&result)
+	sort.SliceStable(result.Audit, func(i, j int) bool { return result.Audit[i].Timestamp > result.Audit[j].Timestamp })
 	return result
 }
 
@@ -581,7 +662,15 @@ func mergeManualAuditHistory(result realAlertsAuditData, dir string) realAlertsA
 	}
 
 	result.HumanAuditAvailable = true
-	result.AuditMode = "DURABLE_MANUAL_INTENT+DURABLE_ALERT_LIFECYCLE+DERIVED_SYSTEM_EVIDENCE"
+	// Preserve the Step 46A acknowledgement capability when the Step 46
+	// manual-intent audit store is merged afterwards. AuditMode describes all
+	// durable human evidence sources exposed by this projection; a later merge
+	// must not erase an earlier capability.
+	if result.AcknowledgementAvailable {
+		result.AuditMode = "DURABLE_MANUAL_INTENT+DURABLE_ALERT_ACK+DURABLE_ALERT_LIFECYCLE+DERIVED_SYSTEM_EVIDENCE"
+	} else {
+		result.AuditMode = "DURABLE_MANUAL_INTENT+DURABLE_ALERT_LIFECYCLE+DERIVED_SYSTEM_EVIDENCE"
+	}
 	for _, event := range snapshot.Events {
 		result.Audit = append(result.Audit, realAuditRecord{
 			ID: event.EventID, Timestamp: event.RecordedAt, Actor: event.Actor, ActorType: "HUMAN",
@@ -590,14 +679,14 @@ func mergeManualAuditHistory(result realAlertsAuditData, dir string) realAlertsA
 		})
 	}
 	sort.SliceStable(result.Audit, func(i, j int) bool { return result.Audit[i].Timestamp > result.Audit[j].Timestamp })
-	result.SourceNote = "Step 46 keeps current operational alerts derived from canonical read-only sources, Step 43 watchdog lifecycle transitions in the dedicated alert store, and confirmed manual route-admission attempts in a separate append-only operator-intent audit store. Manual audit records never write trading PostgreSQL/NATS or imply that an order was submitted. Alert acknowledgement remains deferred."
+	result.SourceNote += " Step 46 keeps confirmed manual route-admission attempts in a separate append-only operator-intent audit store. Manual audit records never write trading PostgreSQL/NATS or imply that an order was submitted."
 	return result
 }
 
 func recountAlerts(result *realAlertsAuditData) {
 	critical, warnings := 0, 0
 	for _, alert := range result.Alerts {
-		if alert.Status != "ACTIVE" {
+		if alert.Status == "RESOLVED" {
 			continue
 		}
 		switch alert.Severity {

@@ -24,7 +24,7 @@ func TestExplicitSymbolMapIsExactVersionedAndClassifiesUnsupported(t *testing.T)
 		t.Fatalf("internal mapping must not silently accept base symbols")
 	}
 	unsupported := UnsupportedIndex(manifest)
-	for _, symbol := range []string{"AKEUSDT", "BROCCOLI714USDT", "NILUSDT", "NOMUSDT", "SAGAUSDT", "XAIUSDT", "龙虾USDT"} {
+	for _, symbol := range []string{"AKEUSDT", "BROCCOLI714USDT", "MARSCOINUSDT", "NILUSDT", "NOMUSDT", "SAGAUSDT", "SOONUSDT", "USUSDT", "XAIUSDT", "龙虾USDT"} {
 		if unsupported[symbol] == "" {
 			t.Fatalf("expected explicit unsupported classification for %q", symbol)
 		}

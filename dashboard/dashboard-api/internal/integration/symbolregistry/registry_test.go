@@ -10,8 +10,8 @@ func TestRegistryLoadsAndIsExplicit(t *testing.T) {
 	if hash == "" {
 		t.Fatal("expected registry hash")
 	}
-	if len(registry.Entries) != 172 {
-		t.Fatalf("entries=%d want=172", len(registry.Entries))
+	if len(registry.Entries) != 175 {
+		t.Fatalf("entries=%d want=175", len(registry.Entries))
 	}
 	idx := EntryIndex(registry)
 	pepe, ok := idx["1000PEPEUSDT"]
@@ -30,5 +30,15 @@ func TestRegistryLoadsAndIsExplicit(t *testing.T) {
 	leg, ok := FindLeg(blocked.Execution, "HYPERLIQUID", "TESTNET")
 	if !ok || leg.Status != "BLOCKED_EXPLICIT" || leg.RoutingPolicy != "DENY" {
 		t.Fatalf("unexpected blocked leg: %+v", leg)
+	}
+	for _, symbol := range []string{"MARSCOINUSDT", "SOONUSDT", "USUSDT"} {
+		entry, ok := idx[symbol]
+		if !ok {
+			t.Fatalf("%s missing", symbol)
+		}
+		leg, ok := FindLeg(entry.Execution, "HYPERLIQUID", "TESTNET")
+		if !ok || leg.Status != "BLOCKED_EXPLICIT" || leg.RoutingPolicy != "DENY" || leg.Symbol != "" {
+			t.Fatalf("unexpected explicit block for %s: %+v", symbol, leg)
+		}
 	}
 }

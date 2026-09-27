@@ -306,4 +306,20 @@ The contract includes current evidence for provider/source health, public Hyperl
 
 Step 46 completes the dashboard-side manual-control boundary without creating a trading command path. OPERATOR users can validate an `asset,weight_pct` CSV, preview the complete target delta (including omitted current assets as target zero), and evaluate a confirmed route admission. The server recomputes the request SHA-256, rejects stale reference targets, rechecks the explicit symbol registry/public venue rules, and appends the OPERATOR intent to an isolated durable audit store.
 
-`POST /api/manual-control/route` always remains fail-closed in this phase: `submitted=false`, `routeEnabled=false`. PortfolioRisk manual transformation, the trading-control sink, Hyperliquid private authentication and submit/cancel/fill lifecycle are still `DEFERRED`. After Step 46 passes, the dashboard phase is functionally complete and the next safe phase is the deferred Step 37 private Hyperliquid TESTNET authentication. Run `./scripts/step46-manual-control-safe-routing.sh`.
+`POST /api/manual-control/route` always remains fail-closed in this phase: `submitted=false`, `routeEnabled=false`. PortfolioRisk manual transformation, the trading-control sink, Hyperliquid private authentication and submit/cancel/fill lifecycle are still `DEFERRED`. After Step 46 passes, real routing remains disabled. The active MOCK-FIRST roadmap closes Step 46A/46B/46C before Step 47 venue-semantics review; private Hyperliquid Steps 37-41 remain deferred until after the mock/VPS acceptance sequence. Run `./scripts/step46-manual-control-safe-routing.sh`.
+
+## Step 46A — human alert acknowledgement
+
+Alerts & Audit now supports durable OPERATOR acknowledgement through `POST /api/alerts-audit/acknowledge`. ACK is append-only, lifecycle-bound and idempotent. It never resolves an alert or authorizes trading. Run `./scripts/step46a-alert-acknowledgement.sh` after rebuilding the real dashboard stack.
+
+## Step 46B — independent alert notifier
+
+Step 46B adds `control-dashboard-alert-notifier`, a separate process that consumes the Step 43 durable alert lifecycle read-only and persists its own append-only notification decisions. It implements restart-safe replay, lifecycle deduplication, cooldown and severity escalation. The first bootstrap suppresses obsolete history and only notifies the latest lifecycle instance of alerts that remain active.
+
+The historical Step 46B gate validated the notifier with the isolated idempotent `TEST_FILE` sink and no network. Step 46C extends only the delivery boundary; the notifier still has no PostgreSQL/NATS/exchange credentials or trading-command surface.
+
+## Step 46C — Telegram notification adapter
+
+Step 46C adds an optional `TELEGRAM` sink behind the same notifier. `TEST_FILE` remains the safe default and no real Telegram credentials are needed for the Step 46C gate: `sendMessage` is tested against a local HTTP mock. Telegram credentials are deployment-only (`DASHBOARD_TELEGRAM_BOT_TOKEN` / `DASHBOARD_TELEGRAM_CHAT_ID` or their `_FILE` variants), are never logged/persisted, and the production client is fixed to the official `https://api.telegram.org` base.
+
+When Telegram is enabled it uses its own durable notifier store under `/data/notifier/telegram`, so first activation reuses the Step 46B bootstrap rule instead of flooding historical alerts. Successful sends append a `step46c-telegram-receipt-v1` receipt keyed by deterministic `notificationId`. The notifier is attached only to the dedicated `dashboard-notifier-egress` bridge and never to the trading/dashboard private networks. Run `./scripts/step46c-telegram-adapter.sh` after rebuilding. After Step 46C, the MOCK-FIRST roadmap continues with Step 47 Hyperliquid venue-semantics specification.

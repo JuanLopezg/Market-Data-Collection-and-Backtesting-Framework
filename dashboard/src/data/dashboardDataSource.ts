@@ -1,4 +1,4 @@
-import type { AlertsAuditData, DashboardDiagnostics, ExecutionData, InfrastructureData, LiveVsExpectedData, ManualControlData, ManualControlPreviewInput, ManualControlRouteInput, ManualControlRouteResult, MarketDataData, OverviewData, PipelineData, PositionsData, ReconciliationData, RiskData, ShellStatus, ProviderStatus, SafetyGateData, GlobalReadinessData, VenueFoundationData, VenuePublicData, VenueSymbolMappingData, VenueTradingRulesData, SymbolRegistryData, LedgerData } from '../types/dashboard'
+import type { AlertAcknowledgementInput, AlertAcknowledgementResult, AlertsAuditData, DashboardDiagnostics, ExecutionData, InfrastructureData, LiveVsExpectedData, ManualControlData, ManualControlPreviewInput, ManualControlRouteInput, ManualControlRouteResult, MarketDataData, OverviewData, PipelineData, PositionsData, ReconciliationData, RiskData, ShellStatus, ProviderStatus, SafetyGateData, GlobalReadinessData, VenueFoundationData, VenuePublicData, VenueSymbolMappingData, VenueTradingRulesData, SymbolRegistryData, LedgerData } from '../types/dashboard'
 
 export interface DashboardDataSource {
   getProviderStatus(): Promise<ProviderStatus>
@@ -21,6 +21,7 @@ export interface DashboardDataSource {
   getMarketData(): Promise<MarketDataData>
   getInfrastructure(): Promise<InfrastructureData>
   getAlertsAudit(): Promise<AlertsAuditData>
+  acknowledgeAlert(input: AlertAcknowledgementInput, csrfToken: string): Promise<AlertAcknowledgementResult>
   getLiveVsExpected(): Promise<LiveVsExpectedData>
   getManualControl(): Promise<ManualControlData>
   previewManualControl(input: ManualControlPreviewInput, csrfToken: string): Promise<ManualControlData>
