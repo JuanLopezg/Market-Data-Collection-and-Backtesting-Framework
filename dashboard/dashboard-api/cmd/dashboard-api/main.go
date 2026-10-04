@@ -128,6 +128,12 @@ func configuredProvider() (provider.Provider, error) {
 	switch mode {
 	case "mock":
 		return provider.NewEmbeddedMock()
+	case "simulation":
+		dir := strings.TrimSpace(envOr("DASHBOARD_SIMULATION_DIR", "/data/simulation"))
+		if dir == "" {
+			return nil, fmt.Errorf("DASHBOARD_SIMULATION_DIR must not be empty")
+		}
+		return provider.NewSimulation(provider.SimulationConfig{Dir: dir}), nil
 	case "real":
 		// Step 36 keeps all prior read-only/safety boundaries and adds public Hyperliquid TESTNET trading-rule validation for supported mappings only.
 		// The proof never creates trades; it only correlates already-durable Strategy/Risk/Planner/Execution/Fill/Reconciliation evidence.
@@ -189,7 +195,7 @@ func configuredProvider() (provider.Provider, error) {
 			AlertAckDir:            strings.TrimSpace(os.Getenv("DASHBOARD_ALERT_ACK_DIR")),
 		}), nil
 	default:
-		return nil, fmt.Errorf("unsupported DASHBOARD_DATA_PROVIDER %q; expected mock or real", mode)
+		return nil, fmt.Errorf("unsupported DASHBOARD_DATA_PROVIDER %q; expected mock, simulation or real", mode)
 	}
 }
 

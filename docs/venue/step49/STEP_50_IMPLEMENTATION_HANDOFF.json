@@ -1,0 +1,26 @@
+{
+  "contractVersion": "step49-to-step50-v1",
+  "nextStep": "STEP_50_MOCK_ORDER_ADMISSION_AND_LIFECYCLE",
+  "venueFingerprint": "a6d2b98a45d11e57bc0d649ff9569952c73adff1671608f5eafe561169ccbb27",
+  "entryCount": 175,
+  "requiredStep50Behavior": [
+    "exact-only catalog lookup",
+    "unknown asset rejected fail-closed",
+    "exact base-10 price/size increment admission",
+    "minimum size/minimum notional admission",
+    "GTC/IOC/post-only/reduce-only admission",
+    "submit/cancel/modify lifecycle",
+    "durable canonical request-id dedup",
+    "client-order-id correlation/uniqueness",
+    "canonical operation/item result envelope",
+    "canonical lifecycle statuses/rejects"
+  ],
+  "forbiddenUntilLater": [
+    "matching engine/fill-price model",
+    "slippage model",
+    "fee/funding posting",
+    "account/position accounting",
+    "private real-venue auth/signing/routing",
+    "smart-order-routing"
+  ]
+}

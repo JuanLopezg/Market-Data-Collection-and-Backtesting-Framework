@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 2,
+  "campaignVersion": "step58a-canonical-direct-realtest-v2",
+  "historicalDataset": {
+    "path": "deploy/historical_replay/run/1d_cmc_by_date.csv",
+    "sha256": "7b4a48df39eb8049fb9f05856b0de44d80e8d21d2c513c9c6eb8db74405ae381",
+    "start": "2020-01-01",
+    "end": "2025-10-13",
+    "marketDataPolicy": "ORIGINAL_OHLCV_UNMODIFIED"
+  },
+  "canonicalCli": "python3 research/replay.py {fast|system|dashboard}",
+  "fullHistoryRealTest": {
+    "start": "2020-01-01",
+    "end": "2025-10-13",
+    "profile": "realtest-parity",
+    "realTestCsv": "storage/backtests/final_tests/pureRSI.csv",
+    "comparisonPolicy": "DIRECT_REALTEST_MANUAL_REVIEW_V1",
+    "hardcodedMismatchExceptions": false,
+    "historicalVolumeModified": false,
+    "executionCapacityUsesHistoricalVolume": false,
+    "matcherMaxAdverseSlippagePpm": 0,
+    "matcherFeePpm": 0,
+    "accountingFeePpm": 0,
+    "normalPartialFillsEnabled": false,
+    "executionTiming": "DECIDE_TARGET_NOTIONAL_AT_CLOSE_T_RESOLVE_TARGET_QUANTITY_AND_FILL_AT_OPEN_T_PLUS_1",
+    "expectedCandidateTrades": 631,
+    "expectedFullyMatchedTrades": 628,
+    "expectedManualReviewDifferences": 4,
+    "expectedCanonicalFills": 1261,
+    "acceptedFullRunFingerprint": "1551106eac4dd7b712729f72980ac196308d61b1d7cbb9e538c557271415cbf0"
+  },
+  "comparisonSemantics": {
+    "window": "SELECTED_START_THROUGH_SELECTED_END_INCLUSIVE",
+    "partialCutoffOpenTradePolicy": "ENTRY_ONLY_WHILE_REFERENCE_TRADE_REMAINS_OPEN_PAST_CUTOFF",
+    "numericPolicy": "HISTORICAL_RESEARCH_REALTEST_TOLERANCE",
+    "fullHistoryAcceptance": "SHOW_ALL_DIFFERENCES_THEN_REQUIRE_HUMAN_APPROVAL"
+  },
+  "speedInvariance": {
+    "validatedSystemSpeeds": [250, 1500, 5000],
+    "fullHistoryFingerprint": "1551106eac4dd7b712729f72980ac196308d61b1d7cbb9e538c557271415cbf0",
+    "pacingMustNotChangeEconomics": true
+  },
+  "restartResume": {
+    "safeBoundary": "COMPLETED_HISTORICAL_DAY",
+    "supportedModes": ["system", "dashboard"],
+    "validated107DayFingerprint": "94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2"
+  },
+  "dashboardParity": {
+    "sameEconomicsAsSystem": true,
+    "fullHistoryFillsMustBeByteIdentical": true,
+    "fullHistoryFingerprint": "1551106eac4dd7b712729f72980ac196308d61b1d7cbb9e538c557271415cbf0"
+  },
+  "mockDefault": {
+    "preserveVenueSimulationEconomics": true,
+    "note": "realtest-parity does not redefine normal MOCK capacity, slippage, grid, fee, accounting, reconciliation or ledger behavior"
+  },
+  "safety": {
+    "privateRealVenueRoutingEnabled": false,
+    "smartOrSplitRoutingEnabled": false,
+    "capitalMovementEnabled": false,
+    "browserDirectVenueEnabled": false
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "contractVersion": "step52-to-step53-v1",
+  "nextStep": "STEP_53_MOCK_SNAPSHOT_USER_STREAM_RECOVERY",
+  "step51MatchingFillFingerprint": "d06a71a4cbc7080cd4c05f7d5b3bc84ec06b55138d25590b8eefbb251e7c4720",
+  "step52AccountingFingerprint": "4fa2a7cc0e8c43f75f7fdcab2cd5b305755c48426ac3f13b4c10ed765dfac746",
+  "projection": "MockVenueV1::MockAccountMarginPositionsAccountingV1",
+  "requiredStep53Behavior": [
+    "durable snapshot of order lifecycle + fill dedup + accounting state",
+    "canonical account/open-order/fill snapshot surfaces",
+    "incremental user-event stream with deterministic sequence",
+    "snapshot plus incremental merge contract",
+    "restart recovery restores exact Step52 economic fingerprint",
+    "duplicate event replay is idempotent after restart",
+    "out-of-order event handling is explicit and fail-closed where ordering matters",
+    "bounded backfill/recovery cursor semantics",
+    "reconnect does not create duplicate fills/accounting",
+    "business event timestamps remain TimeHandler/replay event time"
+  ],
+  "forbiddenUntilLater": [
+    "real venue reconciliation",
+    "private Hyperliquid auth/signing/routing",
+    "smart-order-routing",
+    "live capital"
+  ]
+}

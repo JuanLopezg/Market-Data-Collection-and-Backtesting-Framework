@@ -3,6 +3,7 @@ exchange_inc = include_directories('.')
 
 # ---- Header-only exchange boundary / simulator ----
 exchange_sources = files(
+    'canonical_venue_adapter.h',
     'exchange_event.h',
     'exchange.h',
     'message_bus_exchange.cpp',

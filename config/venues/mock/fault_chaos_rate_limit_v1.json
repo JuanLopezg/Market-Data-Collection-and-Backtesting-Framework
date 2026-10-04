@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "faultModelVersion": "mock-fault-chaos-rate-limit-v1-step55",
+  "venueId": "MOCK",
+  "environment": "MOCK",
+  "boundStep54ReconciliationLedgerFingerprint": "8ea5f659e3bdb3f57c2e0a3408a8ab4a2fb017bdef648268bcbcf3cf9d6c0a2b",
+  "seed": 550055,
+  "deterministicSelector": "SPLITMIX64_SEED_PLUS_OPERATION_ORDINAL",
+  "explicitOneShotFaults": [
+    "DELAY_RESPONSE",
+    "LOSE_RESPONSE_AMBIGUOUS_SUBMIT",
+    "CANONICAL_REJECT",
+    "DISCONNECT_USER_STREAM",
+    "VENUE_UNAVAILABLE",
+    "STALE_SNAPSHOT",
+    "DUPLICATE_SOURCE",
+    "OUT_OF_ORDER_SOURCE",
+    "DUPLICATE_USER_DELIVERY",
+    "OUT_OF_ORDER_USER_DELIVERY"
+  ],
+  "autoSubmitFaultPolicyPpm": {
+    "enabled": false,
+    "canonicalReject": 150000,
+    "lostResponseAmbiguous": 150000,
+    "delayedResponse": 200000,
+    "noneRemainder": 500000
+  },
+  "canonicalReject": {
+    "classification": "VENUE_LIMIT",
+    "nativeCode": "MOCK_CHAOS_V1",
+    "nativeReason": "CHAOS_CANONICAL_REJECT",
+    "retryable": false
+  },
+  "lostSubmitResponse": {
+    "underlyingSubmitMayHaveBeenApplied": true,
+    "blindRetryAllowed": false,
+    "requiredNextAction": "RECONCILE_BEFORE_RETRY"
+  },
+  "delayedResponse": {
+    "usesWallClockTimer": false,
+    "releaseModel": "EXPLICIT_DETERMINISTIC_RELEASE"
+  },
+  "connectivity": {
+    "userStreamDisconnectedBlocksNewSubmit": true,
+    "cancelModifyBlockedByNewOrderReconciliationGate": false,
+    "venueUnavailableBlocksVenueCommands": true,
+    "reconnectRequiresFreshReconciliationBeforeNewSubmit": true
+  },
+  "rateLimit": {
+    "model": "FIXED_EVENT_TIME_WINDOW",
+    "eventTimeWindowUnits": 10,
+    "limitsPerWindow": {
+      "submit": 2,
+      "cancel": 4,
+      "modify": 4,
+      "marketSource": 64,
+      "reconcile": 16,
+      "streamRead": 64
+    },
+    "rateLimitedError": "RATE_LIMITED",
+    "retryable": true,
+    "recovery": "NEXT_EVENT_TIME_WINDOW"
+  },
+  "sourceFaults": {
+    "duplicate": "APPLY_ONCE_THEN_REPLAY_IDENTICAL_SOURCE_RECORD_EXPECT_DUPLICATE_IGNORED",
+    "outOfOrder": "INJECT_NEW_SOURCE_AT_LAST_ACCEPTED_EVENT_TIME_MINUS_ONE_AND_EXPECT_FAIL_CLOSED"
+  },
+  "userDeliveryFaults": {
+    "duplicate": "DUPLICATE_FIRST_DELIVERED_ENVELOPE_WITH_SAME_SEQUENCE",
+    "outOfOrder": "SWAP_FIRST_TWO_DELIVERED_ENVELOPES_WITHOUT_MUTATING_CANONICAL_STREAM"
+  },
+  "reconciliationSafety": {
+    "cleanRequiredForNewSubmit": true,
+    "staleSnapshot": "PENDING",
+    "venueUnavailableSnapshot": "PENDING",
+    "stateAdvanceAfterClean": "BLOCK_NEW_SUBMIT_UNTIL_RECONCILED_AGAIN",
+    "ambiguousSubmit": "BLOCK_NEW_SUBMIT_UNTIL_RECONCILED"
+  },
+  "evidence": {
+    "recordsEveryFaultDecisionAndOutcome": true,
+    "hash": "SHA256",
+    "sameSeedAndSameInputs": "SAME_FAULT_DECISIONS_ECONOMICS_AND_EVIDENCE"
+  },
+  "wallClockUsedForFaultSelectionOrEconomics": false,
+  "fullSystemStrategyRiskPlannerWiringImplemented": false,
+  "privateRealVenueRoutingEnabled": false,
+  "nextStep": "STEP_56_FULL_SYSTEM_REPLAY_RUNTIME"
+}

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "manifestVersion": "step55-v1",
+  "venueId": "MOCK",
+  "environment": "MOCK",
+  "step54ReconciliationLedgerFingerprint": "8ea5f659e3bdb3f57c2e0a3408a8ab4a2fb017bdef648268bcbcf3cf9d6c0a2b",
+  "faultModelVersion": "mock-fault-chaos-rate-limit-v1-step55",
+  "faultConfigSha256": "e5ad511b73cfbf3048d19d870c7e7dbbe60e002a75cde6a551554472fa49ce02",
+  "combinedFaultChaosFingerprint": "7bb82df68ea1187bd59bb40c9907a0186c8829935da623a6538d2809ac6f16ba",
+  "disconnectReconnectImplemented": true,
+  "staleSnapshotImplemented": true,
+  "delayedResponseImplemented": true,
+  "lostAmbiguousSubmitImplemented": true,
+  "duplicateOutOfOrderInjectionImplemented": true,
+  "canonicalRejectInjectionImplemented": true,
+  "deterministicRateLimitImplemented": true,
+  "venueUnavailableImplemented": true,
+  "deterministicSeedEvidenceImplemented": true,
+  "reconciliationSafetyGatePreserved": true,
+  "fullSystemStrategyRiskPlannerWiringImplemented": false,
+  "privateRealVenueRoutingEnabled": false,
+  "nextStep": "STEP_56_FULL_SYSTEM_REPLAY_RUNTIME"
+}

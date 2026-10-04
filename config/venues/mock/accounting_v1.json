@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "accountingVersion": "mock-accounting-v1-step52",
+  "venueId": "MOCK",
+  "environment": "MOCK",
+  "boundStep51MatchingFillFingerprint": "d06a71a4cbc7080cd4c05f7d5b3bc84ec06b55138d25590b8eefbb251e7c4720",
+  "settlementAsset": "USD",
+  "moneyScale": 8,
+  "initialCash": "100000.00",
+  "defaultLeverage": 1,
+  "maximumLeverageSource": "STEP49_RULE_PROFILE",
+  "positionModel": "LINEAR_PERPETUAL_AVERAGE_ENTRY_V1",
+  "principalCashMovementOnFill": false,
+  "realizedPnlPolicy": "CLOSING_QUANTITY_TIMES_PRICE_MINUS_ENTRY_TIMES_EXISTING_POSITION_SIGN",
+  "unrealizedPnlPolicy": "SIGNED_POSITION_QUANTITY_TIMES_MARK_MINUS_ENTRY",
+  "equityPolicy": "SETTLED_CASH_PLUS_UNREALIZED_PNL",
+  "marginPolicy": "ABS_POSITION_NOTIONAL_AT_MARK_DIVIDED_BY_INTEGER_LEVERAGE",
+  "availableMarginPolicy": "MAX_ZERO_EQUITY_MINUS_MARGIN_USED",
+  "feePosting": {
+    "source": "STEP51_FEE_PPM",
+    "feePpm": 400,
+    "eventType": "TRADING_FEE",
+    "amountSign": "NEGATIVE"
+  },
+  "rebatePosting": {
+    "eventType": "REBATE",
+    "source": "EXPLICIT_CANONICAL_ACCOUNTING_INPUT",
+    "amountSign": "POSITIVE_ONLY"
+  },
+  "fundingPosting": {
+    "eventType": "FUNDING_PAYMENT",
+    "source": "EXPLICIT_CANONICAL_ACCOUNTING_INPUT",
+    "amountSign": "SIGNED_ACCOUNT_CENTRIC"
+  },
+  "fillAuthority": "CANONICAL_FILL_ONLY",
+  "duplicateFillPolicy": "IN_PROCESS_IDEMPOTENT_BY_NATIVE_FILL_ID_AND_EXACT_FINGERPRINT",
+  "conflictingFillIdentityPolicy": "MARK_ACCOUNTING_UNSAFE_AND_REJECT",
+  "externalAccountingIdPolicy": "IN_PROCESS_IDEMPOTENT_BY_EXPLICIT_EVENT_ID_AND_EXACT_FINGERPRINT",
+  "restartDurability": "DEFERRED_TO_STEP53",
+  "markPolicy": "EXPLICIT_EVENT_TIME_MARK_INPUT",
+  "wallClockUsedForEconomics": false,
+  "openOrdersSource": "STEP50_CANONICAL_LIFECYCLE_STATE",
+  "historicalOrdersSource": "STEP50_CANONICAL_LIFECYCLE_STATE",
+  "privateRealVenueRoutingEnabled": false,
+  "nextStep": "STEP_53_MOCK_SNAPSHOT_USER_STREAM_RECOVERY"
+}

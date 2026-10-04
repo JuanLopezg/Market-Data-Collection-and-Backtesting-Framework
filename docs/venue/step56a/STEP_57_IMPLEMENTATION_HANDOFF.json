@@ -1,0 +1,21 @@
+{
+  "contractVersion": "step56a-to-step57-v1",
+  "nextStep": "STEP_57_MANUAL_CONTROL_TO_MOCK_NORMAL_PIPELINE",
+  "step56RuntimeFingerprint": "79ec33ef33b9fb45410b1a10038a74dc0ac6b00f064e75175bb9330f2fddf27f",
+  "step56aAcceptanceFingerprint": "0ec48c4566c7a1ba439164c2f242f061b8adf58eb801a536f34b8c12d55f64ae",
+  "step56aFullRunFingerprint": "5bf459d5a560172fad310416f9c0c749b0d2ff81ccbc88d44c814876c62f2bb4",
+  "requiredStep57Behavior": [
+    "manual-control confirmed MOCK intent enters the existing PortfolioRisk/Planner/canonical venue path",
+    "browser never calls MockExchangeAdapter directly",
+    "REAL route remains disabled and submitted=false until later private venue gates",
+    "manual MOCK submissions obey Step54 reconciliation and Step55 safety/rate-limit gates",
+    "manual audit preserves actor/request hash/correlation and canonical downstream lineage",
+    "no separate manual accounting or fill path"
+  ],
+  "afterStep57": "STEP_58_DASHBOARD_SIMULATION_COMPLETION",
+  "forbiddenUntilLater": [
+    "private Hyperliquid auth/signing/routing",
+    "smart-order-routing",
+    "live capital"
+  ]
+}

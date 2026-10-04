@@ -1,0 +1,67 @@
+{
+  "contractVersion": "step47c-portability-v1",
+  "profiles": [
+    {
+      "venueId": "MOCK",
+      "environment": "MOCK",
+      "role": "DETERMINISTIC_CONFORMANCE_VENUE",
+      "requiresCoreRewrite": false,
+      "requiresParallelDashboard": false,
+      "routingSelection": "EXPLICIT"
+    },
+    {
+      "venueId": "HYPERLIQUID",
+      "environment": "TESTNET_OR_MAINNET",
+      "role": "FIRST_REAL_VENUE",
+      "requiresCoreRewrite": false,
+      "requiresParallelDashboard": false,
+      "routingSelection": "EXPLICIT",
+      "v1Products": [
+        "DEFAULT_PERPETUALS"
+      ]
+    },
+    {
+      "venueId": "FUTURE_VENUE",
+      "environment": "CUSTOM_OR_TESTNET_OR_MAINNET",
+      "role": "PORTABILITY_PROBE",
+      "supportedCapabilities": [
+        "MARKET_METADATA",
+        "TRADING_RULES",
+        "SUBMIT_ORDER",
+        "CANCEL_ORDER",
+        "ACCOUNT_SNAPSHOT",
+        "OPEN_ORDERS",
+        "FILLS",
+        "SNAPSHOT_BACKFILL",
+        "FEE_ACCOUNTING"
+      ],
+      "unsupportedCapabilities": [
+        "MODIFY_ORDER",
+        "CLIENT_ORDER_ID",
+        "IDEMPOTENT_SUBMIT",
+        "TIF_IOC",
+        "POST_ONLY",
+        "BATCH_ACTIONS",
+        "LEVERAGE",
+        "USER_STREAM",
+        "DEAD_MANS_SWITCH",
+        "TRIGGER_ORDERS",
+        "FUNDING_ACCOUNTING"
+      ],
+      "unsupportedRequiredCapabilityAction": "BLOCK_ROUTE_FOR_THAT_VENUE",
+      "requiresCoreRewrite": false,
+      "requiresStrategyRewrite": false,
+      "requiresRiskRewrite": false,
+      "requiresPlannerRewrite": false,
+      "requiresParallelDashboard": false,
+      "routingSelection": "EXPLICIT"
+    }
+  ],
+  "proofStatements": [
+    "capability differences are represented as data/contract, not venueId branching in Strategy/Risk/Planner",
+    "symbol identity remains explicit per venue/environment",
+    "a missing capability blocks that venue rather than triggering fallback",
+    "auth/signing/protocol remain adapter-owned",
+    "dashboard displays venue identity but does not require a venue-specific parallel UI"
+  ]
+}

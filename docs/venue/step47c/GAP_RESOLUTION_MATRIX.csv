@@ -1,0 +1,10 @@
+gap_id,title,resolution_status,resolution
+GAP-001,Canonical order lifecycle vocabulary,RESOLVED,Freeze PENDING_SUBMIT/ACCEPTED/RESTING/PARTIALLY_FILLED/FILLED/CANCEL_PENDING/CANCELED/REJECTED/VENUE_TERMINATED/UNKNOWN_REQUIRES_RECONCILIATION; preserve native status/reason; unknown blocks blind retry.
+GAP-002,Idempotent submit is not proven by cloid,RESOLVED,Canonical durable requestId is the dedup key. clientOrderId is separate. Native idempotency is only assumed when IDEMPOTENT_SUBMIT is explicitly confirmed; Hyperliquid remains NOT_CONFIRMED. Ambiguous submit => reconcile before resubmit.
+GAP-003,Trigger / TP-SL capability,RESOLVED_DEFERRED,"Add neutral TRIGGER_ORDERS capability vocabulary, but do not require/implement it for current PureRSI Hyperliquid v1. TP/SL grouping remains venue-native/deferred."
+GAP-004,Fee and funding accounting vocabulary,RESOLVED,Add FEE_ACCOUNTING and FUNDING_ACCOUNTING capabilities plus canonical TRADING_FEE/REBATE/FUNDING_PAYMENT signed accounting events.
+GAP-005,Canonical product / market identity,RESOLVED,Freeze product classes PERPETUAL/SPOT/OUTCOME/OTHER. Canonical market identity requires canonicalAsset + productClass; venue-native locator stays per venue/environment.
+GAP-006,Batch operation result envelope,RESOLVED,Freeze OPERATION vs ITEM result scope. Whole-operation prevalidation errors must not be fabricated into per-item results.
+GAP-007,Venue/risk-limit reject taxonomy,RESOLVED,Add canonical VENUE_LIMIT. Local PortfolioRisk rejections remain outside VenueError semantics; native venue reason/code is preserved.
+GAP-008,Native fill identity,RESOLVED,Adapter constructs opaque stable native_fill_id from venue-sufficient uniqueness. Core never assumes one native field is globally unique.
+GAP-009,V1 Hyperliquid product scope,RESOLVED,Default perpetuals only are IN_SCOPE for first private adapter. HIP-3 perps and spot are DEFERRED; outcomes OUT_OF_SCOPE. Trigger TP/SL/TWAP deferred; capital movement actions out of scope.

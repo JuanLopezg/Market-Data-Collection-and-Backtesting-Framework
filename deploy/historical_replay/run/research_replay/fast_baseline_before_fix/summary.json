@@ -1,0 +1,33 @@
+{
+  "candidateTrades": 631,
+  "closedCandidateTrades": 630,
+  "components": "research-only; no canonical MOCK venue; no dashboard",
+  "days": 2113,
+  "end": "2025-10-13",
+  "engine": "existing research Backtester",
+  "log": "deploy/historical_replay/run/research_replay/fast_baseline_before_fix/research.log",
+  "mode": "fast",
+  "openCandidateTrades": 1,
+  "realTest": {
+    "candidateTradesStartedByCutoff": 631,
+    "closedTradesFullyCompared": 630,
+    "comparisonCsv": "deploy/historical_replay/run/research_replay/fast_baseline_before_fix/realtest_trade_comparison.csv",
+    "cutoff": "2025-10-13",
+    "knownExceptionsObserved": [
+      "candidate:522:FET",
+      "reference:502:BNB",
+      "reference:519:FET",
+      "reference:631:ZEC"
+    ],
+    "numericTolerance": "same dynamic RealTest policy: min(20% + 0.2%*trade_id, 50%)",
+    "openTradeRule": "entry date + entry price + quantity only; exit/PnL ignored until closed",
+    "openTradesEntryOnlyCompared": 0,
+    "policy": "PARTIAL_REALTEST_CUTOFF_V1",
+    "referenceTradesStartedByCutoff": 631,
+    "result": "PASS",
+    "unexpectedDifferences": []
+  },
+  "result": "PASS",
+  "start": "2020-01-01",
+  "trades": "deploy/historical_replay/run/research_replay/fast_baseline_before_fix/trades.csv"
+}

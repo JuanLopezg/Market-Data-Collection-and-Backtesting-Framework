@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "manifestVersion": "step51-v1",
+  "venueId": "MOCK",
+  "environment": "MOCK",
+  "step50OrderLifecycleFingerprint": "bf5e867c6793f7b9ad3c7487f6bdb2d95d296e827406a7c3870533833c09b1c3",
+  "modelVersion": "mock-matching-fill-v1-step51",
+  "modelConfigSha256": "49e46eea00e6e71f583ba364973f4d9ff6ba4cc8ffc953e1728256ed28fa3ea7",
+  "combinedMatchingFillFingerprint": "d06a71a4cbc7080cd4c05f7d5b3bc84ec06b55138d25590b8eefbb251e7c4720",
+  "matcherImplemented": true,
+  "canonicalFillEventsImplemented": true,
+  "syntheticFeeQuoteImplemented": true,
+  "accountingPostingImplemented": false,
+  "positionsImplemented": false,
+  "restartDurabilityImplemented": false,
+  "privateRealVenueRoutingEnabled": false,
+  "nextStep": "STEP_52_MOCK_ACCOUNT_MARGIN_POSITIONS_ACCOUNTING"
+}

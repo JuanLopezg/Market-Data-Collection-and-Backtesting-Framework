@@ -1,0 +1,20 @@
+{
+  "candidateTradesStartedByCutoff": 0,
+  "closedTradesFullyCompared": 0,
+  "comparisonCsv": "deploy/historical_replay/run/research_replay/dashboard_pacing_5d_5000/realtest_trade_comparison.csv",
+  "cutoff": "2020-01-05",
+  "differences": 0,
+  "fullyMatched": 0,
+  "knownExceptionsInCode": 0,
+  "manualAccepted": true,
+  "manualReview": true,
+  "numericTolerance": "historical research policy: min(20% + 0.2%*trade_id, 50%)",
+  "openTradeRule": "entry date/time + entry price + quantity only; exit/PnL ignored until closed",
+  "openTradesEntryOnlyCompared": 0,
+  "policy": "DIRECT_REALTEST_MANUAL_REVIEW_V1",
+  "realtestCsv": "storage/backtests/final_tests/pureRSI.csv",
+  "referenceTradesStartedByCutoff": 0,
+  "result": "PASS",
+  "reviewStoppedEarly": false,
+  "unmatchedCandidateTrades": 0
+}

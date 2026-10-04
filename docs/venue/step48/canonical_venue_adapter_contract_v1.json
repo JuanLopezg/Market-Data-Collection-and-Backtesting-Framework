@@ -1,0 +1,125 @@
+{
+  "contractVersion": "venue-adapter-v1",
+  "step": "48",
+  "basedOnFreeze": "step47c-v1",
+  "implementationKind": "INTERFACE_ONLY",
+  "privateAuthImplemented": false,
+  "privateSigningImplemented": false,
+  "concreteVenueImplemented": false,
+  "routingEnabled": false,
+  "venueSelection": "EXPLICIT_CONFIGURED",
+  "silentRealToMockFallback": false,
+  "silentVenueToVenueFallback": false,
+  "smartOrderRouting": false,
+  "splitRouting": false,
+  "canonicalNamespace": "VenueContracts::V1",
+  "adapterInterface": "CanonicalVenueAdapter",
+  "identity": {
+    "context": [
+      "venue_id",
+      "environment"
+    ],
+    "marketKey": [
+      "canonical_asset",
+      "product_class"
+    ],
+    "productClasses": [
+      "PERPETUAL",
+      "SPOT",
+      "OUTCOME",
+      "OTHER"
+    ],
+    "perVenueLocator": [
+      "venue_symbol",
+      "venue_asset_id"
+    ],
+    "nativeReferencesOpaque": true
+  },
+  "capabilities": [
+    "MARKET_METADATA",
+    "TRADING_RULES",
+    "SUBMIT_ORDER",
+    "CANCEL_ORDER",
+    "MODIFY_ORDER",
+    "CLIENT_ORDER_ID",
+    "IDEMPOTENT_SUBMIT",
+    "TIF_GTC",
+    "TIF_IOC",
+    "POST_ONLY",
+    "REDUCE_ONLY",
+    "BATCH_ACTIONS",
+    "LEVERAGE",
+    "MARGIN_STATE",
+    "ACCOUNT_SNAPSHOT",
+    "OPEN_ORDERS",
+    "HISTORICAL_ORDERS",
+    "FILLS",
+    "USER_STREAM",
+    "SNAPSHOT_BACKFILL",
+    "DEAD_MANS_SWITCH",
+    "RATE_LIMIT_INTROSPECTION",
+    "ORDER_STATUS_QUERY",
+    "TRIGGER_ORDERS",
+    "FEE_ACCOUNTING",
+    "FUNDING_ACCOUNTING"
+  ],
+  "commands": [
+    "SubmitOrderBatch",
+    "CancelOrderBatch",
+    "ModifyOrderBatch",
+    "AccountSnapshotRequest",
+    "OpenOrdersRequest",
+    "OrderStatusRequest",
+    "FillBackfillRequest"
+  ],
+  "events": [
+    "OperationResult",
+    "OrderUpdate",
+    "Fill",
+    "AccountingEvent",
+    "AccountSnapshot",
+    "OpenOrdersSnapshot",
+    "FillBatch"
+  ],
+  "orderLifecycle": [
+    "PENDING_SUBMIT",
+    "ACCEPTED",
+    "RESTING",
+    "PARTIALLY_FILLED",
+    "FILLED",
+    "CANCEL_PENDING",
+    "CANCELED",
+    "REJECTED",
+    "VENUE_TERMINATED",
+    "UNKNOWN_REQUIRES_RECONCILIATION"
+  ],
+  "resultEnvelope": {
+    "scopes": [
+      "OPERATION",
+      "ITEM"
+    ],
+    "operationPrevalidationFailureFabricatesItemResults": false
+  },
+  "idempotency": {
+    "canonicalRequestIdRequired": true,
+    "clientOrderIdSeparate": true,
+    "clientOrderIdImpliesNativeIdempotency": false,
+    "unknownSubmitOutcome": "RECONCILE_BEFORE_RESUBMIT"
+  },
+  "accounting": {
+    "events": [
+      "TRADING_FEE",
+      "REBATE",
+      "FUNDING_PAYMENT"
+    ],
+    "amount": "DECIMAL_STRING",
+    "signedConvention": "POSITIVE_INCREASES_ACCOUNT_VALUE_NEGATIVE_DECREASES"
+  },
+  "portability": {
+    "coreMayBranchOnVenueId": false,
+    "capabilityDriven": true,
+    "missingRequiredCapability": "BLOCK_ROUTE_FOR_THAT_VENUE",
+    "parallelVenueSpecificDashboardRequired": false
+  },
+  "nextStep": "STEP_49_MOCK_VENUE_CATALOG_AND_TRADING_RULES"
+}

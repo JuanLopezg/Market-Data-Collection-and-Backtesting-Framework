@@ -1,0 +1,1590 @@
+{
+  "schemaVersion": 1,
+  "catalogVersion": "mock-catalog-v1-step49",
+  "venueId": "MOCK",
+  "environment": "MOCK",
+  "sourceRegistryVersion": "2026-09-27-step37a.5",
+  "mappingPolicy": "EXPLICIT_ONLY",
+  "productScope": [
+    "PERPETUAL"
+  ],
+  "entryCount": 175,
+  "note": "All MOCK mappings are explicit. No suffix stripping/case conversion/fuzzy aliasing.",
+  "entries": [
+    {
+      "canonicalAsset": "1000BONKUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "1000BONKUSDT",
+      "venueAssetId": "mock-perp-0001",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "1000FLOKIUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "1000FLOKIUSDT",
+      "venueAssetId": "mock-perp-0002",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "1000PEPEUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "1000PEPEUSDT",
+      "venueAssetId": "mock-perp-0003",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "1000SHIBUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "1000SHIBUSDT",
+      "venueAssetId": "mock-perp-0004",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "2ZUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "2ZUSDT",
+      "venueAssetId": "mock-perp-0005",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "AAVEUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "AAVEUSDT",
+      "venueAssetId": "mock-perp-0006",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "ADAUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "ADAUSDT",
+      "venueAssetId": "mock-perp-0007",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "AEROUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "AEROUSDT",
+      "venueAssetId": "mock-perp-0008",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "AKEUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "AKEUSDT",
+      "venueAssetId": "mock-perp-0009",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "ALGOUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "ALGOUSDT",
+      "venueAssetId": "mock-perp-0010",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "AMPUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "AMPUSDT",
+      "venueAssetId": "mock-perp-0011",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "APEUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "APEUSDT",
+      "venueAssetId": "mock-perp-0012",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "APTUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "APTUSDT",
+      "venueAssetId": "mock-perp-0013",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "ARBUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "ARBUSDT",
+      "venueAssetId": "mock-perp-0014",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "ARKUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "ARKUSDT",
+      "venueAssetId": "mock-perp-0015",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "ARUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "ARUSDT",
+      "venueAssetId": "mock-perp-0016",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "ASTERUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "ASTERUSDT",
+      "venueAssetId": "mock-perp-0017",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "ATOMUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "ATOMUSDT",
+      "venueAssetId": "mock-perp-0018",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "AVAXUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "AVAXUSDT",
+      "venueAssetId": "mock-perp-0019",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "AXSUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "AXSUSDT",
+      "venueAssetId": "mock-perp-0020",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "BANDUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "BANDUSDT",
+      "venueAssetId": "mock-perp-0021",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "BATUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "BATUSDT",
+      "venueAssetId": "mock-perp-0022",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "BCHUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "BCHUSDT",
+      "venueAssetId": "mock-perp-0023",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "BEAMUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "BEAMUSDT",
+      "venueAssetId": "mock-perp-0024",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "BGBUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "BGBUSDT",
+      "venueAssetId": "mock-perp-0025",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "BNBUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "BNBUSDT",
+      "venueAssetId": "mock-perp-0026",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "BONKUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "BONKUSDT",
+      "venueAssetId": "mock-perp-0027",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "BROCCOLI714USDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "BROCCOLI714USDT",
+      "venueAssetId": "mock-perp-0028",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "BRUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "BRUSDT",
+      "venueAssetId": "mock-perp-0029",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "BSVUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "BSVUSDT",
+      "venueAssetId": "mock-perp-0030",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "BTCBUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "BTCBUSDT",
+      "venueAssetId": "mock-perp-0031",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "BTCUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "BTCUSDT",
+      "venueAssetId": "mock-perp-0032",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "BTGUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "BTGUSDT",
+      "venueAssetId": "mock-perp-0033",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "BTWUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "BTWUSDT",
+      "venueAssetId": "mock-perp-0034",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "CAKEUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "CAKEUSDT",
+      "venueAssetId": "mock-perp-0035",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "CELOUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "CELOUSDT",
+      "venueAssetId": "mock-perp-0036",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "CFXUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "CFXUSDT",
+      "venueAssetId": "mock-perp-0037",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "CHZUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "CHZUSDT",
+      "venueAssetId": "mock-perp-0038",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "CNXUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "CNXUSDT",
+      "venueAssetId": "mock-perp-0039",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "COMPUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "COMPUSDT",
+      "venueAssetId": "mock-perp-0040",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "COREUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "COREUSDT",
+      "venueAssetId": "mock-perp-0041",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "CROUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "CROUSDT",
+      "venueAssetId": "mock-perp-0042",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "DASHUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "DASHUSDT",
+      "venueAssetId": "mock-perp-0043",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "DCRUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "DCRUSDT",
+      "venueAssetId": "mock-perp-0044",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "DOGEUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "DOGEUSDT",
+      "venueAssetId": "mock-perp-0045",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "DOTUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "DOTUSDT",
+      "venueAssetId": "mock-perp-0046",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "DYDXUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "DYDXUSDT",
+      "venueAssetId": "mock-perp-0047",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "EGLDUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "EGLDUSDT",
+      "venueAssetId": "mock-perp-0048",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "ENAUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "ENAUSDT",
+      "venueAssetId": "mock-perp-0049",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "ENJUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "ENJUSDT",
+      "venueAssetId": "mock-perp-0050",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "EOSUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "EOSUSDT",
+      "venueAssetId": "mock-perp-0051",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "ETCUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "ETCUSDT",
+      "venueAssetId": "mock-perp-0052",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "ETHUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "ETHUSDT",
+      "venueAssetId": "mock-perp-0053",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "FETUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "FETUSDT",
+      "venueAssetId": "mock-perp-0054",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "FILUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "FILUSDT",
+      "venueAssetId": "mock-perp-0055",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "FLOKIUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "FLOKIUSDT",
+      "venueAssetId": "mock-perp-0056",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "FLOWUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "FLOWUSDT",
+      "venueAssetId": "mock-perp-0057",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "FTMUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "FTMUSDT",
+      "venueAssetId": "mock-perp-0058",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "FTTUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "FTTUSDT",
+      "venueAssetId": "mock-perp-0059",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "GALAUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "GALAUSDT",
+      "venueAssetId": "mock-perp-0060",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "GMTUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "GMTUSDT",
+      "venueAssetId": "mock-perp-0061",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "GRTUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "GRTUSDT",
+      "venueAssetId": "mock-perp-0062",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "HBARUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "HBARUSDT",
+      "venueAssetId": "mock-perp-0063",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "HIVEUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "HIVEUSDT",
+      "venueAssetId": "mock-perp-0064",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "HOTUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "HOTUSDT",
+      "venueAssetId": "mock-perp-0065",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "HTUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "HTUSDT",
+      "venueAssetId": "mock-perp-0066",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "HYPEUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "HYPEUSDT",
+      "venueAssetId": "mock-perp-0067",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "ICPUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "ICPUSDT",
+      "venueAssetId": "mock-perp-0068",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "ICXUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "ICXUSDT",
+      "venueAssetId": "mock-perp-0069",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "IMXUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "IMXUSDT",
+      "venueAssetId": "mock-perp-0070",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "INJUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "INJUSDT",
+      "venueAssetId": "mock-perp-0071",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "IPUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "IPUSDT",
+      "venueAssetId": "mock-perp-0072",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "JASMYUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "JASMYUSDT",
+      "venueAssetId": "mock-perp-0073",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "JUPUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "JUPUSDT",
+      "venueAssetId": "mock-perp-0074",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "KASUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "KASUSDT",
+      "venueAssetId": "mock-perp-0075",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "KAVAUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "KAVAUSDT",
+      "venueAssetId": "mock-perp-0076",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "KLAYUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "KLAYUSDT",
+      "venueAssetId": "mock-perp-0077",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "KNCUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "KNCUSDT",
+      "venueAssetId": "mock-perp-0078",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "KSMUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "KSMUSDT",
+      "venueAssetId": "mock-perp-0079",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "LDOUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "LDOUSDT",
+      "venueAssetId": "mock-perp-0080",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "LINKUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "LINKUSDT",
+      "venueAssetId": "mock-perp-0081",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "LITUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "LITUSDT",
+      "venueAssetId": "mock-perp-0082",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "LRCUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "LRCUSDT",
+      "venueAssetId": "mock-perp-0083",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "LSKUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "LSKUSDT",
+      "venueAssetId": "mock-perp-0084",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "LTCUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "LTCUSDT",
+      "venueAssetId": "mock-perp-0085",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "LUNAUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "LUNAUSDT",
+      "venueAssetId": "mock-perp-0086",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "LUNCUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "LUNCUSDT",
+      "venueAssetId": "mock-perp-0087",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "LYNUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "LYNUSDT",
+      "venueAssetId": "mock-perp-0088",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "MANAUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "MANAUSDT",
+      "venueAssetId": "mock-perp-0089",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "MANTAUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "MANTAUSDT",
+      "venueAssetId": "mock-perp-0090",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "MARSCOINUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "MARSCOINUSDT",
+      "venueAssetId": "mock-perp-0091",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "MATICUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "MATICUSDT",
+      "venueAssetId": "mock-perp-0092",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "MKRUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "MKRUSDT",
+      "venueAssetId": "mock-perp-0093",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "MNTUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "MNTUSDT",
+      "venueAssetId": "mock-perp-0094",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "MOVEUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "MOVEUSDT",
+      "venueAssetId": "mock-perp-0095",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "MUBARAKUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "MUBARAKUSDT",
+      "venueAssetId": "mock-perp-0096",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "NEARUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "NEARUSDT",
+      "venueAssetId": "mock-perp-0097",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "NEOUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "NEOUSDT",
+      "venueAssetId": "mock-perp-0098",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "NILUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "NILUSDT",
+      "venueAssetId": "mock-perp-0099",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "NOMUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "NOMUSDT",
+      "venueAssetId": "mock-perp-0100",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "NOTUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "NOTUSDT",
+      "venueAssetId": "mock-perp-0101",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "OKBUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "OKBUSDT",
+      "venueAssetId": "mock-perp-0102",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "OMGUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "OMGUSDT",
+      "venueAssetId": "mock-perp-0103",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "OMUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "OMUSDT",
+      "venueAssetId": "mock-perp-0104",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "ONDOUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "ONDOUSDT",
+      "venueAssetId": "mock-perp-0105",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "ONEUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "ONEUSDT",
+      "venueAssetId": "mock-perp-0106",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "ONTUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "ONTUSDT",
+      "venueAssetId": "mock-perp-0107",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "OPUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "OPUSDT",
+      "venueAssetId": "mock-perp-0108",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "ORDIUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "ORDIUSDT",
+      "venueAssetId": "mock-perp-0109",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "PENGUUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "PENGUUSDT",
+      "venueAssetId": "mock-perp-0110",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "PEPEUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "PEPEUSDT",
+      "venueAssetId": "mock-perp-0111",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "PHAUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "PHAUSDT",
+      "venueAssetId": "mock-perp-0112",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "PIUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "PIUSDT",
+      "venueAssetId": "mock-perp-0113",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "POLUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "POLUSDT",
+      "venueAssetId": "mock-perp-0114",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "PUMPUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "PUMPUSDT",
+      "venueAssetId": "mock-perp-0115",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "QNTUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "QNTUSDT",
+      "venueAssetId": "mock-perp-0116",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "QTUMUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "QTUMUSDT",
+      "venueAssetId": "mock-perp-0117",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "QUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "QUSDT",
+      "venueAssetId": "mock-perp-0118",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "RAREUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "RAREUSDT",
+      "venueAssetId": "mock-perp-0119",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "RENDERUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "RENDERUSDT",
+      "venueAssetId": "mock-perp-0120",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "RENUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "RENUSDT",
+      "venueAssetId": "mock-perp-0121",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "REPUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "REPUSDT",
+      "venueAssetId": "mock-perp-0122",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "RSRUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "RSRUSDT",
+      "venueAssetId": "mock-perp-0123",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "RUNEUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "RUNEUSDT",
+      "venueAssetId": "mock-perp-0124",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "RVNUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "RVNUSDT",
+      "venueAssetId": "mock-perp-0125",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "SAGAUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "SAGAUSDT",
+      "venueAssetId": "mock-perp-0126",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "SANDUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "SANDUSDT",
+      "venueAssetId": "mock-perp-0127",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "SCUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "SCUSDT",
+      "venueAssetId": "mock-perp-0128",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "SEIUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "SEIUSDT",
+      "venueAssetId": "mock-perp-0129",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "SHIBUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "SHIBUSDT",
+      "venueAssetId": "mock-perp-0130",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "SLPUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "SLPUSDT",
+      "venueAssetId": "mock-perp-0131",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "SNTUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "SNTUSDT",
+      "venueAssetId": "mock-perp-0132",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "SNXUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "SNXUSDT",
+      "venueAssetId": "mock-perp-0133",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "SOLUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "SOLUSDT",
+      "venueAssetId": "mock-perp-0134",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "SOONUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "SOONUSDT",
+      "venueAssetId": "mock-perp-0135",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "STXUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "STXUSDT",
+      "venueAssetId": "mock-perp-0136",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "SUIUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "SUIUSDT",
+      "venueAssetId": "mock-perp-0137",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "SUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "SUSDT",
+      "venueAssetId": "mock-perp-0138",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "SUSHIUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "SUSHIUSDT",
+      "venueAssetId": "mock-perp-0139",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "SXPUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "SXPUSDT",
+      "venueAssetId": "mock-perp-0140",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "SYSUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "SYSUSDT",
+      "venueAssetId": "mock-perp-0141",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "TAOUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "TAOUSDT",
+      "venueAssetId": "mock-perp-0142",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "TFUELUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "TFUELUSDT",
+      "venueAssetId": "mock-perp-0143",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "THETAUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "THETAUSDT",
+      "venueAssetId": "mock-perp-0144",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "TIAUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "TIAUSDT",
+      "venueAssetId": "mock-perp-0145",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "TMTGUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "TMTGUSDT",
+      "venueAssetId": "mock-perp-0146",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "TONUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "TONUSDT",
+      "venueAssetId": "mock-perp-0147",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "TRUMPUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "TRUMPUSDT",
+      "venueAssetId": "mock-perp-0148",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "TRXUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "TRXUSDT",
+      "venueAssetId": "mock-perp-0149",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "TWTUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "TWTUSDT",
+      "venueAssetId": "mock-perp-0150",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "UMAUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "UMAUSDT",
+      "venueAssetId": "mock-perp-0151",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "UNIUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "UNIUSDT",
+      "venueAssetId": "mock-perp-0152",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "USUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "USUSDT",
+      "venueAssetId": "mock-perp-0153",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "VETUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "VETUSDT",
+      "venueAssetId": "mock-perp-0154",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "VGXUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "VGXUSDT",
+      "venueAssetId": "mock-perp-0155",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "VIRTUALUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "VIRTUALUSDT",
+      "venueAssetId": "mock-perp-0156",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "WAVESUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "WAVESUSDT",
+      "venueAssetId": "mock-perp-0157",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "WIFUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "WIFUSDT",
+      "venueAssetId": "mock-perp-0158",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "WLDUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "WLDUSDT",
+      "venueAssetId": "mock-perp-0159",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "WLFIUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "WLFIUSDT",
+      "venueAssetId": "mock-perp-0160",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "XAIUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "XAIUSDT",
+      "venueAssetId": "mock-perp-0161",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "XCNUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "XCNUSDT",
+      "venueAssetId": "mock-perp-0162",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "XECUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "XECUSDT",
+      "venueAssetId": "mock-perp-0163",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "XEMUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "XEMUSDT",
+      "venueAssetId": "mock-perp-0164",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "XLMUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "XLMUSDT",
+      "venueAssetId": "mock-perp-0165",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "XMRUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "XMRUSDT",
+      "venueAssetId": "mock-perp-0166",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "XPLUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "XPLUSDT",
+      "venueAssetId": "mock-perp-0167",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "XRPUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "XRPUSDT",
+      "venueAssetId": "mock-perp-0168",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "XTZUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "XTZUSDT",
+      "venueAssetId": "mock-perp-0169",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "YFIUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "YFIUSDT",
+      "venueAssetId": "mock-perp-0170",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "ZBUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "ZBUSDT",
+      "venueAssetId": "mock-perp-0171",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "ZECUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "ZECUSDT",
+      "venueAssetId": "mock-perp-0172",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "ZILUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "ZILUSDT",
+      "venueAssetId": "mock-perp-0173",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "ZRXUSDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "ZRXUSDT",
+      "venueAssetId": "mock-perp-0174",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    },
+    {
+      "canonicalAsset": "龙虾USDT",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "venueSymbol": "龙虾USDT",
+      "venueAssetId": "mock-perp-0175",
+      "ruleProfileId": "MOCK_PERP_DEFAULT_V1",
+      "routingStatus": "ENABLED"
+    }
+  ]
+}

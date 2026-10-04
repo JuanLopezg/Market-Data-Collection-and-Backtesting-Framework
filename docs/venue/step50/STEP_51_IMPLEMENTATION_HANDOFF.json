@@ -1,0 +1,25 @@
+{
+  "contractVersion": "step50-to-step51-v1",
+  "nextStep": "STEP_51_DETERMINISTIC_MATCHING_AND_FILL_MODEL",
+  "step49VenueFingerprint": "a6d2b98a45d11e57bc0d649ff9569952c73adff1671608f5eafe561169ccbb27",
+  "step50OrderLifecycleFingerprint": "bf5e867c6793f7b9ad3c7487f6bdb2d95d296e827406a7c3870533833c09b1c3",
+  "engine": "MockVenueV1::MockOrderAdmissionLifecycleV1",
+  "mustUseStep50LifecycleBridge": true,
+  "requiredStep51Behavior": [
+    "deterministic matcher consumes ACCEPTED MOCK orders",
+    "GTC may become RESTING if not fully executable",
+    "IOC unfilled remainder becomes CANCELED",
+    "post-only crossing becomes canonical rejection without resting",
+    "partial/full execution produces canonical Fill events",
+    "fill/native IDs deterministic and stable",
+    "synthetic OHLCV model must be labeled synthetic and never historical L2",
+    "business/economic timestamps come from event/TimeHandler time"
+  ],
+  "forbiddenUntilLater": [
+    "cash/equity/position accounting",
+    "realized/unrealized PnL",
+    "durable restart recovery",
+    "private Hyperliquid signing/routing",
+    "smart-order-routing"
+  ]
+}

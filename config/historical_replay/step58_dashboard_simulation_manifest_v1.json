@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "manifestVersion": "step58-v1",
+  "step56AcceptanceFingerprint": "0ec48c4566c7a1ba439164c2f242f061b8adf58eb801a536f34b8c12d55f64ae",
+  "step57ManualControlFingerprint": "65c0a7b418d7f3873f38f6a1daa87d5d915e4a254452865b79a69df24c3dc5f0",
+  "simulationConfigSha256": "5ec0a36e124a558dc5b75b45c1aa1f73b6c796a7850442b8e1eb0206cd177585",
+  "combinedDashboardSimulationFingerprint": "ed65f18d0720f95c60443319d5e559407fa50340d9dc67f46c19868d20ae3852",
+  "simulationProviderImplemented": true,
+  "canonicalSnapshotBridgeImplemented": true,
+  "restPlusSseInvalidationImplemented": true,
+  "manualControlDedicatedTransportImplemented": true,
+  "realProviderManualRoutingStillFailClosed": true,
+  "dashboardPrivateKeysAdded": false,
+  "dashboardDirectVenueAccessAdded": false,
+  "historicalReplayVisualRunnerImplemented": true,
+  "visualAcceptanceExecutedByUser": false,
+  "privateRealVenueRoutingEnabled": false,
+  "nextStep": "STEP_59_DETERMINISTIC_EVIDENCE_SPEED_INVARIANCE_RESTART"
+}

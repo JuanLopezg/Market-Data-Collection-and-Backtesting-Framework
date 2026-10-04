@@ -1,0 +1,28 @@
+{
+  "contractVersion": "step51-to-step52-v1",
+  "nextStep": "STEP_52_MOCK_ACCOUNT_MARGIN_POSITIONS_ACCOUNTING",
+  "step50OrderLifecycleFingerprint": "bf5e867c6793f7b9ad3c7487f6bdb2d95d296e827406a7c3870533833c09b1c3",
+  "step51MatchingFillFingerprint": "d06a71a4cbc7080cd4c05f7d5b3bc84ec06b55138d25590b8eefbb251e7c4720",
+  "matcher": "MockVenueV1::MockDeterministicMatchingFillV1",
+  "requiredStep52Behavior": [
+    "consume canonical Fill events as sole execution authority",
+    "balances/cash/equity projection",
+    "positions and average entry/cost basis",
+    "realized and unrealized PnL for MOCK",
+    "post TRADING_FEE/REBATE/FUNDING_PAYMENT canonical accounting events",
+    "leverage/margin state using Step49 rule metadata",
+    "open and historical order/account views derived from canonical state",
+    "deterministic accounting fingerprint independent of replay speed"
+  ],
+  "step51FeeModel": {
+    "feePpm": 400,
+    "step51Behavior": "DIAGNOSTIC_QUOTE_ONLY",
+    "step52MustPostCanonicalAccounting": true
+  },
+  "forbiddenUntilLater": [
+    "restart/user-stream recovery",
+    "real venue reconciliation",
+    "private Hyperliquid signing/routing",
+    "smart-order-routing"
+  ]
+}

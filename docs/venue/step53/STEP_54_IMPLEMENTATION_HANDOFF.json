@@ -1,0 +1,22 @@
+{
+  "contractVersion": "step53-to-step54-v1",
+  "nextStep": "STEP_54_RECONCILIATION_AND_LEDGER_PARITY",
+  "step52AccountingFingerprint": "4fa2a7cc0e8c43f75f7fdcab2cd5b305755c48426ac3f13b4c10ed765dfac746",
+  "step53RecoveryFingerprint": "d7801a18523cf93e61f277373b2e2190070137f74ada03135fc79d1d5005dfdc",
+  "runtime": "MockVenueV1::MockSnapshotUserStreamRecoveryV1",
+  "requiredStep54Behavior": [
+    "compare local expected cash/positions/open orders/fills against recovered MOCK venue truth",
+    "CLEAN/BLOCKED/PENDING reconciliation states",
+    "unsafe reconciliation blocks new order admission/routing",
+    "ledger fill chain parity against canonical Fill authority",
+    "fee/rebate/funding parity against canonical accounting events",
+    "duplicate/out-of-order recovery evidence must not create economic divergence",
+    "reconciliation survives restart and is based on Step53 recovered state",
+    "no fabricated values when a comparison dimension is unavailable"
+  ],
+  "forbiddenUntilLater": [
+    "private Hyperliquid auth/signing/routing",
+    "smart-order-routing",
+    "live capital"
+  ]
+}

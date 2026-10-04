@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "manualControlVersion": "manual-control-mock-normal-pipeline-v1-step57",
+  "boundStep56AcceptanceFingerprint": "0ec48c4566c7a1ba439164c2f242f061b8adf58eb801a536f34b8c12d55f64ae",
+  "boundStep56RuntimeFingerprint": "79ec33ef33b9fb45410b1a10038a74dc0ac6b00f064e75175bb9330f2fddf27f",
+  "venueId": "MOCK",
+  "environment": "MOCK",
+  "manualStrategyId": 900001,
+  "targetContract": {
+    "weights": "LONG_ONLY_FRACTIONS_PLUS_EXPLICIT_CASH",
+    "sumTolerance": "0.000000001",
+    "confirmationHashRequired": true,
+    "staleReferenceRejected": true
+  },
+  "risk": {
+    "engine": "ManualPortfolioRiskEngineV1",
+    "maxGrossLeverage": 1.0,
+    "maxAssetWeight": 1.0,
+    "shortsAllowed": false,
+    "unmappedAssetPolicy": "REJECT_FAIL_CLOSED",
+    "constraintMutationPolicy": "REJECT_IF_REQUEST_WOULD_BE_CHANGED"
+  },
+  "planning": {
+    "engine": "NotionalOrderPlannerEngine",
+    "decisionReference": "CLOSE_T",
+    "executionReference": "OPEN_T_PLUS_1",
+    "cancelBeforeSubmit": true,
+    "oneSubmitBatchPerIntent": true
+  },
+  "routing": {
+    "boundary": "CanonicalVenueAdapter",
+    "concreteVenue": "MockExchangeAdapterV1",
+    "newExposureGate": "STEP55_CAN_ROUTE_NEW_SUBMIT",
+    "venueFallback": false,
+    "smartOrSplitRouting": false
+  },
+  "fillAuthority": "CANONICAL_STEP51_FILL_ONLY",
+  "accountingAuthority": "STEP52_CANONICAL_ACCOUNTING",
+  "reconciliationAuthority": "STEP54_PLUS_STEP55_GATE",
+  "dashboardHttpTransportEnabled": false,
+  "reasonDashboardHttpTransportDeferred": "Step58 owns dashboard simulation transport/read-model integration; Step57 freezes and proves the trading-control pipeline itself.",
+  "realVenueRoutingEnabled": false,
+  "privateHyperliquidAuthEnabled": false,
+  "nextStep": "STEP_58_DASHBOARD_SIMULATION_COMPLETION"
+}

@@ -125,11 +125,11 @@ export function ManualControlPage() {
 
     {!isOperator && <div className="manual-role-lock"><LockKeyhole size={15}/><div><strong>VIEWER access</strong><span>Manual portfolio preview and route admission require an OPERATOR session.</span></div></div>}
 
-    <div className="manual-warning"><AlertTriangle size={15}/><div><strong>Step 46 · Safe Routing Contract</strong><span>{view.safetyNote ?? 'Routing remains fail-closed until the normal trading-control path and private venue lifecycle are proven.'}</span></div></div>
+    <div className="manual-warning"><AlertTriangle size={15}/><div><strong>{view.contractVersion?.startsWith('step58') ? 'Step 58 · MOCK Simulation Routing' : 'Step 46 · Safe Routing Contract'}</strong><span>{view.safetyNote ?? 'Routing remains fail-closed until the normal trading-control path and private venue lifecycle are proven.'}</span></div></div>
     {previewError && <div className="manual-role-lock"><AlertTriangle size={15}/><div><strong>Preview failed</strong><span>{previewError}</span></div></div>}
     {routeError && <div className="manual-role-lock"><AlertTriangle size={15}/><div><strong>Route admission failed</strong><span>{routeError}</span></div></div>}
 
-    <Panel title="Step 46 · Routing Admission Contract" right={<span className={view.routingContractReady ? 'positive' : 'negative'}>{view.contractVersion ?? 'UNVERSIONED'} · {view.routingContractReady ? 'READY' : 'BLOCKED'}</span>}>
+    <Panel title={view.contractVersion?.startsWith('step58') ? "Step 58 · Simulation Routing Contract" : "Step 46 · Routing Admission Contract"} right={<span className={view.routingContractReady ? 'positive' : 'negative'}>{view.contractVersion ?? 'UNVERSIONED'} · {view.routingContractReady ? 'READY' : 'BLOCKED'}</span>}>
       <div className="gate-list">
         <span>Contract mode<strong>{view.routingContractMode ?? '—'}</strong></span>
         <span>Durable human audit<strong>{view.humanAuditAvailable ? 'AVAILABLE' : 'UNAVAILABLE'}</strong></span>
@@ -176,8 +176,8 @@ export function ManualControlPage() {
     </Panel>}
 
     {stage === 'RISK_CHECK' && <section className="manual-grid">
-      <Panel title="Manual Risk Boundary" right={<span className="warning">NOT EXECUTED</span>}>
-        <div className="manual-authority"><ShieldCheck size={28}/><strong>PortfolioRisk remains authoritative</strong><p>The request is structurally/exchange-admission validated only. Step 46 deliberately cannot turn requested weights into an approved target because the trading system does not yet expose the manual PortfolioRisk transformation contract.</p></div>
+      <Panel title="Manual Risk Boundary" right={<span className={view.riskCheckAvailable ? 'positive' : 'warning'}>{view.riskCheckAvailable ? 'STEP57 WIRED' : 'NOT EXECUTED'}</span>}>
+        <div className="manual-authority"><ShieldCheck size={28}/><strong>PortfolioRisk remains authoritative</strong><p>{view.riskCheckAvailable ? 'The confirmed MOCK request will enter the Step57 manual PortfolioRisk transformation and production planner. Preview values remain non-authoritative until that execution-time risk check runs.' : 'The request is structurally/exchange-admission validated only. This provider cannot turn requested weights into an approved target.'}</p></div>
       </Panel>
       <Panel title="Current route blockers" right={<span className="negative">FAIL CLOSED</span>}>
         <div className="gate-list">{routeBlockers.map(blocker => <span key={blocker}>{blocker}<strong>BLOCKED</strong></span>)}</div>
@@ -185,7 +185,7 @@ export function ManualControlPage() {
     </section>}
 
     {stage === 'ORDER_PREVIEW' && <section className="manual-grid manual-grid--orders">
-      <Panel title="Target Delta Preview" right={<span className="muted">Never executable in dashboard</span>}>
+      <Panel title="Target Delta Preview" right={<span className="muted">{view.routeEnabled ? 'MOCK normal pipeline only' : 'Not executable'}</span>}>
         <div className="table-wrap"><table className="wide-table"><thead><tr><th>Asset</th><th>Direction</th><th>Δ weight</th><th>Reference-capital delta</th><th>Fee</th><th>Boundary</th></tr></thead><tbody>{view.orderPreview.map(row => <tr key={row.asset}><td><strong>{row.asset}</strong></td><td className={row.action === 'BUY' ? 'positive' : row.action === 'SELL' ? 'negative' : ''}>{row.action}</td><td>{row.deltaWeightPct > 0 ? '+' : ''}{row.deltaWeightPct.toFixed(2)}%</td><td>{row.estimatedNotionalLabel}</td><td>{row.estimatedFeeLabel}</td><td>{row.note}</td></tr>)}</tbody></table></div>
       </Panel>
       <Panel title="Request Summary">
@@ -194,16 +194,16 @@ export function ManualControlPage() {
     </section>}
 
     {stage === 'CONFIRM' && <section className="manual-grid">
-      <Panel title="Final Confirmation / Admission" right={<span className="negative"><LockKeyhole size={12}/> routing disabled</span>}>
-        <div className="confirm-box"><ShieldCheck size={34}/><h2>Confirm the exact hashed request</h2><p>The server will recompute the CSV hash, reject a stale reference target, reevaluate current execution constraints, and persist the OPERATOR intent. In Step 46 it will still return BLOCKED and submit nothing.</p><button className="button-primary" onClick={() => void evaluateRoute()} disabled={!isOperator || routeBusy || !view.validationPassed || !view.requestHash}>{routeBusy ? 'Evaluating…' : 'Evaluate safe route admission'}</button><small>Confirmation token: {view.confirmationPhrase ?? 'CONFIRM_MANUAL_ROUTE'} · no NATS publish / no exchange call / no order creation.</small></div>
+      <Panel title="Final Confirmation / Admission" right={<span className={view.routeEnabled ? 'positive' : 'negative'}><LockKeyhole size={12}/> {view.routeEnabled ? 'MOCK routing enabled' : 'routing disabled'}</span>}>
+        <div className="confirm-box"><ShieldCheck size={34}/><h2>Confirm the exact hashed request</h2><p>{view.routeEnabled ? 'The server will recompute the hash and stale-reference checks, then queue the request to the Step58 simulation trading-control sink. The runner invokes Step57 Risk → Planner → CanonicalVenueAdapter → MOCK; the browser never talks to the venue.' : 'The server will recompute the CSV hash, reject a stale reference target, and remain fail-closed.'}</p><button className="button-primary" onClick={() => void evaluateRoute()} disabled={!isOperator || routeBusy || !view.validationPassed || !view.requestHash}>{routeBusy ? 'Evaluating…' : 'Evaluate safe route admission'}</button><small>Confirmation token: {view.confirmationPhrase ?? 'CONFIRM_MANUAL_ROUTE'} · {view.routeEnabled ? 'simulation sink only · no private venue / no capital' : 'no trading command dispatched'}.</small></div>
         {routeResult && <div className="alerts-gap-note"><strong>{routeResult.status} · submitted={String(routeResult.submitted)} · audit={routeResult.auditPersisted ? 'PERSISTED' : 'FAILED'}</strong><span>{routeResult.note}</span><code>{routeResult.correlationId}</code><span>{routeResult.blockers.join(' · ')}</span></div>}
       </Panel>
       <Panel title="Durable Operator-Intent Audit" right={<span className={view.humanAuditAvailable ? 'positive' : 'negative'}>{view.humanAuditAvailable ? 'AVAILABLE' : 'UNAVAILABLE'}</span>}>
-        <div className="audit-preview"><span>Action<strong>MANUAL_ROUTE_ADMISSION</strong></span><span>Mode<strong>{view.mode}</strong></span><span>Boundary<strong>{view.exchange}</strong></span><span>Request hash<code>{view.requestHash || '—'}</code></span><span>Expected result<strong>REJECTED / NOT_SUBMITTED</strong></span></div>
+        <div className="audit-preview"><span>Action<strong>MANUAL_ROUTE_ADMISSION</strong></span><span>Mode<strong>{view.mode}</strong></span><span>Boundary<strong>{view.exchange}</strong></span><span>Request hash<code>{view.requestHash || '—'}</code></span><span>Expected result<strong>{view.routeEnabled ? 'QUEUED TO MOCK / STEP57' : 'REJECTED / NOT_SUBMITTED'}</strong></span></div>
         {recentAudits.length > 0 && <div className="table-wrap"><table className="wide-table audit-table"><thead><tr><th>Recorded</th><th>Actor</th><th>Result</th><th>Submitted</th><th>Correlation</th><th>Blockers</th></tr></thead><tbody>{recentAudits.slice(0, 8).map(row => <tr key={row.correlationId}><td>{row.recordedAt}</td><td>{row.actor}</td><td>{row.result}</td><td>{String(row.submitted)}</td><td><code>{row.correlationId}</code></td><td>{row.blockers.join(', ')}</td></tr>)}</tbody></table></div>}
       </Panel>
     </section>}
 
-    {stage !== 'UPLOAD' && <footer className="manual-footer"><button className="button-secondary" onClick={reset}><RefreshCw size={13}/> Reset</button><span>{filename} · server admission contract · actual routing disabled</span>{stage !== 'CONFIRM' && <button className="button-primary" onClick={next} disabled={!isOperator || (stage === 'VALIDATE' && !view.validationPassed)}>Continue <ChevronRight size={13}/></button>}</footer>}
+    {stage !== 'UPLOAD' && <footer className="manual-footer"><button className="button-secondary" onClick={reset}><RefreshCw size={13}/> Reset</button><span>{filename} · server admission contract · {view.routeEnabled ? 'MOCK simulation routing enabled' : 'actual routing disabled'}</span>{stage !== 'CONFIRM' && <button className="button-primary" onClick={next} disabled={!isOperator || (stage === 'VALIDATE' && !view.validationPassed)}>Continue <ChevronRight size={13}/></button>}</footer>}
   </>
 }

@@ -1,0 +1,33 @@
+{
+  "contractVersion": "step58a-to-step58-visual-v1",
+  "nextAction": "STEP_58_VISUAL_DASHBOARD_REPLAY_ACCEPTANCE",
+  "requirementsBeforeVisual": [
+    "STEP_58A_IMPLEMENTATION_GATE_PASS",
+    "STEP_58A_TRUE_1500X_SMOKE_PASS",
+    "STEP_58A_FULL_HISTORY_REALTEST_EQUIVALENCE_PASS"
+  ],
+  "visualPacing": {
+    "economicBusinessTime": "UNCHANGED",
+    "dashboardUiDelayMsPerPhase": 300000,
+    "phasesPerHistoricalDay": 2,
+    "approxHistoricalDayPerRealMinutes": 10
+  },
+  "mustObserve": [
+    "market data",
+    "strategy and risk/planner state",
+    "orders",
+    "fills",
+    "positions",
+    "cash/equity/PnL",
+    "ledger",
+    "reconciliation",
+    "alerts/chaos state where applicable"
+  ],
+  "forbidden": [
+    "private Hyperliquid routing",
+    "browser direct exchange access",
+    "capital movement",
+    "fabricated dashboard values"
+  ],
+  "afterVisualAcceptance": "STEP_59_DETERMINISTIC_EVIDENCE_SPEED_INVARIANCE_RESTART"
+}

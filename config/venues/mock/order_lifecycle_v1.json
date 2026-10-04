@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "lifecycleVersion": "mock-order-lifecycle-v1-step50",
+  "venueId": "MOCK",
+  "environment": "MOCK",
+  "boundStep49VenueFingerprint": "a6d2b98a45d11e57bc0d649ff9569952c73adff1671608f5eafe561169ccbb27",
+  "scope": "ORDER_ADMISSION_AND_LIFECYCLE_ONLY",
+  "requestIdPolicy": {
+    "required": true,
+    "dedupScope": "ALL_COMMAND_TYPES",
+    "sameIdSamePayload": "RETURN_CACHED_OPERATION_RESULT_NO_DUPLICATE_STATE_MUTATION",
+    "sameIdDifferentPayload": "OPERATION_LEVEL_DUPLICATE_REQUEST",
+    "restartDurability": "DEFERRED_TO_STEP53"
+  },
+  "clientOrderIdPolicy": {
+    "optional": true,
+    "uniqueAcrossOrderHistoryWhenPresent": true,
+    "reuseAfterCancel": false,
+    "doesNotReplaceCanonicalRequestId": true
+  },
+  "admission": {
+    "catalogLookup": "EXACT_ONLY",
+    "nativeLocatorMustMatchCatalog": true,
+    "pricePrecision": "REJECT_NONCONFORMING",
+    "sizePrecision": "REJECT_NONCONFORMING",
+    "minimumSize": "ENFORCE",
+    "minimumNotional": "ENFORCE_EXACT_FIXED_POINT",
+    "postOnlyWithIoc": "REJECT_INVALID_REQUEST",
+    "postOnlyCrossingDecision": "DEFER_TO_STEP51_MATCHER",
+    "iocRemainderCancellation": "DEFER_TO_STEP51_MATCHER",
+    "reduceOnlyEconomicCheck": "DEFER_TO_STEP52_ACCOUNT_STATE"
+  },
+  "supportedCommands": [
+    "SUBMIT",
+    "CANCEL",
+    "MODIFY"
+  ],
+  "supportedTif": [
+    "GTC",
+    "IOC"
+  ],
+  "submitInitialStatus": "ACCEPTED",
+  "cancelTransition": [
+    "CANCEL_PENDING",
+    "CANCELED"
+  ],
+  "matchingImplemented": false,
+  "fillsImplemented": false,
+  "feesFundingImplemented": false,
+  "accountingImplemented": false,
+  "accountStateImplemented": false,
+  "privateRealVenueRoutingEnabled": false,
+  "nextStep": "STEP_51_DETERMINISTIC_MATCHING_AND_FILL_MODEL"
+}

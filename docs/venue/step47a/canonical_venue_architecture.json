@@ -1,0 +1,108 @@
+{
+  "contractVersion": "step47a-v1",
+  "artifactType": "CANONICAL_MULTI_EXCHANGE_ARCHITECTURE_BASELINE",
+  "adapterInterfaceImplemented": false,
+  "firstRealVenue": "HYPERLIQUID",
+  "futureVenuePlaceholder": "FUTURE_VENUE",
+  "routing": {
+    "selection": "EXPLICIT_CONFIGURED",
+    "silentRealToMockFallback": false,
+    "silentVenueToVenueFallback": false,
+    "smartOrderRouting": false,
+    "splitRouting": false
+  },
+  "identity": {
+    "chain": [
+      "SOURCE_SYMBOL",
+      "CANONICAL_INTERNAL_ASSET",
+      "PER_VENUE_SYMBOL_OR_ASSET_ID"
+    ],
+    "venueContextRequiredForVenueEvidence": true,
+    "nativeIdentifiersRemainOpaqueEvidence": true,
+    "heuristicSymbolMappingAllowed": false
+  },
+  "environments": [
+    "MOCK",
+    "TESTNET",
+    "MAINNET",
+    "CUSTOM"
+  ],
+  "capabilities": [
+    "MARKET_METADATA",
+    "TRADING_RULES",
+    "SUBMIT_ORDER",
+    "CANCEL_ORDER",
+    "MODIFY_ORDER",
+    "CLIENT_ORDER_ID",
+    "IDEMPOTENT_SUBMIT",
+    "TIF_GTC",
+    "TIF_IOC",
+    "POST_ONLY",
+    "REDUCE_ONLY",
+    "BATCH_ACTIONS",
+    "LEVERAGE",
+    "MARGIN_STATE",
+    "ACCOUNT_SNAPSHOT",
+    "OPEN_ORDERS",
+    "HISTORICAL_ORDERS",
+    "FILLS",
+    "USER_STREAM",
+    "SNAPSHOT_BACKFILL",
+    "DEAD_MANS_SWITCH",
+    "RATE_LIMIT_INTROSPECTION"
+  ],
+  "canonicalErrorClasses": [
+    "NONE",
+    "TRANSPORT_UNAVAILABLE",
+    "AUTHENTICATION_FAILED",
+    "AUTHORIZATION_FAILED",
+    "RATE_LIMITED",
+    "INVALID_REQUEST",
+    "UNSUPPORTED_CAPABILITY",
+    "UNKNOWN_ASSET",
+    "INVALID_PRICE_INCREMENT",
+    "INVALID_QUANTITY_INCREMENT",
+    "BELOW_MINIMUM",
+    "INSUFFICIENT_FUNDS_OR_MARGIN",
+    "REDUCE_ONLY_VIOLATION",
+    "POST_ONLY_WOULD_CROSS",
+    "NO_LIQUIDITY",
+    "ORDER_NOT_FOUND",
+    "DUPLICATE_REQUEST",
+    "VENUE_UNAVAILABLE",
+    "UNKNOWN"
+  ],
+  "boundaries": {
+    "venueNeutralCore": [
+      "STRATEGY",
+      "PORTFOLIO_RISK",
+      "ORDER_PLANNER",
+      "CANONICAL_EXECUTION_STATE",
+      "LEDGER",
+      "RECONCILIATION_CONTRACTS",
+      "DASHBOARD_READ_MODELS"
+    ],
+    "concreteAdapterOwns": [
+      "NATIVE_PROTOCOL",
+      "AUTHENTICATION",
+      "SIGNING",
+      "NATIVE_ASSET_IDS",
+      "NATIVE_ORDER_FILL_IDS",
+      "NATIVE_ERROR_CODES",
+      "NATIVE_RATE_LIMITS",
+      "NATIVE_STREAM_RECOVERY"
+    ]
+  },
+  "portabilityGate": {
+    "requiredAdapters": [
+      "MOCK",
+      "HYPERLIQUID",
+      "FUTURE_VENUE"
+    ],
+    "strategyContractRewriteRequiredForFutureVenue": false,
+    "riskContractRewriteRequiredForFutureVenue": false,
+    "plannerContractRewriteRequiredForFutureVenue": false,
+    "parallelDashboardRequiredForFutureVenue": false
+  },
+  "nextStep": "STEP_47B_HYPERLIQUID_API_SURFACE_AND_VENUE_SEMANTICS_MAPPING"
+}

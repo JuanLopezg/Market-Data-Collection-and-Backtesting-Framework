@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "manifestVersion": "step58a-v1",
+  "step56AcceptanceFingerprint": "0ec48c4566c7a1ba439164c2f242f061b8adf58eb801a536f34b8c12d55f64ae",
+  "step57ManualControlFingerprint": "65c0a7b418d7f3873f38f6a1daa87d5d915e4a254452865b79a69df24c3dc5f0",
+  "step58DashboardSimulationFingerprint": "ed65f18d0720f95c60443319d5e559407fa50340d9dc67f46c19868d20ae3852",
+  "datasetSha256": "7b4a48df39eb8049fb9f05856b0de44d80e8d21d2c513c9c6eb8db74405ae381",
+  "referenceFillSha256": "8716a111aae0be57f35cd8a6fa7f0a4b46423dc0c3f8e43f75e4a64a51bab5aa",
+  "realTestBaselineSha256": "454d53ae2cc22b79cb3aecc179184d5da65420992bc0f4d1993dca8cfba9796f",
+  "step58aConfigSha256": "f64a4275b16bc605a6583cac347ab926fd2727c861848a0e935865a1d998099b",
+  "combinedStep58aFingerprint": "c4c353e894ba789b934e0adfaec1b22d5d9134036285502d52e3256ea71d5271",
+  "true1500xTimeHandlerSmokeImplemented": true,
+  "fullHistoryRealTestCampaignImplemented": true,
+  "exactResearchComparatorReused": true,
+  "historicalExceptionIdentityGateImplemented": true,
+  "mockAccountingSeparatedFromGrossRealTestParity": true,
+  "fullHistoryCampaignExecutedByAssistant": false,
+  "true1500xSmokeExecutedByUser": false,
+  "fullHistoryCampaignExecutedByUser": false,
+  "visualDashboardAcceptanceExecutedByUser": false,
+  "privateRealVenueRoutingEnabled": false,
+  "nextAction": "RUN_STEP58A_1500X_THEN_FULL_HISTORY_REALTEST_THEN_VISUAL_STEP58"
+}

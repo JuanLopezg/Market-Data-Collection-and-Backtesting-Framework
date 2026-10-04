@@ -1,0 +1,18 @@
+{
+  "contractVersion": "step58-to-step59-v1",
+  "nextStep": "STEP_59_DETERMINISTIC_EVIDENCE_SPEED_INVARIANCE_RESTART",
+  "step58DashboardSimulationFingerprint": "ed65f18d0720f95c60443319d5e559407fa50340d9dc67f46c19868d20ae3852",
+  "requiredStep59Behavior": [
+    "repeat full-system replay with multiple TimeHandler speeds and compare economic/order/fill/ledger/reconciliation/accounting fingerprints",
+    "restart mid-run from durable Step53 recovery state and prove the same final economics",
+    "include deterministic Step55 chaos profile and prove repeatability",
+    "capture dashboard/read-model fingerprints without making UI refresh timing economic",
+    "fail closed on any divergent order fill accounting ledger or reconciliation evidence",
+    "do not carry MOCK statistical baselines automatically into Hyperliquid real acceptance"
+  ],
+  "forbiddenUntilLater": [
+    "private Hyperliquid auth/signing/routing",
+    "smart-order-routing",
+    "live capital"
+  ]
+}

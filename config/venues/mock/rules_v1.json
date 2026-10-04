@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "rulesVersion": "mock-rules-v1-step49",
+  "venueId": "MOCK",
+  "environment": "MOCK",
+  "policy": "SYNTHETIC_EXPLICIT_V1",
+  "note": "Synthetic deterministic MOCK rules. No real-venue parity claim.",
+  "profiles": [
+    {
+      "profileId": "MOCK_PERP_DEFAULT_V1",
+      "productClass": "PERPETUAL",
+      "settlementAsset": "USD",
+      "priceIncrement": "0.00000001",
+      "priceScale": 8,
+      "sizeIncrement": "0.00000001",
+      "sizeScale": 8,
+      "minSize": "0.00000001",
+      "minNotional": "10.00",
+      "maxLeverage": 20,
+      "marginModes": [
+        "CROSS",
+        "ISOLATED"
+      ],
+      "supportedTimeInForce": [
+        "GTC",
+        "IOC"
+      ],
+      "postOnly": true,
+      "reduceOnly": true,
+      "modify": true,
+      "clientOrderId": true,
+      "nativeIdempotentSubmit": true,
+      "admissionPrecisionPolicy": "REJECT_NONCONFORMING",
+      "enabled": true
+    }
+  ]
+}

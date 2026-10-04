@@ -1,0 +1,28 @@
+{
+  "contractVersion": "step54-to-step55-v1",
+  "nextStep": "STEP_55_FAULT_CHAOS_RATE_LIMIT_ENGINE",
+  "step53RecoveryFingerprint": "d7801a18523cf93e61f277373b2e2190070137f74ada03135fc79d1d5005dfdc",
+  "step54ReconciliationLedgerFingerprint": "8ea5f659e3bdb3f57c2e0a3408a8ab4a2fb017bdef648268bcbcf3cf9d6c0a2b",
+  "reconciliation": "MockVenueV1::MockReconciliationLedgerParityV1",
+  "requiredStep55Behavior": [
+    "deterministic disconnect/reconnect injection",
+    "stale snapshot injection",
+    "delayed response injection",
+    "lost response/ambiguous submit outcome injection",
+    "duplicate source/user event injection",
+    "out-of-order source/user event injection",
+    "canonical reject injection",
+    "deterministic rate-limit profile and recovery",
+    "venue unavailable state",
+    "deterministic chaos seed/fingerprint",
+    "unsafe or stale reconciliation blocks new submits",
+    "cancel/recovery paths remain available where required for risk reduction",
+    "chaos replay with identical seed produces identical economics and evidence"
+  ],
+  "forbiddenUntilLater": [
+    "full-system Strategy/Risk/Planner wiring",
+    "private Hyperliquid auth/signing/routing",
+    "smart-order-routing",
+    "live capital"
+  ]
+}

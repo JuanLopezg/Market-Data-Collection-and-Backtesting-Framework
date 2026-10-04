@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "manifestVersion": "step57-v1",
+  "step56AcceptanceFingerprint": "0ec48c4566c7a1ba439164c2f242f061b8adf58eb801a536f34b8c12d55f64ae",
+  "step56RuntimeFingerprint": "79ec33ef33b9fb45410b1a10038a74dc0ac6b00f064e75175bb9330f2fddf27f",
+  "manualControlConfigSha256": "1aaeabf118562d2bd096e26fe4b10f9a12953b913f47bb12c4c6fab7c504efae",
+  "combinedManualControlFingerprint": "65c0a7b418d7f3873f38f6a1daa87d5d915e4a254452865b79a69df24c3dc5f0",
+  "manualIntentContractImplemented": true,
+  "manualPortfolioRiskTransformationImplemented": true,
+  "productionNotionalPlannerUsed": true,
+  "canonicalVenueAdapterPathUsed": true,
+  "mockVenueExecutionUsed": true,
+  "fillDrivenManualPositionMirrorImplemented": true,
+  "reconciliationSafetyGateUsed": true,
+  "dashboardHttpTransportEnabled": false,
+  "privateRealVenueRoutingEnabled": false,
+  "nextStep": "STEP_58_DASHBOARD_SIMULATION_COMPLETION"
+}

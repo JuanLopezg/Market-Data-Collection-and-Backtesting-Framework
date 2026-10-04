@@ -236,6 +236,8 @@ func sortedKeys(values map[string]struct{}) []string {
 // contract and the dashboard remains independent from trading execution.
 func dashboardResourcesForSubject(subject string) []string {
 	switch subject {
+	case "simulation.step58.generation":
+		return []string{"*"}
 	case natsdiag.SubjectMarketDataRelease, natsdiag.SubjectMarketDataUpdated, natsdiag.SubjectMarketSliceClosed, natsdiag.SubjectMarketSliceSnapshot:
 		return []string{"shell-status", "overview", "market-data", "live-vs-expected", "pipeline", "alerts-audit"}
 	case natsdiag.SubjectStrategyIntents:

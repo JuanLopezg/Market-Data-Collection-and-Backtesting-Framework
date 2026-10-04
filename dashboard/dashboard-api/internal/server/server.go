@@ -583,6 +583,33 @@ func (s *Server) manualControlRoute(w http.ResponseWriter, r *http.Request) {
 		input.Filename = "manual-target.csv"
 	}
 
+	// Step58 simulation-only trading-control transport. The browser still only
+	// talks to dashboard-api. The provider durably queues a bounded request file
+	// consumed by the Step58 runner, which invokes the Step57 normal manual
+	// Risk -> Planner -> CanonicalVenueAdapter -> MOCK pipeline. REAL providers
+	// do not implement this interface and continue through the Step46 fail-closed path.
+	if router, simulation := s.provider.(interface {
+		RouteManualControl(context.Context, provider.SimulationManualRouteRequest) (provider.SimulationManualRouteResult, error)
+	}); simulation {
+		ctx, cancel := context.WithTimeout(r.Context(), s.cfg.ResourceTimeout)
+		defer cancel()
+		actor := value.Username + " / " + string(value.Role)
+		result, err := router.RouteManualControl(ctx, provider.SimulationManualRouteRequest{
+			Actor:                    actor,
+			Filename:                 strings.TrimSpace(input.Filename),
+			CSV:                      input.CSV,
+			RequestHash:              strings.TrimSpace(input.RequestHash),
+			ReferenceTargetTimestamp: strings.TrimSpace(input.ReferenceTargetTimestamp),
+		})
+		if err != nil {
+			s.cfg.Logger.Error("Step58 simulation manual route failed", "actor", value.Username, "error", err)
+			s.writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Step58 simulation trading-control transport unavailable"})
+			return
+		}
+		s.writeJSON(w, http.StatusOK, result)
+		return
+	}
+
 	previewer, ok := s.provider.(interface {
 		PreviewManualControl(context.Context, provider.ManualControlPreviewRequest) (provider.ManualControlData, error)
 	})

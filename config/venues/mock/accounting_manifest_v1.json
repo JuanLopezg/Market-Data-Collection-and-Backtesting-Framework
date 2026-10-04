@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "manifestVersion": "step52-v1",
+  "venueId": "MOCK",
+  "environment": "MOCK",
+  "step51MatchingFillFingerprint": "d06a71a4cbc7080cd4c05f7d5b3bc84ec06b55138d25590b8eefbb251e7c4720",
+  "accountingVersion": "mock-accounting-v1-step52",
+  "accountingConfigSha256": "00a83581026d8e952c192601f34b6f8265aa3386a1fabda2bd2d6e5ba5b49669",
+  "combinedAccountingFingerprint": "4fa2a7cc0e8c43f75f7fdcab2cd5b305755c48426ac3f13b4c10ed765dfac746",
+  "accountProjectionImplemented": true,
+  "positionsImplemented": true,
+  "realizedUnrealizedPnlImplemented": true,
+  "canonicalFeeRebateFundingEventsImplemented": true,
+  "marginStateImplemented": true,
+  "orderViewsImplemented": true,
+  "restartDurabilityImplemented": false,
+  "userStreamRecoveryImplemented": false,
+  "realVenueReconciliationImplemented": false,
+  "privateRealVenueRoutingEnabled": false,
+  "nextStep": "STEP_53_MOCK_SNAPSHOT_USER_STREAM_RECOVERY"
+}

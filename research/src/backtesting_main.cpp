@@ -17,6 +17,7 @@
 #include "realtest.h"
 #include "universe_selector.h"
 
+#include <cstdlib>
 #include <filesystem>
 #include <limits>
 #include <memory>
@@ -51,17 +52,53 @@ int main(int argc, char** argv)
         true    // include header
     );
 
-    const std::string databasePath =
-        "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/databases/1d_cmc.csv";
+    auto envText = [](const char* name, const std::string& fallback) {
+        const char* value = std::getenv(name);
+        return value != nullptr && *value != '\0'
+            ? std::string(value)
+            : fallback;
+    };
 
-    const std::filesystem::path backtestsDir =
-        "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests";
+    auto envTimestamp = [&](const char* name, Timestamp fallback) {
+        const std::string value = envText(name, "");
+        if (value.empty())
+            return fallback;
+        std::string digits;
+        for (const char ch : value) {
+            if (ch >= '0' && ch <= '9')
+                digits.push_back(ch);
+        }
+        if (digits.size() != 8U)
+            throw std::invalid_argument(std::string(name) + " must be YYYY-MM-DD or YYYYMMDD");
+        return static_cast<Timestamp>(std::stoul(digits));
+    };
 
-    // Set to true only when the reference CSV already exists.
-    constexpr bool compareWithReferenceBacktest = true;
+    const std::string databasePath = envText(
+        "ALGOTRADING_REPLAY_DATABASE_PATH",
+        "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/databases/1d_cmc.csv"
+    );
+
+    const std::filesystem::path backtestsDir = envText(
+        "ALGOTRADING_REPLAY_OUTPUT_DIR",
+        "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests"
+    );
+
+    const Timestamp replayStart = envTimestamp(
+        "ALGOTRADING_REPLAY_START_DATE",
+        00000000
+    );
+    const Timestamp replayEnd = envTimestamp(
+        "ALGOTRADING_REPLAY_END_DATE",
+        0
+    );
+
+    // The canonical research/replay.py front door owns RealTest comparison when this
+    // variable is set. Direct legacy runs preserve the historical behavior.
+    const bool compareWithReferenceBacktest =
+        envText("ALGOTRADING_REPLAY_SKIP_INTERNAL_REALTEST", "0") != "1";
 
     LG_INFO("Database loading started");
-    OHLCVData ohlcvData = loadDatabase(databasePath, 00000000);
+    OHLCVData ohlcvData = loadDatabase(databasePath, replayStart, replayEnd);
     LG_INFO("Database loaded successfully");
 
     double balance = 100000.0;
@@ -577,6 +614,13 @@ int main(int argc, char** argv)
     }
 
     LG_INFO("Active strategy: {}", activeStrategyName);
+
+    const std::string replayTradesOutput = envText(
+        "ALGOTRADING_REPLAY_TRADES_CSV",
+        ""
+    );
+    if (!replayTradesOutput.empty())
+        tradesCsvPath = replayTradesOutput;
 
     BacktestContext context(
         ohlcvData,

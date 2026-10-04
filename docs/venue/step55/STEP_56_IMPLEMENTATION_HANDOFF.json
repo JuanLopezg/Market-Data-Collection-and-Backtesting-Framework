@@ -1,0 +1,25 @@
+{
+  "contractVersion": "step55-to-step56-v1",
+  "nextStep": "STEP_56_FULL_SYSTEM_REPLAY_RUNTIME",
+  "step54ReconciliationLedgerFingerprint": "8ea5f659e3bdb3f57c2e0a3408a8ab4a2fb017bdef648268bcbcf3cf9d6c0a2b",
+  "step55FaultChaosFingerprint": "7bb82df68ea1187bd59bb40c9907a0186c8829935da623a6538d2809ac6f16ba",
+  "faultEngine": "MockVenueV1::MockFaultChaosRateLimitV1",
+  "requiredStep56Behavior": [
+    "wire historical market data through TimeHandler -> Strategy -> PortfolioRisk -> OrderPlanner",
+    "route explicitly configured MOCK orders through the canonical multi-venue boundary",
+    "compose Step50 admission, Step51 matcher, Step52 accounting, Step53 recovery, Step54 reconciliation/ledger, Step55 chaos",
+    "no alternate direct Strategy/Risk/Planner-to-MOCK bypass",
+    "new submits blocked whenever Step54/55 safety gate is not clean/fresh",
+    "cancel/recovery paths remain independent from the new-exposure gate",
+    "business/economic time remains TimeHandler/event time",
+    "full replay exposes orders/fills/positions/ledger/reconciliation/watchdog/dashboard read evidence",
+    "MOCK venue/catalog/rules/lifecycle/matching/accounting/recovery/reconciliation/chaos fingerprints carried into run evidence",
+    "no private real-venue auth/signing/routing"
+  ],
+  "forbiddenUntilLater": [
+    "manual control live routing",
+    "private Hyperliquid auth/signing/routing",
+    "smart-order-routing",
+    "live capital"
+  ]
+}

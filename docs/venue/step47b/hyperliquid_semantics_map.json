@@ -1,0 +1,1222 @@
+{
+  "contractVersion": "step47b-v1",
+  "artifactType": "HYPERLIQUID_API_SURFACE_AND_VENUE_SEMANTICS_MAPPING",
+  "basedOnCanonicalArchitecture": "step47a-v1",
+  "venueId": "HYPERLIQUID",
+  "reviewedAt": "2026-09-27",
+  "documentationPolicy": {
+    "authoritativeSource": "OFFICIAL_HYPERLIQUID_GITBOOK",
+    "privateCredentialsUsed": false,
+    "signedRequestsSent": false,
+    "ordersSent": false,
+    "capitalMoved": false,
+    "runtimeCodeChanged": false
+  },
+  "environmentEndpoints": {
+    "MAINNET": {
+      "rest": "https://api.hyperliquid.xyz",
+      "websocket": "wss://api.hyperliquid.xyz/ws"
+    },
+    "TESTNET": {
+      "rest": "https://api.hyperliquid-testnet.xyz",
+      "websocket": "wss://api.hyperliquid-testnet.xyz/ws"
+    }
+  },
+  "mappingClasses": [
+    "CANONICAL_MATCH",
+    "CANONICAL_WITH_VENUE_EXTENSION",
+    "HYPERLIQUID_ONLY",
+    "UNSUPPORTED_BY_CANONICAL_MODEL"
+  ],
+  "scopeClasses": [
+    "REQUIRED_FOR_CURRENT_STRATEGY",
+    "REQUIRED_FOR_REAL_RECONCILIATION",
+    "MOCK_REQUIRED",
+    "DEFERRED_FEATURE",
+    "OUT_OF_SCOPE"
+  ],
+  "capabilityAssessment": [
+    {
+      "capability": "MARKET_METADATA",
+      "support": "CONFIRMED",
+      "evidence": "meta/spotMeta and related context endpoints",
+      "sourceKey": "INFO_PERPS"
+    },
+    {
+      "capability": "TRADING_RULES",
+      "support": "CONFIRMED",
+      "evidence": "szDecimals, price precision rules and minimum notional rejection rules are documented",
+      "sourceKey": "TICK_LOT"
+    },
+    {
+      "capability": "SUBMIT_ORDER",
+      "support": "CONFIRMED",
+      "evidence": "order action",
+      "sourceKey": "EXCHANGE"
+    },
+    {
+      "capability": "CANCEL_ORDER",
+      "support": "CONFIRMED",
+      "evidence": "cancel and cancelByCloid actions",
+      "sourceKey": "EXCHANGE"
+    },
+    {
+      "capability": "MODIFY_ORDER",
+      "support": "CONFIRMED",
+      "evidence": "modify and batchModify actions",
+      "sourceKey": "EXCHANGE"
+    },
+    {
+      "capability": "CLIENT_ORDER_ID",
+      "support": "CONFIRMED",
+      "evidence": "optional 128-bit hex cloid",
+      "sourceKey": "EXCHANGE"
+    },
+    {
+      "capability": "IDEMPOTENT_SUBMIT",
+      "support": "NOT_CONFIRMED",
+      "evidence": "official docs document cloid but do not state that repeated submission with the same cloid is an idempotent-submit guarantee",
+      "sourceKey": "EXCHANGE"
+    },
+    {
+      "capability": "TIF_GTC",
+      "support": "CONFIRMED",
+      "evidence": "GTC documented",
+      "sourceKey": "EXCHANGE"
+    },
+    {
+      "capability": "TIF_IOC",
+      "support": "CONFIRMED",
+      "evidence": "IOC documented",
+      "sourceKey": "EXCHANGE"
+    },
+    {
+      "capability": "POST_ONLY",
+      "support": "CONFIRMED",
+      "evidence": "ALO is add-liquidity-only/post-only",
+      "sourceKey": "EXCHANGE"
+    },
+    {
+      "capability": "REDUCE_ONLY",
+      "support": "CONFIRMED",
+      "evidence": "order field r/reduceOnly",
+      "sourceKey": "EXCHANGE"
+    },
+    {
+      "capability": "BATCH_ACTIONS",
+      "support": "CONFIRMED",
+      "evidence": "orders/cancels can be batched and batchModify exists",
+      "sourceKey": "EXCHANGE"
+    },
+    {
+      "capability": "LEVERAGE",
+      "support": "CONFIRMED",
+      "evidence": "updateLeverage action and per-asset max leverage semantics",
+      "sourceKey": "EXCHANGE"
+    },
+    {
+      "capability": "MARGIN_STATE",
+      "support": "CONFIRMED",
+      "evidence": "clearinghouseState plus cross/isolated margin semantics",
+      "sourceKey": "INFO_PERPS"
+    },
+    {
+      "capability": "ACCOUNT_SNAPSHOT",
+      "support": "CONFIRMED",
+      "evidence": "clearinghouseState/spotClearinghouseState",
+      "sourceKey": "INFO_PERPS"
+    },
+    {
+      "capability": "OPEN_ORDERS",
+      "support": "CONFIRMED",
+      "evidence": "openOrders info + WS feed",
+      "sourceKey": "INFO"
+    },
+    {
+      "capability": "HISTORICAL_ORDERS",
+      "support": "CONFIRMED",
+      "evidence": "historicalOrders + orderStatus",
+      "sourceKey": "INFO"
+    },
+    {
+      "capability": "FILLS",
+      "support": "CONFIRMED",
+      "evidence": "userFills/userFillsByTime + WS userFills",
+      "sourceKey": "INFO"
+    },
+    {
+      "capability": "USER_STREAM",
+      "support": "CONFIRMED",
+      "evidence": "orderUpdates, userFills, userEvents, clearinghouseState, openOrders subscriptions",
+      "sourceKey": "WS_SUBS"
+    },
+    {
+      "capability": "SNAPSHOT_BACKFILL",
+      "support": "CONFIRMED",
+      "evidence": "snapshot acknowledgements, isSnapshot, reconnect and info-query recovery",
+      "sourceKey": "WS_SUBS"
+    },
+    {
+      "capability": "DEAD_MANS_SWITCH",
+      "support": "CONFIRMED",
+      "evidence": "scheduleCancel",
+      "sourceKey": "EXCHANGE"
+    },
+    {
+      "capability": "RATE_LIMIT_INTROSPECTION",
+      "support": "CONFIRMED",
+      "evidence": "userRateLimit info endpoint; static IP/WS/user limits separately documented",
+      "sourceKey": "INFO"
+    }
+  ],
+  "semantics": [
+    {
+      "id": "HL-001",
+      "surface": "ENVIRONMENT",
+      "nativeSemantic": "REST base URLs differ for MAINNET and TESTNET",
+      "canonicalMapping": [
+        "VenueEnvironment::Mainnet",
+        "VenueEnvironment::Testnet"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "REQUIRED_FOR_CURRENT_STRATEGY"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "API_ROOT",
+      "notes": "Environment is deployment/config data; no silent environment fallback."
+    },
+    {
+      "id": "HL-002",
+      "surface": "ENVIRONMENT",
+      "nativeSemantic": "WebSocket base URLs differ for MAINNET and TESTNET",
+      "canonicalMapping": [
+        "VenueEnvironment"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "MOCK_REQUIRED",
+        "REQUIRED_FOR_REAL_RECONCILIATION"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "WS",
+      "notes": "Adapter selects endpoint explicitly from environment."
+    },
+    {
+      "id": "HL-003",
+      "surface": "INFO",
+      "nativeSemantic": "/info is used for exchange/user state queries",
+      "canonicalMapping": [
+        "MARKET_METADATA",
+        "ACCOUNT_SNAPSHOT",
+        "OPEN_ORDERS",
+        "HISTORICAL_ORDERS",
+        "FILLS"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "REQUIRED_FOR_REAL_RECONCILIATION"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "INFO",
+      "notes": "Read/query surface stays adapter-owned."
+    },
+    {
+      "id": "HL-004",
+      "surface": "EXCHANGE",
+      "nativeSemantic": "/exchange carries signed actions",
+      "canonicalMapping": [
+        "SUBMIT_ORDER",
+        "CANCEL_ORDER",
+        "MODIFY_ORDER"
+      ],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "REQUIRED_FOR_CURRENT_STRATEGY"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "EXCHANGE",
+      "notes": "Signing and wire format stay inside HyperliquidAdapter."
+    },
+    {
+      "id": "HL-005",
+      "surface": "INFO",
+      "nativeSemantic": "time-range queries return bounded pages and require timestamp pagination",
+      "canonicalMapping": [
+        "SNAPSHOT_BACKFILL"
+      ],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "REQUIRED_FOR_REAL_RECONCILIATION",
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "INFO",
+      "notes": "Pagination limit is venue-native; canonical recovery must not assume unbounded history."
+    },
+    {
+      "id": "HL-006",
+      "surface": "ACCOUNT_IDENTITY",
+      "nativeSemantic": "Account state queries require actual master/subaccount address, not agent wallet address",
+      "canonicalMapping": [
+        "ACCOUNT_SNAPSHOT"
+      ],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "REQUIRED_FOR_REAL_RECONCILIATION"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "INFO",
+      "notes": "Signer identity and account identity must remain distinct inside adapter config."
+    },
+    {
+      "id": "HL-010",
+      "surface": "MARKET_METADATA",
+      "nativeSemantic": "perp meta returns universe and margin tables",
+      "canonicalMapping": [
+        "MARKET_METADATA",
+        "TRADING_RULES"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "REQUIRED_FOR_CURRENT_STRATEGY",
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "INFO_PERPS",
+      "notes": ""
+    },
+    {
+      "id": "HL-011",
+      "surface": "MARKET_METADATA",
+      "nativeSemantic": "metaAndAssetCtxs supplies perp contexts including mark/funding/open interest fields",
+      "canonicalMapping": [
+        "MARKET_METADATA"
+      ],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "INFO_PERPS",
+      "notes": "Current strategy market-data source remains independent; execution venue metadata is still required for rules/accounting."
+    },
+    {
+      "id": "HL-012",
+      "surface": "ACCOUNT",
+      "nativeSemantic": "clearinghouseState returns perp account/position/margin summary",
+      "canonicalMapping": [
+        "ACCOUNT_SNAPSHOT",
+        "MARGIN_STATE"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "REQUIRED_FOR_REAL_RECONCILIATION",
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "INFO_PERPS",
+      "notes": ""
+    },
+    {
+      "id": "HL-013",
+      "surface": "SPOT",
+      "nativeSemantic": "spotMeta describes token/pair universe and token IDs",
+      "canonicalMapping": [
+        "MARKET_METADATA"
+      ],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "DEFERRED_FEATURE"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "INFO_SPOT",
+      "notes": "Spot execution is not required for the first Hyperliquid adapter scope unless Step47C deliberately expands v1."
+    },
+    {
+      "id": "HL-014",
+      "surface": "SPOT",
+      "nativeSemantic": "spotClearinghouseState exposes token balances",
+      "canonicalMapping": [
+        "ACCOUNT_SNAPSHOT"
+      ],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "DEFERRED_FEATURE"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "INFO_SPOT",
+      "notes": ""
+    },
+    {
+      "id": "HL-015",
+      "surface": "ASSET_ID",
+      "nativeSemantic": "default perp asset is index in meta universe",
+      "canonicalMapping": [
+        "VenueAssetIdentity.venue_asset_id"
+      ],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "REQUIRED_FOR_CURRENT_STRATEGY"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "ASSET_IDS",
+      "notes": "Native integer ID must be stored explicitly; never derived heuristically from symbols."
+    },
+    {
+      "id": "HL-016",
+      "surface": "ASSET_ID",
+      "nativeSemantic": "builder-deployed/HIP-3 perp IDs use a dex-index based encoding",
+      "canonicalMapping": [
+        "VenueAssetIdentity.venue_asset_id"
+      ],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "DEFERRED_FEATURE"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "ASSET_IDS",
+      "notes": "Native encoding stays in adapter/registry leg."
+    },
+    {
+      "id": "HL-017",
+      "surface": "ASSET_ID",
+      "nativeSemantic": "spot asset ID uses 10000 + spot universe index and differs from token ID",
+      "canonicalMapping": [
+        "VenueAssetIdentity.venue_asset_id"
+      ],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "DEFERRED_FEATURE"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "ASSET_IDS",
+      "notes": ""
+    },
+    {
+      "id": "HL-018",
+      "surface": "ASSET_ID",
+      "nativeSemantic": "outcome assets use separate outcome/side encoding",
+      "canonicalMapping": [
+        "VenueAssetIdentity.venue_asset_id"
+      ],
+      "mappingClass": "HYPERLIQUID_ONLY",
+      "scopeTags": [
+        "OUT_OF_SCOPE"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "ASSET_IDS",
+      "notes": ""
+    },
+    {
+      "id": "HL-019",
+      "surface": "ASSET_ID",
+      "nativeSemantic": "MAINNET and TESTNET native asset IDs can differ",
+      "canonicalMapping": [
+        "VenueContext.environment",
+        "VenueAssetIdentity"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "REQUIRED_FOR_CURRENT_STRATEGY"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "ASSET_IDS",
+      "notes": "Registry mapping must be environment-aware."
+    },
+    {
+      "id": "HL-020",
+      "surface": "TRADING_RULES",
+      "nativeSemantic": "price supports up to five significant figures subject to decimal-place constraints; size follows szDecimals",
+      "canonicalMapping": [
+        "TRADING_RULES"
+      ],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "REQUIRED_FOR_CURRENT_STRATEGY",
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "TICK_LOT",
+      "notes": "Exact Hyperliquid rounding/validation belongs to concrete adapter/rule snapshot."
+    },
+    {
+      "id": "HL-021",
+      "surface": "TRADING_RULES",
+      "nativeSemantic": "minimum perp order notional is documented through MinTradeNtl rejection as $10; spot minimum is 10 quote tokens",
+      "canonicalMapping": [
+        "BELOW_MINIMUM"
+      ],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "REQUIRED_FOR_CURRENT_STRATEGY",
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "ERRORS",
+      "notes": "Treat rule as a versioned venue rule; Step62 revalidates before private integration."
+    },
+    {
+      "id": "HL-030",
+      "surface": "ORDER_SUBMIT",
+      "nativeSemantic": "order action accepts batched orders",
+      "canonicalMapping": [
+        "SUBMIT_ORDER",
+        "BATCH_ACTIONS"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "REQUIRED_FOR_CURRENT_STRATEGY",
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "EXCHANGE",
+      "notes": ""
+    },
+    {
+      "id": "HL-031",
+      "surface": "ORDER_TIF",
+      "nativeSemantic": "GTC rests until canceled/filled",
+      "canonicalMapping": [
+        "TIF_GTC"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "EXCHANGE",
+      "notes": ""
+    },
+    {
+      "id": "HL-032",
+      "surface": "ORDER_TIF",
+      "nativeSemantic": "IOC cancels unfilled remainder",
+      "canonicalMapping": [
+        "TIF_IOC"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "EXCHANGE",
+      "notes": ""
+    },
+    {
+      "id": "HL-033",
+      "surface": "ORDER_TIF",
+      "nativeSemantic": "ALO is add-liquidity-only/post-only and cancels rather than immediately matching",
+      "canonicalMapping": [
+        "POST_ONLY"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "EXCHANGE",
+      "notes": ""
+    },
+    {
+      "id": "HL-034",
+      "surface": "ORDER_FLAG",
+      "nativeSemantic": "reduceOnly is an explicit order field",
+      "canonicalMapping": [
+        "REDUCE_ONLY"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "EXCHANGE",
+      "notes": ""
+    },
+    {
+      "id": "HL-035",
+      "surface": "CLIENT_ID",
+      "nativeSemantic": "cloid is an optional 128-bit hex client order ID",
+      "canonicalMapping": [
+        "CLIENT_ORDER_ID",
+        "VenueNativeReferences.native_client_order_id"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "REQUIRED_FOR_CURRENT_STRATEGY",
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "EXCHANGE",
+      "notes": ""
+    },
+    {
+      "id": "HL-036",
+      "surface": "IDEMPOTENCY",
+      "nativeSemantic": "Docs document cloid, but do not state a repeated-submit same-cloid idempotency guarantee",
+      "canonicalMapping": [
+        "IDEMPOTENT_SUBMIT"
+      ],
+      "mappingClass": "UNSUPPORTED_BY_CANONICAL_MODEL",
+      "scopeTags": [
+        "REQUIRED_FOR_CURRENT_STRATEGY",
+        "MOCK_REQUIRED"
+      ],
+      "support": "NOT_CONFIRMED",
+      "sourceKey": "EXCHANGE",
+      "notes": "Step47C must define canonical/local idempotency policy without assuming cloid alone is a venue guarantee."
+    },
+    {
+      "id": "HL-037",
+      "surface": "TRIGGER_ORDER",
+      "nativeSemantic": "order payload supports trigger TP/SL with isMarket, triggerPx and tpsl",
+      "canonicalMapping": [],
+      "mappingClass": "UNSUPPORTED_BY_CANONICAL_MODEL",
+      "scopeTags": [
+        "DEFERRED_FEATURE"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "EXCHANGE",
+      "notes": "47A capability vocabulary has no trigger-order/TP-SL capability."
+    },
+    {
+      "id": "HL-038",
+      "surface": "ORDER_GROUPING",
+      "nativeSemantic": "order action supports grouping na/normalTpsl/positionTpsl",
+      "canonicalMapping": [],
+      "mappingClass": "UNSUPPORTED_BY_CANONICAL_MODEL",
+      "scopeTags": [
+        "DEFERRED_FEATURE"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "EXCHANGE",
+      "notes": "Venue-specific grouping must not leak into core unless deliberately modeled."
+    },
+    {
+      "id": "HL-039",
+      "surface": "CANCEL",
+      "nativeSemantic": "cancel uses asset + native oid",
+      "canonicalMapping": [
+        "CANCEL_ORDER",
+        "VenueNativeReferences.native_order_id"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "REQUIRED_FOR_CURRENT_STRATEGY",
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "EXCHANGE",
+      "notes": ""
+    },
+    {
+      "id": "HL-040",
+      "surface": "CANCEL",
+      "nativeSemantic": "cancelByCloid cancels using asset + cloid",
+      "canonicalMapping": [
+        "CANCEL_ORDER",
+        "CLIENT_ORDER_ID"
+      ],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "EXCHANGE",
+      "notes": ""
+    },
+    {
+      "id": "HL-041",
+      "surface": "MODIFY",
+      "nativeSemantic": "modify can address order by oid or cloid and supplies replacement order fields",
+      "canonicalMapping": [
+        "MODIFY_ORDER"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "REQUIRED_FOR_CURRENT_STRATEGY",
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "EXCHANGE",
+      "notes": ""
+    },
+    {
+      "id": "HL-042",
+      "surface": "MODIFY",
+      "nativeSemantic": "batchModify modifies multiple orders in one action",
+      "canonicalMapping": [
+        "MODIFY_ORDER",
+        "BATCH_ACTIONS"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "EXCHANGE",
+      "notes": ""
+    },
+    {
+      "id": "HL-043",
+      "surface": "DEAD_MANS_SWITCH",
+      "nativeSemantic": "scheduleCancel schedules cancel-all; omitting time removes it",
+      "canonicalMapping": [
+        "DEAD_MANS_SWITCH"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "EXCHANGE",
+      "notes": "Hyperliquid timing/trigger-count details are adapter-native."
+    },
+    {
+      "id": "HL-044",
+      "surface": "LEVERAGE",
+      "nativeSemantic": "updateLeverage configures cross/isolated leverage per asset",
+      "canonicalMapping": [
+        "LEVERAGE"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "EXCHANGE",
+      "notes": ""
+    },
+    {
+      "id": "HL-045",
+      "surface": "MARGIN",
+      "nativeSemantic": "updateIsolatedMargin/topUpIsolatedOnlyMargin are venue-native isolated-margin actions",
+      "canonicalMapping": [
+        "MARGIN_STATE"
+      ],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "DEFERRED_FEATURE"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "EXCHANGE",
+      "notes": ""
+    },
+    {
+      "id": "HL-046",
+      "surface": "ACTION_EXPIRY",
+      "nativeSemantic": "some actions support expiresAfter; stale expiry consumes extra address-based rate limit",
+      "canonicalMapping": [],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "DEFERRED_FEATURE"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "EXCHANGE",
+      "notes": "Potential adapter safety feature, not a universal core assumption."
+    },
+    {
+      "id": "HL-047",
+      "surface": "API_WALLET",
+      "nativeSemantic": "approveAgent authorizes an API/agent wallet; agent wallet signs on behalf of account/subaccounts",
+      "canonicalMapping": [],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "DEFERRED_FEATURE"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "NONCES",
+      "notes": "Private integration belongs to historical Step37; no key material is introduced in Step47B."
+    },
+    {
+      "id": "HL-048",
+      "surface": "NONCE",
+      "nativeSemantic": "Hyperliquid keeps a signer-specific set of high nonces with a documented time window",
+      "canonicalMapping": [],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "REQUIRED_FOR_CURRENT_STRATEGY"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "NONCES",
+      "notes": "Nonce generation/replay protection is adapter-owned."
+    },
+    {
+      "id": "HL-049",
+      "surface": "SIGNING",
+      "nativeSemantic": "Docs describe two signing schemes and msgpack/address/number formatting pitfalls",
+      "canonicalMapping": [],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "REQUIRED_FOR_CURRENT_STRATEGY"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "SIGNING",
+      "notes": "No signing implementation in Step47B."
+    },
+    {
+      "id": "HL-050",
+      "surface": "TRANSFER",
+      "nativeSemantic": "USDC/spot transfers, withdrawals, staking, vault actions exist on /exchange",
+      "canonicalMapping": [],
+      "mappingClass": "HYPERLIQUID_ONLY",
+      "scopeTags": [
+        "OUT_OF_SCOPE"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "EXCHANGE",
+      "notes": "Capital movement is intentionally outside current trading adapter scope."
+    },
+    {
+      "id": "HL-051",
+      "surface": "TWAP",
+      "nativeSemantic": "twapOrder/twapCancel are supported venue-native actions",
+      "canonicalMapping": [],
+      "mappingClass": "HYPERLIQUID_ONLY",
+      "scopeTags": [
+        "DEFERRED_FEATURE"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "EXCHANGE",
+      "notes": "Not required for current PureRSI execution path."
+    },
+    {
+      "id": "HL-052",
+      "surface": "NONCE_CONTROL",
+      "nativeSemantic": "noop can invalidate/use a pending nonce",
+      "canonicalMapping": [],
+      "mappingClass": "HYPERLIQUID_ONLY",
+      "scopeTags": [
+        "DEFERRED_FEATURE"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "EXCHANGE",
+      "notes": "Adapter-native optimization/safety primitive."
+    },
+    {
+      "id": "HL-060",
+      "surface": "OPEN_ORDERS",
+      "nativeSemantic": "openOrders info returns current open orders",
+      "canonicalMapping": [
+        "OPEN_ORDERS"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "REQUIRED_FOR_REAL_RECONCILIATION",
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "INFO",
+      "notes": ""
+    },
+    {
+      "id": "HL-061",
+      "surface": "ORDER_STATUS",
+      "nativeSemantic": "orderStatus queries by oid or cloid and exposes detailed lifecycle statuses",
+      "canonicalMapping": [
+        "HISTORICAL_ORDERS"
+      ],
+      "mappingClass": "UNSUPPORTED_BY_CANONICAL_MODEL",
+      "scopeTags": [
+        "REQUIRED_FOR_REAL_RECONCILIATION",
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "INFO",
+      "notes": "47A has no canonical order-lifecycle status vocabulary; Step47C must freeze one."
+    },
+    {
+      "id": "HL-062",
+      "surface": "ORDER_HISTORY",
+      "nativeSemantic": "historicalOrders returns recent order history with status",
+      "canonicalMapping": [
+        "HISTORICAL_ORDERS"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "REQUIRED_FOR_REAL_RECONCILIATION",
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "INFO",
+      "notes": ""
+    },
+    {
+      "id": "HL-063",
+      "surface": "FILLS",
+      "nativeSemantic": "userFills returns recent fills including px/sz/oid/fee/closedPnl/hash/tid",
+      "canonicalMapping": [
+        "FILLS",
+        "VenueNativeReferences.native_fill_id"
+      ],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "REQUIRED_FOR_REAL_RECONCILIATION",
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "INFO",
+      "notes": "Adapter must preserve native evidence without making Hyperliquid fill fields universal."
+    },
+    {
+      "id": "HL-064",
+      "surface": "FILLS",
+      "nativeSemantic": "userFillsByTime supplies bounded time-window recovery",
+      "canonicalMapping": [
+        "FILLS",
+        "SNAPSHOT_BACKFILL"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "REQUIRED_FOR_REAL_RECONCILIATION",
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "INFO",
+      "notes": ""
+    },
+    {
+      "id": "HL-065",
+      "surface": "RATE_LIMIT",
+      "nativeSemantic": "userRateLimit exposes address-based request capacity/usage",
+      "canonicalMapping": [
+        "RATE_LIMIT_INTROSPECTION"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "INFO",
+      "notes": ""
+    },
+    {
+      "id": "HL-066",
+      "surface": "FEES",
+      "nativeSemantic": "user fee schedule/rates are queryable through info",
+      "canonicalMapping": [],
+      "mappingClass": "UNSUPPORTED_BY_CANONICAL_MODEL",
+      "scopeTags": [
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "INFO",
+      "notes": "Mock accounting needs fees, but Step47A capability vocabulary has no fee-schedule/accounting capability."
+    },
+    {
+      "id": "HL-067",
+      "surface": "FUNDING",
+      "nativeSemantic": "user funding is available through user stream/info surfaces",
+      "canonicalMapping": [],
+      "mappingClass": "UNSUPPORTED_BY_CANONICAL_MODEL",
+      "scopeTags": [
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "WS_SUBS",
+      "notes": "Mock Step52 requires funding where applicable; Step47A has no funding capability/vocabulary."
+    },
+    {
+      "id": "HL-070",
+      "surface": "WS_USER_STREAM",
+      "nativeSemantic": "orderUpdates streams user order lifecycle updates",
+      "canonicalMapping": [
+        "USER_STREAM"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "REQUIRED_FOR_REAL_RECONCILIATION",
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "WS_SUBS",
+      "notes": ""
+    },
+    {
+      "id": "HL-071",
+      "surface": "WS_USER_STREAM",
+      "nativeSemantic": "userFills provides snapshot then streaming fills",
+      "canonicalMapping": [
+        "USER_STREAM",
+        "FILLS",
+        "SNAPSHOT_BACKFILL"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "REQUIRED_FOR_REAL_RECONCILIATION",
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "WS_SUBS",
+      "notes": ""
+    },
+    {
+      "id": "HL-072",
+      "surface": "WS_USER_STREAM",
+      "nativeSemantic": "clearinghouseState and openOrders subscriptions expose user state",
+      "canonicalMapping": [
+        "USER_STREAM",
+        "ACCOUNT_SNAPSHOT",
+        "OPEN_ORDERS"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "REQUIRED_FOR_REAL_RECONCILIATION",
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "WS_SUBS",
+      "notes": ""
+    },
+    {
+      "id": "HL-073",
+      "surface": "WS_RECOVERY",
+      "nativeSemantic": "time-series user feeds mark first replay message isSnapshot=true",
+      "canonicalMapping": [
+        "SNAPSHOT_BACKFILL"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "REQUIRED_FOR_REAL_RECONCILIATION",
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "WS_SUBS",
+      "notes": ""
+    },
+    {
+      "id": "HL-074",
+      "surface": "WS_RECOVERY",
+      "nativeSemantic": "automated clients must reconnect; missed data can be recovered from snapshot ack or corresponding info request",
+      "canonicalMapping": [
+        "SNAPSHOT_BACKFILL"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "REQUIRED_FOR_REAL_RECONCILIATION",
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "WS",
+      "notes": ""
+    },
+    {
+      "id": "HL-075",
+      "surface": "WS_HEARTBEAT",
+      "nativeSemantic": "connection can be closed after 60 seconds without server-sent messages; ping/pong keeps it alive",
+      "canonicalMapping": [],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "WS_HEARTBEAT",
+      "notes": "Technical transport timing uses wall/monotonic time, not TimeHandler."
+    },
+    {
+      "id": "HL-076",
+      "surface": "WS_POST",
+      "nativeSemantic": "WebSocket can carry info requests and signed actions using request id correlation",
+      "canonicalMapping": [],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "DEFERRED_FEATURE"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "WS_POST",
+      "notes": "Transport choice is adapter-owned; canonical semantics must be identical to REST path."
+    },
+    {
+      "id": "HL-077",
+      "surface": "RATE_LIMIT",
+      "nativeSemantic": "REST has weighted per-IP limits; WebSocket has connection/subscription/message/inflight limits",
+      "canonicalMapping": [],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "RATE_LIMITS",
+      "notes": "Exact numbers are versioned venue-native policy, revalidated at Step62."
+    },
+    {
+      "id": "HL-078",
+      "surface": "RATE_LIMIT",
+      "nativeSemantic": "address-based action limits depend on cumulative traded volume with a starter buffer; cancels have a separate larger allowance",
+      "canonicalMapping": [],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "RATE_LIMITS",
+      "notes": ""
+    },
+    {
+      "id": "HL-079",
+      "surface": "RATE_LIMIT",
+      "nativeSemantic": "open-order count has a user limit and high-count behavior can reject certain orders",
+      "canonicalMapping": [],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "RATE_LIMITS",
+      "notes": ""
+    },
+    {
+      "id": "HL-080",
+      "surface": "ERRORS",
+      "nativeSemantic": "batched order/cancel errors are usually returned per item",
+      "canonicalMapping": [
+        "VenueError"
+      ],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "ERRORS",
+      "notes": ""
+    },
+    {
+      "id": "HL-081",
+      "surface": "ERRORS",
+      "nativeSemantic": "some payload pre-validation failures return one error for the entire batch",
+      "canonicalMapping": [
+        "VenueError"
+      ],
+      "mappingClass": "UNSUPPORTED_BY_CANONICAL_MODEL",
+      "scopeTags": [
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "ERRORS",
+      "notes": "Step47A does not define operation-level vs per-item batch result envelopes."
+    },
+    {
+      "id": "HL-082",
+      "surface": "ORDER_LIFECYCLE",
+      "nativeSemantic": "orderStatus includes open/filled/canceled/triggered/rejected and multiple cancel/reject terminal reasons",
+      "canonicalMapping": [],
+      "mappingClass": "UNSUPPORTED_BY_CANONICAL_MODEL",
+      "scopeTags": [
+        "REQUIRED_FOR_REAL_RECONCILIATION",
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "INFO",
+      "notes": "Step47C must define canonical lifecycle/status + reason mapping."
+    },
+    {
+      "id": "HL-083",
+      "surface": "FILL_IDENTITY",
+      "nativeSemantic": "WebSocket docs note tid alone is not globally unique; global identity can require block_time + coin + tid",
+      "canonicalMapping": [
+        "VenueNativeReferences.native_fill_id"
+      ],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "REQUIRED_FOR_REAL_RECONCILIATION",
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "WS_SUBS",
+      "notes": "HyperliquidAdapter must construct a stable opaque native fill reference; do not assume tid alone."
+    },
+    {
+      "id": "HL-084",
+      "surface": "SYMBOL_MAPPING",
+      "nativeSemantic": "UI asset names can be remapped relative to HyperCore/L1 names",
+      "canonicalMapping": [
+        "VenueAssetIdentity"
+      ],
+      "mappingClass": "CANONICAL_MATCH",
+      "scopeTags": [
+        "REQUIRED_FOR_CURRENT_STRATEGY"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "INFO",
+      "notes": "Confirms explicit versioned registry; never trust UI-name heuristics."
+    },
+    {
+      "id": "HL-085",
+      "surface": "PRODUCT_PARTITION",
+      "nativeSemantic": "perp APIs include a dex dimension and builder-deployed perps have dex-qualified names",
+      "canonicalMapping": [],
+      "mappingClass": "UNSUPPORTED_BY_CANONICAL_MODEL",
+      "scopeTags": [
+        "DEFERRED_FEATURE"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "INFO_PERPS",
+      "notes": "Step47A asset identity lacks an explicit canonical product/market partition; Step47C must decide whether to add one."
+    },
+    {
+      "id": "HL-086",
+      "surface": "SUBACCOUNT_VAULT",
+      "nativeSemantic": "subaccounts/vaults use master signing plus vaultAddress; they have no private key of their own",
+      "canonicalMapping": [],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "DEFERRED_FEATURE"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "EXCHANGE",
+      "notes": "Adapter authentication/account-selection concern."
+    },
+    {
+      "id": "HL-087",
+      "surface": "MARGIN_MODEL",
+      "nativeSemantic": "perps support cross, isolated and isolated-only margin concepts",
+      "canonicalMapping": [
+        "MARGIN_STATE",
+        "LEVERAGE"
+      ],
+      "mappingClass": "CANONICAL_WITH_VENUE_EXTENSION",
+      "scopeTags": [
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "MARGINING",
+      "notes": ""
+    },
+    {
+      "id": "HL-088",
+      "surface": "REJECT_MAPPING",
+      "nativeSemantic": "open-interest cap, oracle and max-position rejections have distinct native reasons",
+      "canonicalMapping": [
+        "VenueErrorClass::Unknown"
+      ],
+      "mappingClass": "UNSUPPORTED_BY_CANONICAL_MODEL",
+      "scopeTags": [
+        "MOCK_REQUIRED"
+      ],
+      "support": "CONFIRMED",
+      "sourceKey": "ERRORS",
+      "notes": "47A error taxonomy can preserve them as native evidence but lacks a useful canonical risk/venue-limit class; Step47C decides whether to extend."
+    }
+  ],
+  "step47cRequiredGaps": [
+    "CANONICAL_ORDER_LIFECYCLE_VOCABULARY",
+    "IDEMPOTENT_SUBMIT_POLICY",
+    "TRIGGER_TPSL_CAPABILITY_DECISION",
+    "FEE_AND_FUNDING_ACCOUNTING_VOCABULARY",
+    "CANONICAL_PRODUCT_MARKET_IDENTITY",
+    "BATCH_OPERATION_RESULT_ENVELOPE",
+    "VENUE_RISK_LIMIT_REJECT_TAXONOMY",
+    "NATIVE_FILL_IDENTITY_RULE",
+    "V1_HYPERLIQUID_PRODUCT_SCOPE_FREEZE"
+  ],
+  "explicitlyOutOfScopeForStep47B": [
+    "private key or seed handling",
+    "API wallet creation/approval",
+    "signature implementation",
+    "live or testnet private order submission",
+    "capital transfers/withdrawals/staking/vault operations",
+    "runtime VenueAdapter implementation",
+    "smart-order-routing or split routing"
+  ],
+  "nextStep": "STEP_47C_PORTABILITY_AND_ARCHITECTURE_FREEZE_GATE"
+}

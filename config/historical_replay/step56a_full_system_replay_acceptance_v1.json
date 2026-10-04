@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "acceptanceVersion": "step56a-full-system-replay-acceptance-v1",
+  "boundStep56RuntimeFingerprint": "79ec33ef33b9fb45410b1a10038a74dc0ac6b00f064e75175bb9330f2fddf27f",
+  "dataset": {
+    "path": "deploy/historical_replay/run/1d_cmc_by_date.csv",
+    "sha256": "7b4a48df39eb8049fb9f05856b0de44d80e8d21d2c513c9c6eb8db74405ae381",
+    "fullDatasetFirstDate": "2020-01-01",
+    "fullDatasetLastDate": "2025-10-13",
+    "acceptanceStartDate": "2020-01-01",
+    "acceptanceEndDate": "2020-04-16",
+    "expectedAcceptanceRows": 3401,
+    "expectedAcceptanceDays": 107,
+    "expectedAcceptanceSourceSymbols": 37,
+    "fullDatasetSourceSymbols": 150
+  },
+  "sourceMapping": {
+    "path": "config/historical_replay/step56a_source_symbol_map_v1.csv",
+    "sha256": "f83fe5ae3ebb128331bfcf97d678aa78d58138c7f2bb9b2f370502fcb7d69fa7",
+    "entries": 150,
+    "policy": "EXPLICIT_EXACT_ONLY_NO_RUNTIME_SUFFIX_OR_ALIAS_HEURISTIC"
+  },
+  "strategy": {
+    "configPath": "config/strategies/pure_rsi_signal.json",
+    "sha256": "5749bef7d6adfc1aeee9d3d0adaa6ec05daa7d6f93c1c4cbee5bca6f7bcf407a",
+    "id": 1,
+    "type": "PureRSI",
+    "maxActiveSignals": 10,
+    "maxRankingPosition": 1000000,
+    "universe": "TOP_20_BY_SMA_VOLUME_25",
+    "ranker": "RSI_CLOSE_7_DESC",
+    "rsiEntry": 80.0,
+    "rsiExit": 70.0
+  },
+  "portfolioRisk": {
+    "configPath": "config/portfolio/pure_rsi_equal_weight.json",
+    "sha256": "8cdcdee3b868ec2d7e23cb73eb2a4d15b2c9f8d3f14ca4aa29630f4a77e95ed2",
+    "allocationWeight": 1.0,
+    "equalWeightPerFullSignal": 0.1,
+    "maxGrossLeverage": 1.5,
+    "maxAssetWeight": 1.5,
+    "rebalance": "ENTRY_EXIT_ONLY"
+  },
+  "releaseClock": {
+    "implementation": "TimeHandler",
+    "speed": 100000000.0,
+    "openPhase": "00:00:00Z",
+    "closePhase": "23:59:59Z",
+    "logicalOpenTimestamp": "YYYYMMDD*10+1",
+    "logicalCloseTimestamp": "YYYYMMDD*10+9",
+    "economicResultsDependOnWallClock": false
+  },
+  "mockRuntime": {
+    "initialCash": "100000.00",
+    "matching": "STEP51_DEFAULT",
+    "accounting": "STEP52_DEFAULT",
+    "autoChaosFaults": false,
+    "rateLimitsRaisedForAcceptanceHarnessOnly": true
+  },
+  "scope": {
+    "fullSystemPipeline": true,
+    "fullHistoricalDataset": false,
+    "note": "Full-system means every trading stage is exercised; this fast gate intentionally uses the frozen 107-day real-history acceptance window, not the entire 2020-2025 dataset."
+  },
+  "expectedBaseline": {
+    "sourceRows": 3401,
+    "days": 107,
+    "sourceSymbolsInWindow": 37,
+    "mappingEntries": 150,
+    "plannedSubmits": 50,
+    "plannedCancels": 0,
+    "canonicalFills": 50,
+    "canonicalAccountingEvents": 50,
+    "knownOrders": 50,
+    "openOrders": 0,
+    "finalPositions": 0,
+    "finalEquity": 106407.26746549,
+    "reconciliation": "CLEAN",
+    "reconciliationIssues": 0,
+    "routeSafe": true,
+    "economicFingerprint": "862ebbaf6ac97f2e",
+    "streamFingerprint": "973c0e9124f20021",
+    "ledgerHeadHash": "25d7e82d07afef691de2044ef7019717b2c43bf7f903530bc2f15233e9bad04f",
+    "chaosEvidenceFingerprint": "f8c85845b2585d7ac15c5f6e0595b43d3cdbfc6ed5e70d1ba0ac17fb491a8eb3",
+    "fullRunFingerprint": "5bf459d5a560172fad310416f9c0c749b0d2ff81ccbc88d44c814876c62f2bb4",
+    "step56RuntimeFingerprint": "79ec33ef33b9fb45410b1a10038a74dc0ac6b00f064e75175bb9330f2fddf27f"
+  },
+  "nextStep": "STEP_57_MANUAL_CONTROL_TO_MOCK_NORMAL_PIPELINE"
+}

@@ -1,0 +1,19 @@
+{
+  "candidateTradesStartedByCutoff": 631,
+  "closedTradesFullyCompared": 630,
+  "comparisonCsv": "deploy/historical_replay/run/research_replay/fast_baseline_before_fix/realtest_trade_comparison.csv",
+  "cutoff": "2025-10-13",
+  "knownExceptionsObserved": [
+    "candidate:522:FET",
+    "reference:502:BNB",
+    "reference:519:FET",
+    "reference:631:ZEC"
+  ],
+  "numericTolerance": "same dynamic RealTest policy: min(20% + 0.2%*trade_id, 50%)",
+  "openTradeRule": "entry date + entry price + quantity only; exit/PnL ignored until closed",
+  "openTradesEntryOnlyCompared": 0,
+  "policy": "PARTIAL_REALTEST_CUTOFF_V1",
+  "referenceTradesStartedByCutoff": 631,
+  "result": "PASS",
+  "unexpectedDifferences": []
+}

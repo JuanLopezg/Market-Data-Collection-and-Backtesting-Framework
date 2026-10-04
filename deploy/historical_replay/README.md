@@ -1,4 +1,30 @@
-# Historical replay topology — T15
+# Historical replay — current canonical entry point
+
+For current research acceptance, use the single public replay wrapper rather than invoking the older distributed T15 topology directly:
+
+```bash
+python3 research/replay.py {fast|system|dashboard}
+```
+
+Current canonical source dataset: `deploy/historical_replay/run/1d_cmc_by_date.csv`, derived from the historical source and covering the accepted full-history window `2020-01-01..2025-10-13`.
+
+The `realtest-parity` profile preserves original OHLCV and reproduces the old Backtester next-open execution economics with zero parity fees/slippage and no execution volume-capacity limit. `system` and `dashboard` have been validated to the same full-history fingerprint:
+
+```text
+1551106eac4dd7b712729f72980ac196308d61b1d7cbb9e538c557271415cbf0
+```
+
+`dashboard` is the same economic replay plus state publication. Restart/resume is supported for both `system` and `dashboard` through `--checkpoint-every`, `--stop-after-days`, and `--resume`.
+
+Important: `--start` starts the simulation cold at that date. To keep prior warm-up/history and slow only a later interval, use `--pace-start` / `--pace-end` instead.
+
+See root `CURRENT_STATE.md` and `research/REPLAY.md` for the active contract.
+
+---
+
+# Legacy distributed historical replay topology — T15
+
+The section below documents the older isolated distributed-replay topology. It is retained as historical architecture/validation material and is not the current RealTest acceptance entry point.
 
 This deployment is isolated from LIVE and from the legacy `deploy/distributed_replay` topology.
 It has its own Docker network, NATS JetStream volume, PostgreSQL volume, canonical market-data

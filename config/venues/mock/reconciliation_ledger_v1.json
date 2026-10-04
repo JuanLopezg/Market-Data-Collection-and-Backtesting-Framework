@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "reconciliationVersion": "mock-reconciliation-ledger-v1-step54",
+  "venueId": "MOCK",
+  "environment": "MOCK",
+  "boundStep53RecoveryFingerprint": "d7801a18523cf93e61f277373b2e2190070137f74ada03135fc79d1d5005dfdc",
+  "states": [
+    "CLEAN",
+    "BLOCKED",
+    "PENDING"
+  ],
+  "freshnessPolicy": {
+    "localExpectedSequenceMustEqualVenueSnapshotSequence": true,
+    "sequenceMismatch": "PENDING",
+    "missingVenueEvidence": "PENDING",
+    "recoveryUnsafe": "BLOCKED"
+  },
+  "dimensions": {
+    "cash": "SETTLED_CASH_BALANCE_TOTAL_EXACT_FIXED_POINT",
+    "positions": [
+      "EXACT_CANONICAL_INSTRUMENT_IDENTITY",
+      "SIGNED_QUANTITY",
+      "AVERAGE_ENTRY_PRICE"
+    ],
+    "openOrders": [
+      "LOCAL_ORDER_ID",
+      "EXACT_CANONICAL_INSTRUMENT_IDENTITY",
+      "STATUS",
+      "CUMULATIVE_FILLED_QUANTITY",
+      "REMAINING_QUANTITY",
+      "NATIVE_ORDER_ID",
+      "NATIVE_CLIENT_ORDER_ID"
+    ],
+    "fills": [
+      "NATIVE_FILL_ID",
+      "LOCAL_ORDER_ID",
+      "STRATEGY_ID",
+      "EVENT_TIME",
+      "SIDE",
+      "QUANTITY",
+      "PRICE",
+      "EXACT_CANONICAL_INSTRUMENT_IDENTITY",
+      "NATIVE_ORDER_ID",
+      "NATIVE_CLIENT_ORDER_ID"
+    ],
+    "intentionallyNotComparedInV1": [
+      "MARK_PRICE",
+      "UNREALIZED_PNL",
+      "EQUITY",
+      "MARGIN_USED",
+      "LEVERAGE"
+    ],
+    "notComparedReason": "STEP53_USER_STREAM_HAS_NO_CANONICAL_MARK_OR_LEVERAGE_INCREMENTAL_EVENT;_DO_NOT_FABRICATE_LOCAL_EXPECTED_VALUES"
+  },
+  "ledger": {
+    "source": "CANONICAL_USER_STREAM_FILL_PLUS_ACCOUNTING_EVENTS",
+    "initialCash": "100000.00",
+    "moneyScale": 8,
+    "hashChain": "SHA256",
+    "genesisHash": "64_ZERO_HEX",
+    "entryKinds": [
+      "FILL",
+      "TRADING_FEE",
+      "REBATE",
+      "FUNDING_PAYMENT"
+    ],
+    "fillEntryId": "fill:<native_fill_id>",
+    "accountingEntryId": "accounting:<correlation_id>",
+    "fillCashDelta": "REALIZED_PNL_ONLY",
+    "principalCashMovementOnFill": false,
+    "tradingFeePpm": 400,
+    "exactlyOneTradingFeePerFill": true,
+    "finalCashMustMatchVenueSettledCash": true,
+    "finalPositionsMustMatchVenuePositions": true,
+    "fillSetMustMatchVenueFillSnapshot": true
+  },
+  "routingGate": {
+    "newSubmitRequires": [
+      "LAST_RECONCILIATION_CLEAN",
+      "RECONCILED_SEQUENCE_EQUALS_CURRENT_VENUE_SEQUENCE",
+      "VENUE_RECOVERY_SAFE"
+    ],
+    "blockedOrPending": "NO_NEW_SUBMIT",
+    "stateAdvanceAfterClean": "PENDING_UNTIL_RECONCILED_AGAIN",
+    "cancelModifyPolicy": "NOT_BLOCKED_BY_THIS_NEW_ORDER_GATE"
+  },
+  "restartRequirement": "SAME_RECOVERED_STATE_MUST_RECONCILE_CLEAN_WITH_SAME_LEDGER_HEAD",
+  "wallClockUsedForEconomicsOrReconciliation": false,
+  "realVenueReconciliationImplemented": false,
+  "privateRealVenueRoutingEnabled": false,
+  "nextStep": "STEP_55_FAULT_CHAOS_RATE_LIMIT_ENGINE"
+}

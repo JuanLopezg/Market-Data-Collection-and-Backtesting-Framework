@@ -1,0 +1,47 @@
+{
+  "candidateTrades": "deploy/historical_replay/run/research_replay/system_100d/candidate_trades.csv",
+  "canonicalFills": 40,
+  "closedCandidateTrades": 18,
+  "days": 100,
+  "economicFingerprint": "ae5feef50b1cd3c4",
+  "end": "2020-04-09",
+  "fillStructure": {
+    "candidateFills": 40,
+    "cutoff": "2020-04-09",
+    "fields": [
+      "order_id",
+      "strategy_id",
+      "timestamp",
+      "coin",
+      "side"
+    ],
+    "reference": "deploy/historical_replay/run/t19_full_history_realtest_fills.csv",
+    "referencePrefixFills": 40,
+    "result": "PASS"
+  },
+  "fills": "deploy/historical_replay/run/research_replay/system_100d/fills.csv",
+  "fullRunFingerprint": "a9281e4fd3bdaebcac33bc20d8bff64b0b2851ceb28a40a378d08a6e8728c9cc",
+  "ledgerHeadHash": "fd151235d76600cc85ea9bad5f1e3c7002cfa11e8404ebe42bba4e7e7d377017",
+  "mode": "system",
+  "openCandidateTrades": 4,
+  "realTest": {
+    "candidateTradesStartedByCutoff": 22,
+    "closedTradesFullyCompared": 18,
+    "comparisonCsv": "deploy/historical_replay/run/research_replay/system_100d/realtest_trade_comparison.csv",
+    "cutoff": "2020-04-09",
+    "knownExceptionsObserved": [],
+    "numericTolerance": "same dynamic RealTest policy: min(20% + 0.2%*trade_id, 50%)",
+    "openTradeRule": "entry date + entry price + quantity only; exit/PnL ignored until closed",
+    "openTradesEntryOnlyCompared": 4,
+    "policy": "PARTIAL_REALTEST_CUTOFF_V1",
+    "referenceTradesStartedByCutoff": 22,
+    "result": "PASS",
+    "unexpectedDifferences": []
+  },
+  "reconciliation": "CLEAN",
+  "result": "PASS",
+  "routeSafe": true,
+  "runtimeSummary": "deploy/historical_replay/run/research_replay/system_100d/runtime_summary.json",
+  "start": "2020-01-01",
+  "streamFingerprint": "09e1c9289ddf35bc"
+}

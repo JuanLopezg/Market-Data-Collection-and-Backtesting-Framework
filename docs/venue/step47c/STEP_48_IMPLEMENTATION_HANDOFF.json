@@ -1,0 +1,27 @@
+{
+  "contractVersion": "step47c-to-step48-v1",
+  "nextStep": "STEP_48_CANONICAL_MULTI_VENUE_ADAPTER_CONTRACT_V1",
+  "implementationSourceOfTruth": "docs/venue/step47c/canonical_multi_venue_contract_freeze.json",
+  "mustPreserveStep47AHeadersUnchanged": true,
+  "mustNotEnablePrivateRouting": true,
+  "requiredStep48Surfaces": [
+    "capabilities query",
+    "venue/context identity",
+    "market/product identity",
+    "canonical submit/cancel/modify request vocabulary",
+    "canonical operation/item result envelope",
+    "canonical order lifecycle/status vocabulary",
+    "account snapshot/open orders/fills/recovery vocabulary",
+    "canonical accounting fee/funding events",
+    "opaque native evidence preservation"
+  ],
+  "forbiddenStep48Features": [
+    "Hyperliquid signing implementation",
+    "private key or seed handling",
+    "real/testnet private order submission",
+    "capital movement",
+    "smart-order-routing",
+    "silent REAL-to-MOCK fallback",
+    "silent venue-to-venue fallback"
+  ]
+}

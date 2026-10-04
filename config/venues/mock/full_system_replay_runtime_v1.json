@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "runtimeVersion": "full-system-replay-runtime-v1-step56",
+  "venueId": "MOCK",
+  "environment": "MOCK",
+  "boundStep55FaultChaosFingerprint": "7bb82df68ea1187bd59bb40c9907a0186c8829935da623a6538d2809ac6f16ba",
+  "mode": "IN_PROCESS_FULL_PIPELINE_RUNTIME_WIRING",
+  "historicalReleaseContract": {
+    "closedSlice": "T_CLOSE",
+    "executionOpen": "T_PLUS_1_OPEN",
+    "businessTimeSource": "UPSTREAM_TIMEHANDLER_RELEASE_TIMESTAMP",
+    "wallClockEconomics": false
+  },
+  "pipeline": [
+    "RollingMarketState",
+    "StrategySignalEngine",
+    "PortfolioRiskEngine",
+    "NotionalOrderPlannerEngine",
+    "CanonicalVenueAdapter",
+    "MockExchangeAdapterV1",
+    "Step50OrderAdmissionLifecycle",
+    "Step51MatchingFill",
+    "Step52Accounting",
+    "Step53RecoveryUserStream",
+    "Step54ReconciliationLedger",
+    "Step55ChaosRateLimit"
+  ],
+  "explicitVenueSelection": "MOCK_ONLY",
+  "venueFallback": false,
+  "smartOrSplitRouting": false,
+  "plannerToVenueEdge": {
+    "notionalQuantityReference": "CLOSE_T",
+    "sizeQuantization": "FLOOR_TO_EXPLICIT_MOCK_SIZE_INCREMENT",
+    "executionLimitReference": "OPEN_T_PLUS_1",
+    "buyPriceQuantization": "CEIL_TO_EXPLICIT_MOCK_PRICE_INCREMENT",
+    "sellPriceQuantization": "FLOOR_TO_EXPLICIT_MOCK_PRICE_INCREMENT",
+    "minimumAndSemanticAdmissionAuthority": "STEP50_CANONICAL_MOCK_ADMISSION"
+  },
+  "portfolioRiskCompatibilityBridge": {
+    "reason": "LEGACY_PORTFOLIO_RISK_ACCOUNT_SNAPSHOT_RECOMPUTES_SPOT_EQUITY",
+    "cashFieldCarries": "CANONICAL_MOCK_EQUITY",
+    "physicalPositionsField": "EMPTY_TO_AVOID_DOUBLE_COUNTING_PERPETUAL_NOTIONAL",
+    "strategyPositionsField": "FILL_DERIVED_STRATEGY_QUANTITIES",
+    "userFacingAccountingAuthority": "STEP52_CANONICAL_ACCOUNTING"
+  },
+  "submitBatching": "ONE_CANONICAL_BATCH_PER_EXECUTION_OPEN",
+  "cancelOrdering": "CANCEL_BATCH_FIRST_THEN_RECONCILE_THEN_SUBMIT_BATCH",
+  "newExposureGate": "STEP55_CAN_ROUTE_NEW_SUBMIT",
+  "fillAuthority": "CANONICAL_STEP51_FILL_ONLY",
+  "strategyPositionMirrorAuthority": "CANONICAL_FILL_EVENTS_ONLY",
+  "canonicalAdapterImplemented": true,
+  "fullStrategyRiskPlannerWiringImplemented": true,
+  "actualHistoricalDatasetCampaignExecuted": false,
+  "dashboardServiceWiringImplemented": false,
+  "manualControlMockRoutingImplemented": false,
+  "privateRealVenueRoutingEnabled": false,
+  "nextStep": "STEP_56_FULL_SYSTEM_REPLAY_ACCEPTANCE_CAMPAIGN"
+}

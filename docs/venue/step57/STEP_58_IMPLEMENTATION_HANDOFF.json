@@ -1,0 +1,19 @@
+{
+  "contractVersion": "step57-to-step58-v1",
+  "nextStep": "STEP_58_DASHBOARD_SIMULATION_COMPLETION",
+  "step56AcceptanceFingerprint": "0ec48c4566c7a1ba439164c2f242f061b8adf58eb801a536f34b8c12d55f64ae",
+  "step57ManualControlFingerprint": "65c0a7b418d7f3873f38f6a1daa87d5d915e4a254452865b79a69df24c3dc5f0",
+  "requiredStep58Behavior": [
+    "run replay and dashboard simultaneously against MOCK canonical truth",
+    "connect confirmed dashboard manual-control action to a dedicated trading-control transport that invokes the Step57 manual pipeline, never browser-to-venue",
+    "dashboard-api remains PostgreSQL SELECT-only and does not gain private keys or direct venue access",
+    "orders fills positions accounting ledger reconciliation alerts and market data update from canonical read models",
+    "Manual Control shows MOCK route enabled only when simulation sink plus reconciliation are safe; REAL remains fail-closed",
+    "no fabricated PnL/equity/reconciliation values"
+  ],
+  "forbiddenUntilLater": [
+    "private Hyperliquid auth/signing/routing",
+    "smart-order-routing",
+    "live capital"
+  ]
+}

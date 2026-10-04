@@ -1,0 +1,246 @@
+{
+  "contractVersion": "step47c-v1",
+  "artifactType": "CANONICAL_MULTI_VENUE_PORTABILITY_AND_ARCHITECTURE_FREEZE",
+  "basedOn": {
+    "step47a": "step47a-v1",
+    "step47b": "step47b-v1"
+  },
+  "adapterInterfaceImplemented": false,
+  "privateRoutingEnabled": false,
+  "firstRealVenue": "HYPERLIQUID",
+  "architecture": {
+    "multiVenue": true,
+    "venueSelection": "EXPLICIT_CONFIGURED",
+    "silentRealToMockFallback": false,
+    "silentVenueToVenueFallback": false,
+    "smartOrderRouting": false,
+    "splitRouting": false,
+    "coreMayBranchOnVenueId": false,
+    "dashboardRequiresParallelVenueSpecificUI": false
+  },
+  "canonicalProductIdentity": {
+    "productClasses": [
+      "PERPETUAL",
+      "SPOT",
+      "OUTCOME",
+      "OTHER"
+    ],
+    "requiredKeyFields": [
+      "canonicalAsset",
+      "productClass"
+    ],
+    "optionalDisambiguators": [
+      "quoteOrSettlementAsset",
+      "contractVariant"
+    ],
+    "venueNativeLocatorRemainsPerVenueEnvironment": true,
+    "rule": "canonical asset identity MUST NOT collapse spot/perpetual/outcome into one ambiguous market identity"
+  },
+  "canonicalCapabilitiesV1": [
+    "MARKET_METADATA",
+    "TRADING_RULES",
+    "SUBMIT_ORDER",
+    "CANCEL_ORDER",
+    "MODIFY_ORDER",
+    "CLIENT_ORDER_ID",
+    "IDEMPOTENT_SUBMIT",
+    "TIF_GTC",
+    "TIF_IOC",
+    "POST_ONLY",
+    "REDUCE_ONLY",
+    "BATCH_ACTIONS",
+    "LEVERAGE",
+    "MARGIN_STATE",
+    "ACCOUNT_SNAPSHOT",
+    "OPEN_ORDERS",
+    "HISTORICAL_ORDERS",
+    "FILLS",
+    "USER_STREAM",
+    "SNAPSHOT_BACKFILL",
+    "DEAD_MANS_SWITCH",
+    "RATE_LIMIT_INTROSPECTION",
+    "ORDER_STATUS_QUERY",
+    "TRIGGER_ORDERS",
+    "FEE_ACCOUNTING",
+    "FUNDING_ACCOUNTING"
+  ],
+  "capabilityAdditionsFromStep47B": [
+    "ORDER_STATUS_QUERY",
+    "TRIGGER_ORDERS",
+    "FEE_ACCOUNTING",
+    "FUNDING_ACCOUNTING"
+  ],
+  "orderLifecycleV1": {
+    "statuses": [
+      "PENDING_SUBMIT",
+      "ACCEPTED",
+      "RESTING",
+      "PARTIALLY_FILLED",
+      "FILLED",
+      "CANCEL_PENDING",
+      "CANCELED",
+      "REJECTED",
+      "VENUE_TERMINATED",
+      "UNKNOWN_REQUIRES_RECONCILIATION"
+    ],
+    "terminal": [
+      "FILLED",
+      "CANCELED",
+      "REJECTED",
+      "VENUE_TERMINATED"
+    ],
+    "ambiguousOutcomeStatus": "UNKNOWN_REQUIRES_RECONCILIATION",
+    "nativeStatusAndReasonPreserved": true,
+    "blindRetryFromUnknownAllowed": false
+  },
+  "idempotencyPolicyV1": {
+    "canonicalRequestIdRequired": true,
+    "canonicalRequestIdIsDurableDedupKey": true,
+    "clientOrderIdIsSeparateFromRequestId": true,
+    "clientOrderIdImpliesNativeIdempotency": false,
+    "nativeIdempotencyRequiresExplicitConfirmedCapability": "IDEMPOTENT_SUBMIT",
+    "ambiguousSubmitAction": "RECONCILE_BEFORE_ANY_RESUBMIT",
+    "hyperliquidNativeIdempotentSubmit": "NOT_CONFIRMED"
+  },
+  "batchResultEnvelopeV1": {
+    "resultScopes": [
+      "OPERATION",
+      "ITEM"
+    ],
+    "operationRejectedBeforeItemEvaluation": {
+      "resultScope": "OPERATION",
+      "itemResultsMustBeEmpty": true
+    },
+    "itemEvaluation": {
+      "resultScope": "ITEM",
+      "preserveInputCorrelation": true
+    },
+    "fabricatePerItemResultsFromOperationError": false
+  },
+  "canonicalRejectTaxonomyV1": [
+    "NONE",
+    "TRANSPORT_UNAVAILABLE",
+    "AUTHENTICATION_FAILED",
+    "AUTHORIZATION_FAILED",
+    "RATE_LIMITED",
+    "INVALID_REQUEST",
+    "UNSUPPORTED_CAPABILITY",
+    "UNKNOWN_ASSET",
+    "INVALID_PRICE_INCREMENT",
+    "INVALID_QUANTITY_INCREMENT",
+    "BELOW_MINIMUM",
+    "INSUFFICIENT_FUNDS_OR_MARGIN",
+    "REDUCE_ONLY_VIOLATION",
+    "POST_ONLY_WOULD_CROSS",
+    "NO_LIQUIDITY",
+    "ORDER_NOT_FOUND",
+    "DUPLICATE_REQUEST",
+    "VENUE_LIMIT",
+    "VENUE_UNAVAILABLE",
+    "UNKNOWN"
+  ],
+  "rejectRules": {
+    "nativeCodeAndReasonPreserved": true,
+    "localRiskEngineRejectsAreNotVenueErrors": true,
+    "unknownSafetyRelevantRejectIsFailClosed": true
+  },
+  "accountingVocabularyV1": {
+    "eventTypes": [
+      "TRADING_FEE",
+      "REBATE",
+      "FUNDING_PAYMENT"
+    ],
+    "amountRepresentation": "DECIMAL_STRING",
+    "signedAmountConvention": "POSITIVE_INCREASES_ACCOUNT_VALUE_NEGATIVE_DECREASES",
+    "settlementAssetRequired": true,
+    "businessEventTimeRequired": true,
+    "nativeReferencePreserved": true
+  },
+  "nativeFillIdentityV1": {
+    "opaqueToCore": true,
+    "adapterMustConstructStableUniqueReference": true,
+    "coreMayAssumeSingleNativeFieldGloballyUnique": false
+  },
+  "triggerOrders": {
+    "capabilityName": "TRIGGER_ORDERS",
+    "canonicalVocabularyPresent": true,
+    "requiredForCurrentPureRsiV1": false,
+    "hyperliquidV1Implementation": "DEFERRED"
+  },
+  "hyperliquidV1Scope": {
+    "productScope": {
+      "DEFAULT_PERPETUALS": "IN_SCOPE",
+      "HIP3_PERPETUALS": "DEFERRED",
+      "SPOT": "DEFERRED",
+      "OUTCOMES": "OUT_OF_SCOPE"
+    },
+    "featureScope": {
+      "LIMIT_ORDERS": "IN_SCOPE",
+      "GTC": "IN_SCOPE",
+      "IOC": "IN_SCOPE",
+      "POST_ONLY_ALO": "IN_SCOPE",
+      "REDUCE_ONLY": "IN_SCOPE",
+      "CANCEL": "IN_SCOPE",
+      "MODIFY": "IN_SCOPE",
+      "CLIENT_ORDER_ID_CLOID": "IN_SCOPE",
+      "TRIGGER_TPSL": "DEFERRED",
+      "TWAP": "DEFERRED",
+      "CAPITAL_TRANSFERS_WITHDRAWALS_STAKING_VAULT_ACTIONS": "OUT_OF_SCOPE"
+    },
+    "privateAuthSigning": "DEFERRED_TO_HISTORICAL_STEP37_AFTER_STEP62",
+    "privateAccountOrdersFillsReconciliation": "DEFERRED_TO_HISTORICAL_STEPS38_41_AFTER_STEP62"
+  },
+  "portabilityProfiles": {
+    "MOCK": {
+      "purpose": "deterministic conformance venue; should implement the full v1 subset needed by Steps49-55",
+      "mayHaveExtraCapabilities": true
+    },
+    "HYPERLIQUID": {
+      "purpose": "first real venue; semantics mapped in Step47B",
+      "coreContractRewriteRequired": false
+    },
+    "FUTURE_VENUE": {
+      "purpose": "proof that a venue may support a smaller/different capability set without core rewrite",
+      "exampleSupportedCapabilities": [
+        "MARKET_METADATA",
+        "TRADING_RULES",
+        "SUBMIT_ORDER",
+        "CANCEL_ORDER",
+        "ACCOUNT_SNAPSHOT",
+        "OPEN_ORDERS",
+        "FILLS",
+        "SNAPSHOT_BACKFILL",
+        "FEE_ACCOUNTING"
+      ],
+      "exampleUnsupportedCapabilities": [
+        "MODIFY_ORDER",
+        "CLIENT_ORDER_ID",
+        "IDEMPOTENT_SUBMIT",
+        "TIF_IOC",
+        "POST_ONLY",
+        "BATCH_ACTIONS",
+        "LEVERAGE",
+        "USER_STREAM",
+        "DEAD_MANS_SWITCH",
+        "TRIGGER_ORDERS",
+        "FUNDING_ACCOUNTING"
+      ],
+      "unsupportedRequiredCapabilityAction": "BLOCK_ROUTE_FOR_THAT_VENUE",
+      "coreContractRewriteRequired": false,
+      "strategyContractRewriteRequired": false,
+      "riskContractRewriteRequired": false,
+      "plannerContractRewriteRequired": false,
+      "parallelDashboardRequired": false
+    }
+  },
+  "step48ImplementationRequirements": [
+    "implement one canonical VenueAdapter interface from this freeze",
+    "capabilities are queried, not assumed",
+    "requests/results preserve venueId and environment",
+    "native IDs/status/reasons remain opaque evidence",
+    "unsupported required capability blocks routing for that venue",
+    "no silent venue fallback",
+    "no private Hyperliquid auth/signing/order submission in Step48"
+  ],
+  "nextStep": "STEP_48_CANONICAL_MULTI_VENUE_ADAPTER_CONTRACT_V1"
+}

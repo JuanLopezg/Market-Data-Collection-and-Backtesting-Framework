@@ -1,4 +1,47 @@
-# Control Dashboard — Step 45
+# Control Dashboard — current canonical replay status
+
+The dashboard repository contains a long implementation history. The active replay contract is now the canonical `research/replay.py dashboard` mode, which shares economics with `system` and publishes the replay state for the UI.
+
+## Current validated behavior
+
+- 107-day dashboard economics match `system`: 25 trades, 25 matches, 0 differences, 50 fills, fingerprint `94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2`.
+- Full-history dashboard economics match `system`: 631 candidate trades, 628 fully matched, the same four human-reviewed RealTest differences, 1261 fills, fingerprint `1551106eac4dd7b712729f72980ac196308d61b1d7cbb9e538c557271415cbf0`.
+- Full-history dashboard `fills.csv` was byte-identical to the accepted system `fills.csv`.
+- Pacing at materially different speeds produced identical fills in the validated warmed campaign.
+- Dashboard day-boundary checkpoint/restart/resume reproduces the continuous-run 107-day fingerprint.
+- The current `LedgerStatus` projection appends each FILL row once; the previously suspected duplicate append is not present.
+
+Run without starting the web stack:
+
+```bash
+python3 research/replay.py dashboard --days 107 --label dashboard_107d --no-dashboard-up
+```
+
+Run with the local UI stack:
+
+```bash
+python3 research/replay.py dashboard --label dashboard_visual
+```
+
+Then open `http://localhost:8080`.
+
+For slow visual review, use the replay pacing options shown by:
+
+```bash
+python3 research/replay.py dashboard --help
+```
+
+The long slow full visual acceptance run is intentionally deferred until the final dashboard review. `--no-dashboard-up` means the replay may still publish dashboard state files, but it does not start the localhost web stack.
+
+Private Hyperliquid routing remains deferred; current accepted work is MOCK/replay-first.
+
+See root `CURRENT_STATE.md` for the authoritative current acceptance status.
+
+---
+
+# Historical dashboard implementation notes
+
+The material below records earlier dashboard implementation steps and remains useful as design/history. Statements about what was "next" at those older steps do not override `CURRENT_STATE.md`.
 
 Lightweight desktop-first algo-trading operations dashboard with a Grafana-like visual direction.
 

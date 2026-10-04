@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "modelVersion": "mock-matching-fill-v1-step51",
+  "venueId": "MOCK",
+  "environment": "MOCK",
+  "boundStep50OrderLifecycleFingerprint": "bf5e867c6793f7b9ad3c7487f6bdb2d95d296e827406a7c3870533833c09b1c3",
+  "marketInput": "OHLCV_BAR_SYNTHETIC",
+  "historicalL2Claim": false,
+  "matchingModel": "LIMIT_TOUCH_WITH_SHARED_BAR_PARTICIPATION_V1",
+  "priceModel": "BAR_OPEN_OR_LIMIT_WITH_DETERMINISTIC_ADVERSE_SLIPPAGE_CAPPED_BY_LIMIT",
+  "postOnlyCrossReference": "BAR_OPEN",
+  "liquidityModel": {
+    "source": "BAR_VOLUME_BASE_ASSET",
+    "sharedAcrossOrdersForSameBar": true,
+    "participationPpm": 100000,
+    "participationPercent": "10.0000",
+    "allocationOrder": "ASCENDING_LOCAL_ORDER_ID",
+    "quantityGridPolicy": "ROUND_AVAILABLE_LIQUIDITY_DOWN_TO_SIZE_INCREMENT"
+  },
+  "slippageModel": {
+    "maxAdversePpm": 250,
+    "maxAdverseBps": "2.5000",
+    "deterministicSeed": 510051,
+    "draw": "FNV1A64_ORDER_TIMESTAMP_FILL_SEQUENCE_MOD_MAX_PLUS_ONE",
+    "neverWorseThanLimit": true
+  },
+  "feeModel": {
+    "feePpm": 400,
+    "feeBps": "4.0000",
+    "computedAsDiagnosticQuoteOnly": true,
+    "accountingEventPosting": "DEFERRED_TO_STEP52"
+  },
+  "latencyModel": {
+    "unit": "MARKET_EVENTS_FOR_SAME_ASSET",
+    "events": 0,
+    "wallClockUsedForEconomics": false
+  },
+  "timeSemantics": {
+    "fillTimestamp": "MARKET_OBSERVATION_EVENT_TIME",
+    "requiredUpstreamSource": "TIMEHANDLER_OR_REPLAY_EVENT_TIME",
+    "wallClockOrMonotonicEconomicTimestamp": false
+  },
+  "tif": {
+    "GTCNoTouch": "RESTING",
+    "GTCPartial": "PARTIALLY_FILLED",
+    "IOCNoExecution": "CANCELED",
+    "IOCPartial": [
+      "PARTIALLY_FILLED",
+      "CANCELED"
+    ],
+    "fullExecution": "FILLED"
+  },
+  "postOnly": {
+    "crossAtSyntheticArrivalReference": "REJECTED_POST_ONLY_WOULD_CROSS",
+    "notCrossingMayFillLaterInSameOHLCVBar": true,
+    "note": "Synthetic bar model; not historical order-book evidence."
+  },
+  "fillIdentity": "mock-fill-<localOrderId>-<perOrderFillSequence>",
+  "accountingImplemented": false,
+  "positionsImplemented": false,
+  "restartDurabilityImplemented": false,
+  "privateRealVenueRoutingEnabled": false,
+  "nextStep": "STEP_52_MOCK_ACCOUNT_MARGIN_POSITIONS_ACCOUNTING"
+}

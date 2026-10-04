@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "manifestVersion": "step56a-v1",
+  "step56RuntimeFingerprint": "79ec33ef33b9fb45410b1a10038a74dc0ac6b00f064e75175bb9330f2fddf27f",
+  "datasetSha256": "7b4a48df39eb8049fb9f05856b0de44d80e8d21d2c513c9c6eb8db74405ae381",
+  "sourceMappingSha256": "f83fe5ae3ebb128331bfcf97d678aa78d58138c7f2bb9b2f370502fcb7d69fa7",
+  "strategyConfigSha256": "5749bef7d6adfc1aeee9d3d0adaa6ec05daa7d6f93c1c4cbee5bca6f7bcf407a",
+  "portfolioConfigSha256": "8cdcdee3b868ec2d7e23cb73eb2a4d15b2c9f8d3f14ca4aa29630f4a77e95ed2",
+  "acceptanceConfigSha256": "68c8e572ecf3bb3b477604caca3751d30bc2fef7cd43431b174c1d6790430b5a",
+  "combinedAcceptanceFingerprint": "0ec48c4566c7a1ba439164c2f242f061b8adf58eb801a536f34b8c12d55f64ae",
+  "actualHistoricalWindowCampaignImplemented": true,
+  "actualHistoricalWindowCampaignCleanroomPass": true,
+  "fullHistoricalDatasetCampaignExecuted": false,
+  "timeHandlerReleaseGateUsed": true,
+  "pureRsiProductionStrategyUsed": true,
+  "portfolioRiskProductionEngineUsed": true,
+  "notionalPlannerProductionEngineUsed": true,
+  "canonicalVenueAdapterPathUsed": true,
+  "privateRealVenueRoutingEnabled": false,
+  "nextStep": "STEP_57_MANUAL_CONTROL_TO_MOCK_NORMAL_PIPELINE"
+}

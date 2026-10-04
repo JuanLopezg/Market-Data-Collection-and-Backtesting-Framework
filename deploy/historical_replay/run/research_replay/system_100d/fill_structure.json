@@ -1,0 +1,14 @@
+{
+  "candidateFills": 40,
+  "cutoff": "2020-04-09",
+  "fields": [
+    "order_id",
+    "strategy_id",
+    "timestamp",
+    "coin",
+    "side"
+  ],
+  "reference": "deploy/historical_replay/run/t19_full_history_realtest_fills.csv",
+  "referencePrefixFills": 40,
+  "result": "PASS"
+}

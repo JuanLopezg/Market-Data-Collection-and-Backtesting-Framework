@@ -1,0 +1,10 @@
+services:
+  dashboard-api:
+    environment:
+      DASHBOARD_DATA_PROVIDER: "simulation"
+      DASHBOARD_SIMULATION_DIR: "/data/simulation"
+      DASHBOARD_RUNTIME_MODE: "REPLAY"
+      DASHBOARD_AUTH_ALLOW_DEMO: "true"
+      DASHBOARD_AUTH_COOKIE_SECURE: "false"
+    volumes:
+      - ../deploy/historical_replay/run/step58_dashboard:/data/simulation

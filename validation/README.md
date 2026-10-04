@@ -1,4 +1,52 @@
-# Unified validation
+# Validation — current canonical replay track
+
+The active RealTest/replay compatibility entry point is:
+
+```bash
+bash validation/step58a_realtest_equivalence_implementation_gate.sh
+```
+
+It checks the active direct-RealTest documentation/config and delegates behavioral proof to:
+
+```bash
+bash validation/step58a_canonical_replay_suite_gate.sh
+```
+
+Current accepted contract:
+
+- one public replay CLI: `python3 research/replay.py {fast|system|dashboard}`;
+- direct acceptance against `storage/backtests/final_tests/pureRSI.csv`;
+- no T19-prefix acceptance and no mismatch whitelist in the canonical path;
+- original OHLCV in RealTest parity;
+- full next-open execution, zero parity fees/slippage, no parity volume-capacity limit;
+- frozen normal-MOCK behavior remains separate;
+- cutoff/open-trade semantics are tested;
+- `--start` is part of the comparison window contract.
+
+Latest locally validated canonical fingerprints:
+
+```text
+107-day : 94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2
+full    : 1551106eac4dd7b712729f72980ac196308d61b1d7cbb9e538c557271415cbf0
+```
+
+Additional local acceptance already performed in this workstream:
+
+- repeated 107-day system determinism;
+- 107-day system speed invariance;
+- full-history system speed invariance;
+- system checkpoint/stop/resume equivalence;
+- dashboard == system economics and byte-identical fills on accepted campaigns;
+- dashboard pacing invariance;
+- dashboard checkpoint/stop/resume equivalence.
+
+These additional checks are recorded in root `CURRENT_STATE.md`. The long slow dashboard visual review remains intentionally pending until final visual acceptance.
+
+## Historical validation suites
+
+The sections below document older distributed/restart/clock validation phases. They remain valuable regression and architecture evidence, but older RealTest baseline/known-exception wording does not override the current direct comparator contract above.
+
+---
 
 Run the complete current economic regression suite from project root:
 

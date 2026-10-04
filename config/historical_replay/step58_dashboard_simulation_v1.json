@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "simulationVersion": "dashboard-simulation-completion-v1-step58",
+  "providerMode": "simulation",
+  "venueId": "MOCK",
+  "environment": "MOCK",
+  "boundStep56AcceptanceFingerprint": "0ec48c4566c7a1ba439164c2f242f061b8adf58eb801a536f34b8c12d55f64ae",
+  "boundStep57ManualControlFingerprint": "65c0a7b418d7f3873f38f6a1daa87d5d915e4a254452865b79a69df24c3dc5f0",
+  "stateContract": {
+    "path": "deploy/historical_replay/run/step58_dashboard/state.json",
+    "schemaVersion": 1,
+    "writer": "step58_dashboard_simulation_runner",
+    "publication": "ATOMIC_RENAME",
+    "reader": "dashboard-api simulation provider",
+    "browserTransport": "AUTHENTICATED_REST_PLUS_SSE_INVALIDATION",
+    "sseSubject": "simulation.step58.generation",
+    "ssePayloadCarriesTradingData": false
+  },
+  "defaultReplayWindow": {
+    "start": "2020-01-01",
+    "end": "2020-04-16",
+    "source": "deploy/historical_replay/run/1d_cmc_by_date.csv"
+  },
+  "uiPacing": {
+    "delayMsPerPhase": 350,
+    "economicEffect": false,
+    "note": "technical visualization pacing only"
+  },
+  "timeSemantics": {
+    "businessTime": "TimeHandler historical release time",
+    "openPhase": "OPEN_T_PLUS_1_ONLY_NO_FUTURE_CLOSE",
+    "closePhase": "COMPLETED_BAR_OHLCV",
+    "wallClockEconomics": false
+  },
+  "readModels": [
+    "overview",
+    "positions",
+    "reconciliation",
+    "pipeline",
+    "execution",
+    "risk",
+    "market-data",
+    "infrastructure",
+    "alerts-audit",
+    "live-vs-expected",
+    "ledger",
+    "manual-control"
+  ],
+  "accountingAuthority": "STEP52_CANONICAL_MOCK_ACCOUNTING",
+  "ledgerAuthority": "STEP54_CANONICAL_LEDGER_PARITY",
+  "reconciliationAuthority": "STEP54_CLEAN_BLOCKED_PENDING",
+  "executionAuthority": "STEP51_CANONICAL_FILL",
+  "manualControl": {
+    "enabledOnlyPhase": "MANUAL_READY",
+    "transport": "DASHBOARD_API_TO_FSYNCED_ATOMIC_REQUEST_FILE_TO_STEP58_RUNNER",
+    "pipeline": "STEP57_MANUAL_RISK_TO_PRODUCTION_PLANNER_TO_CANONICAL_VENUE_ADAPTER_TO_MOCK",
+    "browserDirectVenue": false,
+    "realProviderEnabled": false
+  },
+  "liveVsExpected": {
+    "step58Baseline": "INSUFFICIENT_DATA",
+    "fabricatedMetrics": false,
+    "deterministicBaselineDeferredTo": "STEP59"
+  },
+  "dashboardApiPrivateKeys": false,
+  "dashboardApiDirectVenueAccess": false,
+  "smartOrSplitRouting": false,
+  "privateRealVenueRoutingEnabled": false,
+  "visualAcceptanceRequiredToCloseStep58": true,
+  "nextStep": "STEP_59_DETERMINISTIC_EVIDENCE_SPEED_INVARIANCE_RESTART"
+}

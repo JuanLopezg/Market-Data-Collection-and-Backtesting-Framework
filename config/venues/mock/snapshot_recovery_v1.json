@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "recoveryVersion": "mock-snapshot-user-stream-recovery-v1-step53",
+  "venueId": "MOCK",
+  "environment": "MOCK",
+  "boundStep52AccountingFingerprint": "4fa2a7cc0e8c43f75f7fdcab2cd5b305755c48426ac3f13b4c10ed765dfac746",
+  "persistenceModel": "DURABLE_DETERMINISTIC_REPLAY_CHECKPOINT_PLUS_INCREMENTAL_JOURNAL",
+  "checkpoint": {
+    "file": "checkpoint_v1.bin",
+    "contains": [
+      "all deterministic source records through checkpoint",
+      "checkpoint user-stream sequence",
+      "checkpoint Step52 economic fingerprint"
+    ],
+    "writePolicy": "TEMP_FILE_FSYNC_RENAME_PARENT_DIR_FSYNC",
+    "journalTruncatedOnlyAfterCheckpointCommit": true
+  },
+  "incrementalJournal": {
+    "file": "incremental_v1.bin",
+    "framing": "LITTLE_ENDIAN_U32_LENGTH_PLUS_BINARY_RECORD",
+    "appendPolicy": "WRITE_AHEAD_FSYNC_BEFORE_APPLY",
+    "corruptOrTruncatedRecord": "FAIL_CLOSED"
+  },
+  "userStream": {
+    "sequenceStartsAt": 1,
+    "ordering": "DETERMINISTIC_PIPELINE_EMISSION_ORDER",
+    "sequencePersistence": "REBUILT_EXACTLY_FROM_DURABLE_SOURCE_RECORDS",
+    "maxBackfillEventsPerPage": 256,
+    "cursor": "LAST_DELIVERED_SEQUENCE",
+    "snapshotMergeRule": "TAKE_SNAPSHOT_AT_SEQUENCE_S_THEN_APPLY_INCREMENTALS_SEQUENCE_GT_S"
+  },
+  "dedup": {
+    "commandRequestId": "STEP50_SEMANTICS_RESTORED_BY_REPLAY",
+    "marketObservationIdentity": "CANONICAL_ASSET_PLUS_EVENT_TIME",
+    "markIdentity": "CANONICAL_ASSET_PLUS_EVENT_TIME",
+    "externalAccountingIdentity": "EXPLICIT_EVENT_ID",
+    "leverageIdentity": "CANONICAL_ASSET_PLUS_EVENT_TIME",
+    "sameIdentitySamePayload": "DUPLICATE_IGNORED_FOR_NON_COMMAND_SOURCE_EVENTS",
+    "sameIdentityDifferentPayload": "RECOVERY_UNSAFE_FAIL_CLOSED"
+  },
+  "outOfOrderPolicy": {
+    "newSourceEventWithEventTimeLessThanLastAcceptedEventTime": "REJECT_AND_MARK_RECOVERY_UNSAFE",
+    "exactKnownDuplicateMayArriveLate": true,
+    "commandRetryWithKnownRequestIdMayArriveLate": true,
+    "checkpointAllowedWhileUnsafe": false
+  },
+  "snapshotSurfaces": [
+    "AccountSnapshot",
+    "OpenOrdersSnapshot",
+    "FillBatch"
+  ],
+  "restartGuarantees": [
+    "exact Step52 economic fingerprint",
+    "exact user-stream sequence and deterministic stream fingerprint",
+    "Step50 request-id dedup restored",
+    "Step51 fill sequence restored by deterministic source replay",
+    "Step52 fill/accounting dedup restored"
+  ],
+  "businessTimeSource": "SUPPLIED_EVENT_TIME_ONLY",
+  "wallClockUsedForEconomics": false,
+  "realVenueReconciliationImplemented": false,
+  "privateRealVenueRoutingEnabled": false,
+  "nextStep": "STEP_54_RECONCILIATION_AND_LEDGER_PARITY"
+}

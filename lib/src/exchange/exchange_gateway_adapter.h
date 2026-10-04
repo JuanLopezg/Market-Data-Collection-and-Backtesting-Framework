@@ -23,8 +23,10 @@ struct ExchangeGatewayHandlers {
  * Type    : ExchangeGatewayAdapter
  * Purpose : Exchange-specific backend hidden behind the common gateway process
  *
- * The live adapter will speak Binance/other REST+WebSocket. The replay adapter can route
- * to a simulated exchange service. Everything north of this interface remains identical.
+ * A concrete live adapter owns its venue-native protocol/authentication details. A replay
+ * adapter may route to a simulated/mock venue. Everything north of this boundary remains
+ * transport- and venue-neutral; Step 48 will replace/freeze the canonical multi-venue
+ * adapter contract after the Step 47 architecture/semantics gates are complete.
  **************************************************************************************/
 class ExchangeGatewayAdapter {
 public:

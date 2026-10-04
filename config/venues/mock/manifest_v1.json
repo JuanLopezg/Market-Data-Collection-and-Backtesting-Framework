@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "manifestVersion": "step49-v1",
+  "venueId": "MOCK",
+  "environment": "MOCK",
+  "catalogVersion": "mock-catalog-v1-step49",
+  "rulesVersion": "mock-rules-v1-step49",
+  "sourceRegistryVersion": "2026-09-27-step37a.5",
+  "entryCount": 175,
+  "catalogSha256": "1b7b0f680df740b864086e5d124f38d297a87b35a19564d706a88ede8278f70c",
+  "rulesSha256": "170ffa48e9e7d7e3bc43e3658f41c7da7273e45721f6140382869d481f4c2ab3",
+  "sourceUniverseSha256": "e454852e189a449417757a18f0e782ce27083f7c07b843050f2eb975b18196a0",
+  "combinedVenueFingerprint": "a6d2b98a45d11e57bc0d649ff9569952c73adff1671608f5eafe561169ccbb27",
+  "mappingPolicy": "EXPLICIT_ONLY",
+  "realVenueParityClaim": false,
+  "adapterImplemented": false,
+  "orderAdmissionImplemented": false,
+  "matchingImplemented": false,
+  "accountingImplemented": false,
+  "privateRoutingEnabled": false,
+  "nextStep": "STEP_50_MOCK_ORDER_ADMISSION_AND_LIFECYCLE"
+}
