@@ -1,3 +1,4 @@
+# Live-trading executables. Each service keeps its own build definition below.
 subdir('binance_simulator')
 subdir('execution_service')
 

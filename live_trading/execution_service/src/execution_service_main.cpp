@@ -1,3 +1,18 @@
+/*
+ * execution_service_main.cpp
+ *
+ * Purpose: Runs the direct execution engine path that consumes decisions, prices, order updates, and fills.
+ *
+ * Read this file from top to bottom:
+ *   1. Restore the durable trading snapshot.
+ *   2. Consume decisions and execution prices in deterministic order.
+ *   3. Apply order updates/fills and persist the resulting trading state.
+ *
+ * This file contains the executable entrypoint and service-level orchestration.
+ * Keep reusable domain calculations in focused components; keep startup,
+ * message flow, persistence boundaries, logging, and shutdown visible here.
+ */
+
 #include <algorithm>
 #include <atomic>
 #include <csignal>
@@ -25,6 +40,11 @@
 #include "transport_subjects.h"
 
 
+
+// ============================================================================
+// Internal helpers and service implementation
+// ============================================================================
+
 namespace {
 
 std::atomic<bool> running{true};
@@ -35,6 +55,11 @@ void stopHandler(int)
     running.store(false);
 }
 
+
+
+// ============================================================================
+// Command-line configuration
+// ============================================================================
 
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
@@ -119,6 +144,11 @@ Options parseOptions(int argc, char** argv)
     return options;
 }
 
+
+
+// ============================================================================
+// Service runtime and message-processing loop
+// ============================================================================
 
 class ExecutionServiceRuntime {
 private:
@@ -506,6 +536,11 @@ public:
 
 } // namespace
 
+
+
+// ============================================================================
+// Process entrypoint
+// ============================================================================
 
 int main(int argc, char** argv)
 {

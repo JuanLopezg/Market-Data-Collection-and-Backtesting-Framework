@@ -1,9 +1,17 @@
+/*
+ * File purpose: Defines the market-data service configuration values read from JSON.
+ *
+ * Keep this file focused on this responsibility. Trading decisions belong in
+ * their domain component; process orchestration belongs in the service application.
+ */
+
 #pragma once
 
 #include <cstddef>
 #include <filesystem>
 #include <string>
 
+// All user-configurable inputs for the live market-data service.
 struct MarketDataConfig {
     std::string main_exchange = "binance";
     std::filesystem::path database_path = "storage/databases/database.db";

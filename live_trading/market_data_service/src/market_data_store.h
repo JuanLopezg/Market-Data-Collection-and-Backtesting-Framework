@@ -1,3 +1,10 @@
+/*
+ * File purpose: Declares canonical SQLite persistence for daily market data and tracked-symbol lifecycle state.
+ *
+ * Keep this file focused on this responsibility. Trading decisions belong in
+ * their domain component; process orchestration belongs in the service application.
+ */
+
 #pragma once
 
 #include <chrono>
@@ -22,6 +29,7 @@ struct MarketDataDownloadRequest {
     std::chrono::year_month_day end_date;
 };
 
+// SQLite repository for canonical OHLCV and the tracked-symbol lifecycle.
 class MarketDataStore {
 public:
     explicit MarketDataStore(std::filesystem::path databasePath);

@@ -1,3 +1,10 @@
+/*
+ * File purpose: Loads and validates the market-data service JSON configuration.
+ *
+ * Keep this file focused on this responsibility. Trading decisions belong in
+ * their domain component; process orchestration belongs in the service application.
+ */
+
 #include "market_data_config.h"
 
 #include <fstream>

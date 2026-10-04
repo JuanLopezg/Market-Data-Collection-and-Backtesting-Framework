@@ -1,3 +1,18 @@
+/*
+ * strategy_service_main.cpp
+ *
+ * Purpose: Reads committed market data, evaluates configured strategies, and publishes strategy intents.
+ *
+ * Read this file from top to bottom:
+ *   1. Load strategy configuration and recover the latest durable checkpoint.
+ *   2. Consume MarketDataUpdated only for completed business dates.
+ *   3. Warm/read canonical history, calculate intents, persist the checkpoint, and publish StrategyIntentBatch.
+ *
+ * This file contains the executable entrypoint and service-level orchestration.
+ * Keep reusable domain calculations in focused components; keep startup,
+ * message flow, persistence boundaries, logging, and shutdown visible here.
+ */
+
 #include <algorithm>
 #include <atomic>
 #include <csignal>
@@ -36,12 +51,22 @@
 #include "time_utils.h"
 #include "transport_subjects.h"
 
+
+// ============================================================================
+// Internal helpers and service implementation
+// ============================================================================
+
 namespace {
 
 using json = nlohmann::json;
 std::atomic<bool> running{true};
 
 void stopHandler(int) { running.store(false); }
+
+
+// ============================================================================
+// Command-line configuration
+// ============================================================================
 
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
@@ -194,6 +219,11 @@ void interruptibleBusinessWaitUntil(
         std::this_thread::sleep_for(technicalPollInterval);
     }
 }
+
+
+// ============================================================================
+// Durable PostgreSQL persistence helpers
+// ============================================================================
 
 class PgResult {
 private:
@@ -425,6 +455,11 @@ public:
     }
 };
 
+
+// ============================================================================
+// Strategy configuration parsing and construction
+// ============================================================================
+
 IndicatorKind parseIndicatorKind(const std::string& value)
 {
     if (value == "SMA") return IndicatorKind::SMA;
@@ -544,6 +579,11 @@ std::string intentMessageId(Timestamp timestamp)
     return "strategy-intents:" + std::to_string(timestamp);
 }
 
+
+
+// ============================================================================
+// Service runtime and message-processing loop
+// ============================================================================
 
 class StrategyServiceRuntime {
 private:
@@ -1013,6 +1053,11 @@ public:
 };
 
 } // namespace
+
+
+// ============================================================================
+// Process entrypoint
+// ============================================================================
 
 int main(int argc, char** argv)
 {

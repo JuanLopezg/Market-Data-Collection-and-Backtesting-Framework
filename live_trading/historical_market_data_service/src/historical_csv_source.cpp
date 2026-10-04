@@ -1,3 +1,10 @@
+/*
+ * File purpose: Parses historical CSV data one day at a time and enforces ordering, validation, and anti-lookahead boundaries.
+ *
+ * Keep this file focused on this responsibility. Trading decisions belong in
+ * their domain component; process orchestration belongs in the service application.
+ */
+
 #include "historical_csv_source.h"
 
 #include <algorithm>

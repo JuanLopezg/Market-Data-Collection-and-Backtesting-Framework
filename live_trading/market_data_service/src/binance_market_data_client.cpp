@@ -1,3 +1,10 @@
+/*
+ * File purpose: Implements Binance REST calls, response validation, and bounded parallel daily-candle downloads.
+ *
+ * Keep this file focused on this responsibility. Trading decisions belong in
+ * their domain component; process orchestration belongs in the service application.
+ */
+
 #include "binance_market_data_client.h"
 
 #include <algorithm>

@@ -1,3 +1,10 @@
+/*
+ * File purpose: Loads normalized historical CSV data and exposes only candles visible at the configured simulated clock.
+ *
+ * Keep this file focused on this responsibility. Trading decisions belong in
+ * their domain component; process orchestration belongs in the service application.
+ */
+
 #include "historical_market_data.h"
 
 #include <algorithm>

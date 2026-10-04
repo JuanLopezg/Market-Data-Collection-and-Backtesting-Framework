@@ -1,3 +1,4 @@
+# Build the market-data-service executable and its local components.
 sources = [
     'market_data_service_main.cpp',
     'market_data_config.cpp',

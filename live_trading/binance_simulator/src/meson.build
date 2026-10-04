@@ -1,3 +1,4 @@
+# Build the binance-simulator executable and its local components.
 threads_dep = dependency('threads')
 
 sources = [

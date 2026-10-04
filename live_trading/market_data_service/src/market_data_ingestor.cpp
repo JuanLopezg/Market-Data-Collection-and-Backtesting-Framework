@@ -1,3 +1,10 @@
+/*
+ * File purpose: Runs one complete daily ingestion cycle: universe selection, downloads, validation, and storage commit.
+ *
+ * Keep this file focused on this responsibility. Trading decisions belong in
+ * their domain component; process orchestration belongs in the service application.
+ */
+
 #include "market_data_ingestor.h"
 
 #include <algorithm>

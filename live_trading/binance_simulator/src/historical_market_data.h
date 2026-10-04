@@ -1,3 +1,10 @@
+/*
+ * File purpose: Defines the in-memory historical candle store and simulated clock used by the Binance simulator.
+ *
+ * Keep this file focused on this responsibility. Trading decisions belong in
+ * their domain component; process orchestration belongs in the service application.
+ */
+
 #pragma once
 
 #include <atomic>
@@ -7,6 +14,7 @@
 #include <string>
 #include <vector>
 
+// One Binance-style daily candle stored as wire-friendly text values.
 struct SimulatedKline {
     std::int64_t openTimeMs = 0;
     std::int64_t closeTimeMs = 0;
@@ -17,11 +25,13 @@ struct SimulatedKline {
     std::string volume;
 };
 
+// Maps the simulator exchange symbol to its base asset.
 struct SimulatedInstrument {
     std::string exchangeSymbol;
     std::string baseAsset;
 };
 
+// Owns historical candles and hides any candle that is not visible at the simulated clock.
 class HistoricalMarketData {
 public:
     HistoricalMarketData(std::filesystem::path csvPath, std::int64_t clockTimeMs);

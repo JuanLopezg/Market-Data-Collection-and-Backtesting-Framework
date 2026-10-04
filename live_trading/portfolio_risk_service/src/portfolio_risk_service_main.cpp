@@ -1,3 +1,18 @@
+/*
+ * portfolio_risk_service_main.cpp
+ *
+ * Purpose: Combines strategy intents with account state, sizing, covariance/risk logic, and rebalance policy.
+ *
+ * Read this file from top to bottom:
+ *   1. Recover the durable account/risk checkpoint.
+ *   2. Wait for matching strategy intents and account state.
+ *   3. Read the required market history, calculate risk-aware decisions, persist them, and publish DecisionBatch.
+ *
+ * This file contains the executable entrypoint and service-level orchestration.
+ * Keep reusable domain calculations in focused components; keep startup,
+ * message flow, persistence boundaries, logging, and shutdown visible here.
+ */
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -37,12 +52,22 @@
 #include "transport_subjects.h"
 #include "volatility_target_sizer.h"
 
+
+// ============================================================================
+// Internal helpers and service implementation
+// ============================================================================
+
 namespace {
 
 using json = nlohmann::json;
 std::atomic<bool> running{true};
 
 void stopHandler(int) { running.store(false); }
+
+
+// ============================================================================
+// Command-line configuration
+// ============================================================================
 
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
@@ -204,6 +229,11 @@ std::string checkpointIdentity(
         "\nmarket_history_days=" + std::to_string(requiredHistoryDays) +
         "\nmarket_history_buffer_days=" + std::to_string(options.market_history_buffer_days);
 }
+
+
+// ============================================================================
+// Durable PostgreSQL persistence helpers
+// ============================================================================
 
 class PgResult {
 private:
@@ -430,6 +460,11 @@ public:
     }
 };
 
+
+// ============================================================================
+// Portfolio sizing and rebalance configuration
+// ============================================================================
+
 std::unique_ptr<PortfolioSizer> makeSizer(const json& value)
 {
     const std::string type = value.at("type").get<std::string>();
@@ -528,6 +563,11 @@ std::size_t marketRowCount(const MarketData& marketData)
     }
     return rows;
 }
+
+
+// ============================================================================
+// Service runtime and message-processing loop
+// ============================================================================
 
 class PortfolioRiskServiceRuntime {
 private:
@@ -909,6 +949,11 @@ public:
 };
 
 } // namespace
+
+
+// ============================================================================
+// Process entrypoint
+// ============================================================================
 
 int main(int argc, char** argv)
 {

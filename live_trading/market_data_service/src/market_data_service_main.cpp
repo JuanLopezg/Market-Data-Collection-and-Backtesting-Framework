@@ -1,3 +1,18 @@
+/*
+ * market_data_service_main.cpp
+ *
+ * Purpose: Runs the daily live market-data ingestion schedule and publishes committed update notifications.
+ *
+ * Read this file from top to bottom:
+ *   1. Load and validate market-data configuration.
+ *   2. Ingest the newest completed business UTC day into canonical SQLite.
+ *   3. Publish MarketDataUpdated only after storage commits, then wait for the next business-time boundary.
+ *
+ * This file contains the executable entrypoint and service-level orchestration.
+ * Keep reusable domain calculations in focused components; keep startup,
+ * message flow, persistence boundaries, logging, and shutdown visible here.
+ */
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -19,6 +34,11 @@
 #include "time_utils.h"
 #include "transport_subjects.h"
 
+
+// ============================================================================
+// Internal helpers and service implementation
+// ============================================================================
+
 namespace {
 
 std::atomic<bool> running{true};
@@ -27,6 +47,11 @@ void stopHandler(int)
 {
     running.store(false);
 }
+
+
+// ============================================================================
+// Command-line configuration
+// ============================================================================
 
 struct Options {
     std::filesystem::path config = "config/market_data/market_data_config.json";
@@ -129,6 +154,11 @@ bool runTarget(
 }
 
 } // namespace
+
+
+// ============================================================================
+// Process entrypoint
+// ============================================================================
 
 int main(int argc, char** argv)
 {

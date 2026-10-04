@@ -1,3 +1,10 @@
+/*
+ * File purpose: Publishes MarketDataUpdated only after canonical SQLite ingestion has committed successfully.
+ *
+ * Keep this file focused on this responsibility. Trading decisions belong in
+ * their domain component; process orchestration belongs in the service application.
+ */
+
 #include "market_data_update_publisher.h"
 
 #include <cstdint>

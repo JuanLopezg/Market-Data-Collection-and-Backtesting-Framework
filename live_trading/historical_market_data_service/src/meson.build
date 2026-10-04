@@ -1,3 +1,4 @@
+# Build the historical-market-data-service executable and its local components.
 sources = [
     'historical_market_data_service_main.cpp',
     'historical_csv_source.cpp',

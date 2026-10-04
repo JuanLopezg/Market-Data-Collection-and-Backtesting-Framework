@@ -1,3 +1,10 @@
+/*
+ * File purpose: Declares the daily ingestion coordinator that combines exchange data with canonical SQLite storage.
+ *
+ * Keep this file focused on this responsibility. Trading decisions belong in
+ * their domain component; process orchestration belongs in the service application.
+ */
+
 #pragma once
 
 #include <chrono>
@@ -17,6 +24,7 @@ struct MarketDataIngestionSummary {
     std::size_t downloaded_rows = 0;
 };
 
+// Coordinates one atomic daily market-data refresh from Binance into canonical storage.
 class MarketDataIngestor {
 public:
     explicit MarketDataIngestor(MarketDataConfig config);

@@ -1,3 +1,18 @@
+/*
+ * simulated_exchange_service_main.cpp
+ *
+ * Purpose: Implements the durable simulated exchange backend used by the gateway and historical/system tests.
+ *
+ * Read this file from top to bottom:
+ *   1. Recover exchange cash, positions, orders, fills, and durable outbox state.
+ *   2. Consume execution prices plus submit/cancel/snapshot backend commands.
+ *   3. Apply exchange semantics, checkpoint first, then publish order/fill/snapshot events from the durable outbox.
+ *
+ * This file contains the executable entrypoint and service-level orchestration.
+ * Keep reusable domain calculations in focused components; keep startup,
+ * message flow, persistence boundaries, logging, and shutdown visible here.
+ */
+
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -34,6 +49,11 @@
 #include "transport_subjects.h"
 
 
+
+// ============================================================================
+// Internal helpers and service implementation
+// ============================================================================
+
 namespace {
 
 std::atomic<bool> running{true};
@@ -67,6 +87,11 @@ Timestamp currentBusinessUtcDate(const TimeHandler& timeHandler)
     );
 }
 
+
+
+// ============================================================================
+// Command-line configuration
+// ============================================================================
 
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
@@ -194,6 +219,11 @@ std::string doubleText(double value)
     return output.str();
 }
 
+
+
+// ============================================================================
+// Durable PostgreSQL persistence helpers
+// ============================================================================
 
 class PgResult {
 private:
@@ -738,6 +768,11 @@ public:
     }
 };
 
+
+
+// ============================================================================
+// Service runtime and message-processing loop
+// ============================================================================
 
 class SimulatedExchangeServiceRuntime {
 private:
@@ -1458,6 +1493,11 @@ public:
 
 } // namespace
 
+
+
+// ============================================================================
+// Process entrypoint
+// ============================================================================
 
 int main(int argc, char** argv)
 {

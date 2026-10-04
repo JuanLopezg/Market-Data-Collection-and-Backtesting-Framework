@@ -1,3 +1,18 @@
+/*
+ * execution_state_service_main.cpp
+ *
+ * Purpose: Owns durable execution/account state, reconciliation, planning handoff, and exchange-event processing.
+ *
+ * Read this file from top to bottom:
+ *   1. Restore durable execution state and reconcile it with the exchange snapshot.
+ *   2. Turn portfolio decisions into planning requests and consume notional plans.
+ *   3. Track orders/fills, publish account snapshots, and close each execution cycle only when state is complete.
+ *
+ * This file contains the executable entrypoint and service-level orchestration.
+ * Keep reusable domain calculations in focused components; keep startup,
+ * message flow, persistence boundaries, logging, and shutdown visible here.
+ */
+
 #include <algorithm>
 #include <atomic>
 #include <csignal>
@@ -41,6 +56,11 @@
 #include "transport_subjects.h"
 
 
+
+// ============================================================================
+// Internal helpers and service implementation
+// ============================================================================
+
 namespace {
 
 std::atomic<bool> running{true};
@@ -80,6 +100,11 @@ std::optional<Timestamp> configuredReplayBootstrapCompletedUtcDate(const TimeHan
     return static_cast<Timestamp>(toYYYYMMDD(getPreviousDayDate(referenceUtcDate)));
 }
 
+
+
+// ============================================================================
+// Command-line configuration
+// ============================================================================
 
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
@@ -176,6 +201,11 @@ Options parseOptions(int argc, char** argv)
     return options;
 }
 
+
+
+// ============================================================================
+// Service runtime and message-processing loop
+// ============================================================================
 
 class ExecutionStateServiceRuntime {
 private:
@@ -1211,6 +1241,11 @@ public:
 
 } // namespace
 
+
+
+// ============================================================================
+// Process entrypoint
+// ============================================================================
 
 int main(int argc, char** argv)
 {

@@ -1,3 +1,18 @@
+/*
+ * exchange_gateway_main.cpp
+ *
+ * Purpose: Bridges northbound trading commands to an exchange backend and republishes exchange events.
+ *
+ * Read this file from top to bottom:
+ *   1. Read runtime/control/backend stream configuration.
+ *   2. Subscribe to submit, cancel, snapshot, or dry-run planning messages.
+ *   3. Forward commands to the backend adapter and publish normalized order/fill/snapshot events.
+ *
+ * This file contains the executable entrypoint and service-level orchestration.
+ * Keep reusable domain calculations in focused components; keep startup,
+ * message flow, persistence boundaries, logging, and shutdown visible here.
+ */
+
 #include <atomic>
 #include <csignal>
 #include <cmath>
@@ -18,6 +33,11 @@
 #include "time_utils.h"
 #include "transport_subjects.h"
 
+
+
+// ============================================================================
+// Internal helpers and service implementation
+// ============================================================================
 
 namespace {
 
@@ -80,6 +100,11 @@ const char* gatewayModeName(GatewayMode mode)
 }
 
 
+
+// ============================================================================
+// Command-line configuration
+// ============================================================================
+
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
     std::string runtime_stream = "ALGOTRADING_RUNTIME";
@@ -138,6 +163,11 @@ Options parseOptions(int argc, char** argv)
     return options;
 }
 
+
+
+// ============================================================================
+// Service runtime and message-processing loop
+// ============================================================================
 
 class ExchangeGatewayRuntime {
 private:
@@ -453,8 +483,8 @@ public:
           time_handler_(TimeHandlerFactory::createFromEnvironment()),
           bus_(options_.nats_url)
     {
-        // PATCH 24 deliberately keeps snapshot requests on a separate control stream.
-        // Existing PATCH 17-23 runtime streams therefore need no in-place subject update.
+        // Snapshot requests intentionally use a separate control stream.
+        // This keeps control traffic isolated from normal runtime event subjects.
         // Gateway is bound only to normal trading subjects. Business/event-time
         // validation is local through TimeHandler; no shared-clock control plane is used.
         bus_.ensureStream(
@@ -506,7 +536,7 @@ public:
             );
         }
         else {
-            // STEP 7: this mode can only inspect/prepare notional plans.
+            // Dry-run mode can inspect and validate notional plans but cannot submit orders.
             // It deliberately has no SubmitOrder/CancelOrder/backend binding.
             notional_plan_subscription_ = bus_.subscribe(
                 consumer(
@@ -567,7 +597,7 @@ public:
                 );
             }
             else {
-                // STEP 7 dry-run boundary: no backend and no real submission path.
+                // Dry-run boundary: there is no backend binding and no real submission path.
                 bus_.poll(
                     notional_plan_subscription_,
                     32,
@@ -584,6 +614,11 @@ public:
 
 } // namespace
 
+
+
+// ============================================================================
+// Process entrypoint
+// ============================================================================
 
 int main(int argc, char** argv)
 {

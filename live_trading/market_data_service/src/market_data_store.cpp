@@ -1,3 +1,10 @@
+/*
+ * File purpose: Implements transactional SQLite writes, reads, schema management, and symbol-retention bookkeeping.
+ *
+ * Keep this file focused on this responsibility. Trading decisions belong in
+ * their domain component; process orchestration belongs in the service application.
+ */
+
 #include "market_data_store.h"
 
 #include <algorithm>

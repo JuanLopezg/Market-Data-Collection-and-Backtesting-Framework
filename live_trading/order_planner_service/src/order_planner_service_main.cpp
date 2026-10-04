@@ -1,3 +1,18 @@
+/*
+ * order_planner_service_main.cpp
+ *
+ * Purpose: Converts notional planning requests into deterministic executable notional order plans.
+ *
+ * Read this file from top to bottom:
+ *   1. Recover the latest durable planning checkpoint.
+ *   2. Validate a planning request against current execution state.
+ *   3. Build, persist, and publish the notional order plan exactly once per business date.
+ *
+ * This file contains the executable entrypoint and service-level orchestration.
+ * Keep reusable domain calculations in focused components; keep startup,
+ * message flow, persistence boundaries, logging, and shutdown visible here.
+ */
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -30,6 +45,11 @@
 #include "time_utils.h"
 #include "transport_subjects.h"
 
+
+
+// ============================================================================
+// Internal helpers and service implementation
+// ============================================================================
 
 namespace {
 
@@ -88,6 +108,11 @@ void interruptibleBusinessWaitUntil(
     }
 }
 
+
+// ============================================================================
+// Command-line configuration
+// ============================================================================
+
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
     std::string stream = "ALGOTRADING_RUNTIME";
@@ -131,6 +156,11 @@ Options parseOptions(int argc, char** argv)
         throw std::invalid_argument("--postgres is required for LIVE planner checkpoints");
     return options;
 }
+
+
+// ============================================================================
+// Durable PostgreSQL persistence helpers
+// ============================================================================
 
 class PgResult {
 private:
@@ -278,6 +308,11 @@ public:
             throw std::logic_error("Conflicting persisted order-planner LIVE checkpoint");
     }
 };
+
+
+// ============================================================================
+// Service runtime and message-processing loop
+// ============================================================================
 
 class OrderPlannerServiceRuntime {
 private:
@@ -599,6 +634,11 @@ public:
 };
 
 } // namespace
+
+
+// ============================================================================
+// Process entrypoint
+// ============================================================================
 
 int main(int argc, char** argv)
 {

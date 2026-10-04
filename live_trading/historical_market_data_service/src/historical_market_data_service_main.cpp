@@ -1,3 +1,18 @@
+/*
+ * historical_market_data_service_main.cpp
+ *
+ * Purpose: Feeds canonical historical market data and execution-open prices without exposing future candle data.
+ *
+ * Read this file from top to bottom:
+ *   1. Advance independent CSV cursors using business time.
+ *   2. Publish only the open price while a daily candle is still in progress.
+ *   3. Commit completed daily candles to SQLite before publishing MarketDataUpdated.
+ *
+ * This file contains the executable entrypoint and service-level orchestration.
+ * Keep reusable domain calculations in focused components; keep startup,
+ * message flow, persistence boundaries, logging, and shutdown visible here.
+ */
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -23,6 +38,11 @@
 #include "time_utils.h"
 #include "transport_subjects.h"
 
+
+// ============================================================================
+// Internal helpers and service implementation
+// ============================================================================
+
 namespace {
 
 constexpr auto EMPTY_DATE = std::chrono::year{2000}/1/1;
@@ -32,6 +52,11 @@ void stopHandler(int)
 {
     running.store(false);
 }
+
+
+// ============================================================================
+// Command-line configuration
+// ============================================================================
 
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
@@ -268,6 +293,11 @@ void commitAndPublish(
 }
 
 } // namespace
+
+
+// ============================================================================
+// Process entrypoint
+// ============================================================================
 
 int main(int argc, char** argv)
 {
