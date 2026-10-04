@@ -27,7 +27,7 @@ REALTEST_CSV = ROOT / "storage/backtests/final_tests/pureRSI.csv"
 HISTORICAL_DATA = ROOT / "storage/databases/1d_cmc.csv"
 RUNTIME_BUNDLE_LIB = ROOT / "deploy/historical_replay/.runtime_bundle/lib"
 
-CANONICAL_RUNNER_SOURCE = ROOT / "research/src/canonical_replay.cpp"
+CANONICAL_RUNNER_SOURCE = ROOT / "research/src/canonical/canonical_replay.cpp"
 CANONICAL_RUNNER_BIN = RUN_ROOT / "bin/algotrading_replay_full"
 
 INCLUDE_DIRS = [
@@ -39,7 +39,7 @@ INCLUDE_DIRS = [
 ]
 
 FULL_RUN_SOURCES = [
-    "research/src/canonical_replay.cpp",
+    "research/src/canonical/canonical_replay.cpp",
     "lib/src/runtime/strategy_signal_engine.cpp",
     "lib/src/runtime/portfolio_risk_engine.cpp",
     "lib/src/runtime/notional_order_planner_engine.cpp",
@@ -56,9 +56,9 @@ FULL_RUN_SOURCES = [
 ]
 
 FAST_RUN_SOURCES = [
-    "research/src/backtest_helpers.cpp",
-    "research/src/realtest.cpp",
-    "research/src/backtesting_main.cpp",
+    "research/src/common/backtest_helpers.cpp",
+    "research/src/common/realtest.cpp",
+    "research/src/legacy/backtesting_main.cpp",
 ]
 
 
@@ -546,7 +546,7 @@ def compare_candidate_trades_to_realtest(
       * Only RealTest trades whose entry date is inside [start, cutoff] are compared.
       * A trade still open beyond a partial cutoff compares entry only.
       * Numeric equality uses the same historical dynamic tolerance as
-        research/src/realtest.cpp.
+        research/src/common/realtest.cpp.
       * No mismatch/exception is pre-approved in code. Every difference is
         reported and the human running the full comparison decides whether
         the observed set is acceptable.

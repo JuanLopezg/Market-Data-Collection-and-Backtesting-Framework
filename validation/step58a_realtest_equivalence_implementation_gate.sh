@@ -52,7 +52,7 @@ assert all(value is False for value in d['safety'].values())
 PY
 pass 'active Step58A config describes direct RealTest parity, zero execution frictions and system/dashboard restart support'
 
-if grep -Eq '0\.1\*v|10000000000|100000000000|v_prime=' "$CFG" "$DOC" "$ROOT/research/src/canonical_replay.cpp"; then
+if grep -Eq '0\.1\*v|10000000000|100000000000|v_prime=' "$CFG" "$DOC" "$ROOT/research/src/canonical/canonical_replay.cpp"; then
   fail 'obsolete synthetic-volume parity semantics remain in active Step58A files'
 fi
 pass 'active Step58A files contain no synthetic-volume parity transform'

@@ -22,6 +22,5 @@ __pycache__/
 # --- Other ---
 *.log
 storage/
-lib/src/strategy/strategies/
 lib/src/strategy/on_hold/
 validation/logs

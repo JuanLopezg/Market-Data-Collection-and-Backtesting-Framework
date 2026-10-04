@@ -26,8 +26,8 @@ pass 'prior full-system/manual/dashboard artifacts remain untouched'
 printf '%s\n' '[2/8] One canonical public CLI exposes three modes plus partial-day controls'
 for f in \
  "$ROOT/research/replay.py" \
- "$ROOT/research/src/canonical_replay.cpp" \
- "$ROOT/research/src/backtesting_main.cpp" \
+ "$ROOT/research/src/canonical/canonical_replay.cpp" \
+ "$ROOT/research/src/legacy/backtesting_main.cpp" \
  "$ROOT/research/REPLAY.md"; do
   [[ -f "$f" ]] || fail "missing ${f#$ROOT/}"
 done
@@ -128,27 +128,27 @@ pass '107-day canonical system matches the RealTest CSV directly; no T19 whiteli
 
 printf '%s\n' '[5b/8] RealTest-parity keeps historical data intact and disables execution frictions explicitly'
 grep -Fq 'value.bar.volume = canonicalHistoricalVolume(std::stod(fields[6]));' \
-  "$ROOT/research/src/canonical_replay.cpp" \
+  "$ROOT/research/src/canonical/canonical_replay.cpp" \
   || fail 'historical Strategy volume is not preserved'
 grep -Fq 'observation.bar.volume = value.bar.volume;' \
-  "$ROOT/research/src/canonical_replay.cpp" \
+  "$ROOT/research/src/canonical/canonical_replay.cpp" \
   || fail 'execution-open observation does not preserve the historical volume value'
 grep -Fq 'matching.ignore_volume_capacity = true;' \
-  "$ROOT/research/src/canonical_replay.cpp" \
+  "$ROOT/research/src/canonical/canonical_replay.cpp" \
   || fail 'RealTest parity still uses bar volume as execution capacity'
 grep -Fq 'matching.max_adverse_slippage_ppm = 0U;' \
-  "$ROOT/research/src/canonical_replay.cpp" \
+  "$ROOT/research/src/canonical/canonical_replay.cpp" \
   || fail 'RealTest parity slippage is not disabled'
 grep -Fq 'matching.fee_ppm = 0U;' \
-  "$ROOT/research/src/canonical_replay.cpp" \
+  "$ROOT/research/src/canonical/canonical_replay.cpp" \
   || fail 'RealTest parity matching fee is not neutral'
 grep -Fq 'accounting.fee_ppm = 0U;' \
-  "$ROOT/research/src/canonical_replay.cpp" \
+  "$ROOT/research/src/canonical/canonical_replay.cpp" \
   || fail 'RealTest parity accounting fee is not neutral'
 grep -Fq 'RealTest parity order remained active after execution open' \
-  "$ROOT/research/src/canonical_replay.cpp" \
+  "$ROOT/research/src/canonical/canonical_replay.cpp" \
   || fail 'RealTest parity does not fail closed on an unfilled open order'
-if grep -Eq '100000000000|0\.1\*v|10000000000' "$ROOT/research/src/canonical_replay.cpp"; then
+if grep -Eq '100000000000|0\.1\*v|10000000000' "$ROOT/research/src/canonical/canonical_replay.cpp"; then
   fail 'synthetic RealTest liquidity/volume transform is still present'
 fi
 python3 - "$SYS/summary.json" <<'PY58A5B'
@@ -224,13 +224,13 @@ PY
 pass 'cutoff policy matches the requested open-trade semantics exactly'
 
 printf '%s\n' '[7/8] Fast research mode is date/output controllable without creating a second public replay CLI'
-grep -Fq 'ALGOTRADING_REPLAY_START_DATE' "$ROOT/research/src/backtesting_main.cpp" \
+grep -Fq 'ALGOTRADING_REPLAY_START_DATE' "$ROOT/research/src/legacy/backtesting_main.cpp" \
   || fail 'fast Backtester start override missing'
-grep -Fq 'ALGOTRADING_REPLAY_END_DATE' "$ROOT/research/src/backtesting_main.cpp" \
+grep -Fq 'ALGOTRADING_REPLAY_END_DATE' "$ROOT/research/src/legacy/backtesting_main.cpp" \
   || fail 'fast Backtester end override missing'
-grep -Fq 'ALGOTRADING_REPLAY_TRADES_CSV' "$ROOT/research/src/backtesting_main.cpp" \
+grep -Fq 'ALGOTRADING_REPLAY_TRADES_CSV' "$ROOT/research/src/legacy/backtesting_main.cpp" \
   || fail 'fast candidate trade output override missing'
-grep -Fq 'ALGOTRADING_REPLAY_SKIP_INTERNAL_REALTEST' "$ROOT/research/src/backtesting_main.cpp" \
+grep -Fq 'ALGOTRADING_REPLAY_SKIP_INTERNAL_REALTEST' "$ROOT/research/src/legacy/backtesting_main.cpp" \
   || fail 'central RealTest ownership switch missing'
 if command -v meson >/dev/null 2>&1 && [[ -f "$ROOT/meson.build" ]]; then
   # Only compile when this checkout has a configured build or can configure one with its local deps.
@@ -254,7 +254,7 @@ if grep -Eq 'T19_REFERENCE_FILLS|REALTEST_BASELINE|known_exception_policy|KNOWN_
   fail 'frozen T19 exception/prefix acceptance still exists in canonical replay.py'
 fi
 if grep -Ein 'PRIVATE_KEY|MNEMONIC|SEED_PHRASE|API_WALLET|HYPERLIQUID.*(SIGN|PRIVATE|ORDER)' \
- "$ROOT/research/replay.py" "$ROOT/research/src/canonical_replay.cpp" >"$TMP/private"; then
+ "$ROOT/research/replay.py" "$ROOT/research/src/canonical/canonical_replay.cpp" >"$TMP/private"; then
   cat "$TMP/private" >&2
   fail 'private real-venue concern leaked into canonical replay suite'
 fi

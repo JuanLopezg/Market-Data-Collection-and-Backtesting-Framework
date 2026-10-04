@@ -58,7 +58,7 @@ The single script performs, in order:
 
 1. PureRSI + EqualWeight full-history distributed replay.
 2. Exact distributed-vs-fast comparison.
-3. Exact `research/src/realtest.cpp` comparison against `pureRSI.csv`.
+3. Exact `research/src/common/realtest.cpp` comparison against `pureRSI.csv`.
 4. Locked known RealTest baseline check (only the confirmed BNB/FET/ZEC exceptions).
 5. PureRSI + VolTarget full-history distributed replay.
 6. Exact distributed-vs-fast comparison.

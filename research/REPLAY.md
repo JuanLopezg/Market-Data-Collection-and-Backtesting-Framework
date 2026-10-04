@@ -157,7 +157,7 @@ Dashboard state remains at the existing Step58 path:
 ## RealTest-parity execution isolation
 
 `realtest-parity` reproduces the execution semantics of the historical
-`research/src/backtesting_main.cpp` while still traversing the modern full-system
+`research/src/legacy/backtesting_main.cpp` while still traversing the modern full-system
 Strategy -> Risk -> Planner -> CanonicalVenueAdapter -> MOCK path.
 
 The boundary is intentionally simple and explicit:

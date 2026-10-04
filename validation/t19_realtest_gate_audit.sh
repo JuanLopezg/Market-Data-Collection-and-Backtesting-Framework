@@ -8,7 +8,7 @@ echo "T19 — REALTEST EXACT-POLICY GATE AUDIT"
 echo "============================================================"
 
 required=(
-  research/src/realtest.cpp
+  research/src/common/realtest.cpp
   research/src/realtest.h
   tools/distributed_compare/check_realtest_baseline.py
   tools/distributed_compare/realtest_known_baseline.json
