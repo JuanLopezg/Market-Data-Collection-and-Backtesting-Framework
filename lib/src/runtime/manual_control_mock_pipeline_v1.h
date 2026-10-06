@@ -20,6 +20,12 @@
 #include "notional_order_planner_engine.h"
 #include "order_manager.h"
 
+/**************************************************************************************
+ * Type    : ManualControlMockPipelineV1
+ * Purpose : Route an explicit manual target through risk, planning and the canonical MOCK
+ *           venue without involving a strategy signal generator.
+ **************************************************************************************/
+
 namespace ManualControlV1 {
 
 enum class ManualRouteStatusV1 {

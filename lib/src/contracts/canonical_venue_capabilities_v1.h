@@ -5,9 +5,7 @@
 #include <vector>
 
 /**************************************************************************************
- * Header  : canonical_venue_capabilities_v1.h
- * Step    : 48 — Canonical Multi-Venue Adapter Contract v1
- * Purpose : Stable capability negotiation for heterogeneous execution venues
+ * Purpose : Stable capability negotiation for heterogeneous execution venues.
  *
  * A caller MUST query capabilities instead of branching on venue identity. Requiring an
  * unsupported capability blocks that route; it never implies fallback to another venue.
@@ -39,7 +37,7 @@ enum class Capability {
     DeadMansSwitch,
     RateLimitIntrospection,
 
-    // Added by the Step47C freeze.
+    // Capabilities used by status, trigger-order and accounting workflows.
     OrderStatusQuery,
     TriggerOrders,
     FeeAccounting,

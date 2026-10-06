@@ -6,6 +6,7 @@ runtime_sources = files(
     'decision_engine.cpp',
     'execution_engine.cpp',
     'execution_planning_state.cpp',
+    'full_system_replay_runtime_v1.cpp',
     'order_planner_engine.cpp',
     'notional_order_planner_engine.cpp',
     'portfolio_risk_engine.cpp',

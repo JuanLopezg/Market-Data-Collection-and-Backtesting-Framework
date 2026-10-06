@@ -9,6 +9,13 @@
 #include <nlohmann/json.hpp>
 
 
+/**************************************************************************************
+ * Purpose : Central JSON boundary for transport contracts.
+ *
+ * The mappings stay together because they are mechanical representations of related
+ * wire contracts. Helpers remain private to this translation unit so serialization rules
+ * are easy to audit without spreading tiny codec files across the project.
+ **************************************************************************************/
 namespace {
 
 using json = nlohmann::json;

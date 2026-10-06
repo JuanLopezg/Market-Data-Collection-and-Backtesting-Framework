@@ -11,6 +11,15 @@
 #include "canonical_venue_adapter.h"
 #include "mock_fault_chaos_rate_limit_v1.h"
 
+/**************************************************************************************
+ * Type    : MockExchangeAdapterV1
+ * Purpose : Expose the complete deterministic MOCK venue through CanonicalVenueAdapter.
+ *
+ * Higher-level trading code talks only to the canonical adapter contract. This facade
+ * forwards commands into the MOCK lifecycle/matching/account/recovery pipeline and emits
+ * canonical venue events back to the caller.
+ **************************************************************************************/
+
 namespace MockVenueV1 {
 
 class MockExchangeAdapterV1 final : public CanonicalVenueAdapter {

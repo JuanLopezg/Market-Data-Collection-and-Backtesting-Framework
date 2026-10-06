@@ -35,9 +35,7 @@ void Logger::Setup(bool debugEnabled,
     root.setPriority(debugEnabled ? log4cpp::Priority::DEBUG
                                   : log4cpp::Priority::INFO);
 
-    // -------------------------
-    // PatternLayout para TODO
-    // -------------------------
+    // Use the same timestamp/severity layout for every configured appender.
     auto* layoutConsole = new log4cpp::PatternLayout();
     layoutConsole->setConversionPattern("%d{%Y-%m-%d %H:%M:%S.%l} [%p] %m%n");
 

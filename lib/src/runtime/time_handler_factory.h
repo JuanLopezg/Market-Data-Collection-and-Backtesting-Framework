@@ -21,7 +21,7 @@ TimeHandlerConfig loadConfigFromEnvironment();
 // Construct a validated TimeHandler from canonical configuration.
 TimeHandler create(const TimeHandlerConfig& config);
 
-// Convenience entry point used by services once T6-T12 migrate to TimeHandler.
+// Convenience entry point for services that read time configuration from the environment.
 TimeHandler createFromEnvironment();
 
 } // namespace TimeHandlerFactory

@@ -40,7 +40,15 @@ INCLUDE_DIRS = [
 
 FULL_RUN_SOURCES = [
     "research/src/canonical/canonical_replay.cpp",
+    "lib/src/exchange/mock_reconciliation_ledger_parity_v1.cpp",
+    "lib/src/exchange/mock_snapshot_user_stream_recovery_v1.cpp",
+    "lib/src/exchange/mock_fault_chaos_rate_limit_v1.cpp",
+    "lib/src/exchange/mock_account_margin_positions_accounting_v1.cpp",
+    "lib/src/exchange/mock_deterministic_matching_fill_v1.cpp",
+    "lib/src/exchange/mock_order_admission_lifecycle_v1.cpp",
+    "lib/src/exchange/mock_recovery_codec_v1.cpp",
     "lib/src/runtime/strategy_signal_engine.cpp",
+    "lib/src/runtime/full_system_replay_runtime_v1.cpp",
     "lib/src/runtime/portfolio_risk_engine.cpp",
     "lib/src/runtime/notional_order_planner_engine.cpp",
     "lib/src/runtime/rolling_market_state.cpp",

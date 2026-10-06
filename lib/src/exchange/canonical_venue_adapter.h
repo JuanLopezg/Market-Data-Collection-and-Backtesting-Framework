@@ -8,12 +8,11 @@
 #include "canonical_venue_orders_v1.h"
 
 /**************************************************************************************
- * Header  : canonical_venue_adapter.h
- * Step    : 48 — Canonical Multi-Venue Adapter Contract v1
- * Purpose : Common executable interface for MOCK, the first real venue and future venues
+ * Type    : CanonicalVenueAdapter
+ * Purpose : Common execution interface shared by MOCK and concrete trading venues.
  *
- * This is an interface only. Step48 does not implement credentials, private routing,
- * network protocols or a concrete venue.
+ * This interface defines the behavior expected by higher-level trading code. Credentials,
+ * private routing, network protocols and venue-specific details belong in concrete adapters.
  *
  * Contract rules:
  * - context() identifies the explicitly configured venue/environment.

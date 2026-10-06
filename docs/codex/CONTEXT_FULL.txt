@@ -1,0 +1,1220 @@
+ALGOTRADING — CURRENT CONTEXT / HANDOFF
+Generated: 2026-10-06
+Project root on user machine:
+/mnt/c/Users/Juan/Documents/Python/algoTrading
+
+PURPOSE
+=======
+This file is the current long-form handoff for continuing work in a new ChatGPT/LLM session.
+
+It captures:
+- the validated canonical replay state,
+- the live_trading readability pass,
+- the ongoing lib readability/structure pass,
+- the current temporary research compatibility architecture,
+- the exact current validation status,
+- coding/readability rules,
+- and the revised roadmap.
+
+Immediate next priorities:
+1. finish the current lib readability/structure pass,
+2. rework research so it uses CURRENT library behavior instead of the frozen legacy runtime,
+3. build the .ai repository context/index layer,
+4. continue release/VPS/Hyperliquid work.
+
+========================================================================
+1. USER WORKING STYLE
+========================================================================
+
+The user prefers:
+- quick, direct, code-focused responses,
+- one step at a time,
+- scripts or small ZIP deltas for non-trivial changes,
+- local execution by the user rather than the assistant running long builds/tests,
+- explicit distinction between PASS and “not yet validated”,
+- readability over cleverness,
+- a moderate number of files: neither giant monoliths nor pointless fragmentation,
+- comments and logs in English,
+- minimal historical clutter in active source folders.
+
+Do not:
+- run long backtests automatically,
+- silently change trading semantics,
+- mark something PASS until the user provides successful output,
+- create abstraction layers that only move one function into another file,
+- split one simple class across an excessive number of tiny files,
+- create wrapper-only files just to make main() tiny.
+
+When delivering patches:
+- say what changed,
+- say whether anything is deleted,
+- keep the patch focused,
+- provide exact local validation commands.
+
+========================================================================
+2. CODE QUALITY / READABILITY RULES
+========================================================================
+
+GENERAL
+-------
+- Readability is more important than micro-optimization unless performance is genuinely material.
+- Code should be understandable by someone who knows very little about the repo.
+- Prefer straightforward code over clever one-liners or compressed logic.
+- A person new to the project should be able to follow the main flow from top to bottom without jumping through many files.
+
+FILES
+-----
+- One file should have a clear responsibility.
+- Avoid giant files that contain several unrelated concepts.
+- Also avoid artificial fragmentation.
+- A main file is allowed to be reasonably long when it contains real service orchestration.
+- Do NOT create a *_application.cpp + *_application.h pair just to move the same main logic out of main().
+- Separate a component only when it has a meaningful responsibility, reuse, lifecycle, state, or abstraction boundary.
+- Several small tightly-related types may live together.
+- A class does not automatically need one header + one cpp if that causes noise.
+- Likewise, a whole subsystem should not be jammed into two enormous files.
+- A large component can reasonably be a .h for interface/state and a .cpp for implementation.
+
+FUNCTIONS
+---------
+- Functions should do one understandable job.
+- Names should explain intent.
+- Avoid vague names such as calc(), process(), handle(), doStuff() when a more specific name is possible.
+- Avoid huge functions when they clearly contain several independent steps.
+- Also avoid extracting trivial one-line functions purely to reduce line count.
+- Main flows should read almost like pseudocode.
+
+ENTRYPOINTS
+-----------
+- main() should be understandable.
+- It may contain service-level orchestration directly.
+- It should not contain deep reusable domain algorithms.
+- Do not reduce main() to a one-line wrapper unless the abstraction genuinely provides value.
+
+COMMENTS
+--------
+- Comments must be in English.
+- Comments should explain WHY something exists or what invariant/timing rule is important.
+- Do not write comments that simply restate the next line.
+- Important trading timing/economic rules should be documented close to the code.
+
+LOGS
+----
+- Logs must be in English.
+- Logs should be concise but include useful context when relevant:
+  symbol, orderId, tradeId, side, quantity, price, reason, timestamp.
+- DEBUG for detailed diagnostics.
+- INFO for meaningful service/trading events.
+- WARN for recoverable abnormal states.
+- ERROR for real failures.
+- Do not log secrets.
+
+STRUCTURE
+---------
+- Separate domain logic from infrastructure where possible.
+- Strategy should not care about dashboard rendering.
+- Risk should not know how JSON is drawn.
+- Portfolio should not depend directly on Hyperliquid-specific details.
+- Prefer small explicit interfaces between modules.
+- Avoid mutable global state.
+- Ownership in C++ should be obvious.
+- Prefer named domain structs over long lists of ambiguous doubles.
+- Avoid magic numbers.
+- Prefer one source of truth for PnL, equity, sizing, fills, etc.
+
+TRADING-SPECIFIC
+----------------
+- No hidden look-ahead.
+- Timing rules must be explicit.
+- Backtest and live should share economic logic where reasonable.
+- Differences between replay/backtest/live must be deliberate and documented.
+- Important invariants should be checked.
+- Duplicate signals/orders/fills must be easy to investigate.
+- Risk, sizing, fills, reconciliation, positions, PnL and order state should be easy to trace.
+
+BUILD / REPO HYGIENE
+--------------------
+- The supported project should compile with the normal build.
+- No old.cpp / final2.cpp / tmp.cpp naming.
+- Remove one-off migration scripts after their job is finished.
+- Generated outputs should live in dedicated output/run directories.
+- Avoid dozens of historical Markdown notes in active folders.
+- Current docs should describe current behavior, not narrate development history.
+
+========================================================================
+3. OFFICIAL LOCAL BUILD ENVIRONMENT
+========================================================================
+
+Use WSL for project builds.
+
+Project root in WSL:
+
+    cd /mnt/c/Users/Juan/Documents/Python/algoTrading
+
+Why:
+- WSL has Arrow/Parquet and the other required dependencies.
+- Git Bash / MinGW failed because Arrow was not available there.
+
+Do not set up a second Windows-native dependency stack unless explicitly desired later.
+
+Typical build:
+
+    rm -rf build-check
+    meson setup build-check
+    meson compile -C build-check
+
+========================================================================
+4. CANONICAL REPLAY — PUBLIC CLI
+========================================================================
+
+Canonical CLI:
+
+    python3 research/replay.py {fast|system|dashboard}
+
+Modes:
+
+fast
+----
+Research Backtester / PureRSI route.
+
+system
+------
+Modern deterministic full-system route:
+Strategy -> Risk -> Planner -> canonical venue / MOCK.
+
+dashboard
+---------
+Same economics as system, plus dashboard state publication.
+
+========================================================================
+5. CANONICAL RELEASE BASELINE
+========================================================================
+
+Current compact canonical acceptance fingerprint:
+
+    94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2
+
+Validated compact window:
+
+    2020-01-01 .. 2020-04-16
+    107 days
+
+Expected compact result:
+- RealTest trades: 25
+- candidate trades: 25
+- fully matched: 25
+- differences: 0
+- canonical fills: 50
+
+Release gate:
+
+    bash validation/step59_canonical_replay_release_gate.sh
+
+Step59 validates:
+- canonical runner compiles,
+- checkpoint/resume controls,
+- exact compact RealTest parity,
+- repeated determinism,
+- system restart/resume,
+- dashboard == system,
+- dashboard restart/resume,
+- pacing speed invariance,
+- all paths converge to the accepted fingerprint.
+
+========================================================================
+6. FULL-HISTORY CANONICAL EVIDENCE
+========================================================================
+
+Historical data range:
+
+    2020-01-01 .. 2025-10-13
+
+Days:
+
+    2113
+
+Accepted full-history result:
+- candidate trades: 631
+- fully matched: 628
+- visible differences: 4
+- canonical fills: 1261
+
+Full-history fingerprint:
+
+    1551106eac4dd7b712729f72980ac196308d61b1d7cbb9e538c557271415cbf0
+
+The four visible differences are intentionally NOT hidden:
+
+1. BNB / RealTest id 502
+   RealTest: 2024-06-05 -> 2024-06-09
+   candidate exits 2024-06-08
+   candidate qty: 77.0384643884
+   candidate pnl: -218.233868573
+
+2. FET / RealTest id 519
+   RealTest trade beginning 2024-09-21 missing from candidate.
+
+3. ZEC / id 631
+   Starts 2025-10-12.
+   Historical candidate boundary representation had exited=NO.
+   mark/exit representation: 249.722524
+   qty: 269.7706550268
+   pnl: -11488.0330820616
+   RealTest marks it exited at close.
+
+4. Extra candidate FET trade
+   candidate id 522
+   2024-09-25 -> 2024-09-26
+   qty: 31046.9153915333
+   pnl: -2239.1966787836
+
+These differences were manually reviewed/accepted.
+Do not hardcode them away or hide them.
+
+========================================================================
+7. REALTEST / PARITY ECONOMICS
+========================================================================
+
+RealTest source:
+
+    storage/backtests/final_tests/pureRSI.csv
+
+Historical parity economics:
+- original OHLCV,
+- target monetary value at CLOSE(T),
+- target quantity resolved at OPEN(T+1),
+- full fill at next open,
+- no volume capacity limit,
+- slippage = 0,
+- fees = 0,
+- no synthetic 1e10 / 1e11 liquidity transform.
+
+Normal MOCK behavior remains separate and may use realistic execution rules.
+
+Do NOT reintroduce:
+- hidden whitelists,
+- hardcoded known exceptions,
+- synthetic parity liquidity,
+- non-zero parity slippage/fees.
+
+========================================================================
+8. DETERMINISM / SPEED / RESTART EVIDENCE
+========================================================================
+
+107-day system speed invariance:
+- speed 250 -> 94fdf8...
+- speed 1500 -> 94fdf8...
+- speed 5000 -> 94fdf8...
+
+Full-history system speed invariance:
+- speed 250 -> 155110...
+- speed 1500 -> 155110...
+- speed 5000 -> 155110...
+
+Repeated compact system runs:
+- identical fingerprint 94fdf8...
+- byte-identical fills.
+
+System restart/resume:
+- checkpoint after day 50,
+- resume to completion,
+- final 25/25 RealTest,
+- 50 fills,
+- fingerprint 94fdf8...,
+- byte-identical fills.
+
+Dashboard compact:
+- 25/25,
+- 50 fills,
+- fingerprint 94fdf8...,
+- byte-identical economics.
+
+Dashboard restart/resume:
+- same final economics and same fingerprint.
+
+========================================================================
+9. DASHBOARD PACING
+========================================================================
+
+Meaningful pacing test:
+- warm history through later period,
+- pace only an active date,
+- speeds 250 and 5000,
+- identical economics and fills.
+
+Pacing fingerprint:
+
+    b85026fe0cf5206dc4120af9b3a12cdc6a2a978d08faf69b0dc99b602bbe9024
+
+Observed result:
+- 502 candidate trades,
+- 501 fully matched,
+- known BNB difference,
+- 1004 fills,
+- byte-identical fills between speeds.
+
+Dashboard full-history:
+- 631 candidates,
+- 628 matched,
+- same 4 differences,
+- 1261 fills,
+- fingerprint 155110...,
+- system == dashboard economics.
+
+The user visually checked the dashboard and confirmed it looked good enough for the current stage.
+
+The final long slow browser acceptance is intentionally deferred until near the Hyperliquid phase.
+
+========================================================================
+10. WINDOW SEMANTICS
+========================================================================
+
+--start changes the actual simulation start and starts cold.
+
+If beginning mid-history:
+- rolling indicators,
+- universe selection,
+- rankers,
+- other state
+
+may not be warmed.
+
+For visual pacing of a later interval while keeping warm history use:
+- --pace-start
+- --pace-end
+
+Do not confuse simulation start with paced display interval.
+
+========================================================================
+11. LIVE_TRADING READABILITY PASS
+========================================================================
+
+The user requested a readability pass over all live_trading code, without refactoring lib at that time.
+
+Main goals:
+- comments in English,
+- logs in English,
+- understandable to a newcomer,
+- prefer readability over cleverness,
+- clearer responsibilities,
+- clearer flow,
+- remove historical PATCH/STEP comments from active code,
+- keep behavior unchanged.
+
+Top-level service areas include roughly:
+
+live_trading/
+├── binance_simulator/
+├── exchange_gateway/
+├── execution_service/
+├── execution_state_service/
+├── historical_market_data_service/
+├── market_data_service/
+├── order_planner_service/
+├── portfolio_risk_service/
+├── simulated_exchange_service/
+└── strategy_service/
+
+A README was added to explain the end-to-end live flow.
+
+Conceptual flow:
+
+Market Data
+-> Strategy
+-> Risk
+-> Order Planning
+-> Execution
+-> Exchange Gateway
+-> Exchange / Simulator
+-> Fills / Account / Execution State
+
+IMPORTANT DESIGN CORRECTION
+---------------------------
+The first readability pass created *_application.cpp / *_application.h wrappers and reduced main() to a tiny wrapper.
+
+The user rejected that structure.
+
+Corrected rule:
+- main can be moderately long,
+- orchestration stays visible in main when appropriate,
+- real components remain separate,
+- only create extra files for real responsibilities,
+- avoid both monolithic files and fake abstraction layers.
+
+The temporary *_application.* layer was merged back into *_main.cpp and removed.
+Meson references were cleaned.
+
+Later whole-project builds succeeded with this corrected live_trading structure.
+
+========================================================================
+12. RESEARCH DIRECTORY — CURRENT TEMPORARY STRUCTURE
+========================================================================
+
+Current high-level shape:
+
+research/
+├── replay.py
+├── REPLAY.md
+├── meson.build
+└── src/
+    ├── canonical/
+    │   ├── canonical_replay.cpp
+    │   └── meson.build
+    ├── common/
+    ├── legacy/
+    │   ├── backtesting_main.cpp
+    │   ├── backtesting_metrics_main_html_reports.cpp
+    │   ├── btc_moving_average.cpp
+    │   ├── initial_strategy_parameters.cpp
+    │   ├── multi_strategy_main.cpp
+    │   ├── stats.cpp
+    │   ├── testing_xhbreakout.cpp
+    │   ├── runtime/
+    │   └── meson.build
+    ├── tools/
+    │   ├── fake_live_main.cpp
+    │   └── meson.build
+    └── meson.build
+
+Current target set includes:
+
+Modern/current:
+- algotrading_canonical_replay
+- algotrading_research
+- algotrading_fake_live
+
+Historical/research:
+- algotrading_research_html
+- algotrading_research_btc_ma
+- algotrading_research_initial_params
+- algotrading_research_multi_strategy
+- algotrading_research_stats
+- algotrading_research_xhbreakout
+
+========================================================================
+13. IMPORTANT: RESEARCH LEGACY RUNTIME IS TEMPORARY
+========================================================================
+
+Current compatibility runtime:
+
+    research/src/legacy/runtime/
+
+Why it exists:
+- historical research mains used an older Strategy / BacktestContext API,
+- current lib no longer matched those interfaces,
+- the temporary goal was to make the old research executables compile.
+
+Historical compatibility code was mainly based on commit:
+
+    89eb80cb440d44c31a762c402074871d56610190
+
+This is NOT the desired final architecture.
+
+The user explicitly wants the next research phase to use CURRENT behavior, not old behavior.
+
+Final desired direction:
+- current lib is the source of truth,
+- research uses current interfaces and current economics,
+- useful HTML/report/statistics/research capabilities remain available,
+- temporary frozen runtime is removed once migration is complete.
+
+Do not treat research/src/legacy/runtime/ as permanent.
+
+========================================================================
+14. IMPORTANT GIT DISCOVERY: STRATEGY FILES
+========================================================================
+
+The directory:
+
+    lib/src/strategy/strategies/
+
+was previously ignored by .gitignore.
+
+Files physically present included:
+- all_strategies.h
+- donchianBreakout.h
+- meson.build
+- pureRSI.h
+- xHBreakout.h
+- xHBreakout_atr.h
+
+The ignore entry for lib/src/strategy/strategies/ was removed.
+
+Before committing:
+- inspect git status,
+- make sure strategy sources are tracked,
+- do not accidentally re-ignore this directory.
+
+========================================================================
+15. LIB READABILITY PASS — GOAL
+========================================================================
+
+The current active task is applying the same readability philosophy to lib/.
+
+Goals:
+- comments in English,
+- logs in English,
+- easier navigation for a newcomer,
+- clearer headers,
+- large header-only components split into normal .h/.cpp when appropriate,
+- keep templates inline when required,
+- avoid giant multi-responsibility files,
+- avoid pointless fragmentation,
+- preserve behavior.
+
+This is a readability/organization pass, NOT a trading-semantics redesign.
+
+After every meaningful sub-pass:
+1. compile whole project,
+2. run Step59,
+3. confirm fingerprint remains 94fdf8...,
+4. only then continue.
+
+========================================================================
+16. LIB PASS 1 — SAFE READABILITY CLEANUP
+========================================================================
+
+PASS 1 included:
+- lib/README.md orientation map,
+- comments/log wording cleanup,
+- historical PATCH/STEP comments rewritten or removed where they were only development narration,
+- preserved frozen evidence/version identifiers where relevant,
+- clarified major MOCK/runtime components,
+- kept contract_json_codec.cpp centralized instead of fragmenting it unnecessarily.
+
+Validation:
+- whole project build: PASS
+- Step59: PASS
+- fingerprint unchanged:
+  94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2
+
+PASS 1 is CLOSED.
+
+========================================================================
+17. LIB PASS 2A — RECONCILIATION / LEDGER PARITY
+========================================================================
+
+Component:
+
+    lib/src/exchange/mock_reconciliation_ledger_parity_v1.h
+
+Refactor:
+- interface/types/state remain in .h,
+- implementation moved to:
+  lib/src/exchange/mock_reconciliation_ledger_parity_v1.cpp
+- Meson updated.
+
+Because canonical replay has a standalone compile path in research/replay.py,
+that source list also had to be updated to include the new .cpp.
+
+Validation:
+- whole project build: PASS
+- Step59 initially failed with undefined references because research/replay.py did not link the new .cpp
+- standalone source list fixed
+- Step59 rerun: PASS
+- fingerprint unchanged 94fdf8...
+
+PASS 2A is CLOSED.
+
+========================================================================
+18. LIB PASS 2B — FULL SYSTEM REPLAY RUNTIME
+========================================================================
+
+Component:
+
+    lib/src/runtime/full_system_replay_runtime_v1.h
+
+Refactor:
+- header reduced to interface/state/helpers,
+- implementation moved to:
+  lib/src/runtime/full_system_replay_runtime_v1.cpp
+- Meson updated,
+- research/replay.py standalone source list updated.
+
+Validation:
+- whole project build: PASS
+- Step59: PASS
+- fingerprint unchanged 94fdf8...
+
+PASS 2B is CLOSED.
+
+========================================================================
+19. LIB PASS 2C — SNAPSHOT / USER STREAM RECOVERY
+========================================================================
+
+Component:
+
+    lib/src/exchange/mock_snapshot_user_stream_recovery_v1.h
+
+Refactor:
+- header reduced to contract/state/helper declarations,
+- implementation moved to:
+  lib/src/exchange/mock_snapshot_user_stream_recovery_v1.cpp
+- Meson updated,
+- research/replay.py standalone source list updated.
+
+Validation:
+- whole project build: PASS
+- Step59: PASS
+- fingerprint unchanged 94fdf8...
+
+PASS 2C is CLOSED.
+
+========================================================================
+20. LIB PASS 2D — FAULT / CHAOS / RATE LIMIT
+========================================================================
+
+Component:
+
+    lib/src/exchange/mock_fault_chaos_rate_limit_v1.h
+
+Refactor:
+- normal implementation moved to:
+  lib/src/exchange/mock_fault_chaos_rate_limit_v1.cpp
+- required template implementation kept in the header,
+- Meson updated,
+- research/replay.py standalone source list updated.
+
+Validation:
+- whole project build: PASS
+- Step59: PASS
+- fingerprint unchanged 94fdf8...
+
+PASS 2D is CLOSED.
+
+========================================================================
+21. LIB PASS 2E — ACCOUNT / MARGIN / POSITIONS / ACCOUNTING
+========================================================================
+
+Component:
+
+    lib/src/exchange/mock_account_margin_positions_accounting_v1.h
+
+Refactor:
+- interface/state in header,
+- implementation moved to:
+  lib/src/exchange/mock_account_margin_positions_accounting_v1.cpp
+- Meson updated,
+- research/replay.py standalone source list updated.
+
+There were two mechanical extraction bugs:
+1. constructor declaration/body split incorrectly,
+2. several out-of-class signatures were generated in the wrong order.
+
+Both were fixed.
+
+The user then reported:
+    "it passed"
+
+PASS 2E is considered CLOSED.
+
+========================================================================
+22. LIB PASS 2F — DETERMINISTIC MATCHING / FILLS
+========================================================================
+
+Component:
+
+    lib/src/exchange/mock_deterministic_matching_fill_v1.h
+
+Refactor:
+- header roughly ~195 lines,
+- implementation roughly ~548 lines,
+- template emit() remains in header,
+- matching/fill/slippage/lifecycle implementation moved to:
+  lib/src/exchange/mock_deterministic_matching_fill_v1.cpp
+- Meson updated,
+- research/replay.py standalone source list updated.
+
+The user reported:
+    "passed again"
+
+PASS 2F is CLOSED.
+
+========================================================================
+23. LIB PASS 2G — ORDER ADMISSION / LIFECYCLE
+========================================================================
+
+Component:
+
+    lib/src/exchange/mock_order_admission_lifecycle_v1.h
+
+Refactor:
+- lightweight public forwarding/getter methods remained inline,
+- templates remained in the header,
+- substantial admission/validation/lifecycle/fingerprint/idempotency implementation moved to:
+  lib/src/exchange/mock_order_admission_lifecycle_v1.cpp
+- Meson updated,
+- research/replay.py standalone source list updated.
+
+Initial extraction produced four malformed out-of-class signatures:
+- noError()
+- fingerprint(SubmitOrderBatch)
+- fingerprint(CancelOrderBatch)
+- fingerprint(ModifyOrderBatch)
+
+Those mechanical signature errors were fixed.
+
+Validation:
+- whole project build: PASS
+- Step59: PASS
+- canonical fingerprint unchanged:
+  94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2
+
+PASS 2G is CLOSED.
+
+========================================================================
+24. IMPORTANT BUILD-WIRING LESSON FROM LIB SPLITS
+========================================================================
+
+Several large exchange/runtime components were previously header-only.
+
+When moving them to .cpp:
+- Meson must include the new .cpp,
+- BUT canonical replay also has a standalone compile path controlled by research/replay.py.
+
+Therefore every new implementation file needed by canonical replay must also appear in the standalone canonical source list.
+
+Current standalone canonical source list has been progressively updated for:
+- mock_reconciliation_ledger_parity_v1.cpp
+- full_system_replay_runtime_v1.cpp
+- mock_snapshot_user_stream_recovery_v1.cpp
+- mock_fault_chaos_rate_limit_v1.cpp
+- mock_account_margin_positions_accounting_v1.cpp
+- mock_deterministic_matching_fill_v1.cpp
+- mock_order_admission_lifecycle_v1.cpp
+
+Do not assume Meson alone is sufficient for Step59.
+
+========================================================================
+25. LIB PASS 2H — RECOVERY CODEC
+========================================================================
+
+Component:
+
+    lib/src/exchange/mock_recovery_codec_v1.h
+
+Refactor:
+- small cohesive Writer / Reader byte primitives remained in the header,
+- larger domain serializers moved to:
+  lib/src/exchange/mock_recovery_codec_v1.cpp
+- durable file I/O helpers moved to the .cpp,
+- low-level file-descriptor helpers became implementation details,
+- Meson updated,
+- research/replay.py standalone canonical source list updated.
+
+Validation:
+- user reported the build and Step59 passed,
+- canonical fingerprint remained accepted.
+
+PASS 2H is CLOSED.
+
+========================================================================
+26. REMAINING LIB REVIEW
+========================================================================
+
+Other larger files/components from the original inspection include:
+- transport/contract_json_codec.cpp        ~895 lines
+- strategy/strategies/xHBreakout_atr.h    ~682 lines
+- strategy/strategies/donchianBreakout.h  ~481 lines
+- strategy/strategies/xHBreakout.h        ~403 lines
+
+Guidance:
+- contract_json_codec.cpp is large but coherent; do NOT split it automatically.
+- strategy files should be reviewed as strategy components, not mechanically split only because of line count.
+- on_hold strategies are not part of the immediate active path.
+
+========================================================================
+27. CURRENT WARNINGS
+========================================================================
+
+Normal builds still show warnings, especially from the temporary research legacy runtime.
+
+Examples:
+- unused variables/functions in research/src/common/realtest.cpp
+- unused variables in research/src/legacy/backtesting_main.cpp
+- unused parameters in legacy xHBreakout
+- unused params in btc_moving_average/testing_xhbreakout
+- narrowing warnings in legacy time_utils
+- an unused helper in live_trading/strategy_service
+- unused encodeFill/decodeFill in postgres_state_store.cpp
+
+These warnings are not the current blocker.
+
+Most research/legacy warnings should be handled when research is migrated to current lib behavior.
+
+========================================================================
+28. NEXT MAJOR TASK AFTER LIB
+========================================================================
+
+RESEARCH MODERNIZATION
+
+The user explicitly wants to redo research after lib cleanup.
+
+Goal:
+- useful research programs should use CURRENT library behavior,
+- remove dependence on frozen old Strategy / BacktestContext behavior,
+- preserve useful HTML/report/metrics/parameter/multi-strategy functionality,
+- migrate to current APIs,
+- remove research/src/legacy/runtime/ when no longer needed.
+
+Approach:
+1. inventory what each research executable actually does,
+2. map each capability to current lib interfaces,
+3. migrate one executable at a time,
+4. keep whole project compiling,
+5. preserve canonical Step59 fingerprint,
+6. only delete legacy runtime after all useful research programs are migrated.
+
+========================================================================
+29. .AI REPOSITORY CONTEXT LAYER — AFTER RESEARCH
+========================================================================
+
+After lib + research modernization, build:
+
+    build_repo_context.py
+
+Generated folder:
+
+    .ai/
+
+Required outputs:
+
+    .ai/REPO_MAP.md
+    .ai/ARCHITECTURE.md
+    .ai/SYMBOLS.json
+    .ai/DEPENDENCIES.json
+    .ai/REPO_CONTEXT.json
+    .ai/AI_INSTRUCTIONS.md
+
+Requirements:
+- deterministic/regenerable,
+- local-only,
+- no embeddings,
+- standard library preferred,
+- Python AST for Python,
+- conservative C++ indexing,
+- no secrets,
+- large datasets not fully parsed,
+- .gitignore used intelligently,
+- useful to future LLMs.
+
+The .ai layer should be built after the structure reflects the intended current architecture.
+
+========================================================================
+30. LATER ROADMAP
+========================================================================
+
+After:
+1. finish lib readability/structure,
+2. modernize research to current behavior,
+3. build .ai context layer,
+
+continue:
+
+A. Synchronize docs / CURRENT_STATE
+B. Freeze release evidence formally
+C. Prepare replay deployment to VPS
+D. Verify exact local vs VPS equivalence
+E. Review CURRENT official Hyperliquid API/docs
+F. Compare adapter against current API
+G. Correct adapter
+H. Hyperliquid TESTNET private connectivity
+I. Integrated TESTNET:
+   Strategy + Risk + Planner + Adapter + Dashboard
+J. TESTNET failure/recovery/reconciliation:
+   reconnect
+   rate limit
+   failures
+   recovery
+   reconciliation
+   kill switch
+K. Shadow mode
+L. Final long/slow dashboard visual acceptance
+M. MAINNET hardening
+N. Controlled LIVE readiness
+O. Minimal-capital first LIVE run
+
+Do not jump directly to mainnet.
+
+========================================================================
+31. FINAL VISUAL DASHBOARD ACCEPTANCE
+========================================================================
+
+The user wants the long slow visual acceptance near the end.
+
+Do not force it now.
+
+A 107-day pace-all run around speed 250 is roughly 10h16m plus overhead.
+
+Inspect:
+- date progression,
+- REPLAY_OPEN / REPLAY_CLOSE,
+- equity,
+- positions,
+- orders,
+- fills,
+- ledger/accounting,
+- reconciliation,
+- dashboard state.
+
+This is visual/operational acceptance, not a substitute for deterministic gates.
+
+========================================================================
+32. SOURCE-OF-TRUTH PRIORITY
+========================================================================
+
+Use this priority:
+
+1. Current source code
+2. Current compile / validation output
+3. Active docs / CURRENT_STATE
+4. This handoff
+5. Historical notes/evidence
+
+If docs and source disagree:
+- inspect source,
+- run the smallest relevant validation,
+- update docs afterward.
+
+========================================================================
+33. REFACTOR SAFETY RULE
+========================================================================
+
+Canonical replay is highly validated.
+
+After meaningful lib or cross-cutting refactors:
+
+    bash validation/step59_canonical_replay_release_gate.sh
+
+Expected fingerprint:
+
+    94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2
+
+If this changes unexpectedly:
+STOP.
+
+Do not accept a new fingerprint casually.
+Find the behavioral difference first.
+
+========================================================================
+34. USEFUL COMMANDS
+========================================================================
+
+Project root:
+
+    cd /mnt/c/Users/Juan/Documents/Python/algoTrading
+
+Full build:
+
+    rm -rf build-check
+    meson setup build-check
+    meson compile -C build-check
+
+Canonical release gate:
+
+    bash validation/step59_canonical_replay_release_gate.sh
+
+Canonical CLI:
+
+    python3 research/replay.py fast
+    python3 research/replay.py system
+    python3 research/replay.py dashboard
+
+Git review:
+
+    git status --short
+
+Current PASS 2G validation:
+
+    rm -rf build-lib-pass2g
+    meson setup build-lib-pass2g
+    meson compile -C build-lib-pass2g
+
+    bash validation/step59_canonical_replay_release_gate.sh
+
+========================================================================
+35. CURRENT STATUS SUMMARY
+========================================================================
+
+CONFIRMED CLOSED
+----------------
+- canonical Step59 baseline
+- live_trading readability middle-ground structure
+- lib PASS 1
+- lib PASS 2A reconciliation/ledger parity
+- lib PASS 2B full system replay runtime
+- lib PASS 2C snapshot/user-stream recovery
+- lib PASS 2D fault/chaos/rate-limit
+- lib PASS 2E accounting/margin/positions
+- lib PASS 2F deterministic matching/fills
+- lib PASS 2G order admission/lifecycle
+- lib PASS 2H recovery codec
+
+CURRENTLY OPEN
+--------------
+- finish the remaining sensible lib readability/structure review
+- do not split coherent files only because they are large
+
+NEXT
+----
+1. Finish the remaining lib review and close the lib phase with build + Step59.
+2. Rebuild research around CURRENT lib behavior and CURRENT interfaces.
+3. Remove temporary research/src/legacy/runtime/ only after migration is complete.
+4. Build the .ai structural context layer.
+5. Synchronize current docs/state.
+6. Continue VPS / Hyperliquid roadmap.
+
+
+
+========================================================================
+36. CODEX-SPECIFIC OPERATING INSTRUCTIONS
+========================================================================
+
+This repository context may be read by Codex.
+
+Codex should NOT blindly trust filenames, historical comments, or this handoff.
+Use this file as a navigation map, then verify the relevant source.
+
+Before substantial work:
+1. read AGENTS.md,
+2. read docs/codex/CONTEXT_FULL.txt,
+3. read docs/codex/ARCHITECTURE_FULL.md,
+4. inspect git status,
+5. open only the source files relevant to the task,
+6. trace dependencies and execution paths before editing.
+
+For bugs, trace cause to effect. Example:
+
+    market input
+    -> rolling state / indicator
+    -> strategy signal
+    -> risk decision
+    -> sizing / order plan
+    -> execution request
+    -> venue lifecycle
+    -> matching / fill
+    -> position/accounting
+    -> reconciliation/dashboard/output
+
+Do not patch the visible symptom if the actual defect is upstream.
+
+For duplicate behavior investigate:
+- signal IDs / decision IDs,
+- order idempotency keys,
+- request IDs,
+- lifecycle transitions,
+- fill sequence / fill fingerprints,
+- replayed user-stream events,
+- recovery/reconciliation reapplication.
+
+For sizing or PnL bugs investigate:
+- monetary target vs quantity,
+- close(T) vs open(T+1) timing,
+- price used for quantity resolution,
+- fees/slippage mode,
+- position sign,
+- partial fills,
+- realized vs unrealized PnL,
+- cash/equity/margin source of truth.
+
+For replay/backtest differences investigate:
+- warm-up history,
+- --start semantics,
+- pace-start/pace-end semantics,
+- ordering of CLOSE and next OPEN,
+- deterministic source ordering,
+- state persisted across restart/resume,
+- canonical MOCK vs realistic MOCK behavior.
+
+========================================================================
+37. CURRENT REPOSITORY DIRECTION — IMPORTANT
+========================================================================
+
+The repository is intentionally moving AWAY from a frozen historical research
+architecture and TOWARD one current implementation used consistently.
+
+Desired direction:
+
+    current lib/
+        |
+        +--> canonical replay
+        |
+        +--> live trading
+        |
+        +--> research tools
+
+Research may expose different workflows/reports, but should not preserve an old
+Strategy/BacktestContext implementation merely because older experiments used it.
+
+The temporary legacy runtime should eventually disappear.
+
+Do not prematurely remove it before the useful historical research executables
+have current equivalents.
+
+========================================================================
+38. LIB REFACTOR DESIGN PRINCIPLE
+========================================================================
+
+The large header splits performed in PASS 2A..2H are NOT a command to convert
+every header into a header/cpp pair.
+
+Use judgment.
+
+Split when:
+- the header contains hundreds of lines of non-template implementation,
+- moving implementation makes the public contract substantially easier to read,
+- compile/build wiring remains clear,
+- the component still remains cohesive.
+
+Do not split when:
+- implementation is template-dependent,
+- the file is already a small cohesive value type,
+- the result would create a tiny cpp containing trivial getters,
+- a coherent codec/contract implementation would become scattered across many files.
+
+The user strongly prefers a practical middle ground.
+
+========================================================================
+39. TEMPORARY FILE / BUILD CLEANUP
+========================================================================
+
+Temporary Meson build directories created during the readability passes can be deleted.
+
+Examples:
+- build-lib-baseline
+- build-lib-pass1
+- build-lib-pass2a
+- build-lib-pass2b
+- build-lib-pass2c
+- build-lib-pass2d
+- build-lib-pass2e
+- build-lib-pass2f
+- build-lib-pass2g
+- build-lib-pass2h
+- build-live-readability
+- build-research-check
+- build-check
+
+The normal classic build/ directory can be retained.
+
+These build directories are generated artifacts, not source/evidence.
+
+One-off migration/helper scripts used to perform already-completed refactors should
+also be removed from the repository root once their changes are confirmed.
+
+========================================================================
+40. FINAL HANDOFF RULE
+========================================================================
+
+When continuing from this file:
+
+- preserve validated behavior,
+- keep the code readable,
+- use current source as truth,
+- verify every meaningful structural change locally,
+- do not optimize for fewer lines or more files,
+- optimize for an understandable system.
+
+========================================================================
+END OF HANDOFF
+========================================================================

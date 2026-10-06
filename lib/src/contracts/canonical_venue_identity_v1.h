@@ -6,13 +6,10 @@
 #include "venue_identity.h"
 
 /**************************************************************************************
- * Header  : canonical_venue_identity_v1.h
- * Step    : 48 — Canonical Multi-Venue Adapter Contract v1
- * Purpose : Stable v1 market/instrument identity used by all concrete VenueAdapters
+ * Purpose : Stable v1 market/instrument identity shared by all venue adapters.
  *
- * Step47A's venue_identity.h remains the frozen architecture-baseline artifact.
- * This v1 layer builds on its VenueContext while adding the product/market identity
- * frozen by Step47C. It intentionally contains no concrete exchange/protocol names.
+ * The base VenueContext identifies venue and environment. This layer adds canonical market
+ * and instrument identity without embedding exchange-specific naming rules in business code.
  **************************************************************************************/
 namespace VenueContracts {
 namespace V1 {
