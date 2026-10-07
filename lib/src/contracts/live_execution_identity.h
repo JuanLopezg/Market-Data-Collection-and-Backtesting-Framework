@@ -6,13 +6,10 @@
 #include "execution_order.h"
 
 
-/**************************************************************************************
- * Header  : live_execution_identity.h
- * Purpose : One deterministic identity vocabulary for the LIVE daily execution chain
- *
- * These identities describe logical/economic messages. Transport redelivery or process
- * restart must reproduce the same ids for the same completed UTC day/state revision.
- **************************************************************************************/
+// One deterministic identity vocabulary for the LIVE daily execution chain
+//
+// These identities describe logical/economic messages. Transport redelivery or process
+// restart must reproduce the same ids for the same completed UTC day/state revision.
 namespace LiveExecutionIdentity {
 
 inline std::string notionalPlanningRequest(Timestamp decisionTimestamp, std::uint64_t stateRevision)

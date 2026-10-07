@@ -80,7 +80,7 @@ def main():
     run([sys.executable,str(root/'tools/historical_replay/t23_cleanup.py'),'--root','.','--apply'],root)
     run(['meson','setup','build','--reconfigure'],root)
     run(['ninja','-C','build','-j8'],root)
-    run(['bash',str(root/'validation/t23_no_legacy_clock_audit.sh'),'.'],root)
+    run(['bash',str(root/'validation/no_legacy_clock_audit.sh'),'.'],root)
 
     # T24: rebuild runtime image from cleaned sources and reproduce the clean fingerprint.
     run([sys.executable,str(tool),'--root','.','--label','t24_post_cleanup','--speed','1500','--target-completed','20200415','--expected-fingerprint',str(baseline),'--max-wall-seconds','1200'],root)

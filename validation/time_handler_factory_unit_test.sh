@@ -9,10 +9,10 @@ BIN="$BUILD_DIR/time_handler_factory_unit_test"
 mkdir -p "$BUILD_DIR"
 
 c++ -std=c++20 -O2 -Wall -Wextra -Wpedantic \
-  -I"$ROOT/lib/src/runtime" \
+  -I"$ROOT/lib/src/utils" \
   "$ROOT/validation/time_handler_factory_unit_test.cpp" \
-  "$ROOT/lib/src/runtime/time_handler.cpp" \
-  "$ROOT/lib/src/runtime/time_handler_factory.cpp" \
+  "$ROOT/lib/src/utils/time_handler.cpp" \
+  "$ROOT/lib/src/utils/time_handler_factory.cpp" \
   -pthread \
   -o "$BIN"
 

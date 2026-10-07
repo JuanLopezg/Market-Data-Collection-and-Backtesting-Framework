@@ -15,26 +15,24 @@ trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/obj" "$(dirname "$OUT")"
 
 INCLUDES=(
- -I"$ROOT/lib/src/account" -I"$ROOT/lib/src/analytics" -I"$ROOT/lib/src/common_types"
+ -I"$ROOT/lib/src/account" -I"$ROOT/lib/src/analytics" -I"$ROOT/lib/src/logging"
  -I"$ROOT/lib/src/contracts" -I"$ROOT/lib/src/data_types" -I"$ROOT/lib/src/exchange"
  -I"$ROOT/lib/src/execution" -I"$ROOT/lib/src/filter" -I"$ROOT/lib/src/indicator"
  -I"$ROOT/lib/src/market" -I"$ROOT/lib/src/portfolio" -I"$ROOT/lib/src/position"
  -I"$ROOT/lib/src/ranker" -I"$ROOT/lib/src/rebalance" -I"$ROOT/lib/src/risk"
- -I"$ROOT/lib/src/runtime" -I"$ROOT/lib/src/signal" -I"$ROOT/lib/src/sizing"
- -I"$ROOT/lib/src/strategy" -I"$ROOT/lib/src/strategy/strategies" -I"$ROOT/lib/src/universe"
+ -I"$ROOT/lib/src/runtime" -I"$ROOT/lib/src/utils" -I"$ROOT/lib/src/signal" -I"$ROOT/lib/src/sizing"
+ -I"$ROOT/lib/src/strategy" -I"$ROOT/lib/src/universe"
 )
 printf '%s\n' "${INCLUDES[@]}" > "$TMP/includes.rsp"
 SOURCES=(
  tools/historical_replay/step58_dashboard_simulation_runner.cpp
- lib/src/runtime/strategy_signal_engine.cpp
- lib/src/runtime/portfolio_risk_engine.cpp
- lib/src/runtime/notional_order_planner_engine.cpp
- lib/src/runtime/rolling_market_state.cpp
- lib/src/runtime/time_handler.cpp
+ lib/src/strategy/strategy_signal_engine.cpp
+ lib/src/risk/portfolio_risk_engine.cpp
+ lib/src/execution/planning/notional_order_planner.cpp
+ lib/src/market/rolling_market_state.cpp
+ lib/src/utils/time_handler.cpp
  lib/src/strategy/strategy.cpp
- lib/src/universe/universe_selector.cpp
  lib/src/universe/liquidity_universe.cpp
- lib/src/ranker/ranker.cpp
  lib/src/ranker/indicator_ranker.cpp
  lib/src/indicator/indicator_engine.cpp
  lib/src/indicator/indicator_calculators.cpp

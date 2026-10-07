@@ -24,35 +24,35 @@ for audit in \
 done
 
 # Canonical causal chain must be wired explicitly.
-need 'live_trading/market_data_service/src/market_data_update_publisher.cpp' \
-  'TransportSubjects::MARKET_DATA_UPDATED' \
+need 'live_trading/market_data_service/src/update_publisher.cpp' \
+  'MessageSubjects::MARKET_DATA_UPDATED' \
   'MarketData must publish market.data.updated.v1'
 need 'live_trading/strategy_service/src/strategy_service_main.cpp' \
-  'TransportSubjects::MARKET_DATA_UPDATED' \
+  'MessageSubjects::MARKET_DATA_UPDATED' \
   'Strategy must consume market.data.updated.v1'
 need 'live_trading/strategy_service/src/strategy_service_main.cpp' \
-  'TransportSubjects::STRATEGY_INTENTS' \
+  'MessageSubjects::STRATEGY_INTENTS' \
   'Strategy must publish StrategyIntentBatch'
 need 'live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp' \
-  'TransportSubjects::STRATEGY_INTENTS' \
+  'MessageSubjects::STRATEGY_INTENTS' \
   'PortfolioRisk must consume StrategyIntentBatch'
 need 'live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp' \
-  'TransportSubjects::ACCOUNT_SNAPSHOT' \
+  'MessageSubjects::ACCOUNT_SNAPSHOT' \
   'PortfolioRisk must consume the daily AccountSnapshot'
 need 'live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp' \
-  'TransportSubjects::DECISION_BATCH' \
+  'MessageSubjects::DECISION_BATCH' \
   'PortfolioRisk must publish DecisionBatch'
 need 'live_trading/execution_state_service/src/execution_state_service_main.cpp' \
-  'TransportSubjects::DECISION_BATCH' \
+  'MessageSubjects::DECISION_BATCH' \
   'ExecutionState must consume DecisionBatch'
 need 'live_trading/execution_state_service/src/execution_state_service_main.cpp' \
-  'TransportSubjects::NOTIONAL_ORDER_PLANNING_REQUEST' \
+  'MessageSubjects::NOTIONAL_ORDER_PLANNING_REQUEST' \
   'ExecutionState must publish the notional planning request'
 need 'live_trading/order_planner_service/src/order_planner_service_main.cpp' \
-  'TransportSubjects::NOTIONAL_ORDER_PLANNING_REQUEST' \
+  'MessageSubjects::NOTIONAL_ORDER_PLANNING_REQUEST' \
   'OrderPlanner must consume the notional planning request'
 need 'live_trading/order_planner_service/src/order_planner_service_main.cpp' \
-  'TransportSubjects::NOTIONAL_ORDER_PLAN' \
+  'MessageSubjects::NOTIONAL_ORDER_PLAN' \
   'OrderPlanner must stop at NotionalOrderPlan'
 
 # The pre-exchange path must stop before executable exchange commands.
@@ -61,9 +61,9 @@ for file in \
   live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp \
   live_trading/execution_state_service/src/execution_state_service_main.cpp \
   live_trading/order_planner_service/src/order_planner_service_main.cpp; do
-  forbid "$file" 'TransportSubjects::SUBMIT_ORDER' \
+  forbid "$file" 'MessageSubjects::SUBMIT_ORDER' \
     "$file must not submit an executable exchange order before STEP 7/8"
-  forbid "$file" 'TransportSubjects::BACKEND_SUBMIT_ORDER' \
+  forbid "$file" 'MessageSubjects::BACKEND_SUBMIT_ORDER' \
     "$file must not address an exchange backend before STEP 7/8"
 done
 
@@ -85,7 +85,7 @@ need 'lib/src/contracts/notional_order_planning.h' \
   'Each planned economic order must expose deterministic economic identity'
 
 # Acceptance/log observability markers needed by the runtime verifier.
-need 'live_trading/market_data_service/src/market_data_update_publisher.cpp' \
+need 'live_trading/market_data_service/src/update_publisher.cpp' \
   'event=market_data_updated_published' \
   'MarketData runtime acceptance marker missing'
 need 'live_trading/strategy_service/src/strategy_service_main.cpp' \

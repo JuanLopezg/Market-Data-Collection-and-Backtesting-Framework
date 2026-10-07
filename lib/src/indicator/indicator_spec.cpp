@@ -1,3 +1,5 @@
+// Hash and format the complete indicator request, including source, length and offset.
+
 #include "indicator_spec.h"
 
 #include <functional>

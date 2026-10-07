@@ -21,16 +21,16 @@
 
 #include "entry_exit_only_rebalance_policy.h"
 #include "equal_weight_sizer.h"
-#include "full_system_replay_runtime_v1.h"
+#include "replay_runtime.h"
 #include "indicator_ranker.h"
 #include "liquidity_universe.h"
-#include "mock_accounting_fixed_point_v1.h"
-#include "pureRSI.h"
+#include "mock/decimal.h"
+#include "validated/pure_rsi.h"
 #include "risk_constraints.h"
 #include "time_handler.h"
 
-using namespace FullSystemReplayV1;
-using namespace MockVenueV1;
+using namespace Replay;
+using namespace MockVenue;
 using namespace VenueContracts::V1;
 
 namespace {
@@ -249,14 +249,14 @@ double canonicalHistoricalVolume(double raw_volume)
 }
 
 void matchRealTestParityAtExecutionOpen(
-    MockExchangeAdapterV1& adapter,
+    MockExchange& adapter,
     const DayData& day)
 {
     // Reproduce the historical research/RealTest execution contract without
     // changing Strategy data: orders execute at OPEN(T+1), while the matcher
     // is configured to ignore bar volume as a fill-capacity constraint.
     for (const auto& value : day.slice.bars) {
-        MarketBarObservationV1 observation;
+        MarketBarObservation observation;
         observation.canonical_asset = value.coin;
         observation.event_time = day.open_timestamp;
 
@@ -269,9 +269,9 @@ void matchRealTestParityAtExecutionOpen(
 
         const auto result = adapter.processMarketBar(observation);
         if (result.status ==
-                MockVenueV1::ChaosStatusV1::VenueUnavailable ||
+                MockVenue::ChaosStatus::VenueUnavailable ||
             result.status ==
-                MockVenueV1::ChaosStatusV1::OutOfOrderRejected)
+                MockVenue::ChaosStatus::OutOfOrderRejected)
             throw std::runtime_error(
                 "RealTest parity open matching was rejected");
     }
@@ -389,12 +389,12 @@ PortfolioRiskEngine makeRiskEngine()
     return PortfolioRiskEngine(std::move(configs));
 }
 
-std::string reconciliationState(ReconciliationStateV1 state)
+std::string reconciliationState(ReconciliationState state)
 {
     switch (state) {
-    case ReconciliationStateV1::Pending: return "PENDING";
-    case ReconciliationStateV1::Clean: return "CLEAN";
-    case ReconciliationStateV1::Blocked: return "BLOCKED";
+    case ReconciliationState::Pending: return "PENDING";
+    case ReconciliationState::Clean: return "CLEAN";
+    case ReconciliationState::Blocked: return "BLOCKED";
     }
     return "UNKNOWN";
 }
@@ -440,7 +440,7 @@ void exportParityFillsForRealTest(
 
 void exportFillsForRealTest(
     const std::filesystem::path& path,
-    const std::vector<UserStreamEnvelopeV1>& stream,
+    const std::vector<UserStreamEnvelope>& stream,
     const std::unordered_map<std::string,std::string>& source_to_canonical)
 {
     std::unordered_map<std::string,std::string> canonical_to_source;
@@ -500,7 +500,7 @@ std::string jsonEscape(const std::string& input)
 }
 
 
-std::string issueKind(ReconciliationIssueKindV1 kind)
+std::string issueKind(ReconciliationIssueKind kind)
 {
     return std::to_string(static_cast<int>(kind));
 }
@@ -510,13 +510,13 @@ std::string accountingType(AccountingEventType type)
     return VenueContracts::V1::toString(type);
 }
 
-std::string ledgerKind(LedgerEntryKindV1 kind)
+std::string ledgerKind(LedgerEntryKind kind)
 {
     switch (kind) {
-    case LedgerEntryKindV1::Fill: return "FILL";
-    case LedgerEntryKindV1::TradingFee: return "TRADING_FEE";
-    case LedgerEntryKindV1::Rebate: return "REBATE";
-    case LedgerEntryKindV1::FundingPayment: return "FUNDING_PAYMENT";
+    case LedgerEntryKind::Fill: return "FILL";
+    case LedgerEntryKind::TradingFee: return "TRADING_FEE";
+    case LedgerEntryKind::Rebate: return "REBATE";
+    case LedgerEntryKind::FundingPayment: return "FUNDING_PAYMENT";
     }
     return "UNKNOWN";
 }
@@ -622,7 +622,7 @@ void writeCheckpointMetadata(
     const std::string& date,
     int day_index,
     int rows_processed,
-    const MockExchangeAdapterV1& adapter)
+    const MockExchange& adapter)
 {
     ReplayCheckpointMetadata value;
     value.mode = args.mode;
@@ -699,17 +699,17 @@ double quantityUnitsToDouble(const std::string& asset, std::int64_t units)
 
 double moneyUnitsToDouble(std::int64_t units)
 {
-    return signedScaledToDouble(units, kMockMoneyScaleV1);
+    return signedScaledToDouble(units, kMockMoneyScale);
 }
 
 double moneyUnitsToDoubleU(std::uint64_t units)
 {
     return static_cast<double>(units) /
-        static_cast<double>(kMockMoneyFactorV1);
+        static_cast<double>(kMockMoneyFactor);
 }
 
 std::string dashboardStateJson(
-    MockExchangeAdapterV1& adapter,
+    MockExchange& adapter,
     const Args& args,
     const std::string& phase,
     const std::string& date,
@@ -724,7 +724,7 @@ std::string dashboardStateJson(
     const auto account =
         adapter.chaos().runtime().account().accountSnapshot(ts);
 
-    MockReconciliationLedgerParityV1 ledger_builder(
+    MockReconciliation ledger_builder(
         adapter.chaos().runtime().account().config().fee_ppm);
     const auto local =
         ledger_builder.buildLocalExpected(
@@ -916,7 +916,7 @@ std::string dashboardStateJson(
         if (i) out << ',';
         const auto& e = local.ledger.entries[i];
         std::string side;
-        if (e.kind == LedgerEntryKindV1::Fill)
+        if (e.kind == LedgerEntryKind::Fill)
             side = e.position_delta_units >= 0 ? "BUY" : "SELL";
         out << "{\"sequence\":" << e.stream_sequence
             << ",\"kind\":\"" << ledgerKind(e.kind)
@@ -974,7 +974,7 @@ std::string dashboardStateJson(
 }
 
 void emitDashboardState(
-    MockExchangeAdapterV1& adapter,
+    MockExchange& adapter,
     const Args& args,
     const std::string& phase,
     const std::string& date,
@@ -1045,9 +1045,9 @@ int main(int argc, char** argv)
 
         StrategySignalEngine strategy = makeStrategyEngine();
         PortfolioRiskEngine risk = makeRiskEngine();
-        NotionalOrderPlannerEngine planner;
+        NotionalOrderPlanner planner;
 
-        MockChaosConfigV1 chaos;
+        MockChaosConfig chaos;
         chaos.auto_submit_faults = false;
         chaos.submit_limit = 100000U;
         chaos.cancel_limit = 100000U;
@@ -1056,8 +1056,8 @@ int main(int argc, char** argv)
         chaos.reconcile_limit = 100000U;
         chaos.stream_read_limit = 1000000U;
 
-        MatchingFillConfigV1 matching;
-        MockAccountingConfigV1 accounting;
+        MatchingFillConfig matching;
+        MockAccountingConfig accounting;
         if (args.profile == "realtest-parity") {
             matching.ignore_volume_capacity = true;
             matching.max_adverse_slippage_ppm = 0U;
@@ -1098,13 +1098,13 @@ int main(int argc, char** argv)
                 ignored);
         }
 
-        MockExchangeAdapterV1 adapter(
+        MockExchange adapter(
             args.durable,
             chaos,
             matching,
             accounting);
 
-        FullSystemReplayRuntimeV1 replay(
+        ReplayRuntime replay(
             strategy,
             risk,
             planner,
@@ -1145,10 +1145,10 @@ int main(int argc, char** argv)
 
             StrategySignalEngine scratch_strategy = makeStrategyEngine();
             PortfolioRiskEngine scratch_risk = makeRiskEngine();
-            NotionalOrderPlannerEngine scratch_planner;
-            MockExchangeAdapterV1 scratch_adapter(
+            NotionalOrderPlanner scratch_planner;
+            MockExchange scratch_adapter(
                 scratch_dir, chaos, matching, accounting);
-            FullSystemReplayRuntimeV1 scratch_replay(
+            ReplayRuntime scratch_replay(
                 scratch_strategy,
                 scratch_risk,
                 scratch_planner,
@@ -1546,7 +1546,7 @@ int main(int argc, char** argv)
             << signedScaledToDouble(
                    adapter.chaos().runtime().
                        account().feesPaidUnits(),
-                   kMockMoneyScaleV1)
+                   kMockMoneyScale)
             << ",\n";
         out << "  \"reconciliation\": \""
             << reconciliationState(

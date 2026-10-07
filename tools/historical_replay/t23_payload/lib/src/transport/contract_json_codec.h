@@ -21,10 +21,10 @@
 
 
 /**************************************************************************************
- * Type    : ContractJsonCodec
+ * Type    : MessageJson
  * Purpose : Stable JSON wire representation for service-boundary DTOs
  **************************************************************************************/
-namespace ContractJsonCodec {
+namespace MessageJson {
 
 std::string encode(const MarketDataReleaseRequest& value);
 MarketDataReleaseRequest decodeMarketDataReleaseRequest(const std::string& payload);

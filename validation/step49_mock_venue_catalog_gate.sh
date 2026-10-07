@@ -30,10 +30,10 @@ for f in \
  "$CFG/source_registry_assets_step37a5.txt" \
  "$ART/STEP_49_MOCK_VENUE_CATALOG_AND_TRADING_RULES.md" \
  "$ART/STEP_50_IMPLEMENTATION_HANDOFF.json" "$ART/SHA256SUMS" \
- "$ROOT/lib/src/exchange/mock_venue_catalog_v1.h" \
- "$ROOT/lib/src/exchange/mock_venue_catalog_data_v1.inc" \
- "$ROOT/lib/src/exchange/mock_venue_catalog_version_v1.h" \
- "$ROOT/lib/src/exchange/mock_venue_rules_v1.h" \
+ "$ROOT/lib/src/exchange/mock/catalog.h" \
+ "$ROOT/lib/src/exchange/mock/catalog_data.inc" \
+ "$ROOT/lib/src/exchange/mock/catalog.h" \
+ "$ROOT/lib/src/exchange/mock/rules.h" \
  "$ROOT/validation/step49_mock_venue_catalog_test.cpp"; do
   [[ -f "$f" ]] || fail "missing ${f#$ROOT/}"
 done
@@ -129,8 +129,8 @@ pass '175-entry catalog and rules compile under C++17'
 
 printf '%s\n' '[7/8] No heuristic mapping or Step50+/private implementation slipped in'
 if grep -Ein 'tolower|toupper|regex|substr|erase|ends_with|starts_with|fuzzy' \
- "$ROOT/lib/src/exchange/mock_venue_catalog_v1.h" \
- "$ROOT/lib/src/exchange/mock_venue_catalog_data_v1.inc" >"$TMP/h"; then
+ "$ROOT/lib/src/exchange/mock/catalog.h" \
+ "$ROOT/lib/src/exchange/mock/catalog_data.inc" >"$TMP/h"; then
   cat "$TMP/h" >&2
   fail 'heuristic mapping primitive detected'
 fi

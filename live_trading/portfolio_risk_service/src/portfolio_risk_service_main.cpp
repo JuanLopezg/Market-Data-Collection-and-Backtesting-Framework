@@ -1,17 +1,10 @@
-/*
- * portfolio_risk_service_main.cpp
- *
- * Purpose: Combines strategy intents with account state, sizing, covariance/risk logic, and rebalance policy.
- *
- * Read this file from top to bottom:
- *   1. Recover the durable account/risk checkpoint.
- *   2. Wait for matching strategy intents and account state.
- *   3. Read the required market history, calculate risk-aware decisions, persist them, and publish DecisionBatch.
- *
- * This file contains the executable entrypoint and service-level orchestration.
- * Keep reusable domain calculations in focused components; keep startup,
- * message flow, persistence boundaries, logging, and shutdown visible here.
- */
+// Combines strategy intents with account state, sizing, covariance/risk logic, and rebalance
+// policy.
+//
+// 1. Recover the durable account/risk checkpoint.
+// 2. Wait for matching strategy intents and account state.
+// 3. Read the required market history, calculate risk-aware decisions, persist them, and publish
+// DecisionBatch.
 
 #include <algorithm>
 #include <atomic>
@@ -39,23 +32,21 @@
 #include <nlohmann/json.hpp>
 
 #include "canonical_market_data_reader.h"
-#include "contract_json_codec.h"
+#include "message_json.h"
 #include "entry_exit_only_rebalance_policy.h"
 #include "equal_weight_sizer.h"
-#include "nats_jetstream_message_bus.h"
+#include "jetstream_bus.h"
 #include "portfolio_risk_engine.h"
 #include "sample_covariance_estimator.h"
 #include "service_logging.h"
 #include "threshold_rebalance_policy.h"
 #include "time_handler_factory.h"
 #include "time_utils.h"
-#include "transport_subjects.h"
+#include "message_subjects.h"
 #include "volatility_target_sizer.h"
 
 
-// ============================================================================
-// Internal helpers and service implementation
-// ============================================================================
+// Internal helpers and service implementation.
 
 namespace {
 
@@ -65,9 +56,7 @@ std::atomic<bool> running{true};
 void stopHandler(int) { running.store(false); }
 
 
-// ============================================================================
-// Command-line configuration
-// ============================================================================
+// Command-line configuration.
 
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
@@ -231,9 +220,7 @@ std::string checkpointIdentity(
 }
 
 
-// ============================================================================
-// Durable PostgreSQL persistence helpers
-// ============================================================================
+// Durable PostgreSQL persistence helpers.
 
 class PgResult {
 private:
@@ -461,9 +448,7 @@ public:
 };
 
 
-// ============================================================================
-// Portfolio sizing and rebalance configuration
-// ============================================================================
+// Portfolio sizing and rebalance configuration.
 
 std::unique_ptr<PortfolioSizer> makeSizer(const json& value)
 {
@@ -565,9 +550,7 @@ std::size_t marketRowCount(const MarketData& marketData)
 }
 
 
-// ============================================================================
-// Service runtime and message-processing loop
-// ============================================================================
+// Service runtime and message-processing loop.
 
 class PortfolioRiskServiceRuntime {
 private:
@@ -576,14 +559,14 @@ private:
     const TimeHandlerConfig time_config_;
     const TimeHandler time_handler_;
     const std::optional<Timestamp> replay_bootstrap_completed_date_;
-    NatsJetStreamMessageBus bus_;
+    JetStreamBus bus_;
     CanonicalMarketDataReader market_reader_;
     std::unique_ptr<PortfolioRiskCheckpointStore> checkpoint_store_;
     std::unique_ptr<PortfolioRiskEngine> engine_;
     Timestamp durable_checkpoint_timestamp_ = 0;
 
-    DurableMessageBus::SubscriptionID account_subscription_ = 0;
-    DurableMessageBus::SubscriptionID strategy_subscription_ = 0;
+    MessageBus::SubscriptionID account_subscription_ = 0;
+    MessageBus::SubscriptionID strategy_subscription_ = 0;
 
     void resetEngine()
     {
@@ -604,7 +587,7 @@ private:
     DurableMessageDisposition onAccountSnapshot(const BusMessage& message)
     {
         try {
-            AccountSnapshot snapshot = ContractJsonCodec::decodeAccountSnapshot(message.payload);
+            AccountSnapshot snapshot = MessageJson::decodeAccountSnapshot(message.payload);
             if (snapshot.timestamp == 0 || !std::isfinite(snapshot.cash) || snapshot.metadata.message_id.empty())
                 return DurableMessageDisposition::Terminate;
 
@@ -698,7 +681,7 @@ private:
     DurableMessageDisposition onStrategyIntents(const BusMessage& message)
     {
         try {
-            StrategyIntentBatch signals = ContractJsonCodec::decodeStrategyIntentBatch(message.payload);
+            StrategyIntentBatch signals = MessageJson::decodeStrategyIntentBatch(message.payload);
             if (signals.timestamp == 0) {
                 LG_WARN("service=portfolio-risk event=strategy_intents_terminated reason=zero_timestamp");
                 return DurableMessageDisposition::Terminate;
@@ -767,7 +750,7 @@ private:
                 return DurableMessageDisposition::Retry;
             }
 
-            AccountSnapshot account = ContractJsonCodec::decodeAccountSnapshot(accountRow->payload);
+            AccountSnapshot account = MessageJson::decodeAccountSnapshot(accountRow->payload);
             if (account.timestamp != target || account.metadata.message_id != accountRow->message_id)
                 throw std::logic_error("Persisted PortfolioRisk LIVE account checkpoint is inconsistent");
 
@@ -798,13 +781,13 @@ private:
                 : signals.metadata.message_id;
             output.metadata.produced_at = target;
 
-            const std::string encodedDecision = ContractJsonCodec::encode(output);
+            const std::string encodedDecision = MessageJson::encode(output);
 
             // Preserve the established crash contract: deterministic publish first,
             // durable daily checkpoint second, ACK third. If we crash between publish and
             // checkpoint, retry republishes the same logical MessageID.
             bus_.publish(
-                TransportSubjects::DECISION_BATCH,
+                MessageSubjects::DECISION_BATCH,
                 encodedDecision,
                 output.metadata.message_id);
 
@@ -868,7 +851,7 @@ public:
           bus_(options_.nats_url),
           market_reader_(options_.market_data_db)
     {
-        bus_.ensureStream(options_.stream, TransportSubjects::tradingRuntimeSubjects());
+        bus_.ensureStream(options_.stream, MessageSubjects::tradingRuntimeSubjects());
 
         checkpoint_store_ = std::make_unique<PortfolioRiskCheckpointStore>(
             options_.postgres,
@@ -876,11 +859,11 @@ public:
         recoverFromCheckpoint();
 
         account_subscription_ = bus_.subscribe(
-            consumer("portfolio-risk-account-snapshots", TransportSubjects::ACCOUNT_SNAPSHOT),
+            consumer("portfolio-risk-account-snapshots", MessageSubjects::ACCOUNT_SNAPSHOT),
             [this](const BusMessage& message) { return onAccountSnapshot(message); });
 
         strategy_subscription_ = bus_.subscribe(
-            consumer("portfolio-risk-strategy-intents", TransportSubjects::STRATEGY_INTENTS),
+            consumer("portfolio-risk-strategy-intents", MessageSubjects::STRATEGY_INTENTS),
             [this](const BusMessage& message) { return onStrategyIntents(message); });
     }
 
@@ -901,8 +884,8 @@ public:
             options_.portfolio_config,
             options_.market_data_db.string(),
             required_history_days_,
-            TransportSubjects::STRATEGY_INTENTS,
-            TransportSubjects::ACCOUNT_SNAPSHOT,
+            MessageSubjects::STRATEGY_INTENTS,
+            MessageSubjects::ACCOUNT_SNAPSHOT,
             loopPeriod.count(),
             time_config_.speed,
             time_config_.identity());
@@ -951,9 +934,7 @@ public:
 } // namespace
 
 
-// ============================================================================
-// Process entrypoint
-// ============================================================================
+// Process entrypoint.
 
 int main(int argc, char** argv)
 {

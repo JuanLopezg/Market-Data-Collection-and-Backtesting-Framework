@@ -13,9 +13,7 @@ DecisionEngine::DecisionEngine(
 {}
 
 
-/**************************************************************************************
- * Purpose : Update signals at a completed bar and create strategy decision intents
- **************************************************************************************/
+// Update signals at a completed bar and create strategy decision intents
 void DecisionEngine::onBarClose(
     const MarketData& marketData,
     Timestamp ts,

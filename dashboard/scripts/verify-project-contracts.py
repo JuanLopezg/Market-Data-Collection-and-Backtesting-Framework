@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Fail-fast source audit for the trading project contracts Step 14 depends on.
+"""Fail-fast source audit for the current dashboard/trading integration contracts.
 
 This script never reads .env files and never prints secrets. It only checks that
-known source files still contain the contract/table/subject markers audited on
-2026-09-24.
+known source files still contain the contract/table/subject markers used by
+the current real-source mapping.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from pathlib import Path
 import sys
 
 CHECKS = {
-    "lib/src/transport/transport_subjects.h": [
+    "lib/src/transport/message_subjects.h": [
         '"market.data.updated.v1"',
         '"strategy.intents.v1"',
         '"decision.batch.v1"',
@@ -45,7 +45,7 @@ CHECKS = {
     "live_trading/order_planner_service/src/order_planner_service_main.cpp": [
         "order_planner_live_notional_checkpoint",
     ],
-    "live_trading/market_data_service/src/market_data_store.cpp": [
+    "live_trading/market_data_service/src/market_store.cpp": [
         "tracked_pairs",
         "ohlcv_data",
         "date_of_start",
@@ -84,15 +84,15 @@ def main() -> int:
                 failures.append(f"{relative}: missing audited marker {marker!r}")
 
     if failures:
-        print("STEP14 SOURCE AUDIT: FAIL")
+        print("DASHBOARD SOURCE AUDIT: FAIL")
         for failure in failures:
             print(f"- {failure}")
         print("Do not enable RealProvider until the mapping is re-audited.")
         return 1
 
-    print(f"STEP14 SOURCE AUDIT: PASS ({checked} markers)")
-    print("Audited source contracts still match the Step 14 mapping.")
-    print("This confirms source contracts only. Step 21 enables Infrastructure, Positions, Execution, Reconciliation, Pipeline/Why and Risk as bounded read-only real resources; remaining real resources stay fail-closed.")
+    print(f"DASHBOARD SOURCE AUDIT: PASS ({checked} markers)")
+    print("Audited source contracts still match the current dashboard mapping.")
+    print("This confirms source markers only; it does not validate runtime connectivity, accounting completeness or private execution readiness.")
     return 0
 
 

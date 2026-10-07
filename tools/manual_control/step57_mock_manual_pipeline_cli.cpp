@@ -3,10 +3,10 @@
 #include <iostream>
 #include <string>
 
-#include "manual_control_mock_pipeline_v1.h"
+#include "manual_trading.h"
 
-using namespace ManualControlV1;
-using namespace MockVenueV1;
+using namespace ManualControl;
+using namespace MockVenue;
 
 int main(int argc, char** argv)
 {
@@ -21,13 +21,13 @@ int main(int argc, char** argv)
     if (weight_pct < 0.0 || weight_pct > 100.0 || price <= 0.0)
         return 2;
 
-    MockChaosConfigV1 chaos;
+    MockChaosConfig chaos;
     chaos.submit_limit = 100U;
     chaos.reconcile_limit = 100U;
-    MockExchangeAdapterV1 adapter(argv[1], chaos);
-    ManualControlMockPipelineV1 pipeline(adapter);
+    MockExchange adapter(argv[1], chaos);
+    ManualTrading pipeline(adapter);
 
-    ManualTargetIntentV1 intent;
+    ManualTargetIntent intent;
     intent.request_id = "cli-request";
     intent.correlation_id = "cli-correlation";
     intent.actor = "CLI / OPERATOR";
@@ -48,6 +48,6 @@ int main(int argc, char** argv)
               << " submits=" << result.submit_count
               << " cancels=" << result.cancel_count
               << " reason=" << result.reason << "\n";
-    return result.status == ManualRouteStatusV1::Submitted ||
-           result.status == ManualRouteStatusV1::Noop ? 0 : 1;
+    return result.status == ManualRouteStatus::Submitted ||
+           result.status == ManualRouteStatus::Noop ? 0 : 1;
 }

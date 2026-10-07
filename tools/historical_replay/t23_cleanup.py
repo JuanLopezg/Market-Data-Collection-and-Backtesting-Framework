@@ -16,9 +16,9 @@ LEGACY_DIRS = [
     'tools/distributed_compare',
 ]
 PAYLOAD_FILES = [
-    'lib/src/transport/contract_json_codec.h',
-    'lib/src/transport/contract_json_codec.cpp',
-    'lib/src/transport/transport_subjects.h',
+    'lib/src/transport/message_json.h',
+    'lib/src/transport/message_json.cpp',
+    'lib/src/transport/message_subjects.h',
     'live_trading/meson.build',
 ]
 FORBIDDEN = [

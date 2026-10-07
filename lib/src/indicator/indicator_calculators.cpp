@@ -1,3 +1,6 @@
+// Causal bar-series calculations: output[i] uses only bars through i.
+// NaN marks warm-up periods where the indicator does not yet have enough history.
+
 #include "indicator_calculators.h"
 
 #include <algorithm>
@@ -137,6 +140,7 @@ std::vector<double> calculateEMA(
 
     const double alpha = 2.0 / (static_cast<double>(len) + 1.0);
 
+    // Seed EMA with the first full simple average; subsequent bars use alpha=2/(N+1).
     result[len - 1] = initialSum / static_cast<double>(len);
 
     for (std::size_t i = len; i < n; ++i) {
@@ -167,7 +171,7 @@ std::vector<double> calculateROC(
         const double previous = values[i - len];
 
         if (previous != 0.0) {
-            result[i] = (values[i] / previous) - 1.0;
+            result[i] = (values[i] / previous) - 1.0; // Fractional return: 0.10 means +10%.
         }
     }
 
@@ -208,6 +212,8 @@ std::vector<double> calculateRSI(
         }
     }
 
+    // RSI needs N price changes, hence N+1 prices. Seed both Wilder averages
+    // from those first N changes before starting the recursive update.
     double avgGain = gainSum / static_cast<double>(len);
     double avgLoss = lossSum / static_cast<double>(len);
 
@@ -247,6 +253,8 @@ std::vector<double> calculateATR(
         return result;
     }
 
+    // The first bar has no previous close. ATR therefore starts after N true ranges
+    // from bars 1..N and uses Wilder smoothing rather than an EMA alpha.
     std::vector<double> trueRange = invalidVector(n);
 
     for (std::size_t i = 1; i < n; ++i) {
@@ -254,7 +262,7 @@ std::vector<double> calculateATR(
         const double highClose = std::abs(bars[i].high - bars[i - 1].close);
         const double lowClose = std::abs(bars[i].low - bars[i - 1].close);
 
-        trueRange[i] = std::max({highLow, highClose, lowClose});
+        trueRange[i] = std::max({highLow, highClose, lowClose}); // Include gaps from the previous close.
     }
 
     double sumTR = 0.0;

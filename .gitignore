@@ -1,26 +1,63 @@
-# --- Build system ---
+# Build outputs
 build/
 builddir/
 *.ninja
 meson-logs/
-
-# --- C++ binaries ---
 *.exe
 *.dll
+*.so
+*.so.*
 *.a
 *.o
 *.obj
 *.pdb
 
-# --- Editor ---
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Frontend dependencies and generated bundles
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Local editor settings
 .vscode/
 .idea/
 
-# --- Python junk ---
-__pycache__/
+# Local credentials; keep configuration templates versioned
+.env
+.env.*
+*.env
+!.env.example
+!.env.*.example
+!*.env.example
+*.pem
+*.key
 
-# --- Other ---
+# Generated deployment packages (recreated by build_runtime_bundle.sh)
+.runtime_bundle/
+
+# Mutable replay results, compiled runners and dashboard state
+/deploy/historical_replay/run/research_replay/
+/deploy/historical_replay/run/step58_dashboard/
+/deploy/historical_replay/run/step58a/bin/
+/deploy/historical_replay/run/t19_realtest_compare
+/deploy/historical_replay/run/*_logs_tail.txt
+/deploy/historical_replay/run/*_backup.*
+# Keep run/1d_cmc_by_date.csv and frozen historical summary evidence versioned.
+
+# Diagnostic logs, local datasets, studies and handoff archives
 *.log
-storage/
-lib/src/strategy/on_hold/
-validation/logs
+*.log.*
+/storage/
+/validation/logs/
+/handoff_code_*/
+
+# Unsupported local strategy experiments
+/lib/src/strategy/on_hold/

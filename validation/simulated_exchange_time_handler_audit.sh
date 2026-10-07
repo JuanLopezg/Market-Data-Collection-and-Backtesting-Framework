@@ -16,7 +16,7 @@ grep -q 'TimeHandler time_handler_' "$FILE" || fail "SimulatedExchange does not 
 grep -q 'TimeHandlerFactory::createFromEnvironment()' "$FILE" || fail "SimulatedExchange does not use the common TimeHandler factory"
 grep -q 'businessTimeReady' "$FILE" || fail "business/event-time gate is missing"
 grep -q 'execution_prices_market_time' "$FILE" || fail "execution market time is not gated by local business time"
-grep -q 'TransportSubjects::tradingRuntimeSubjects()' "$FILE" || fail "runtime stream still depends on replay clock subjects"
+grep -q 'MessageSubjects::tradingRuntimeSubjects()' "$FILE" || fail "runtime stream still depends on replay clock subjects"
 
 if grep -Eq 'ServiceClockContext|service_clock\.h|clock_->|parseRuntimeMode|runtimeModeName|--runtime-mode|--simulation-id|simulation_id|CLOCK_STATE|CLOCK_CONTROL|CLOCK_SYNC_REQUEST' "$FILE"; then
   echo "Legacy clock residue found in SimulatedExchange:" >&2

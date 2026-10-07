@@ -17,28 +17,22 @@
 #include "risk_constraints.h"
 #include "signal_state.h"
 #include "strategy.h"
-#include "target_weights.h"
-#include "virtual_position_state.h"
+#include "portfolio_weights.h"
+#include "position_state.h"
 
 
 class IndicatorEngine;
 
 
-/**************************************************************************************
- * Type    : StrategyPortfolio
- * Purpose : Collection of independently configured strategy instances
- **************************************************************************************/
+// Collection of independently configured strategy instances
 class StrategyInstance;
 using StrategyPortfolio = std::vector<StrategyInstance>;
 
 
-/**************************************************************************************
- * Type    : StrategyInstance
- * Purpose : Own one strategy plus its sizing/risk/rebalance configuration and attribution
- *
- * The instance is independent from Account/Backtester. Strategy capital is supplied when
- * a rebalance plan is calculated, which keeps this object reusable in backtest and live.
- **************************************************************************************/
+// Own one strategy plus its sizing/risk/rebalance configuration and attribution
+//
+// The instance is independent from Account/Backtester. Strategy capital is supplied when
+// a rebalance plan is calculated, which keeps this object reusable in backtest and live.
 class StrategyInstance {
 private:
     StrategyID strategy_id_ = 0;
@@ -90,12 +84,10 @@ public:
         strategy_->updateSignals(marketData, ts, signal_state_, indicators);
     }
 
-    /**************************************************************************************
-     * Purpose : Calculate desired weights and strategy-level rebalance decisions
-     *
-     * strategyCapital is supplied by Account/portfolio orchestration. It is captured in
-     * RebalancePlan so a target weight can later be converted at the actual execution time.
-     **************************************************************************************/
+    // Calculate desired weights and strategy-level rebalance decisions
+    //
+    // strategyCapital is supplied by Account/portfolio orchestration. It is captured in
+    // RebalancePlan so a target weight can later be converted at the actual execution time.
     std::optional<RebalancePlan> calculateRebalancePlan(
         const MarketData& marketData,
         Timestamp ts,
@@ -123,7 +115,7 @@ public:
         const auto sizedWeights = portfolio_sizer_->size(signal_state_, marketData, ts);
         if (!sizedWeights) {
             last_sizing_diagnostics_.reset();
-            return std::nullopt;
+            return std::nullopt; // No sizing estimate means defer planning, not liquidate holdings.
         }
 
         desired_weights_ = risk_constraints_.apply(*sizedWeights);
@@ -168,6 +160,8 @@ public:
 
         RebalancePlan plan(ts, strategyCapital);
 
+        // Consider signals, desired targets and filled holdings together; an asset
+        // that dropped out of the signal set may still need a flattening decision.
         std::unordered_set<Coin> coins;
         for (const auto& [coin, signal] : signal_state_.values()) {
             (void)signal;
@@ -225,9 +219,7 @@ public:
         virtual_positions_.add(fill.coin, fill.signedQuantity());
     }
 
-    /**************************************************************************************
-     * Purpose : Restore persistent strategy-owned operational state after restart
-     **************************************************************************************/
+    // Restore persistent strategy-owned operational state after restart
     void restoreState(
         const std::unordered_map<Coin, double>& signals,
         const std::unordered_map<Coin, double>& desiredWeights,

@@ -12,15 +12,12 @@
 #include "data_types.h"
 
 
-/**************************************************************************************
- * Type    : CanonicalMarketDataWindow
- * Purpose : Bounded read-only market window for one daily strategy decision
- *
- * raw_data contains the recent OHLCV history needed to compute indicators.
- * market_data contains only the target day's current top-N entry universe.  Extra
- * active-signal symbols may be present in raw_data so exit indicators can still be
- * evaluated, but they are deliberately excluded from the entry universe.
- **************************************************************************************/
+// Bounded read-only market window for one daily strategy decision
+//
+// raw_data contains the recent OHLCV history needed to compute indicators.
+// market_data contains only the target day's current top-N entry universe.  Extra
+// active-signal symbols may be present in raw_data so exit indicators can still be
+// evaluated, but they are deliberately excluded from the entry universe.
 struct CanonicalMarketDataWindow {
     OHLCVData raw_data;
     MarketData market_data;
@@ -30,12 +27,9 @@ struct CanonicalMarketDataWindow {
 };
 
 
-/**************************************************************************************
- * Type    : CanonicalMarketDataReader
- * Purpose : Read bounded LIVE daily history from the canonical SQLite market database
- *
- * The reader opens SQLite read-only.  The market-data service remains the only writer.
- **************************************************************************************/
+// Read bounded LIVE daily history from the canonical SQLite market database
+//
+// The reader opens SQLite read-only.  The market-data service remains the only writer.
 class CanonicalMarketDataReader {
 private:
     std::filesystem::path database_path_;

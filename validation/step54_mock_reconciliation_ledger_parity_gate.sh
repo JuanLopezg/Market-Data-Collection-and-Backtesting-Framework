@@ -30,8 +30,8 @@ for f in \
  "$ART/STEP_54_RECONCILIATION_LEDGER_PARITY.md" \
  "$ART/STEP_55_IMPLEMENTATION_HANDOFF.json" \
  "$ART/SHA256SUMS" \
- "$ROOT/lib/src/exchange/mock_sha256_v1.h" \
- "$ROOT/lib/src/exchange/mock_reconciliation_ledger_parity_v1.h" \
+ "$ROOT/lib/src/exchange/mock/hash.h" \
+ "$ROOT/lib/src/exchange/mock/reconciliation.h" \
  "$ROOT/validation/step54_mock_reconciliation_ledger_parity_test.cpp"; do
   [[ -f "$f" ]] || fail "missing ${f#$ROOT/}"
 done
@@ -102,18 +102,18 @@ pass 'cash/positions/open-orders/fills, SHA-256 chain, restart parity and route 
 
 printf '%s\n' '[6/8] Ledger chain and routing guard are present; no wall-clock reconciliation'
 grep -Fq 'Sha256V1::hexDigest' \
- "$ROOT/lib/src/exchange/mock_reconciliation_ledger_parity_v1.h" \
+ "$ROOT/lib/src/exchange/mock/reconciliation.h" \
  || fail 'SHA-256 ledger chain call missing'
 grep -Fq 'canRouteNewOrders' \
- "$ROOT/lib/src/exchange/mock_reconciliation_ledger_parity_v1.h" \
+ "$ROOT/lib/src/exchange/mock/reconciliation.h" \
  || fail 'new-order reconciliation guard missing'
 grep -Fq 'submitIfSafe' \
- "$ROOT/lib/src/exchange/mock_reconciliation_ledger_parity_v1.h" \
+ "$ROOT/lib/src/exchange/mock/reconciliation.h" \
  || fail 'guarded submit boundary missing'
 if grep -Ein \
  'system_clock|steady_clock|high_resolution_clock|sleep_for|sleep_until|gettimeofday|clock_gettime|std::time|(^|[^[:alnum:]_])time\(' \
- "$ROOT/lib/src/exchange/mock_reconciliation_ledger_parity_v1.h" \
- "$ROOT/lib/src/exchange/mock_sha256_v1.h" >"$TMP/clock"; then
+ "$ROOT/lib/src/exchange/mock/reconciliation.h" \
+ "$ROOT/lib/src/exchange/mock/hash.h" >"$TMP/clock"; then
   cat "$TMP/clock" >&2
   fail 'wall/monotonic clock primitive leaked into Step54 reconciliation economics'
 fi
@@ -127,8 +127,8 @@ if find "$ROOT/lib/src/exchange" -maxdepth 1 -type f \
 fi
 if grep -Ein \
  'hyperliquid|private[_ -]?key|mnemonic|seed phrase|api wallet|smart[_ -]?order|split[_ -]?routing' \
- "$ROOT/lib/src/exchange/mock_reconciliation_ledger_parity_v1.h" \
- "$ROOT/lib/src/exchange/mock_sha256_v1.h" >"$TMP/future"; then
+ "$ROOT/lib/src/exchange/mock/reconciliation.h" \
+ "$ROOT/lib/src/exchange/mock/hash.h" >"$TMP/future"; then
   cat "$TMP/future" >&2
   fail 'private real-venue/smart-routing concern leaked into Step54 code'
 fi

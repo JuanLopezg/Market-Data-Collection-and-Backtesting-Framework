@@ -233,6 +233,8 @@ std::vector<Coin> CanonicalMarketDataReader::rankedSymbols(
     return result;
 }
 
+// Bound SQL history at the completed decision date. Indicator warm-up must never
+// read rows beyond that date; extra held symbols supply exits without becoming entries.
 CanonicalMarketDataWindow CanonicalMarketDataReader::loadWindow(
     Timestamp date,
     unsigned int historyDays,

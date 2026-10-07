@@ -1,17 +1,10 @@
-/*
- * simulated_exchange_service_main.cpp
- *
- * Purpose: Implements the durable simulated exchange backend used by the gateway and historical/system tests.
- *
- * Read this file from top to bottom:
- *   1. Recover exchange cash, positions, orders, fills, and durable outbox state.
- *   2. Consume execution prices plus submit/cancel/snapshot backend commands.
- *   3. Apply exchange semantics, checkpoint first, then publish order/fill/snapshot events from the durable outbox.
- *
- * This file contains the executable entrypoint and service-level orchestration.
- * Keep reusable domain calculations in focused components; keep startup,
- * message flow, persistence boundaries, logging, and shutdown visible here.
- */
+// Implements the durable simulated exchange backend used by the gateway and historical/system
+// tests.
+//
+// 1. Recover exchange cash, positions, orders, fills, and durable outbox state.
+// 2. Consume execution prices plus submit/cancel/snapshot backend commands.
+// 3. Apply exchange semantics, checkpoint first, then publish order/fill/snapshot events from
+// the durable outbox.
 
 #include <algorithm>
 #include <atomic>
@@ -35,24 +28,19 @@
 #include <libpq-fe.h>
 
 #include "account.h"
-#include "contract_json_codec.h"
+#include "message_json.h"
 #include "exchange_snapshot_event.h"
 #include "exchange_snapshot_request.h"
-#include "execution_commands.h"
-#include "execution_events.h"
-#include "execution_price_snapshot.h"
-#include "nats_jetstream_message_bus.h"
+#include "execution_messages.h"
+#include "jetstream_bus.h"
 #include "service_logging.h"
-#include "simulated_exchange.h"
+#include "adapters/simulated_exchange.h"
 #include "time_handler_factory.h"
 #include "time_utils.h"
-#include "transport_subjects.h"
+#include "message_subjects.h"
 
 
-
-// ============================================================================
-// Internal helpers and service implementation
-// ============================================================================
+// Internal helpers and service implementation.
 
 namespace {
 
@@ -88,10 +76,7 @@ Timestamp currentBusinessUtcDate(const TimeHandler& timeHandler)
 }
 
 
-
-// ============================================================================
-// Command-line configuration
-// ============================================================================
+// Command-line configuration.
 
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
@@ -220,10 +205,7 @@ std::string doubleText(double value)
 }
 
 
-
-// ============================================================================
-// Durable PostgreSQL persistence helpers
-// ============================================================================
+// Durable PostgreSQL persistence helpers.
 
 class PgResult {
 private:
@@ -769,15 +751,12 @@ public:
 };
 
 
-
-// ============================================================================
-// Service runtime and message-processing loop
-// ============================================================================
+// Service runtime and message-processing loop.
 
 class SimulatedExchangeServiceRuntime {
 private:
     const Options options_;
-    NatsJetStreamMessageBus bus_;
+    JetStreamBus bus_;
     TimeHandler time_handler_;
     SimulatedExchange exchange_;
     Account account_;
@@ -788,10 +767,10 @@ private:
     std::vector<ExchangeEvent> pending_events_;
     Timestamp latest_timestamp_ = 0;
 
-    DurableMessageBus::SubscriptionID prices_subscription_ = 0;
-    DurableMessageBus::SubscriptionID submit_subscription_ = 0;
-    DurableMessageBus::SubscriptionID cancel_subscription_ = 0;
-    DurableMessageBus::SubscriptionID snapshot_request_subscription_ = 0;
+    MessageBus::SubscriptionID prices_subscription_ = 0;
+    MessageBus::SubscriptionID submit_subscription_ = 0;
+    MessageBus::SubscriptionID cancel_subscription_ = 0;
+    MessageBus::SubscriptionID snapshot_request_subscription_ = 0;
     bool chaos_crash_after_checkpoint_once_ =
         envFlag("ALGOTRADING_CHAOS_CRASH_AFTER_CHECKPOINT_ONCE");
 
@@ -907,9 +886,9 @@ private:
                 );
                 output.update = *update;
 
-                record.subject = TransportSubjects::BACKEND_ORDER_UPDATE;
+                record.subject = MessageSubjects::BACKEND_ORDER_UPDATE;
                 record.message_id = output.metadata.message_id;
-                record.payload = ContractJsonCodec::encode(output);
+                record.payload = MessageJson::encode(output);
             }
             else if (const auto* fill = std::get_if<Fill>(&event)) {
                 FillEvent output;
@@ -920,9 +899,9 @@ private:
                 );
                 output.fill = *fill;
 
-                record.subject = TransportSubjects::BACKEND_FILL;
+                record.subject = MessageSubjects::BACKEND_FILL;
                 record.message_id = output.metadata.message_id;
-                record.payload = ContractJsonCodec::encode(output);
+                record.payload = MessageJson::encode(output);
             }
             else {
                 throw std::logic_error("Unsupported simulated-exchange event in durable outbox");
@@ -977,8 +956,8 @@ private:
                 );
                 output.update = *update;
                 bus_.publish(
-                    TransportSubjects::BACKEND_ORDER_UPDATE,
-                    ContractJsonCodec::encode(output),
+                    MessageSubjects::BACKEND_ORDER_UPDATE,
+                    MessageJson::encode(output),
                     output.metadata.message_id
                 );
                 LG_INFO(
@@ -999,8 +978,8 @@ private:
                 );
                 output.fill = *fill;
                 bus_.publish(
-                    TransportSubjects::BACKEND_FILL,
-                    ContractJsonCodec::encode(output),
+                    MessageSubjects::BACKEND_FILL,
+                    MessageJson::encode(output),
                     output.metadata.message_id
                 );
                 LG_INFO(
@@ -1054,6 +1033,8 @@ private:
         const std::vector<DurableOutboxRecord> outbox =
             durableOutboxRecords(correlationId);
 
+        // Commit account/order changes and their outgoing events together. A restart
+        // republishes the stored outbox instead of applying the economic transition again.
         checkpoint_store_->saveTransition(
             account_.cash(),
             account_.positions().values(),
@@ -1181,7 +1162,7 @@ private:
     {
         try {
             const ExecutionPriceSnapshot prices =
-                ContractJsonCodec::decodeExecutionPriceSnapshot(message.payload);
+                MessageJson::decodeExecutionPriceSnapshot(message.payload);
             validateMetadata(prices.metadata);
             if (prices.timestamp == 0 || prices.prices.empty())
                 return DurableMessageDisposition::Terminate;
@@ -1243,7 +1224,7 @@ private:
     {
         try {
             const SubmitOrderCommand command =
-                ContractJsonCodec::decodeSubmitOrderCommand(message.payload);
+                MessageJson::decodeSubmitOrderCommand(message.payload);
             validateMetadata(command.metadata);
             if (command.order.order_id == 0)
                 return DurableMessageDisposition::Terminate;
@@ -1317,7 +1298,7 @@ private:
     {
         try {
             const CancelOrderCommand command =
-                ContractJsonCodec::decodeCancelOrderCommand(message.payload);
+                MessageJson::decodeCancelOrderCommand(message.payload);
             validateMetadata(command.metadata);
             if (command.order_id == 0)
                 return DurableMessageDisposition::Terminate;
@@ -1351,7 +1332,7 @@ private:
     {
         try {
             const ExchangeSnapshotRequest request =
-                ContractJsonCodec::decodeExchangeSnapshotRequest(message.payload);
+                MessageJson::decodeExchangeSnapshotRequest(message.payload);
             validateMetadata(request.metadata);
             if (!businessTimeReady(request.metadata.produced_at, "backend_snapshot_request_metadata"))
                 return DurableMessageDisposition::Retry;
@@ -1366,8 +1347,8 @@ private:
                 output.snapshot.timestamp
             );
             bus_.publish(
-                TransportSubjects::BACKEND_EXCHANGE_SNAPSHOT,
-                ContractJsonCodec::encode(output),
+                MessageSubjects::BACKEND_EXCHANGE_SNAPSHOT,
+                MessageJson::encode(output),
                 output.metadata.message_id
             );
             LG_INFO(
@@ -1399,8 +1380,8 @@ public:
           exchange_(options_.commission_rate),
           account_(options_.initial_cash)
     {
-        bus_.ensureStream(options_.runtime_stream, TransportSubjects::tradingRuntimeSubjects());
-        bus_.ensureStream(options_.backend_stream, TransportSubjects::exchangeBackendSubjects());
+        bus_.ensureStream(options_.runtime_stream, MessageSubjects::tradingRuntimeSubjects());
+        bus_.ensureStream(options_.backend_stream, MessageSubjects::exchangeBackendSubjects());
 
         recoverDurableState();
 
@@ -1423,7 +1404,7 @@ public:
             consumer(
                 options_.runtime_stream,
                 "simulated-exchange-prices",
-                TransportSubjects::EXECUTION_PRICES
+                MessageSubjects::EXECUTION_PRICES
             ),
             [this](const BusMessage& message) { return onPrices(message); }
         );
@@ -1431,7 +1412,7 @@ public:
             consumer(
                 options_.backend_stream,
                 "simulated-exchange-submit",
-                TransportSubjects::BACKEND_SUBMIT_ORDER
+                MessageSubjects::BACKEND_SUBMIT_ORDER
             ),
             [this](const BusMessage& message) { return onSubmit(message); }
         );
@@ -1439,7 +1420,7 @@ public:
             consumer(
                 options_.backend_stream,
                 "simulated-exchange-cancel",
-                TransportSubjects::BACKEND_CANCEL_ORDER
+                MessageSubjects::BACKEND_CANCEL_ORDER
             ),
             [this](const BusMessage& message) { return onCancel(message); }
         );
@@ -1447,7 +1428,7 @@ public:
             consumer(
                 options_.backend_stream,
                 "simulated-exchange-snapshot-request",
-                TransportSubjects::BACKEND_EXCHANGE_SNAPSHOT_REQUEST
+                MessageSubjects::BACKEND_EXCHANGE_SNAPSHOT_REQUEST
             ),
             [this](const BusMessage& message) { return onSnapshotRequest(message); }
         );
@@ -1494,10 +1475,7 @@ public:
 } // namespace
 
 
-
-// ============================================================================
-// Process entrypoint
-// ============================================================================
+// Process entrypoint.
 
 int main(int argc, char** argv)
 {

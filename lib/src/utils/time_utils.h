@@ -10,84 +10,51 @@
 #include <string>
 #include <nlohmann/json.hpp>
 
-/**************************************************************************************
- * Purpose : Returns the current local time as a formatted string with millisecond precision.
- * Args    : None
- * Return  : std::string - Local timestamp in the format "YYYY-MM-DD HH:MM:SS.mmm"
- **************************************************************************************/
+// Returns the current local time as a formatted string with millisecond precision.
+// Args    : None
 std::string nowString();
 
-/**************************************************************************************
- * Purpose : Returns the current UTC time with millisecond precision.
- * Args    : None
- * Return  : std::string - UTC time formatted as "HH:MM:SS.mmm UTC"
- **************************************************************************************/
+// Returns the current UTC time with millisecond precision.
+// Args    : None
 std::string currentUtcTimestamp();
 std::string currentUtcTimestamp(std::chrono::system_clock::time_point now);
 
-/**************************************************************************************
- * Purpose : Computes the remaining time until the next UTC midnight (00:00:00).
- * Args    : None
- * Return  : std::string - Formatted duration "HHh MMm SSs until UTC midnight"
- **************************************************************************************/
+// Computes the remaining time until the next UTC midnight (00:00:00).
+// Args    : None
 std::string timeUntilUtcMidnight();
 std::string timeUntilUtcMidnight(std::chrono::system_clock::time_point now);
 
-/**************************************************************************************
- * Purpose : Retrieves the current UTC calendar date (year, month, day).
- * Args    : None
- * Return  : std::chrono::year_month_day - Current date in UTC.
- **************************************************************************************/
+// Retrieves the current UTC calendar date (year, month, day).
+// Args    : None
 std::chrono::year_month_day getCurrentUtcDate();
 std::chrono::year_month_day getCurrentUtcDate(std::chrono::system_clock::time_point now);
 
-/**************************************************************************************
- * Purpose : Computes the date of the previous day relative to the input date.
- * Args    : ymd - A chrono::year_month_day representing the current date.
- * Return  : std::chrono::year_month_day - The previous day's date.
- **************************************************************************************/
+// Computes the date of the previous day relative to the input date.
+// Args    : ymd - A chrono::year_month_day representing the current date.
 std::chrono::year_month_day getPreviousDayDate(std::chrono::year_month_day ymd);
 
-/**************************************************************************************
- * Purpose : Formats a chrono::year_month_day into a "YYYY-MM-DD" string.
- * Args    : ymd - Date to format.
- * Return  : std::string - Formatted date string.
- **************************************************************************************/
+// Formats a chrono::year_month_day into a "YYYY-MM-DD" string.
+// Args    : ymd - Date to format.
 std::string formatYMD(std::chrono::year_month_day ymd);
 
-/**************************************************************************************
- * Purpose : Computes the next UTC midnight (00:00:00 of the following day).
- * Args    : None
- * Return  : std::chrono::system_clock::time_point - Timestamp of next midnight UTC.
- **************************************************************************************/
+// Computes the next UTC midnight (00:00:00 of the following day).
+// Args    : None
 std::chrono::system_clock::time_point computeNextMidnightUTC();
 std::chrono::system_clock::time_point computeNextMidnightUTC(std::chrono::system_clock::time_point now);
 
-/**************************************************************************************
- * Purpose : Converts a chrono::year_month_day into an integer of the form YYYYMMDD.
- * Args    : ymd - The date to convert.
- * Return  : int - The compact date representation (e.g., 20240118).
- **************************************************************************************/
+// Converts a chrono::year_month_day into an integer of the form YYYYMMDD.
+// Args    : ymd - The date to convert.
 int toYYYYMMDD(std::chrono::year_month_day ymd);
 
-/**************************************************************************************
- * Purpose : Converts an integer date (YYYYMMDD) to a Unix timestamp in milliseconds.
- * Args    : yyyymmdd - The encoded date (YYYYMMDD).
- * Return  : long - Unix timestamp (ms since 1970-01-01 00:00:00 UTC).
- **************************************************************************************/
+// Converts an integer date (YYYYMMDD) to a Unix timestamp in milliseconds.
+// Args    : yyyymmdd - The encoded date (YYYYMMDD).
 long toUnixMillis(int yyyymmdd);
 
-/**************************************************************************************
- * Purpose : Given a compact date (YYYYMMDD), computes the previous calendar day.
- * Args    : yyyymmdd - Date encoded as YYYYMMDD (e.g., 20240118).
- * Return  : unsigned int - Previous day encoded as YYYYMMDD.
- **************************************************************************************/
+// Given a compact date (YYYYMMDD), computes the previous calendar day.
+// Args    : yyyymmdd - Date encoded as YYYYMMDD (e.g., 20240118).
 unsigned int previousDay(unsigned int yyyymmdd);
 
-/**************************************************************************************
- * Purpose : Given a compact date (YYYYMMDD), computes the next calendar day.
- * Args    : yyyymmdd - Date encoded as YYYYMMDD (e.g., 20240118).
- * Return  : unsigned int - Next day encoded as YYYYMMDD.
- **************************************************************************************/
+// Given a compact date (YYYYMMDD), computes the next calendar day.
+// Args    : yyyymmdd - Date encoded as YYYYMMDD (e.g., 20240118).
 unsigned int nextDay(unsigned int yyyymmdd);
 

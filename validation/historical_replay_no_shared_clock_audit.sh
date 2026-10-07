@@ -12,7 +12,7 @@ files=(
   "live_trading/simulated_exchange_service/src/simulated_exchange_service_main.cpp"
 )
 
-legacy_regex='ServiceClockContext|SimulatedClock|ClockState|ClockControl|ClockSyncRequest|TransportSubjects::CLOCK_(STATE|CONTROL|SYNC_REQUEST)|runtimeSubjects[[:space:]]*\(|--runtime-mode|--simulation-id|simulation\.clock\.'
+legacy_regex='ServiceClockContext|SimulatedClock|ClockState|ClockControl|ClockSyncRequest|MessageSubjects::CLOCK_(STATE|CONTROL|SYNC_REQUEST)|runtimeSubjects[[:space:]]*\(|--runtime-mode|--simulation-id|simulation\.clock\.'
 failed=0
 
 printf '%s\n' '============================================================'
@@ -59,12 +59,8 @@ else
   rm -f /tmp/t13_generator_matches.$$ || true
 fi
 
-# T13 deliberately does NOT delete the old replay controller yet. It is legacy and
-# must not be used by the new path; T23 removes the remaining legacy files after the
-# historical replay path has passed acceptance.
-if [[ -f "$ROOT/live_trading/replay_controller/src/replay_controller_main.cpp" ]]; then
-  echo "INFO legacy replay-controller still present (expected until cleanup; do not use it for new replay)"
-fi
+# The former replay controller has been removed. Current tree-wide absence is
+# checked by validation/no_legacy_clock_audit.sh.
 
 if [[ "$failed" -ne 0 ]]; then
   echo "FAIL: T13 historical replay still depends on shared logical clock"

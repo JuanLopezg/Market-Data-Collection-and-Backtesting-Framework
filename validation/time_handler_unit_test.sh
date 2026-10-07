@@ -12,9 +12,9 @@ OUT="${TMPDIR:-/tmp}/algotrading_time_handler_unit_test"
   -O2 \
   -Wall -Wextra -Wpedantic \
   -pthread \
-  -Ilib/src/runtime \
+  -Ilib/src/utils \
   validation/time_handler_unit_test.cpp \
-  lib/src/runtime/time_handler.cpp \
+  lib/src/utils/time_handler.cpp \
   -o "$OUT"
 
 "$OUT"

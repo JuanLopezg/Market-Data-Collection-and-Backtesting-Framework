@@ -3,11 +3,11 @@
 #include <string>
 #include <variant>
 
-#include "mock_account_margin_positions_accounting_v1.h"
-#include "mock_order_admission_lifecycle_v1.h"
+#include "mock/account.h"
+#include "mock/orders.h"
 
 using namespace VenueContracts::V1;
-using namespace MockVenueV1;
+using namespace MockVenue;
 
 namespace {
 
@@ -80,7 +80,7 @@ LimitOrderIntent makeOrder(
 }
 
 void submit(
-    MockOrderAdmissionLifecycleV1& life,
+    MockOrders& life,
     const std::string& request_id,
     const LimitOrderIntent& order,
     Timestamp ts)
@@ -100,10 +100,10 @@ int main()
     {
         std::uint64_t notional = 0U;
         assert(moneyNotionalUnits(
-            100ULL * kMockMoneyFactorV1,
+            100ULL * kMockMoneyFactor,
             10000000ULL, // 0.1
             &notional));
-        assert(notional == 10ULL * kMockMoneyFactorV1);
+        assert(notional == 10ULL * kMockMoneyFactor);
 
         std::uint64_t fee = 0U;
         assert(ppmAmountUnits(notional, 400U, &fee));
@@ -115,7 +115,7 @@ int main()
         assert(formatSignedScaled(signed_amount, 8U) == "-0.25000000");
     }
 
-    MockAccountMarginPositionsAccountingV1 account;
+    MockAccount account;
 
     // Initial account.
     {
@@ -137,7 +137,7 @@ int main()
     const Fill buy = makeFill(
         "BTCUSDT", 1, Side::Buy, 0.1, 100.0, 100, "fill-1");
     Event buy_event = buy;
-    assert(account.consume(buy_event) == FillApplyResultV1::Applied);
+    assert(account.consume(buy_event) == FillApplyResult::Applied);
     assert(account.emittedEvents().size() == 1U);
     assert(std::holds_alternative<AccountingEvent>(account.emittedEvents()[0]));
 
@@ -162,7 +162,7 @@ int main()
     // Same fill is idempotent in-process: no double position/fee.
     account.clearEmittedEvents();
     const std::string fp_before_duplicate = account.economicFingerprint();
-    assert(account.applyFill(buy) == FillApplyResultV1::DuplicateIgnored);
+    assert(account.applyFill(buy) == FillApplyResult::DuplicateIgnored);
     assert(account.emittedEvents().empty());
     assert(account.economicFingerprint() == fp_before_duplicate);
 
@@ -183,7 +183,7 @@ int main()
     account.clearEmittedEvents();
     const Fill partial_close = makeFill(
         "BTCUSDT", 2, Side::Sell, 0.04, 120.0, 120, "fill-2");
-    assert(account.applyFill(partial_close) == FillApplyResultV1::Applied);
+    assert(account.applyFill(partial_close) == FillApplyResult::Applied);
     {
         const auto s = account.accountSnapshot(120);
         assert(s.positions.size() == 1U);
@@ -200,7 +200,7 @@ int main()
     account.clearEmittedEvents();
     const Fill flip = makeFill(
         "BTCUSDT", 3, Side::Sell, 0.10, 90.0, 130, "fill-3");
-    assert(account.applyFill(flip) == FillApplyResultV1::Applied);
+    assert(account.applyFill(flip) == FillApplyResult::Applied);
     {
         const auto s = account.accountSnapshot(130);
         assert(s.positions.size() == 1U);
@@ -223,10 +223,10 @@ int main()
     account.clearEmittedEvents();
     assert(account.postRebate(
         "BTCUSDT", 150, "0.50000000", "rebate-1") ==
-        ExternalAccountingApplyResultV1::Applied);
+        ExternalAccountingApplyResult::Applied);
     assert(account.postFundingPayment(
         "BTCUSDT", 151, "-0.25000000", "funding-1") ==
-        ExternalAccountingApplyResultV1::Applied);
+        ExternalAccountingApplyResult::Applied);
     assert(account.emittedEvents().size() == 2U);
     assert(std::get<AccountingEvent>(
         account.emittedEvents()[0]).type == AccountingEventType::Rebate);
@@ -237,13 +237,13 @@ int main()
     const auto funding_fp = account.economicFingerprint();
     assert(account.postFundingPayment(
         "BTCUSDT", 151, "-0.25000000", "funding-1") ==
-        ExternalAccountingApplyResultV1::DuplicateIgnored);
+        ExternalAccountingApplyResult::DuplicateIgnored);
     assert(account.emittedEvents().empty());
     assert(account.economicFingerprint() == funding_fp);
 
     // Order views come from lifecycle state only.
     {
-        MockOrderAdmissionLifecycleV1 life;
+        MockOrders life;
         submit(life, "open-a", makeOrder(1001, "ETHUSDT", 0.01, 3000.0), 200);
         submit(life, "open-b", makeOrder(1002, "SOLUSDT", 0.1, 150.0), 201);
 
@@ -276,8 +276,8 @@ int main()
 
     // Same event-time economic inputs => same fingerprint; wall/replay speed is absent.
     {
-        MockAccountMarginPositionsAccountingV1 a;
-        MockAccountMarginPositionsAccountingV1 b;
+        MockAccount a;
+        MockAccount b;
         assert(a.setLeverageExact("BTCUSDT", 3U));
         assert(b.setLeverageExact("BTCUSDT", 3U));
 
@@ -286,12 +286,12 @@ int main()
         const Fill f2 = makeFill(
             "BTCUSDT", 11, Side::Sell, 0.05, 110.0, 501, "det-fill-2");
 
-        assert(a.applyFill(f1) == FillApplyResultV1::Applied);
-        assert(a.applyFill(f2) == FillApplyResultV1::Applied);
+        assert(a.applyFill(f1) == FillApplyResult::Applied);
+        assert(a.applyFill(f2) == FillApplyResult::Applied);
         assert(a.markToMarket("BTCUSDT", 502, 105.0));
         assert(a.postFundingPayment(
             "BTCUSDT", 503, "-0.12500000", "det-funding") ==
-            ExternalAccountingApplyResultV1::Applied);
+            ExternalAccountingApplyResult::Applied);
 
         // Different amount of irrelevant CPU work cannot affect economics.
         volatile std::uint64_t sink = 0U;
@@ -299,12 +299,12 @@ int main()
             sink += i;
         (void)sink;
 
-        assert(b.applyFill(f1) == FillApplyResultV1::Applied);
-        assert(b.applyFill(f2) == FillApplyResultV1::Applied);
+        assert(b.applyFill(f1) == FillApplyResult::Applied);
+        assert(b.applyFill(f2) == FillApplyResult::Applied);
         assert(b.markToMarket("BTCUSDT", 502, 105.0));
         assert(b.postFundingPayment(
             "BTCUSDT", 503, "-0.12500000", "det-funding") ==
-            ExternalAccountingApplyResultV1::Applied);
+            ExternalAccountingApplyResult::Applied);
 
         assert(a.economicFingerprint() == b.economicFingerprint());
         assert(a.accountSnapshot(504).equity == b.accountSnapshot(504).equity);
@@ -312,16 +312,16 @@ int main()
 
     // Conflicting fill ID is fail-closed and marks accounting unsafe.
     {
-        MockAccountMarginPositionsAccountingV1 unsafe;
+        MockAccount unsafe;
         Fill original = makeFill(
             "ETHUSDT", 20, Side::Buy, 0.01, 3000.0, 600, "conflict-fill");
-        assert(unsafe.applyFill(original) == FillApplyResultV1::Applied);
+        assert(unsafe.applyFill(original) == FillApplyResult::Applied);
         const std::string before = unsafe.economicFingerprint();
 
         Fill conflict = original;
         conflict.price = 3100.0;
         assert(unsafe.applyFill(conflict) ==
-               FillApplyResultV1::IdentityConflictUnsafe);
+               FillApplyResult::IdentityConflictUnsafe);
         assert(!unsafe.accountingSafe());
         assert(unsafe.accountSnapshot(601).positions.size() == 1U);
         assert(unsafe.economicFingerprint() != before); // unsafe flag changed, economics did not duplicate

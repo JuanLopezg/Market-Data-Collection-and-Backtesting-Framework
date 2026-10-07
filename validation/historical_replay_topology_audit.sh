@@ -17,7 +17,7 @@ echo "============================================================"
 echo "T14 — HISTORICAL REPLAY ISOLATED TOPOLOGY AUDIT"
 echo "============================================================"
 
-python3 - "$COMPOSE" <<'PY'
+python3 - "$COMPOSE" "$ROOT" <<'PY'
 import sys
 from pathlib import Path
 import yaml
@@ -59,9 +59,26 @@ if not any(str(v).endswith(":/data/historical/1d_cmc.csv:ro") for v in feeder_vo
 if "market-data-db:/data/market:rw" not in feeder_volumes:
     raise SystemExit("historical feeder must be the market SQLite writer")
 
-for reader in ("strategy", "portfolio-risk", "execution-state"):
-    if "market-data-db:/data/market:ro" not in services[reader].get("volumes", []):
-        raise SystemExit(f"{reader} must mount canonical market SQLite read-only")
+# Current consumers need writable WAL sidecar/lock files in the volume.
+# Their canonical SQLite connection itself must remain read-only/query-only.
+root = Path(sys.argv[2])
+canonical_reader = (root / "lib/src/market/canonical_market_data_reader.cpp").read_text(encoding="utf-8")
+for marker in ("SQLITE_OPEN_READONLY", "PRAGMA query_only=ON"):
+    if marker not in canonical_reader:
+        raise SystemExit(f"canonical SQLite reader lost its read-only guard: {marker}")
+
+reader_sources = {
+    "strategy": "strategy_service",
+    "portfolio-risk": "portfolio_risk_service",
+    "execution-state": "execution_state_service",
+}
+for reader, section in reader_sources.items():
+    mounts = services[reader].get("volumes", [])
+    if not any(v in mounts for v in ("market-data-db:/data/market:ro", "market-data-db:/data/market:rw")):
+        raise SystemExit(f"{reader} must use the isolated canonical market SQLite volume")
+    source = (root / "live_trading" / section / "src" / f"{section}_main.cpp").read_text(encoding="utf-8")
+    if "CanonicalMarketDataReader" not in source:
+        raise SystemExit(f"{reader} must use the shared read-only canonical reader")
 
 for svc in ("strategy", "portfolio-risk", "execution-state", "order-planner", "exchange-gateway", "simulated-exchange"):
     if services[svc].get("profiles") != ["runtime"]:

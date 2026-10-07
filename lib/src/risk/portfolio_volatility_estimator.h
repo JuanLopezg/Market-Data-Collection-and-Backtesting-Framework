@@ -4,18 +4,15 @@
 #include <cmath>
 #include <stdexcept>
 
-#include "covariance_matrix.h"
+#include "covariance_estimator.h"
 #include "portfolio_weights.h"
 
 
-/**************************************************************************************
- * Type    : PortfolioVolatilityEstimator
- * Purpose : Calculates annualized portfolio volatility from weights and covariance
- *
- * PortfolioWeights are dimensionless fractions of portfolio capital, so no monetary
- * capital is needed here. The returned volatility is a decimal annualized value, e.g.
- * 0.20 means 20%.
- **************************************************************************************/
+// Calculates annualized portfolio volatility from weights and covariance
+//
+// PortfolioWeights are dimensionless fractions of portfolio capital, so no monetary
+// capital is needed here. The returned volatility is a decimal annualized value, e.g.
+// 0.20 means 20%.
 class PortfolioVolatilityEstimator {
 public:
     double estimate(
@@ -26,6 +23,8 @@ public:
         if (portfolioWeights.size() == 0)
             return 0.0;
 
+        // Portfolio variance is w^T * covariance * w. Signed weights retain long/short
+        // hedging effects; taking absolute weights here would lose those effects.
         double variance = 0.0;
 
         for (const auto& [leftCoin, leftWeight] : portfolioWeights.values()) {

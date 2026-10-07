@@ -1,19 +1,11 @@
-# Live-trading executables. Each service keeps its own build definition below.
-subdir('binance_simulator')
-subdir('execution_service')
-
-subdir('strategy_service')
-
-subdir('portfolio_risk_service')
-
-subdir('order_planner_service')
-
-subdir('execution_state_service')
-
-subdir('exchange_gateway')
-
-subdir('simulated_exchange_service')
-
-subdir('market_data_service')
-
-subdir('historical_market_data_service')
+# Each service has one build definition beside its sources.
+subdir('binance_simulator/src')
+subdir('execution_service/src')
+subdir('strategy_service/src')
+subdir('portfolio_risk_service/src')
+subdir('order_planner_service/src')
+subdir('execution_state_service/src')
+subdir('exchange_gateway/src')
+subdir('simulated_exchange_service/src')
+subdir('market_data_service/src')
+subdir('historical_market_data_service/src')

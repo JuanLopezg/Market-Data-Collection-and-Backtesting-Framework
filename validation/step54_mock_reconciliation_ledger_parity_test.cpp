@@ -9,11 +9,11 @@
 
 #include <unistd.h>
 
-#include "mock_reconciliation_ledger_parity_v1.h"
-#include "mock_sha256_v1.h"
+#include "mock/reconciliation.h"
+#include "mock/hash.h"
 
 using namespace VenueContracts::V1;
-using namespace MockVenueV1;
+using namespace MockVenue;
 
 namespace {
 
@@ -67,7 +67,7 @@ SubmitOrderBatch submitOne(
     return batch;
 }
 
-MarketBarObservationV1 bar(
+MarketBarObservation bar(
     const std::string& asset,
     Timestamp ts,
     double open,
@@ -76,7 +76,7 @@ MarketBarObservationV1 bar(
     double close,
     double volume)
 {
-    MarketBarObservationV1 observation;
+    MarketBarObservation observation;
     observation.canonical_asset = asset;
     observation.event_time = ts;
     observation.bar.open = open;
@@ -89,13 +89,13 @@ MarketBarObservationV1 bar(
 }
 
 bool hasIssue(
-    const ReconciliationReportV1& report,
-    ReconciliationIssueKindV1 kind)
+    const ReconciliationReport& report,
+    ReconciliationIssueKind kind)
 {
     return std::any_of(
         report.issues.begin(),
         report.issues.end(),
-        [&](const ReconciliationIssueV1& issue) {
+        [&](const ReconciliationIssue& issue) {
             return issue.kind == kind;
         });
 }
@@ -105,7 +105,7 @@ bool hasIssue(
 int main()
 {
     assert(
-        Sha256V1::hexDigest("abc") ==
+        Sha256::hexDigest("abc") ==
         "ba7816bf8f01cfea414140de5dae2223"
         "b00361a396177a9cb410ff61f20015ad");
 
@@ -123,12 +123,12 @@ int main()
     std::uint64_t checkpoint_sequence = 0U;
 
     {
-        MockSnapshotUserStreamRecoveryV1 runtime(dir);
-        MockReconciliationLedgerParityV1 recon;
+        MockRecovery runtime(dir);
+        MockReconciliation recon;
 
         assert(runtime.setLeverage(
             "BTCUSDT", 90, 2U) ==
-            RecoverySourceResultV1::Applied);
+            RecoverySourceResult::Applied);
 
         assert(runtime.submit(
             submitOne(
@@ -139,7 +139,7 @@ int main()
                     0.20,
                     100.0),
                 100)) ==
-            RecoverySourceResultV1::Applied);
+            RecoverySourceResult::Applied);
 
         // 10% of 1.0 volume => 0.1 fill.
         assert(runtime.processBar(
@@ -151,7 +151,7 @@ int main()
                 99.0,
                 100.0,
                 1.0)) ==
-            RecoverySourceResultV1::Applied);
+            RecoverySourceResult::Applied);
 
         // Second bar completes the remaining 0.1.
         assert(runtime.processBar(
@@ -163,27 +163,27 @@ int main()
                 98.0,
                 101.0,
                 1.0)) ==
-            RecoverySourceResultV1::Applied);
+            RecoverySourceResult::Applied);
 
         assert(runtime.postFundingPayment(
             "BTCUSDT",
             121,
             "-0.25000000",
             "funding-121") ==
-            RecoverySourceResultV1::Applied);
+            RecoverySourceResult::Applied);
 
         assert(runtime.postRebate(
             "BTCUSDT",
             122,
             "0.10000000",
             "rebate-122") ==
-            RecoverySourceResultV1::Applied);
+            RecoverySourceResult::Applied);
 
         assert(runtime.markToMarket(
             "BTCUSDT",
             123,
             105.0) ==
-            RecoverySourceResultV1::Applied);
+            RecoverySourceResult::Applied);
 
         // Keep one explicit open order for open-order reconciliation.
         assert(runtime.submit(
@@ -195,7 +195,7 @@ int main()
                     0.10,
                     100.0),
                 130)) ==
-            RecoverySourceResultV1::Applied);
+            RecoverySourceResult::Applied);
 
         // Buy limit 100 is not touched by an ETH bar around 3000 -> RESTING.
         assert(runtime.processBar(
@@ -207,13 +207,13 @@ int main()
                 2990.0,
                 3005.0,
                 10.0)) ==
-            RecoverySourceResultV1::Applied);
+            RecoverySourceResult::Applied);
 
-        const ReconciliationReportV1 clean =
+        const ReconciliationReport clean =
             recon.reconcile(runtime, 140);
 
         assert(clean.state ==
-               ReconciliationStateV1::Clean);
+               ReconciliationState::Clean);
         assert(clean.clean());
         assert(clean.issues.empty());
         assert(clean.local_sequence ==
@@ -259,10 +259,10 @@ int main()
             const auto pending =
                 recon.compare(local, stale);
             assert(pending.state ==
-                   ReconciliationStateV1::Pending);
+                   ReconciliationState::Pending);
             assert(hasIssue(
                 pending,
-                ReconciliationIssueKindV1::SequenceMismatch));
+                ReconciliationIssueKind::SequenceMismatch));
         }
 
         // Fresh cash contradiction => BLOCKED.
@@ -274,10 +274,10 @@ int main()
             const auto blocked =
                 recon.compare(local, mismatch);
             assert(blocked.state ==
-                   ReconciliationStateV1::Blocked);
+                   ReconciliationState::Blocked);
             assert(hasIssue(
                 blocked,
-                ReconciliationIssueKindV1::CashMismatch));
+                ReconciliationIssueKind::CashMismatch));
         }
 
         // Fresh position contradiction => BLOCKED.
@@ -289,10 +289,10 @@ int main()
             const auto blocked =
                 recon.compare(local, mismatch);
             assert(blocked.state ==
-                   ReconciliationStateV1::Blocked);
+                   ReconciliationState::Blocked);
             assert(hasIssue(
                 blocked,
-                ReconciliationIssueKindV1::PositionQuantityMismatch));
+                ReconciliationIssueKind::PositionQuantityMismatch));
         }
 
         // Fresh open-order contradiction => BLOCKED.
@@ -303,10 +303,10 @@ int main()
             const auto blocked =
                 recon.compare(local, mismatch);
             assert(blocked.state ==
-                   ReconciliationStateV1::Blocked);
+                   ReconciliationState::Blocked);
             assert(hasIssue(
                 blocked,
-                ReconciliationIssueKindV1::OpenOrderMissingOnVenue));
+                ReconciliationIssueKind::OpenOrderMissingOnVenue));
         }
 
         // Fresh fill contradiction => BLOCKED.
@@ -319,10 +319,10 @@ int main()
             const auto blocked =
                 recon.compare(local, mismatch);
             assert(blocked.state ==
-                   ReconciliationStateV1::Blocked);
+                   ReconciliationState::Blocked);
             assert(hasIssue(
                 blocked,
-                ReconciliationIssueKindV1::FillMissingOnVenue));
+                ReconciliationIssueKind::FillMissingOnVenue));
         }
 
         // Ledger tamper is detected independently of venue snapshot values.
@@ -334,10 +334,10 @@ int main()
             const auto blocked =
                 recon.compare(tampered, venue);
             assert(blocked.state ==
-                   ReconciliationStateV1::Blocked);
+                   ReconciliationState::Blocked);
             assert(hasIssue(
                 blocked,
-                ReconciliationIssueKindV1::LedgerIntegrityMismatch));
+                ReconciliationIssueKind::LedgerIntegrityMismatch));
         }
 
         // Recovery unsafe is a hard block.
@@ -347,10 +347,10 @@ int main()
             const auto blocked =
                 recon.compare(local, unsafe);
             assert(blocked.state ==
-                   ReconciliationStateV1::Blocked);
+                   ReconciliationState::Blocked);
             assert(hasIssue(
                 blocked,
-                ReconciliationIssueKindV1::RecoveryUnsafe));
+                ReconciliationIssueKind::RecoveryUnsafe));
         }
 
         // CLEAN gate permits exactly the new submit; state advances immediately make
@@ -368,7 +368,7 @@ int main()
                     0.10,
                     150.0),
                 150)) ==
-            NewOrderRouteResultV1::Submitted);
+            NewOrderRouteResult::Submitted);
 
         assert(runtime.lastSequence() >
                before_submit);
@@ -387,7 +387,7 @@ int main()
                     10.0,
                     1.0),
                 151)) ==
-            NewOrderRouteResultV1::BlockedByReconciliation);
+            NewOrderRouteResult::BlockedByReconciliation);
 
         assert(runtime.lastSequence() ==
                before_blocked);
@@ -413,8 +413,8 @@ int main()
     // Restart: Step53 recovery reconstructs the source stream. Step54 must reconcile
     // CLEAN again with the same economic fingerprint and ledger head.
     {
-        MockSnapshotUserStreamRecoveryV1 recovered(dir);
-        MockReconciliationLedgerParityV1 recon;
+        MockRecovery recovered(dir);
+        MockReconciliation recon;
 
         assert(recovered.recoverySafe());
         assert(recovered.lastSequence() ==

@@ -1,17 +1,10 @@
-/*
- * market_data_service_main.cpp
- *
- * Purpose: Runs the daily live market-data ingestion schedule and publishes committed update notifications.
- *
- * Read this file from top to bottom:
- *   1. Load and validate market-data configuration.
- *   2. Ingest the newest completed business UTC day into canonical SQLite.
- *   3. Publish MarketDataUpdated only after storage commits, then wait for the next business-time boundary.
- *
- * This file contains the executable entrypoint and service-level orchestration.
- * Keep reusable domain calculations in focused components; keep startup,
- * message flow, persistence boundaries, logging, and shutdown visible here.
- */
+// Runs the daily live market-data ingestion schedule and publishes committed update
+// notifications.
+//
+// 1. Load and validate market-data configuration.
+// 2. Ingest the newest completed business UTC day into canonical SQLite.
+// 3. Publish MarketDataUpdated only after storage commits, then wait for the next business-time
+// boundary.
 
 #include <algorithm>
 #include <atomic>
@@ -26,18 +19,16 @@
 
 #include <curl/curl.h>
 
-#include "market_data_config.h"
-#include "market_data_ingestor.h"
-#include "market_data_update_publisher.h"
+#include "config.h"
+#include "ingestion.h"
+#include "update_publisher.h"
 #include "service_logging.h"
 #include "time_handler_factory.h"
 #include "time_utils.h"
-#include "transport_subjects.h"
+#include "message_subjects.h"
 
 
-// ============================================================================
-// Internal helpers and service implementation
-// ============================================================================
+// Internal helpers and service implementation.
 
 namespace {
 
@@ -49,9 +40,7 @@ void stopHandler(int)
 }
 
 
-// ============================================================================
-// Command-line configuration
-// ============================================================================
+// Command-line configuration.
 
 struct Options {
     std::filesystem::path config = "config/market_data/market_data_config.json";
@@ -156,9 +145,7 @@ bool runTarget(
 } // namespace
 
 
-// ============================================================================
-// Process entrypoint
-// ============================================================================
+// Process entrypoint.
 
 int main(int argc, char** argv)
 {
@@ -180,10 +167,10 @@ int main(int argc, char** argv)
         MarketDataUpdatePublisher publisher(config);
 
         LG_INFO(
-            "service=market-data event=service_ready source=binance storage=sqlite database={} ranking_size={} active_top_n={} retention_days={} minimum_history_days={} nats_url={} stream={} update_subject={} time_speed={} time_identity={}",
+            "service=market-data event=service_ready source=binance storage=sqlite database={} ranking_size={} active_top_n={} retention_days={} minimum_history_days={} stream={} update_subject={} time_speed={} time_identity={}",
             config.database_path.string(), config.ranking_size, config.active_top_n,
             config.retain_after_top_n_days, config.minimum_history_days,
-            config.nats_url, config.stream, TransportSubjects::MARKET_DATA_UPDATED,
+            config.stream, MessageSubjects::MARKET_DATA_UPDATED,
             timeConfig.speed, timeConfig.identity()
         );
         std::cout.flush();

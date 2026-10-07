@@ -9,23 +9,21 @@
 #include <vector>
 
 #include "fill.h"
-#include "tracked_order.h"
-#include "order_update.h"
+#include "execution_order.h"
 
 
-/**************************************************************************************
- * Type    : OrderManager
- * Purpose : Single source of truth for locally known order lifecycle state
- *
- * OrderManager never changes Account/positions. Fill events are validated/tracked here
- * and are then applied separately to Account by the runtime/backtester.
- **************************************************************************************/
+// Single source of truth for locally known order lifecycle state
+//
+// OrderManager never changes Account/positions. Fill events are validated/tracked here
+// and are then applied separately to Account by the runtime/backtester.
 class OrderManager {
 private:
     std::unordered_map<OrderID, TrackedOrder> orders_;
     std::unordered_set<FillID> processed_fill_ids_;
     double quantity_epsilon_ = 1e-12;
 
+    // Terminal statuses cannot reopen through status updates. Fill handling is separate:
+    // a late fill may still arrive after a cancellation acknowledgement.
     static bool transitionAllowed(ExecutionOrderStatus from, ExecutionOrderStatus to)
     {
         if (from == to)
@@ -81,9 +79,7 @@ public:
             throw std::invalid_argument("Order id already tracked");
     }
 
-    /**************************************************************************************
-     * Purpose : Restore tracked order/fill-id state without replaying exchange side effects
-     **************************************************************************************/
+    // Restore tracked order/fill-id state without replaying exchange side effects
     void restore(
         const std::vector<TrackedOrder>& orders,
         const std::vector<FillID>& processedFillIds
@@ -129,7 +125,7 @@ public:
         if (!order.isOpen())
             throw std::logic_error("Cannot cancel terminal order");
 
-        order.cancel_requested = true;
+        order.cancel_requested = true; // Keep the remaining quantity pending until cancellation is confirmed.
         order.updated_at = timestamp;
     }
 
@@ -172,6 +168,7 @@ public:
 
         if (order.remainingQuantity() <= quantity_epsilon_)
             order.status = ExecutionOrderStatus::Filled;
+        // A late partial fill changes filled quantity but must not reopen a canceled remainder.
         else if (order.status != ExecutionOrderStatus::Canceled)
             order.status = ExecutionOrderStatus::PartiallyFilled;
 

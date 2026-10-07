@@ -3,5 +3,6 @@ market_inc = include_directories('.')
 
 market_sources = files(
     'price_snapshot.h',
-    'canonical_market_data_reader.cpp'
+    'canonical_market_data_reader.cpp',
+    'rolling_market_state.cpp'
 )

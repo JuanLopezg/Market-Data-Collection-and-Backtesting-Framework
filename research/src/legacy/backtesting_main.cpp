@@ -1,5 +1,5 @@
-#include "backtest.h"
-#include "pureRSI.h"
+#include "backtester.h"
+#include "validated/pure_rsi.h"
 #include "equal_weight_sizer.h"
 #include "entry_exit_only_rebalance_policy.h"
 #include "risk_constraints.h"

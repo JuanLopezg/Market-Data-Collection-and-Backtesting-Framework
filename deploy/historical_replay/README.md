@@ -8,7 +8,7 @@ python3 research/replay.py {fast|system|dashboard}
 
 Current canonical source dataset: `deploy/historical_replay/run/1d_cmc_by_date.csv`, derived from the historical source and covering the accepted full-history window `2020-01-01..2025-10-13`.
 
-The `realtest-parity` profile preserves original OHLCV and reproduces the old Backtester next-open execution economics with zero parity fees/slippage and no execution volume-capacity limit. `system` and `dashboard` have been validated to the same full-history fingerprint:
+The `realtest-parity` profile preserves original OHLCV and reproduces the research Backtester next-open execution economics with zero parity fees/slippage and no execution volume-capacity limit. `system` and `dashboard` have been validated to the same full-history fingerprint:
 
 ```text
 1551106eac4dd7b712729f72980ac196308d61b1d7cbb9e538c557271415cbf0
@@ -18,22 +18,24 @@ The `realtest-parity` profile preserves original OHLCV and reproduces the old Ba
 
 Important: `--start` starts the simulation cold at that date. To keep prior warm-up/history and slow only a later interval, use `--pace-start` / `--pace-end` instead.
 
-See root `CURRENT_STATE.md` and `research/REPLAY.md` for the active contract.
+See [CURRENT_STATE.md](../../CURRENT_STATE.md) and [research/REPLAY.md](../../research/REPLAY.md) for evidence and the active contract.
+The default compact release check is `bash validation/step59_canonical_replay_release_gate.sh`.
+Full-history evidence above still has manually reviewed RealTest differences; it is not a claim of zero discrepancies.
 
 ---
 
-# Legacy distributed historical replay topology — T15
+## Isolated historical service deployment
 
-The section below documents the older isolated distributed-replay topology. It is retained as historical architecture/validation material and is not the current RealTest acceptance entry point.
+The Compose workflow below remains useful for service integration and anti-lookahead checks. It is separate from the public canonical RealTest acceptance entrypoint. Run its commands from the repository root.
 
-This deployment is isolated from LIVE and from the legacy `deploy/distributed_replay` topology.
+This deployment is isolated from LIVE. The former `deploy/distributed_replay` topology has been removed.
 It has its own Docker network, NATS JetStream volume, PostgreSQL volume, canonical market-data
 SQLite volume, stream names, and host inspection ports.
 
 There is **no replay-controller and no shared logical clock**. Every business service inherits the
-same `./run/time.env` file generated once by T13.
+same `./run/time.env` file generated once per run by the preparation tool.
 
-## Historical feeder semantics
+### Historical feeder semantics
 
 `algotrading_historical_market_data_service` reads the reference CSV sequentially. It does not load
 the full 2020-2025 dataset into the canonical runtime database. For each source day it first checks
@@ -48,7 +50,7 @@ for the day enter the canonical ranking candidate set. The strategy's own config
 universe (for PureRSI, top-N by its indicator logic) therefore remains responsible for selecting
 the actual entry universe instead of an arbitrary feeder-side truncation.
 
-## Prepare one run
+### Prepare one run
 
 ```bash
 cp deploy/historical_replay/.env.example deploy/historical_replay/.env
@@ -63,7 +65,7 @@ python3 tools/historical_replay/create_time_env.py \
 
 The generated time file must be created **once per run**, not once per container.
 
-## Validate T15
+### Validate and package
 
 ```bash
 ./validation/historical_replay_topology_audit.sh .
@@ -76,7 +78,7 @@ docker compose \
   config >/tmp/algotrading-historical-replay.compose.yml
 ```
 
-Then run the normal project build. Once the new feeder binary exists, package the runtime:
+Build the project with Meson under WSL, then package the compiled runtime:
 
 ```bash
 ./deploy/historical_replay/build_runtime_bundle.sh
@@ -87,10 +89,9 @@ docker compose \
   --profile runtime build
 ```
 
-T15 does not yet declare the whole distributed replay economically accepted. T16 adds explicit
-anti-lookahead acceptance checks before T17 runs a reference comparison.
+Source/visibility audits and Compose validation do not establish full distributed economic or restart acceptance. The canonical release gate establishes its own bounded replay invariants; broker/container failure campaigns remain separate.
 
-## Isolation invariants
+### Isolation invariants
 
 - No `replay-controller`.
 - No `ClockState`, `ClockControl`, `ClockSyncRequest`, `ServiceClockContext` or clock subjects.
@@ -98,5 +99,7 @@ anti-lookahead acceptance checks before T17 runs a reference comparison.
 - NATS/PostgreSQL/market SQLite state is not shared with LIVE.
 - Historical source is mounted read-only.
 - Only the historical feeder writes canonical replay market SQLite.
-- Strategy, PortfolioRisk and ExecutionState mount canonical SQLite read-only.
+- Strategy, PortfolioRisk and ExecutionState use the shared read-only/query-only
+  canonical SQLite reader. The named volume is mounted writable for WAL sidecar/lock
+  bookkeeping; this is application-enforced read ownership, not filesystem isolation.
 - Retry/poll sleeps remain technical real time; candle visibility is business time.

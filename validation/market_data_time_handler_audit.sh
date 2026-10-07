@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="${1:-.}"
 FILE="$ROOT/live_trading/market_data_service/src/market_data_service_main.cpp"
-CLIENT="$ROOT/live_trading/market_data_service/src/binance_market_data_client.cpp"
+CLIENT="$ROOT/live_trading/market_data_service/src/binance_client.cpp"
 
 fail() {
     echo "FAIL: $*" >&2

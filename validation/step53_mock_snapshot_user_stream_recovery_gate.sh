@@ -26,8 +26,8 @@ for f in \
  "$CFG/snapshot_recovery_v1.json" "$CFG/snapshot_recovery_manifest_v1.json" \
  "$ART/STEP_53_MOCK_SNAPSHOT_USER_STREAM_RECOVERY.md" \
  "$ART/STEP_54_IMPLEMENTATION_HANDOFF.json" "$ART/SHA256SUMS" \
- "$ROOT/lib/src/exchange/mock_recovery_codec_v1.h" \
- "$ROOT/lib/src/exchange/mock_snapshot_user_stream_recovery_v1.h" \
+ "$ROOT/lib/src/exchange/mock/recovery_codec.h" \
+ "$ROOT/lib/src/exchange/mock/recovery.h" \
  "$ROOT/validation/step53_mock_snapshot_user_stream_recovery_test.cpp"; do
   [[ -f "$f" ]] || fail "missing ${f#$ROOT/}"
 done
@@ -94,11 +94,11 @@ CXX="${CXX:-c++}"
 pass 'restart restores exact economics/stream; snapshot+incrementals and post-restart dedup validated'
 
 printf '%s\n' '[6/8] Durable writes are fsync-based while economic time remains supplied event time'
-grep -Fq '::fsync' "$ROOT/lib/src/exchange/mock_recovery_codec_v1.h" || fail 'fsync durability missing'
-grep -Fq 'durableAppendFramed' "$ROOT/lib/src/exchange/mock_recovery_codec_v1.h" || fail 'durable journal append missing'
-grep -Fq 'durableWriteAtomic' "$ROOT/lib/src/exchange/mock_recovery_codec_v1.h" || fail 'atomic checkpoint writer missing'
+grep -Fq '::fsync' "$ROOT/lib/src/exchange/mock/recovery_codec.h" || fail 'fsync durability missing'
+grep -Fq 'durableAppendFramed' "$ROOT/lib/src/exchange/mock/recovery_codec.h" || fail 'durable journal append missing'
+grep -Fq 'durableWriteAtomic' "$ROOT/lib/src/exchange/mock/recovery_codec.h" || fail 'atomic checkpoint writer missing'
 if grep -Ein 'system_clock|steady_clock|high_resolution_clock|sleep_for|sleep_until|gettimeofday|clock_gettime|std::time|(^|[^[:alnum:]_])time\(' \
- "$ROOT/lib/src/exchange/mock_snapshot_user_stream_recovery_v1.h" >"$TMP/clock"; then
+ "$ROOT/lib/src/exchange/mock/recovery.h" >"$TMP/clock"; then
  cat "$TMP/clock" >&2
  fail 'wall/monotonic time leaked into Step53 business/economic sequencing'
 fi
@@ -106,8 +106,8 @@ pass 'technical durability is real; business/event time remains replay-supplied'
 
 printf '%s\n' '[7/8] Step54/private real-venue implementation has not slipped in'
 if grep -Ein 'hyperliquid|private[_ -]?key|mnemonic|seed phrase|api wallet|smart[_ -]?order|real[_ -]?venue[_ -]?reconciliation' \
- "$ROOT/lib/src/exchange/mock_snapshot_user_stream_recovery_v1.h" \
- "$ROOT/lib/src/exchange/mock_recovery_codec_v1.h" >"$TMP/future"; then
+ "$ROOT/lib/src/exchange/mock/recovery.h" \
+ "$ROOT/lib/src/exchange/mock/recovery_codec.h" >"$TMP/future"; then
  cat "$TMP/future" >&2
  fail 'Step54/private real-venue concern leaked into Step53 code'
 fi

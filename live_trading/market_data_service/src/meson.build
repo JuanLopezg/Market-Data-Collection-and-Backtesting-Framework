@@ -1,11 +1,11 @@
 # Build the market-data-service executable and its local components.
 sources = [
     'market_data_service_main.cpp',
-    'market_data_config.cpp',
-    'market_data_store.cpp',
-    'binance_market_data_client.cpp',
-    'market_data_ingestor.cpp',
-    'market_data_update_publisher.cpp'
+    'config.cpp',
+    'market_store.cpp',
+    'binance_client.cpp',
+    'ingestion.cpp',
+    'update_publisher.cpp'
 ]
 
 executable(

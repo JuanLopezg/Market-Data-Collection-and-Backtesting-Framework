@@ -10,14 +10,11 @@
 #include "price_snapshot.h"
 
 
-/**************************************************************************************
- * Type    : Account
- * Purpose : Actual cash and filled positions owned by the account
- *
- * This is reality, not strategy intent. Account changes only from Fill objects.
- * Equity is marked from an externally supplied PriceSnapshot so the same object can be
- * used in historical backtests and live trading.
- **************************************************************************************/
+// Actual cash and filled positions owned by the account
+//
+// This is reality, not strategy intent. Account changes only from Fill objects.
+// Equity is marked from an externally supplied PriceSnapshot so the same object can be
+// used in historical backtests and live trading.
 class Account {
 private:
     double cash_ = 0.0;
@@ -31,19 +28,18 @@ public:
             throw std::invalid_argument("Initial account cash must be finite and positive");
     }
 
+    // The caller deduplicates FillIDs; this account applies each accepted fill once.
     void applyFill(const Fill& fill)
     {
         fill.validate();
 
         const double signedQuantity = fill.signedQuantity();
-        cash_ -= signedQuantity * fill.price;
+        cash_ -= signedQuantity * fill.price; // A buy spends cash; a sell receives it.
         cash_ -= fill.commission;
         positions_.add(fill.coin, signedQuantity);
     }
 
-    /**************************************************************************************
-     * Purpose : Restore authoritative filled account state during startup recovery
-     **************************************************************************************/
+    // Restore authoritative filled account state during startup recovery
     void restoreState(double cash, const std::unordered_map<Coin, double>& positions)
     {
         if (!std::isfinite(cash))
@@ -65,7 +61,7 @@ public:
             if (!prices.contains(coin))
                 throw std::runtime_error("Missing mark price for account position");
 
-            result += quantity * prices.get(coin);
+            result += quantity * prices.get(coin); // Shorts subtract marked exposure.
         }
 
         return result;

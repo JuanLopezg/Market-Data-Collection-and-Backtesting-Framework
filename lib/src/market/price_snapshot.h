@@ -8,14 +8,11 @@
 #include "data_types.h"
 
 
-/**************************************************************************************
- * Type    : PriceSnapshot
- * Purpose : Generic point-in-time prices by asset
- *
- * This type is shared by backtest and live infrastructure. It does not imply that the
- * stored price is a fill price; callers decide whether it represents an open, close,
- * quote, mark or another valid reference price.
- **************************************************************************************/
+// Generic point-in-time prices by asset
+//
+// This type is shared by backtest and live infrastructure. It does not imply that the
+// stored price is a fill price; callers decide whether it represents an open, close,
+// quote, mark or another valid reference price.
 class PriceSnapshot {
 private:
     std::unordered_map<Coin, double> prices_;
@@ -53,3 +50,10 @@ public:
         return prices_;
     }
 };
+
+// Prices used immediately before order planning to resolve monetary targets
+// into quantities
+//
+// These are reference prices only. The exchange remains responsible for the actual
+// fill price.
+using ExecutionReferencePrices = PriceSnapshot;

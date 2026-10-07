@@ -6,10 +6,10 @@
 
 #include <unistd.h>
 
-#include "mock_fault_chaos_rate_limit_v1.h"
+#include "mock/faults.h"
 
 using namespace VenueContracts::V1;
-using namespace MockVenueV1;
+using namespace MockVenue;
 
 namespace {
 
@@ -92,7 +92,7 @@ CancelOrderBatch cancelOne(
     return b;
 }
 
-MarketBarObservationV1 bar(
+MarketBarObservation bar(
     const std::string& asset,
     Timestamp ts,
     double open = 100.0,
@@ -101,7 +101,7 @@ MarketBarObservationV1 bar(
     double close = 100.0,
     double volume = 100.0)
 {
-    MarketBarObservationV1 b;
+    MarketBarObservation b;
     b.canonical_asset = asset;
     b.event_time = ts;
     b.bar.open = open;
@@ -114,7 +114,7 @@ MarketBarObservationV1 bar(
 }
 
 void cleanReconcile(
-    MockFaultChaosRateLimitV1& engine,
+    MockFaults& engine,
     Timestamp ts)
 {
     const auto r = engine.reconcile(ts);
@@ -132,14 +132,14 @@ CampaignResult deterministicCampaign(
     const std::filesystem::path& dir,
     std::uint64_t seed)
 {
-    MockChaosConfigV1 config;
+    MockChaosConfig config;
     config.seed = seed;
     config.auto_submit_faults = true;
     config.submit_limit = 100U;
     config.reconcile_limit = 100U;
     config.market_source_limit = 100U;
 
-    MockFaultChaosRateLimitV1 engine(
+    MockFaults engine(
         dir,
         config);
 
@@ -164,16 +164,16 @@ CampaignResult deterministicCampaign(
                     time++));
 
         if (result.status ==
-                ChaosStatusV1::Delivered ||
+                ChaosStatus::Delivered ||
             result.status ==
-                ChaosStatusV1::DelayedResponse ||
+                ChaosStatus::DelayedResponse ||
             result.status ==
-                ChaosStatusV1::LostResponseAmbiguous) {
+                ChaosStatus::LostResponseAmbiguous) {
             ++next_order;
         } else {
             assert(
                 result.status ==
-                ChaosStatusV1::CanonicalRejected);
+                ChaosStatus::CanonicalRejected);
         }
 
         // The venue can execute accepted orders irrespective of response delivery.
@@ -182,9 +182,9 @@ CampaignResult deterministicCampaign(
                 bar("BTCUSDT", time++));
         assert(
             source.status ==
-                ChaosStatusV1::Delivered ||
+                ChaosStatus::Delivered ||
             source.status ==
-                ChaosStatusV1::DuplicateIgnored);
+                ChaosStatus::DuplicateIgnored);
 
         // Resolve any ambiguity/staleness before the next new-exposure attempt.
         cleanReconcile(engine, time++);
@@ -210,10 +210,10 @@ int main()
         const auto dir = tempDir("command-faults");
         std::filesystem::remove_all(dir, ignored);
 
-        MockChaosConfigV1 config;
+        MockChaosConfig config;
         config.submit_limit = 100U;
         config.reconcile_limit = 100U;
-        MockFaultChaosRateLimitV1 engine(dir, config);
+        MockFaults engine(dir, config);
         cleanReconcile(engine, 10);
 
         const auto reject_order =
@@ -222,7 +222,7 @@ int main()
             engine.runtime().lastSequence();
 
         engine.injectNext(
-            ChaosFaultV1::CanonicalReject);
+            ChaosFault::CanonicalReject);
         const auto rejected =
             engine.submit(
                 submitOne(
@@ -232,7 +232,7 @@ int main()
 
         assert(
             rejected.status ==
-            ChaosStatusV1::CanonicalRejected);
+            ChaosStatus::CanonicalRejected);
         assert(
             rejected.error.classification ==
             ErrorClass::VenueLimit);
@@ -247,7 +247,7 @@ int main()
             makeOrder(1002, "BTCUSDT", 0.1, 100.0);
 
         engine.injectNext(
-            ChaosFaultV1::LoseResponseAmbiguousSubmit);
+            ChaosFault::LoseResponseAmbiguousSubmit);
         const auto lost =
             engine.submit(
                 submitOne(
@@ -257,7 +257,7 @@ int main()
 
         assert(
             lost.status ==
-            ChaosStatusV1::LostResponseAmbiguous);
+            ChaosStatus::LostResponseAmbiguous);
         assert(lost.underlying_may_have_applied);
         assert(lost.requires_reconciliation_before_retry);
         assert(
@@ -277,9 +277,9 @@ int main()
                     12));
         assert(
             retry.status ==
-                ChaosStatusV1::Delivered ||
+                ChaosStatus::Delivered ||
             retry.status ==
-                ChaosStatusV1::DuplicateIgnored);
+                ChaosStatus::DuplicateIgnored);
         assert(
             engine.runtime().lifecycle().orders().size() ==
             orders_before_retry);
@@ -290,7 +290,7 @@ int main()
             makeOrder(1003, "BTCUSDT", 0.1, 100.0);
 
         engine.injectNext(
-            ChaosFaultV1::DelayResponse);
+            ChaosFault::DelayResponse);
         const auto delayed =
             engine.submit(
                 submitOne(
@@ -299,7 +299,7 @@ int main()
                     15));
         assert(
             delayed.status ==
-            ChaosStatusV1::DelayedResponse);
+            ChaosStatus::DelayedResponse);
         assert(
             engine.runtime().lifecycle().
                 findOrder(1003) != nullptr);
@@ -310,7 +310,7 @@ int main()
         assert(released[0].command_key == "delayed-1");
         assert(
             released[0].underlying ==
-            RecoverySourceResultV1::Applied);
+            RecoverySourceResult::Applied);
 
         std::filesystem::remove_all(dir, ignored);
     }
@@ -322,7 +322,7 @@ int main()
         const auto dir = tempDir("disconnect");
         std::filesystem::remove_all(dir, ignored);
 
-        MockFaultChaosRateLimitV1 engine(dir);
+        MockFaults engine(dir);
         cleanReconcile(engine, 100);
 
         const auto live_order =
@@ -335,7 +335,7 @@ int main()
                     101));
         assert(
             submit_result.status ==
-            ChaosStatusV1::Delivered);
+            ChaosStatus::Delivered);
 
         cleanReconcile(engine, 102);
 
@@ -354,7 +354,7 @@ int main()
                     104));
         assert(
             blocked.status ==
-            ChaosStatusV1::UserStreamDisconnected);
+            ChaosStatus::UserStreamDisconnected);
 
         const StoredOrder* stored =
             engine.runtime().lifecycle().
@@ -369,7 +369,7 @@ int main()
                     105));
         assert(
             cancel_result.status ==
-            ChaosStatusV1::Delivered);
+            ChaosStatus::Delivered);
 
         const auto unavailable_page =
             engine.streamAfter(0U, 10U, 106);
@@ -395,17 +395,17 @@ int main()
         const auto dir = tempDir("snapshot-availability");
         std::filesystem::remove_all(dir, ignored);
 
-        MockFaultChaosRateLimitV1 engine(dir);
+        MockFaults engine(dir);
         cleanReconcile(engine, 200);
 
         engine.injectNext(
-            ChaosFaultV1::StaleSnapshot);
+            ChaosFault::StaleSnapshot);
         const auto stale =
             engine.reconcile(201);
         assert(!stale.clean());
         assert(
             stale.state ==
-            ReconciliationStateV1::Pending);
+            ReconciliationState::Pending);
         assert(!engine.canRouteNewSubmit());
 
         cleanReconcile(engine, 202);
@@ -415,7 +415,7 @@ int main()
             engine.reconcile(204);
         assert(
             pending.state ==
-            ReconciliationStateV1::Pending);
+            ReconciliationState::Pending);
 
         const auto unavailable_submit =
             engine.submit(
@@ -429,7 +429,7 @@ int main()
                     205));
         assert(
             unavailable_submit.status ==
-            ChaosStatusV1::VenueUnavailable);
+            ChaosStatus::VenueUnavailable);
 
         engine.setVenueAvailable(true, 206);
         assert(!engine.canRouteNewSubmit());
@@ -445,11 +445,11 @@ int main()
         const auto dir = tempDir("rate-limit");
         std::filesystem::remove_all(dir, ignored);
 
-        MockChaosConfigV1 config;
+        MockChaosConfig config;
         config.submit_limit = 1U;
         config.reconcile_limit = 100U;
 
-        MockFaultChaosRateLimitV1 engine(dir, config);
+        MockFaults engine(dir, config);
         cleanReconcile(engine, 300);
 
         const auto first =
@@ -464,7 +464,7 @@ int main()
                     301));
         assert(
             first.status ==
-            ChaosStatusV1::Delivered);
+            ChaosStatus::Delivered);
 
         cleanReconcile(engine, 302);
 
@@ -480,7 +480,7 @@ int main()
                     303));
         assert(
             limited.status ==
-            ChaosStatusV1::RateLimited);
+            ChaosStatus::RateLimited);
         assert(
             limited.error.classification ==
             ErrorClass::RateLimited);
@@ -499,7 +499,7 @@ int main()
                     311));
         assert(
             recovered.status ==
-            ChaosStatusV1::Delivered);
+            ChaosStatus::Delivered);
 
         std::filesystem::remove_all(dir, ignored);
     }
@@ -511,7 +511,7 @@ int main()
         const auto dir = tempDir("delivery-faults");
         std::filesystem::remove_all(dir, ignored);
 
-        MockFaultChaosRateLimitV1 engine(dir);
+        MockFaults engine(dir);
         cleanReconcile(engine, 400);
 
         assert(
@@ -524,20 +524,20 @@ int main()
                         0.1,
                         100.0),
                     401)).status ==
-            ChaosStatusV1::Delivered);
+            ChaosStatus::Delivered);
 
         engine.injectNext(
-            ChaosFaultV1::DuplicateSource);
+            ChaosFault::DuplicateSource);
         const auto duplicate_source =
             engine.processBar(
                 bar("BTCUSDT", 402));
         assert(
             duplicate_source.status ==
-            ChaosStatusV1::Delivered);
+            ChaosStatus::Delivered);
         assert(engine.runtime().recoverySafe());
 
         engine.injectNext(
-            ChaosFaultV1::DuplicateUserDelivery);
+            ChaosFault::DuplicateUserDelivery);
         const auto duplicate_delivery =
             engine.streamAfter(0U, 64U, 403);
         assert(duplicate_delivery.available);
@@ -548,7 +548,7 @@ int main()
             duplicate_delivery.page.events[1].sequence);
 
         engine.injectNext(
-            ChaosFaultV1::OutOfOrderUserDelivery);
+            ChaosFault::OutOfOrderUserDelivery);
         const auto out_of_order_delivery =
             engine.streamAfter(0U, 64U, 404);
         assert(out_of_order_delivery.available);
@@ -568,7 +568,7 @@ int main()
         const auto dir = tempDir("out-of-order-source");
         std::filesystem::remove_all(dir, ignored);
 
-        MockFaultChaosRateLimitV1 engine(dir);
+        MockFaults engine(dir);
         cleanReconcile(engine, 500);
 
         assert(
@@ -581,7 +581,7 @@ int main()
                         0.01,
                         3000.0),
                     501)).status ==
-            ChaosStatusV1::Delivered);
+            ChaosStatus::Delivered);
 
         assert(
             engine.processBar(
@@ -593,10 +593,10 @@ int main()
                     2990.0,
                     3005.0,
                     100.0)).status ==
-            ChaosStatusV1::Delivered);
+            ChaosStatus::Delivered);
 
         engine.injectNext(
-            ChaosFaultV1::OutOfOrderSource);
+            ChaosFault::OutOfOrderSource);
         const auto out_of_order =
             engine.processBar(
                 bar(
@@ -610,7 +610,7 @@ int main()
 
         assert(
             out_of_order.status ==
-            ChaosStatusV1::OutOfOrderRejected);
+            ChaosStatus::OutOfOrderRejected);
         assert(!engine.runtime().recoverySafe());
         assert(!engine.canRouteNewSubmit());
 

@@ -6,20 +6,17 @@
 #include "rebalance_policy.h"
 
 
-/**************************************************************************************
- * Type    : EntryExitOnlyRebalancePolicy
- * Purpose : Sizes a position when it first becomes active and otherwise keeps quantity
- *
- * Behaviour:
- *   0 signal + no position      -> HOLD
- *   0 signal + open position    -> FLAT
- *   active signal + no position -> TARGET_WEIGHT (new entry)
- *   active signal + same-side position -> HOLD
- *   signal changes side         -> TARGET_WEIGHT (close/reverse through execution later)
- *
- * Changes such as +0.5 -> +1.0 do not resize an already-open same-side position. This
- * is the intended initial behaviour for equal-weight strategies.
- **************************************************************************************/
+// Sizes a position when it first becomes active and otherwise keeps quantity
+//
+// Behaviour:
+// 0 signal + no position      -> HOLD
+// 0 signal + open position    -> FLAT
+// active signal + no position -> TARGET_WEIGHT (new entry)
+// active signal + same-side position -> HOLD
+// signal changes side         -> TARGET_WEIGHT (close/reverse through execution later)
+//
+// Changes such as +0.5 -> +1.0 do not resize an already-open same-side position. This
+// is the intended initial behaviour for equal-weight strategies.
 class EntryExitOnlyRebalancePolicy final : public RebalancePolicy {
 public:
     RebalanceDecision decide(

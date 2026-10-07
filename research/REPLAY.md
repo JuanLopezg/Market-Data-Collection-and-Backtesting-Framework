@@ -1,6 +1,6 @@
 # Canonical Replay Suite
 
-From this step onward, replay/backtest work has **one public entry point**:
+Replay/backtest work has **one public entry point**:
 
 ```bash
 python3 research/replay.py <mode> ...
@@ -81,7 +81,7 @@ process environment so there is still only one public replay CLI.
 Runs:
 
 `PureRSI -> StrategySignalEngine -> PortfolioRiskEngine ->
-NotionalOrderPlannerEngine -> CanonicalVenueAdapter -> MOCK ->
+NotionalOrderPlanner -> CanonicalVenueAdapter -> MOCK ->
 Fill -> Accounting -> Recovery -> Reconciliation -> Ledger`
 
 Unpaced example:
@@ -218,3 +218,28 @@ python3 research/replay.py system --days 107 --label restart_107d \
 The resumed final `fullRunFingerprint` must equal an uninterrupted run of the same
 campaign. `--resume` requires the same explicit `--label`, start and selected window.
 The same invariant is required in both `system` and `dashboard` modes.
+
+
+## Current implementation and research migration
+
+The fast replay executable is built from `src/legacy/backtesting_main.cpp`
+against CURRENT `lib/backtest/Backtester`; its directory name does not mean it
+uses the frozen runtime. System/dashboard use `src/canonical/canonical_replay.cpp`
+and CURRENT `lib/src/runtime/replay_runtime.*`.
+
+Six separate research executables still depend on `src/legacy/runtime/`:
+HTML metrics/reports, BTC moving-average experiments, initial parameter studies,
+multi-strategy experiments, statistical studies and XH-breakout testing. Migrate those tools before removing that frozen implementation.
+The next task is the HTML report consumer, preserving its output/data contracts and
+comparing a bounded study against its existing behavior.
+
+The default WSL release check, from the repository root, is:
+
+```bash
+bash validation/step59_canonical_replay_release_gate.sh
+```
+
+See [CURRENT_STATE.md](../CURRENT_STATE.md) for validated fingerprints and outstanding
+full-history/browser acceptance, and [validation/README.md](../validation/README.md)
+for focused checks. Frozen step runners remain diagnostic history; new replay options
+belong in the public CLI.

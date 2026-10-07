@@ -5,10 +5,7 @@
 #include "contract_metadata.h"
 
 
-/**************************************************************************************
- * Type    : AccountSnapshot
- * Purpose : Read-only business-state projection owned by ExecutionEngine
- **************************************************************************************/
+// Read-only business-state projection owned by ExecutionEngine
 struct AccountSnapshot {
     ContractMetadata metadata;
     Timestamp timestamp = 0;

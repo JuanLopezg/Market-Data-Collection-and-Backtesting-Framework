@@ -1,4 +1,4 @@
-#include "contract_json_codec.h"
+#include "message_json.h"
 #include "live_execution_identity.h"
 
 #include <algorithm>
@@ -157,7 +157,7 @@ std::string dump(const T& value)
 }
 
 
-namespace ContractJsonCodec {
+namespace MessageJson {
 
 std::string encode(const MarketDataReleaseRequest& value)
 {

@@ -5,20 +5,17 @@
 #include <unordered_map>
 #include <vector>
 
-#include "daily_close_snapshot.h"
+#include "market_messages.h"
 #include "decision_batch.h"
 #include "execution_order.h"
 #include "order_planning.h"
 
 
-/**************************************************************************************
- * Type    : PlannedNotionalOrder
- * Purpose : Exchange-agnostic economic order intent, still expressed in USD notional
- *
- * Quantity conversion is deliberately deferred to the exchange-specific edge. The
- * future venue adapter converts notional_usd / close(T) to a venue-valid quantity and
- * applies symbol/precision/min-size rules. Actual fill price remains exchange truth.
- **************************************************************************************/
+// Exchange-agnostic economic order intent, still expressed in USD notional
+//
+// Quantity conversion is deliberately deferred to the exchange-specific edge. The
+// future venue adapter converts notional_usd / close(T) to a venue-valid quantity and
+// applies symbol/precision/min-size rules. Actual fill price remains exchange truth.
 struct PlannedNotionalOrder {
     // Deterministic logical identity for this economic order intent. This is NOT yet
     // a venue/exchange order id. Step 7 derives venue/client identity from this value.
@@ -44,10 +41,7 @@ struct PlannedNotionalOrder {
 };
 
 
-/**************************************************************************************
- * Type    : NotionalOrderPlanningRequest
- * Purpose : Self-contained LIVE planning request for one completed UTC day T
- **************************************************************************************/
+// Self-contained LIVE planning request for one completed UTC day T
 struct NotionalOrderPlanningRequest {
     ContractMetadata metadata;
     Timestamp decision_timestamp = 0;
@@ -57,13 +51,10 @@ struct NotionalOrderPlanningRequest {
 };
 
 
-/**************************************************************************************
- * Type    : NotionalOrderPlanBatch
- * Purpose : Planner output that stops at the USD/notional boundary
- *
- * No exchange order has been submitted and no exchange-specific quantity has been
- * chosen. Step 7 will consume this boundary and perform venue-specific conversion.
- **************************************************************************************/
+// Planner output that stops at the USD/notional boundary
+//
+// No exchange order has been submitted and no exchange-specific quantity has been
+// chosen. Step 7 will consume this boundary and perform venue-specific conversion.
 struct NotionalOrderPlanBatch {
     ContractMetadata metadata;
     Timestamp decision_timestamp = 0;

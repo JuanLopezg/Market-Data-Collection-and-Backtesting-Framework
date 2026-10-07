@@ -4,16 +4,13 @@
 #include <vector>
 
 #include "contract_metadata.h"
-#include "rebalance_decision.h"
+#include "rebalance_plan.h"
 
 
-/**************************************************************************************
- * Type    : StrategyDecisionIntent
- * Purpose : Approved strategy intent produced at close T
- *
- * This contains approved economic targets (USD/notional) plus the original rebalance
- * semantics for audit. It never contains an exchange-specific executable quantity.
- **************************************************************************************/
+// Approved strategy intent produced at close T
+//
+// This contains approved economic targets (USD/notional) plus the original rebalance
+// semantics for audit. It never contains an exchange-specific executable quantity.
 struct StrategyDecisionIntent {
     StrategyID strategy_id = 0;
     Timestamp decision_timestamp = 0;
@@ -26,10 +23,7 @@ struct StrategyDecisionIntent {
 };
 
 
-/**************************************************************************************
- * Type    : DecisionBatch
- * Purpose : Atomic decision output for one completed cross-sectional market slice
- **************************************************************************************/
+// Atomic decision output for one completed cross-sectional market slice
 struct DecisionBatch {
     ContractMetadata metadata;
     Timestamp decision_timestamp = 0;

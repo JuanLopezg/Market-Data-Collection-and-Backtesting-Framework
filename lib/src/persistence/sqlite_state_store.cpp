@@ -1,3 +1,6 @@
+// Persist one operational snapshot plus an optional fill in the same transaction.
+// Snapshot tables are replaced; the fill audit is append-only and deduplicated by FillID.
+
 #include "sqlite_state_store.h"
 
 #include <stdexcept>
@@ -152,6 +155,8 @@ void SQLiteStateStore::save(
             finish(stmt);
         }
 
+        // Replace all operational child tables inside the transaction; retaining rows
+        // from the previous snapshot would resurrect closed positions or canceled work.
         exec(
             "DELETE FROM account_positions;"
             "DELETE FROM strategy_signals;"
@@ -285,6 +290,8 @@ void SQLiteStateStore::save(
 }
 
 
+// An absent runtime row means no saved snapshot. A zero-position snapshot
+// is still a real persisted state and must remain distinguishable from absence.
 std::optional<TradingStateSnapshot> SQLiteStateStore::load() const
 {
     TradingStateSnapshot snapshot;

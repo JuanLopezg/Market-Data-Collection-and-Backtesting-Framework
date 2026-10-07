@@ -22,10 +22,13 @@ forbid_marker() {
   fi
 }
 
-# MarketData: previous completed UTC day, commit then publish, scheduled daily run.
-require_marker "live_trading/market_data_service/src/market_data_service_main.cpp" "getPreviousDayDate(getCurrentUtcDate(std::chrono::system_clock::now()))"
+# MarketData: previous completed business UTC day, commit then publish, scheduled daily run.
+require_marker "live_trading/market_data_service/src/market_data_service_main.cpp" "getPreviousDayDate(getCurrentUtcDate(timeHandler.getTime()))"
 require_marker "live_trading/market_data_service/src/market_data_service_main.cpp" "event=next_daily_run_scheduled"
 require_marker "live_trading/market_data_service/src/market_data_service_main.cpp" "publisher.publish(summary)"
+# Host time is still valid for technical retries, never for economic day selection.
+forbid_marker "live_trading/market_data_service/src/market_data_service_main.cpp" "getCurrentUtcDate(std::chrono::system_clock::now())"
+forbid_marker "live_trading/market_data_service/src/market_data_service_main.cpp" "computeNextMidnightUTC(std::chrono::system_clock::now())"
 
 # Strategy: future rejected, stale notifications drained, checkpointed day sleeps to next midnight.
 require_marker "live_trading/strategy_service/src/strategy_service_main.cpp" "event=stale_market_update_skipped"

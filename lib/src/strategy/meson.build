@@ -1,15 +1,10 @@
-# ---- Include directories ----
 strategy_inc = include_directories('.')
 
-# ---- Subdirectories ----
-subdir('strategies')
-
-# ---- Merge include paths ----
-strategy_inc = [strategy_inc, strategies_inc]
-
-# ---- Source files (only translation units, not headers) ----
+# Shared strategy infrastructure and strategies with accepted simulation evidence.
 strategy_sources = files(
     'strategy_instance.h',
     'strategy_signal_instance.h',
-    'strategy.cpp'
+    'validated/pure_rsi.h',
+    'strategy.cpp',
+    'strategy_signal_engine.cpp'
 )

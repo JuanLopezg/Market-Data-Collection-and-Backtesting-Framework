@@ -1,9 +1,4 @@
-/*
- * File purpose: Implements the local Binance-compatible HTTP API over HistoricalMarketData.
- *
- * Keep this file focused on this responsibility. Trading decisions belong in
- * their domain component; process orchestration belongs in the service application.
- */
+// Implements the local Binance-compatible HTTP API over HistoricalMarketData.
 
 #include "binance_http_server.h"
 

@@ -7,10 +7,7 @@
 #include "state_store.h"
 
 
-/**************************************************************************************
- * Type    : SQLiteStateStore
- * Purpose : Small inspectable persistence implementation for one trading engine
- **************************************************************************************/
+// Small inspectable persistence implementation for one trading engine
 class SQLiteStateStore final : public StateStore {
 private:
     sqlite3* db_ = nullptr;

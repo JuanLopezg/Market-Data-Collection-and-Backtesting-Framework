@@ -8,6 +8,8 @@ Before substantial work, read in this order:
 4. the actual source files involved in the task.
 
 The source code and current test/build output are the final source of truth.
+Use [docs/README.md](docs/README.md) to find other maintained guides. Validation evidence
+belongs in CURRENT_STATE.md; avoid duplicating historical step diaries in active guides.
 
 ## Project style
 
@@ -62,7 +64,7 @@ Do not run full-history/slow visual tests unless the task requires them.
 
 ## Current direction
 
-1. Finish remaining sensible `lib/` readability/structure work.
+1. Keep current library/live structure readable; finish only concrete remaining issues.
 2. Migrate `research/` to CURRENT `lib/` APIs and behavior.
 3. Remove `research/src/legacy/runtime/` only after useful research tools are migrated.
 4. Build the generated `.ai/` context/index layer.

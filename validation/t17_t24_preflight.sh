@@ -47,7 +47,7 @@ assert 'economic_equivalence_gate' in r
 assert 'T19c exact research RealTest policy' in r
 assert "choices=['none','restart-all','strategy-gap','chaos']" in r
 assert 'fingerprint_sha256' in r
-assert 't23_cleanup.py' in s and 't23_no_legacy_clock_audit.sh' in s
+assert 't23_cleanup.py' in s and 'no_legacy_clock_audit.sh' in s
 assert 't24_post_cleanup' in s
 plan=json.loads(Path('/tmp/t23_cleanup_plan.json').read_text())
 assert 'live_trading/replay_controller' in plan['delete_dirs']

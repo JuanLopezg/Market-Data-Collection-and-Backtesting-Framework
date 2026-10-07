@@ -22,6 +22,7 @@ std::vector<double> invalidVector(std::size_t size)
 }
 
 
+// A positive offset reads older observations; it never advances into future bars.
 std::vector<double> applyOffset(
     const std::vector<double>& values,
     unsigned int offset
@@ -39,7 +40,7 @@ std::vector<double> applyOffset(
     }
 
     for (std::size_t i = off; i < values.size(); ++i) {
-        shifted[i] = values[i - off];
+        shifted[i] = values[i - off]; // Offset 1 exposes the previous bar at the current timestamp.
     }
 
     return shifted;
@@ -48,6 +49,8 @@ std::vector<double> applyOffset(
 } // namespace
 
 
+// Precompute once per unique specification. Calculators are causal even when
+// the supplied historical series contains dates later than a value() query.
 void IndicatorEngine::precompute(
     const OHLCVData& rawData,
     const std::vector<IndicatorSpec>& specs
@@ -152,7 +155,7 @@ bool IndicatorEngine::has(
 ) const
 {
     const double v = value(coin, ts, spec);
-    return v == v; // NaN Check
+    return v == v; // NaN is unequal to itself; this tests availability, not general finiteness.
 }
 
 

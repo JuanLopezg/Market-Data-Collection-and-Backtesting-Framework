@@ -1,25 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Ejecutar desde la raíz de algoTrading.
-#
-# Genera:
-#   handoff_code_YYYYMMDD_HHMMSS/
-#       research.tar.gz
-#       lib.tar.gz
-#       validation.tar.gz
-#       ...
-#       root_files.tar.gz
-#       SHA256SUMS.txt
-#
-# No modifica ni mueve ninguna carpeta original.
+# Run from the repository root. Creates one source archive per project section,
+# a root-files archive and SHA256SUMS.txt without moving the original files.
 
 STAMP="$(date +%Y%m%d_%H%M%S)"
 OUT="handoff_code_${STAMP}"
 
 mkdir -p "$OUT"
 
-# Carpetas que quiero revisar por separado.
+# Project sections packaged separately.
 DIRS=(
     "research"
     "lib"
@@ -33,7 +23,7 @@ DIRS=(
     "docs"
 )
 
-# Basura/generated files que no aportan código fuente.
+# Exclude caches, generated data and dependency/build outputs.
 EXCLUDES=(
     "--exclude=.git"
     "--exclude=.venv"
@@ -75,7 +65,7 @@ for f in \
     meson_options \
     README.md \
     CURRENT_STATE.md \
-    TO-DO.txt \
+    AGENTS.md \
     .gitignore \
     .dockerignore
 do

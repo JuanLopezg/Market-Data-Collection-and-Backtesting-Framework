@@ -1,17 +1,9 @@
-/*
- * execution_service_main.cpp
- *
- * Purpose: Runs the direct execution engine path that consumes decisions, prices, order updates, and fills.
- *
- * Read this file from top to bottom:
- *   1. Restore the durable trading snapshot.
- *   2. Consume decisions and execution prices in deterministic order.
- *   3. Apply order updates/fills and persist the resulting trading state.
- *
- * This file contains the executable entrypoint and service-level orchestration.
- * Keep reusable domain calculations in focused components; keep startup,
- * message flow, persistence boundaries, logging, and shutdown visible here.
- */
+// Runs the direct execution engine path that consumes decisions, prices, order updates, and
+// fills.
+//
+// 1. Restore the durable trading snapshot.
+// 2. Consume decisions and execution prices in deterministic order.
+// 3. Apply order updates/fills and persist the resulting trading state.
 
 #include <algorithm>
 #include <atomic>
@@ -28,22 +20,19 @@
 #include <vector>
 
 #include "account.h"
-#include "contract_json_codec.h"
+#include "message_json.h"
 #include "decision_batch.h"
 #include "execution_engine.h"
-#include "execution_price_snapshot.h"
-#include "message_bus_exchange.h"
-#include "nats_jetstream_message_bus.h"
+#include "execution_messages.h"
+#include "adapters/message_exchange.h"
+#include "jetstream_bus.h"
 #include "postgres_state_store.h"
 #include "trade_recorder.h"
 #include "trading_state_snapshot.h"
-#include "transport_subjects.h"
+#include "message_subjects.h"
 
 
-
-// ============================================================================
-// Internal helpers and service implementation
-// ============================================================================
+// Internal helpers and service implementation.
 
 namespace {
 
@@ -56,10 +45,7 @@ void stopHandler(int)
 }
 
 
-
-// ============================================================================
-// Command-line configuration
-// ============================================================================
+// Command-line configuration.
 
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
@@ -145,30 +131,27 @@ Options parseOptions(int argc, char** argv)
 }
 
 
-
-// ============================================================================
-// Service runtime and message-processing loop
-// ============================================================================
+// Service runtime and message-processing loop.
 
 class ExecutionServiceRuntime {
 private:
     const Options options_;
     std::unordered_map<StrategyID, std::string> strategy_names_;
 
-    NatsJetStreamMessageBus bus_;
+    JetStreamBus bus_;
     PostgresStateStore store_;
     Account account_;
     TradeRecorder trade_recorder_;
-    MessageBusExchange exchange_;
+    MessageExchange exchange_;
     ExecutionEngine engine_;
 
     std::optional<DecisionBatch> pending_decision_;
     Timestamp last_decision_timestamp_ = 0;
 
-    DurableMessageBus::SubscriptionID decision_subscription_ = 0;
-    DurableMessageBus::SubscriptionID prices_subscription_ = 0;
-    DurableMessageBus::SubscriptionID order_update_subscription_ = 0;
-    DurableMessageBus::SubscriptionID fill_subscription_ = 0;
+    MessageBus::SubscriptionID decision_subscription_ = 0;
+    MessageBus::SubscriptionID prices_subscription_ = 0;
+    MessageBus::SubscriptionID order_update_subscription_ = 0;
+    MessageBus::SubscriptionID fill_subscription_ = 0;
 
     TradingStateSnapshot snapshot() const
     {
@@ -235,8 +218,8 @@ private:
         }
 
         bus_.publish(
-            TransportSubjects::ACCOUNT_SNAPSHOT,
-            ContractJsonCodec::encode(value),
+            MessageSubjects::ACCOUNT_SNAPSHOT,
+            MessageJson::encode(value),
             value.metadata.message_id
         );
     }
@@ -325,7 +308,7 @@ private:
     DurableMessageDisposition onDecision(const BusMessage& message)
     {
         try {
-            const DecisionBatch batch = ContractJsonCodec::decodeDecisionBatch(message.payload);
+            const DecisionBatch batch = MessageJson::decodeDecisionBatch(message.payload);
             if (batch.decision_timestamp == 0 || !validateDecisionStrategies(batch))
                 return DurableMessageDisposition::Terminate;
 
@@ -352,7 +335,7 @@ private:
     {
         try {
             const ExecutionPriceSnapshot value =
-                ContractJsonCodec::decodeExecutionPriceSnapshot(message.payload);
+                MessageJson::decodeExecutionPriceSnapshot(message.payload);
 
             if (value.timestamp == 0 || value.decision_timestamp == 0 || value.prices.empty())
                 return DurableMessageDisposition::Terminate;
@@ -426,7 +409,7 @@ private:
     DurableMessageDisposition onOrderUpdate(const BusMessage& message)
     {
         try {
-            const OrderUpdateEvent value = ContractJsonCodec::decodeOrderUpdateEvent(message.payload);
+            const OrderUpdateEvent value = MessageJson::decodeOrderUpdateEvent(message.payload);
             engine_.processExchangeEvent(
                 ExchangeEvent{value.update},
                 [this](const std::optional<Fill>& fill) { persist(fill); }
@@ -442,7 +425,7 @@ private:
     DurableMessageDisposition onFill(const BusMessage& message)
     {
         try {
-            const FillEvent value = ContractJsonCodec::decodeFillEvent(message.payload);
+            const FillEvent value = MessageJson::decodeFillEvent(message.payload);
             engine_.processExchangeEvent(
                 ExchangeEvent{value.fill},
                 [this](const std::optional<Fill>& fill) { persist(fill); }
@@ -484,7 +467,7 @@ public:
         for (const auto& strategy : options_.strategies)
             strategy_names_.emplace(strategy.strategy_id, strategy.name);
 
-        bus_.ensureStream(options_.stream, TransportSubjects::runtimeSubjects());
+        bus_.ensureStream(options_.stream, MessageSubjects::runtimeSubjects());
 
         if (const auto stored = store_.load())
             restore(*stored);
@@ -492,19 +475,19 @@ public:
             persist();
 
         decision_subscription_ = bus_.subscribe(
-            consumer("execution-service-decisions", TransportSubjects::DECISION_BATCH),
+            consumer("execution-service-decisions", MessageSubjects::DECISION_BATCH),
             [this](const BusMessage& message) { return onDecision(message); }
         );
         prices_subscription_ = bus_.subscribe(
-            consumer("execution-service-prices", TransportSubjects::EXECUTION_PRICES),
+            consumer("execution-service-prices", MessageSubjects::EXECUTION_PRICES),
             [this](const BusMessage& message) { return onPrices(message); }
         );
         order_update_subscription_ = bus_.subscribe(
-            consumer("execution-service-order-updates", TransportSubjects::ORDER_UPDATE),
+            consumer("execution-service-order-updates", MessageSubjects::ORDER_UPDATE),
             [this](const BusMessage& message) { return onOrderUpdate(message); }
         );
         fill_subscription_ = bus_.subscribe(
-            consumer("execution-service-fills", TransportSubjects::FILL),
+            consumer("execution-service-fills", MessageSubjects::FILL),
             [this](const BusMessage& message) { return onFill(message); }
         );
     }
@@ -537,10 +520,7 @@ public:
 } // namespace
 
 
-
-// ============================================================================
-// Process entrypoint
-// ============================================================================
+// Process entrypoint.
 
 int main(int argc, char** argv)
 {

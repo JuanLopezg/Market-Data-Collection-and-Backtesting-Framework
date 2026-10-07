@@ -10,10 +10,10 @@ import subprocess
 import sys
 
 INCLUDE_DIRS = [
-    "common_types", "utils", "data_types", "contracts", "transport", "market",
+    "logging", "utils", "data_types", "contracts", "transport", "market",
     "position", "account", "analytics", "backtest", "signal", "portfolio", "risk",
     "sizing", "rebalance", "execution", "exchange", "runtime", "persistence",
-    "recovery", "testing", "strategy", "strategy/strategies", "ranker", "indicator",
+    "recovery", "testing", "strategy", "ranker", "indicator",
     "universe", "filter",
 ]
 

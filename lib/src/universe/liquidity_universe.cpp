@@ -1,3 +1,5 @@
+// Select the best N current bars by liquidity score before strategy entry ranking.
+
 #include "liquidity_universe.h"
 
 #include <algorithm>
@@ -74,11 +76,11 @@ CoinBarMap TopNLiquidityUniverse::select(
             const bool bValid = std::isfinite(b.score);
 
             if (aValid != bValid) {
-                return aValid;
+                return aValid; // Finite scores sort before unavailable or invalid ones.
             }
 
             if (a.score == b.score) {
-                return a.coin < b.coin;
+                return a.coin < b.coin; // Equal numeric scores use symbol order, independent of hash-map iteration.
             }
 
             return descending_

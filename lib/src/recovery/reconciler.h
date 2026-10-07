@@ -5,13 +5,10 @@
 #include "trading_state_snapshot.h"
 
 
-/**************************************************************************************
- * Type    : Reconciler
- * Purpose : Compare local operational state with normalized exchange state
- *
- * V1 is intentionally conservative: any meaningful cash/position/open-order mismatch is
- * blocking. Automatic repair belongs later, after exchange-specific behaviour is known.
- **************************************************************************************/
+// Compare local operational state with normalized exchange state
+//
+// V1 is intentionally conservative: any meaningful cash/position/open-order mismatch is
+// blocking. Automatic repair belongs later, after exchange-specific behaviour is known.
 class Reconciler {
 private:
     double cash_tolerance_ = 1e-6;

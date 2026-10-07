@@ -5,12 +5,9 @@
 #include "data_types.h"
 
 
-/**************************************************************************************
- * Type    : TradeRecord
- * Purpose : Analytics representation reconstructed from strategy-attributed fills
- *
- * A TradeRecord is not live state. Positions/Account remain the source of truth.
- **************************************************************************************/
+// Analytics representation reconstructed from strategy-attributed fills
+//
+// A TradeRecord is not live state. Positions/Account remain the source of truth.
 struct TradeRecord {
     TradeID trade_id = 0;
     StrategyID strategy_id = 0;

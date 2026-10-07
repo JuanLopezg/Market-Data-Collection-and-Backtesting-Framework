@@ -6,24 +6,19 @@
 #include <unordered_map>
 
 
-/**************************************************************************************
- * Type aliases
- * Purpose : Common primitive types used throughout the backtesting engine
- **************************************************************************************/
+// Type aliases
+// Shared types used by strategy, execution, replay and compatibility exports.
 using Balance   = double;
 using Equity    = double;
 using TradeID    = unsigned int;
 using OrderID    = unsigned int;
 using FillID     = unsigned long long;
 using StrategyID = unsigned int;
-using Timestamp  = unsigned int;
+using Timestamp  = unsigned int; // Daily market keys use YYYYMMDD; this is not Unix milliseconds.
 using Coin       = std::string;
 
 
-/**************************************************************************************
- * Type    : Direction
- * Purpose : Represents trade/order direction
- **************************************************************************************/
+// Represents trade/order direction
 enum class Direction : int {
     Long  = 1,
     Short = -1,
@@ -31,21 +26,20 @@ enum class Direction : int {
 };
 
 
-/**************************************************************************************
- * Type    : OrderType
- * Purpose : Defines how an order should be filled
- *
- * Market:
- *   Fill immediately according to the execution model.
- *
- * Limit:
- *   Long  fills when bar.low  <= trigger_price_
- *   Short fills when bar.high >= trigger_price_
- *
- * Stop:
- *   Long  fills when bar.high >= trigger_price_
- *   Short fills when bar.low  <= trigger_price_
- **************************************************************************************/
+// The Order/Trade types below support the older bar-based interface and exports.
+// Current execution uses ExecutionOrder, OrderUpdate and Fill with partial-fill tracking.
+// Defines how an order should be filled
+//
+// Market:
+// Fill immediately according to the execution model.
+//
+// Limit:
+// Long  fills when bar.low  <= trigger_price_
+// Short fills when bar.high >= trigger_price_
+//
+// Stop:
+// Long  fills when bar.high >= trigger_price_
+// Short fills when bar.low  <= trigger_price_
 enum class OrderType : int {
     Market = 0,
     Limit  = 1,
@@ -53,10 +47,7 @@ enum class OrderType : int {
 };
 
 
-/**************************************************************************************
- * Type    : OrderStatus
- * Purpose : Tracks the lifecycle of a pending order
- **************************************************************************************/
+// Tracks the lifecycle of a pending order
 enum class OrderStatus : int {
     Pending   = 0,
     Filled    = 1,
@@ -65,20 +56,14 @@ enum class OrderStatus : int {
 };
 
 
-/**************************************************************************************
- * Type    : OrderTimeInForce
- * Purpose : Defines how long an order remains valid
- **************************************************************************************/
+// Defines how long an order remains valid
 enum class OrderTimeInForce : int {
     GoodForBars       = 0,
     GoodTillCancelled = 1
 };
 
 
-/**************************************************************************************
- * Type    : OHLCV
- * Purpose : Raw OHLCV price and volume data for a single bar
- **************************************************************************************/
+// Raw OHLCV price and volume data for a single bar
 struct OHLCV {
     double open   = 0.0;
     double high   = 0.0;
@@ -88,30 +73,24 @@ struct OHLCV {
 };
 
 
-/**************************************************************************************
- * Type    : OHLCVData
- * Purpose : Container for raw OHLCV data indexed by coin and timestamp
- *
- * Structure :
- *   data[coin][timestamp] -> OHLCV
- **************************************************************************************/
+// Container for raw OHLCV data indexed by coin and timestamp
+//
+// Structure :
+// data[coin][timestamp] -> OHLCV
 struct OHLCVData {
     std::map<Coin, std::map<Timestamp, OHLCV>> data;
 };
 
 
-/**************************************************************************************
- * Type    : BarData
- * Purpose : Basic market bar used during strategy execution
- *
- * Important:
- *   This struct should only contain data intrinsic to the bar itself.
- *
- *   Parameterized indicators such as RSI(14), ATR(20), ROC(5), SMA(Volume, 25),
- *   Highest(High, 20), etc. should NOT be stored here.
- *
- *   Those are handled by IndicatorEngine.
- **************************************************************************************/
+// Basic market bar used during strategy execution
+//
+// Important:
+// This struct should only contain data intrinsic to the bar itself.
+//
+// Parameterized indicators such as RSI(14), ATR(20), ROC(5), SMA(Volume, 25),
+// Highest(High, 20), etc. should NOT be stored here.
+//
+// Those are handled by IndicatorEngine.
 struct BarData {
     double open   = 0.0;
     double high   = 0.0;
@@ -123,24 +102,21 @@ struct BarData {
 };
 
 
-/**************************************************************************************
- * Type    : Order
- * Purpose : Represents an intended entry that may or may not become a real trade
- *
- * Important:
- *   An Order is NOT a position.
- *
- *   A pending limit/stop order should not affect balance, equity, exposure, or PnL.
- *   Only after the order fills should a Trade be created.
- *
- * Example:
- *   Strategy creates:
- *     Buy BTC limit 95000, valid for 1 bar
- *
- *   Next bar:
- *     If bar.low <= 95000, the order fills and creates a Trade.
- *     Otherwise, the order expires and disappears.
- **************************************************************************************/
+// Represents an intended entry that may or may not become a real trade
+//
+// Important:
+// An Order is NOT a position.
+//
+// A pending limit/stop order should not affect balance, equity, exposure, or PnL.
+// Only after the order fills should a Trade be created.
+//
+// Example:
+// Strategy creates:
+// Buy BTC limit 95000, valid for 1 bar
+//
+// Next bar:
+// If bar.low <= 95000, the order fills and creates a Trade.
+// Otherwise, the order expires and disappears.
 struct Order {
     OrderID   order_id_        = 0;
 
@@ -199,15 +175,12 @@ struct Order {
 };
 
 
-/**************************************************************************************
- * Type    : Trade
- * Purpose : Represents a single trade lifecycle
- *
- * Important:
- *   A Trade means the position already exists.
- *
- *   Pending limit/stop orders should be represented by Order, not by Trade.
- **************************************************************************************/
+// Represents a single trade lifecycle
+//
+// Important:
+// A Trade means the position already exists.
+//
+// Pending limit/stop orders should be represented by Order, not by Trade.
 struct Trade {
     TradeID   trade_id_        = 0;
     OrderID   source_order_id_ = 0;
@@ -244,10 +217,8 @@ struct Trade {
 };
 
 
-/**************************************************************************************
- * Type aliases
- * Purpose : Common containers used across the engine
- **************************************************************************************/
+// Type aliases
+// Common containers used across the engine
 using CoinBarMap = std::unordered_map<Coin, BarData>;
 
 /*
@@ -261,37 +232,31 @@ using OrderList = std::vector<Order>;
 using TradeList = std::vector<Trade>;
 
 
-/**************************************************************************************
- * Compatibility alias
- *
- * Previous code used EnrichedData.
- * The data is no longer enriched with indicators, but keeping this alias allows
- * the rest of the project to be migrated gradually.
- **************************************************************************************/
+// Compatibility alias
+//
+// Previous code used EnrichedData.
+// The data is no longer enriched with indicators, but keeping this alias allows
+// the rest of the project to be migrated gradually.
 using EnrichedData = MarketData;
 
 
-/**************************************************************************************
- * Purpose : Build market data from raw OHLCV data
- *
- * This function converts:
- *
- *   raw.data[coin][timestamp] -> OHLCV
- *
- * into:
- *
- *   marketData[timestamp][coin] -> BarData
- *
- * It only copies raw bar fields and assigns barNumber.
- * It does NOT calculate indicators.
- **************************************************************************************/
+// Build market data from raw OHLCV data
+//
+// This function converts:
+//
+// raw.data[coin][timestamp] -> OHLCV
+//
+// into:
+//
+// marketData[timestamp][coin] -> BarData
+//
+// It only copies raw bar fields and assigns barNumber.
+// It does NOT calculate indicators.
 MarketData buildMarketData(const OHLCVData& raw);
 
 
-/**************************************************************************************
- * Compatibility wrapper
- *
- * Previous code called buildEnriched().
- * This now simply builds basic MarketData.
- **************************************************************************************/
+// Compatibility wrapper
+//
+// Previous code called buildEnriched().
+// This now simply builds basic MarketData.
 EnrichedData buildEnriched(const OHLCVData& raw);

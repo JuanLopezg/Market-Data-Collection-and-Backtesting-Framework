@@ -2,7 +2,7 @@
 sources = [
     'historical_market_data_service_main.cpp',
     'historical_csv_source.cpp',
-    '../../market_data_service/src/market_data_store.cpp'
+    '../../market_data_service/src/market_store.cpp'
 ]
 
 executable(

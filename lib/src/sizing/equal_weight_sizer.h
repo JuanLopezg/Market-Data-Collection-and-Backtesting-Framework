@@ -7,18 +7,15 @@
 #include "portfolio_sizer.h"
 
 
-/**************************************************************************************
- * Type    : EqualWeightSizer
- * Purpose : Assigns the same configured weight to every full-strength active signal
- *
- * Signal intensity scales the entry weight linearly:
- *   +1.0 -> +weightPerFullSignal
- *   +0.5 -> +0.5 * weightPerFullSignal
- *   -1.0 -> -weightPerFullSignal
- *
- * This class only calculates desired weights. Whether an already-open position should
- * actually be resized is decided later by the strategy's RebalancePolicy.
- **************************************************************************************/
+// Assigns the same configured weight to every full-strength active signal
+//
+// Signal intensity scales the entry weight linearly:
+// +1.0 -> +weightPerFullSignal
+// +0.5 -> +0.5 * weightPerFullSignal
+// -1.0 -> -weightPerFullSignal
+//
+// This class only calculates desired weights. Whether an already-open position should
+// actually be resized is decided later by the strategy's RebalancePolicy.
 class EqualWeightSizer final : public PortfolioSizer {
 private:
     double weightPerFullSignal_ = 0.0;

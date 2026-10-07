@@ -1,151 +1,81 @@
 # algoTrading
 
-C++/Python crypto trading research and execution project with a canonical historical replay path, a live-shaped runtime stack, a MOCK venue, and an operations dashboard.
+C++/Python trading research, a reusable trading library, live services and an
+observational dashboard. Current validated execution is canonical historical
+replay through a deterministic MOCK venue. Private exchange execution remains
+unfinished.
 
-## Current source of truth
+## Start here
 
-Read [`CURRENT_STATE.md`](CURRENT_STATE.md) first. It records the currently validated replay behavior, fingerprints, known RealTest differences, restart support, and the remaining work before TESTNET/LIVE.
+- [Current state and accepted evidence](CURRENT_STATE.md)
+- [Documentation index](docs/README.md)
+- [Architecture](docs/codex/ARCHITECTURE_FULL.md)
+- [Library](lib/README.md), [live services](live_trading/README.md),
+  [replay](research/REPLAY.md), [dashboard](dashboard/README.md)
+- [Validation guide](validation/README.md)
 
-The canonical research entry point is:
+For coding work, read [AGENTS.md](AGENTS.md), then the two context/architecture
+files it names and the relevant README. Source and current test output take
+precedence over documentation.
 
-```bash
-python3 research/replay.py {fast|system|dashboard} [options]
-```
+## Replay
 
-- `fast` runs the legacy research Backtester/PureRSI path.
-- `system` runs the modern Strategy -> Risk -> Planner -> canonical venue adapter -> MOCK stack.
-- `dashboard` runs the same system economics and additionally publishes dashboard state.
-
-Use `python3 research/replay.py <mode> --help` for the current options.
-
-## Canonical RealTest parity profile
-
-`system` and `dashboard` currently use the `realtest-parity` profile for the canonical research comparison. Its purpose is to reproduce the historical Backtester execution economics while still traversing the modern runtime stack:
-
-- original historical OHLCV is preserved;
-- strategy/risk decide target notional on CLOSE(T);
-- target quantity is resolved at OPEN(T+1);
-- fills are full next-open fills;
-- execution volume does not capacity-limit parity fills;
-- slippage is zero;
-- commission/fees are zero;
-- `storage/backtests/final_tests/pureRSI.csv` is the acceptance source;
-- no mismatch whitelist or hard-coded exception acceptance is used.
-
-The normal MOCK profile remains separate and keeps its realistic venue mechanics. RealTest-parity settings are not a statement about future live venue behavior.
-
-## Locally validated canonical results
-
-Full history (`2020-01-01..2025-10-13`, 2113 source days):
-
-```text
-RealTest trades checked : 631
-Candidate trades total  : 631
-Fully matched           : 628
-Differences             : 4
-canonicalFills          : 1261
-fullRunFingerprint      : 1551106eac4dd7b712729f72980ac196308d61b1d7cbb9e538c557271415cbf0
-```
-
-The four differences are surfaced for human review: the historical BNB exit-date difference, the RealTest FET trade with no candidate match, the final ZEC end-state/time difference, and the extra candidate FET trade. They are not encoded as accepted exceptions.
-
-The 107-day deterministic baseline is:
-
-```text
-Candidate trades total : 25
-Fully matched          : 25
-Differences            : 0
-canonicalFills         : 50
-fullRunFingerprint     : 94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2
-```
-
-This 107-day fingerprint was reproduced across repeated runs and multiple TimeHandler speeds. Full-history `system` speed invariance was also verified, and full-history `dashboard` produced the same fingerprint and byte-identical `fills.csv` as `system`.
-
-## Common commands
-
-Short canonical system replay:
+Use the one public entrypoint:
 
 ```bash
 python3 research/replay.py system --days 107 --label system_107d
-```
-
-Full canonical system replay:
-
-```bash
-python3 research/replay.py system --label system_full
-```
-
-Dashboard replay without starting the web stack:
-
-```bash
 python3 research/replay.py dashboard --days 107 --label dashboard_107d --no-dashboard-up
+python3 research/replay.py fast --days 107 --label fast_107d
 ```
 
-Dashboard replay with the UI stack:
+`fast` uses the current library Backtester through the research entrypoint.
+`system` uses the canonical Strategy/Risk/Planner/MOCK runtime.
+`dashboard` shares system economics and publishes dashboard state.
+
+`--start` starts strategy state and warm-up at that date. To inspect a later
+period with earlier history preserved, use `--pace-start/--pace-end`.
+See [replay controls and restart examples](research/REPLAY.md).
+
+The RealTest parity profile preserves original OHLCV, decides USD targets at
+close(T), resolves quantities at open(T+1), and uses full next-open fills with
+zero fees/slippage and no volume-capacity limit. Normal MOCK realism is separate.
+Differences are reported directly; they are never accepted through a whitelist.
+
+## Build and validate
+
+Use WSL from the repository root:
 
 ```bash
-python3 research/replay.py dashboard --label dashboard_visual
-# open http://localhost:8080
+# For a new build directory:
+meson setup build
+meson compile -C build -j 3
+bash validation/step59_canonical_replay_release_gate.sh
 ```
 
-Safe day-boundary restart/resume is supported by both `system` and `dashboard`:
+Skip setup when `build` is already configured. The compact gate checks 107 days,
+25/25 RealTest matches, zero differences, 50 fills, determinism, system/dashboard
+restart and pacing invariance. Full-history and broker acceptance are separate.
 
-```bash
-python3 research/replay.py system --days 107 --label restart_107d \
-  --checkpoint-every 25 --stop-after-days 50
+## Deployment and handoff
 
-python3 research/replay.py system --days 107 --label restart_107d \
-  --checkpoint-every 25 --resume
-```
+[Live deployment](deploy/live/README.md) and
+[distributed historical deployment](deploy/historical_replay/README.md) describe
+their respective Compose stacks. Dashboard deployment has its own
+[guide](dashboard/docs/AWS_DEPLOYMENT.md). None of these guides constitute
+approval to route live capital.
 
-The same flags work in `dashboard` mode.
+`./handoff.sh` packages source and current documentation. Generated datasets,
+replay output and frozen evidence are not substitutes for current source checks.
 
-### About `--start`
+## Files kept local
 
-`--start` defines the actual replay start and the RealTest comparison window start. Starting in the middle of history therefore also starts strategy state/warm-up there; it is not equivalent to fast-forwarding from 2020. For a warmed strategy plus pacing only around a later date, keep the original replay start and use `--pace-start/--pace-end`.
+`.gitignore` excludes generated runtime bundles, replay output/checkpoints,
+mutable dashboard state, compiled runners, logs, dependency caches and local credentials.
+These files can remain on disk without being included in a commit. Original
+`.env.example` templates, source configuration, the canonical input dataset and
+frozen historical specifications/summary evidence remain versioned.
 
-## Validation
-
-The active Step58A compatibility entry point is:
-
-```bash
-bash validation/step58a_realtest_equivalence_implementation_gate.sh
-```
-
-It delegates behavioral proof to:
-
-```bash
-bash validation/step58a_canonical_replay_suite_gate.sh
-```
-
-The current gate checks direct RealTest ownership, the 107-day system comparison, original OHLCV, zero parity fees/slippage, no execution volume capacity in parity, the frozen normal-MOCK baseline, cutoff/open-trade semantics, and one canonical public replay CLI.
-
-Older Txx/distributed validation assets remain in the repository as historical evidence and regression tooling; they are not the current RealTest acceptance path.
-
-## Dashboard
-
-`dashboard` is observational around the same replay economics as `system`. Full-history economic equality with `system`, pacing invariance, and day-boundary restart/resume have been locally validated. The long slow visual acceptance run is intentionally deferred until the final dashboard review.
-
-See [`dashboard/README.md`](dashboard/README.md) for the dashboard-specific history and [`deploy/historical_replay/README.md`](deploy/historical_replay/README.md) for replay/deployment notes.
-
-## Venue / live status
-
-Private Hyperliquid integration and capital routing remain deferred. Public/read-only venue groundwork may exist in the repository, but the current accepted workstream is MOCK/replay-first. TESTNET, shadow mode, MAINNET hardening, and controlled LIVE readiness remain later phases.
-
-## Build
-
-The project contains Meson-based components and the canonical replay wrapper also builds the required C++ replay runner when needed. For the current replay workflow, prefer `research/replay.py` rather than invoking internal replay binaries directly.
-
-## Handoff
-
-Run:
-
-```bash
-./handoff.sh
-```
-
-The handoff package includes the major source directories plus root project state files, including `CURRENT_STATE.md`.
-
-## Disclaimer
-
-This project is for research and engineering purposes. It is not financial advice.
+Recreate deployment bundles with their `build_runtime_bundle.sh` scripts after
+building in WSL. New machines copy environment templates and supply local credentials.
+Ignored datasets under `storage/` still need to be provided locally for validation.
+Removing a file from current Git tracking does not remove it from earlier commits.

@@ -9,7 +9,7 @@ The Step56 gate re-runs Step55 first, so one local command validates the depende
 This step wires the production engine boundaries into the MOCK venue stack:
 
 `closed market slice -> StrategySignalEngine -> PortfolioRiskEngine ->
-NotionalOrderPlannerEngine -> CanonicalVenueAdapter -> MockExchangeAdapterV1 ->
+NotionalOrderPlanner -> CanonicalVenueAdapter -> MockExchangeAdapterV1 ->
 admission -> matching/fills -> accounting -> recovery -> reconciliation/ledger ->
 chaos/rate limit`
 
@@ -87,7 +87,7 @@ the same atomic planner batch.
 Canonical Step51 `Fill` remains the only source of execution truth.
 
 Step56 maintains a compatibility `OrderManager` and strategy-position mirror only so
-the existing `NotionalOrderPlannerEngine` can calculate current/pending quantities.
+the existing `NotionalOrderPlanner` can calculate current/pending quantities.
 
 That mirror:
 - changes strategy positions only from canonical Fill;
@@ -135,7 +135,7 @@ Step56 carries fingerprints for Steps49–56 and produces:
 
 The local gate uses a small deterministic threshold strategy and synthetic bars to prove
 the *wiring* through the real StrategySignalEngine, PortfolioRiskEngine and
-NotionalOrderPlannerEngine.
+NotionalOrderPlanner.
 
 It deliberately does not claim the real PureRSI historical dataset campaign has run.
 

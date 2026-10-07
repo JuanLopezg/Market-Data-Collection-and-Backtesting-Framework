@@ -6,13 +6,10 @@
 #include "state_store.h"
 
 
-/**************************************************************************************
- * Type    : PostgresStateStore
- * Purpose : Distributed-runtime StateStore backed by PostgreSQL
- *
- * The operational snapshot is stored as one JSONB document and the fill audit trail is
- * append-only. save(snapshot, fill) commits both inside one PostgreSQL transaction.
- **************************************************************************************/
+// Distributed-runtime StateStore backed by PostgreSQL
+//
+// The operational snapshot is stored as one JSONB document and the fill audit trail is
+// append-only. save(snapshot, fill) commits both inside one PostgreSQL transaction.
 class PostgresStateStore final : public StateStore {
 private:
     struct Impl;

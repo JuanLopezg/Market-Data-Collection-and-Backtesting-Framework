@@ -6,10 +6,7 @@
 #include "data_types.h"
 
 
-/**************************************************************************************
- * Type    : ReconciliationIssueKind
- * Purpose : Machine-readable reason why local and exchange state disagree
- **************************************************************************************/
+// Machine-readable reason why local and exchange state disagree
 enum class ReconciliationIssueKind {
     CashMismatch,
     PositionMismatch,
@@ -19,10 +16,7 @@ enum class ReconciliationIssueKind {
 };
 
 
-/**************************************************************************************
- * Type    : ReconciliationIssue
- * Purpose : One blocking discrepancy found during startup reconciliation
- **************************************************************************************/
+// One blocking discrepancy found during startup reconciliation
 struct ReconciliationIssue {
     ReconciliationIssueKind kind = ReconciliationIssueKind::PositionMismatch;
     Coin coin;
@@ -33,10 +27,9 @@ struct ReconciliationIssue {
 };
 
 
-/**************************************************************************************
- * Type    : ReconciliationReport
- * Purpose : Complete result of comparing persisted/local state against exchange truth
- **************************************************************************************/
+// Complete result of comparing persisted/local state against exchange truth
+// A report describes differences only. Repair or resubmission belongs to the
+// recovery workflow after the caller decides whether trading can resume.
 struct ReconciliationReport {
     std::vector<ReconciliationIssue> issues;
 

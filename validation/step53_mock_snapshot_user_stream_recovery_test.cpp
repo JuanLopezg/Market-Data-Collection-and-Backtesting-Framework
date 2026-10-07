@@ -7,10 +7,10 @@
 
 #include <unistd.h>
 
-#include "mock_snapshot_user_stream_recovery_v1.h"
+#include "mock/recovery.h"
 
 using namespace VenueContracts::V1;
-using namespace MockVenueV1;
+using namespace MockVenue;
 
 namespace {
 
@@ -64,7 +64,7 @@ SubmitOrderBatch submitOne(
     return b;
 }
 
-MarketBarObservationV1 bar(
+MarketBarObservation bar(
     const std::string& asset,
     Timestamp ts,
     double open,
@@ -73,7 +73,7 @@ MarketBarObservationV1 bar(
     double close,
     double volume)
 {
-    MarketBarObservationV1 b;
+    MarketBarObservation b;
     b.canonical_asset = asset;
     b.event_time = ts;
     b.bar.open = open;
@@ -103,26 +103,26 @@ int main()
     double final_equity = 0.0;
 
     {
-        MockSnapshotUserStreamRecoveryV1 runtime(dir);
+        MockRecovery runtime(dir);
 
         assert(runtime.recoverySafe());
         assert(runtime.lastSequence() == 0U);
         assert(runtime.lastBusinessEventTime() == 0U);
 
         assert(runtime.setLeverage("BTCUSDT", 90, 2U) ==
-               RecoverySourceResultV1::Applied);
+               RecoverySourceResult::Applied);
 
         const auto order =
             makeOrder(1001, "BTCUSDT", 0.20, 100.0);
         assert(runtime.submit(
             submitOne("submit-1001", order, 100)) ==
-            RecoverySourceResultV1::Applied);
+            RecoverySourceResult::Applied);
 
         // First bar has 1.0 volume, 10% participation => 0.1 fill.
         const auto first_bar =
             bar("BTCUSDT", 110, 101.0, 102.0, 99.0, 100.0, 1.0);
         assert(runtime.processBar(first_bar) ==
-               RecoverySourceResultV1::Applied);
+               RecoverySourceResult::Applied);
 
         const auto snapshot_before_checkpoint =
             runtime.stateSnapshot(110);
@@ -147,7 +147,7 @@ int main()
         const std::string before_duplicate_bar_econ =
             runtime.account().economicFingerprint();
         assert(runtime.processBar(first_bar) ==
-               RecoverySourceResultV1::DuplicateIgnored);
+               RecoverySourceResult::DuplicateIgnored);
         assert(runtime.lastSequence() == before_duplicate_bar);
         assert(runtime.account().economicFingerprint() ==
                before_duplicate_bar_econ);
@@ -156,27 +156,27 @@ int main()
         const auto second_bar =
             bar("BTCUSDT", 120, 101.0, 103.0, 98.0, 101.0, 1.0);
         assert(runtime.processBar(second_bar) ==
-               RecoverySourceResultV1::Applied);
+               RecoverySourceResult::Applied);
 
         assert(runtime.postFundingPayment(
             "BTCUSDT",
             121,
             "-0.25000000",
             "funding-121") ==
-            RecoverySourceResultV1::Applied);
+            RecoverySourceResult::Applied);
 
         assert(runtime.postRebate(
             "BTCUSDT",
             122,
             "0.10000000",
             "rebate-122") ==
-            RecoverySourceResultV1::Applied);
+            RecoverySourceResult::Applied);
 
         assert(runtime.markToMarket(
             "BTCUSDT",
             123,
             105.0) ==
-            RecoverySourceResultV1::Applied);
+            RecoverySourceResult::Applied);
 
         const auto final_snapshot =
             runtime.stateSnapshot(123);
@@ -235,7 +235,7 @@ int main()
 
     // Restart: checkpoint + incremental journal reconstruct exact state and stream.
     {
-        MockSnapshotUserStreamRecoveryV1 recovered(dir);
+        MockRecovery recovered(dir);
 
         assert(recovered.recoverySafe());
         assert(recovered.lastCheckpointSequence() == checkpoint_sequence);
@@ -259,7 +259,7 @@ int main()
             makeOrder(1001, "BTCUSDT", 0.20, 100.0);
         assert(recovered.submit(
             submitOne("submit-1001", order, 100)) ==
-            RecoverySourceResultV1::Applied);
+            RecoverySourceResult::Applied);
         assert(recovered.lifecycle().orders().size() == 1U);
         assert(recovered.lastSequence() == before_retry + 1U);
         assert(std::holds_alternative<OperationResult>(
@@ -275,13 +275,13 @@ int main()
             recovered.account().economicFingerprint();
 
         assert(recovered.processBar(second_bar) ==
-               RecoverySourceResultV1::DuplicateIgnored);
+               RecoverySourceResult::DuplicateIgnored);
         assert(recovered.postFundingPayment(
             "BTCUSDT",
             121,
             "-0.25000000",
             "funding-121") ==
-            RecoverySourceResultV1::DuplicateIgnored);
+            RecoverySourceResult::DuplicateIgnored);
 
         assert(recovered.lastSequence() == before_dupes);
         assert(recovered.account().economicFingerprint() ==
@@ -297,7 +297,7 @@ int main()
             recovered.account().economicFingerprint();
 
         assert(recovered.processBar(old_eth_bar) ==
-               RecoverySourceResultV1::OutOfOrderRejected);
+               RecoverySourceResult::OutOfOrderRejected);
         assert(!recovered.recoverySafe());
         assert(recovered.lastSequence() == before_ooo);
         assert(recovered.account().economicFingerprint() ==
@@ -310,7 +310,7 @@ int main()
     // The rejected out-of-order input was never persisted, so a clean restart returns
     // to the last durable safe state (plus the durable request retry).
     {
-        MockSnapshotUserStreamRecoveryV1 recovered_again(dir);
+        MockRecovery recovered_again(dir);
         assert(recovered_again.recoverySafe());
         assert(recovered_again.account().economicFingerprint() ==
                final_economic_fingerprint);

@@ -32,9 +32,9 @@ for f in \
  "$ART/STEP_56_FULL_SYSTEM_REPLAY_RUNTIME.md" \
  "$ART/STEP_56_REPLAY_ACCEPTANCE_HANDOFF.json" \
  "$ART/SHA256SUMS" \
- "$ROOT/lib/src/exchange/mock_exchange_adapter_v1.h" \
- "$ROOT/lib/src/runtime/full_system_replay_fingerprints_v1.h" \
- "$ROOT/lib/src/runtime/full_system_replay_runtime_v1.h" \
+ "$ROOT/lib/src/exchange/mock/exchange.h" \
+ "$ROOT/lib/src/runtime/replay_runtime.h" \
+ "$ROOT/lib/src/runtime/replay_runtime.h" \
  "$ROOT/validation/step56_full_system_replay_runtime_test.cpp"; do
   [[ -f "$f" ]] || fail "missing ${f#$ROOT/}"
 done
@@ -97,7 +97,7 @@ CXX="${CXX:-c++}"
 "$CXX" -std=c++20 -Wall -Wextra -Werror -pedantic \
  -I"$ROOT/lib/src/account" \
  -I"$ROOT/lib/src/analytics" \
- -I"$ROOT/lib/src/common_types" \
+ -I"$ROOT/lib/src/logging" \
  -I"$ROOT/lib/src/contracts" \
  -I"$ROOT/lib/src/data_types" \
  -I"$ROOT/lib/src/exchange" \
@@ -116,13 +116,11 @@ CXX="${CXX:-c++}"
  -I"$ROOT/lib/src/strategy" \
  -I"$ROOT/lib/src/universe" \
  "$ROOT/validation/step56_full_system_replay_runtime_test.cpp" \
- "$ROOT/lib/src/runtime/strategy_signal_engine.cpp" \
- "$ROOT/lib/src/runtime/portfolio_risk_engine.cpp" \
- "$ROOT/lib/src/runtime/notional_order_planner_engine.cpp" \
- "$ROOT/lib/src/runtime/rolling_market_state.cpp" \
+ "$ROOT/lib/src/strategy/strategy_signal_engine.cpp" \
+ "$ROOT/lib/src/risk/portfolio_risk_engine.cpp" \
+ "$ROOT/lib/src/execution/planning/notional_order_planner.cpp" \
+ "$ROOT/lib/src/market/rolling_market_state.cpp" \
  "$ROOT/lib/src/strategy/strategy.cpp" \
- "$ROOT/lib/src/universe/universe_selector.cpp" \
- "$ROOT/lib/src/ranker/ranker.cpp" \
  "$ROOT/lib/src/indicator/indicator_engine.cpp" \
  "$ROOT/lib/src/indicator/indicator_calculators.cpp" \
  "$ROOT/lib/src/indicator/indicator_spec.cpp" \
@@ -131,14 +129,14 @@ CXX="${CXX:-c++}"
 pass 'Strategy -> Risk -> Planner -> canonical MOCK -> Fill -> Accounting -> Recon/Ledger wiring validated'
 
 printf '%s\n' '[6/8] Trading commands cross CanonicalVenueAdapter; no direct planner-to-MOCK submit bypass'
-grep -Fq 'CanonicalVenueAdapter& venue_adapter_' "$ROOT/lib/src/runtime/full_system_replay_runtime_v1.h" \
+grep -Fq 'CanonicalVenueAdapter& venue_adapter_' "$ROOT/lib/src/runtime/replay_runtime.h" \
   || fail 'canonical adapter boundary missing'
-grep -Fq 'venue_adapter_.submitOrders(batch)' "$ROOT/lib/src/runtime/full_system_replay_runtime_v1.h" \
+grep -Fq 'venue_adapter_.submitOrders(batch)' "$ROOT/lib/src/runtime/replay_runtime.h" \
   || fail 'submit does not cross CanonicalVenueAdapter'
-grep -Fq 'venue_adapter_.cancelOrders(batch)' "$ROOT/lib/src/runtime/full_system_replay_runtime_v1.h" \
+grep -Fq 'venue_adapter_.cancelOrders(batch)' "$ROOT/lib/src/runtime/replay_runtime.h" \
   || fail 'cancel does not cross CanonicalVenueAdapter'
 if grep -Ein 'runtime\(\)\.submit\(|lifecycle\(\)\.submit\(|chaos\(\)\.submit\(' \
- "$ROOT/lib/src/runtime/full_system_replay_runtime_v1.h" >"$TMP/bypass"; then
+ "$ROOT/lib/src/runtime/replay_runtime.h" >"$TMP/bypass"; then
  cat "$TMP/bypass" >&2
  fail 'direct MOCK submit bypass detected in full-system runtime'
 fi
@@ -146,14 +144,14 @@ pass 'Strategy/Risk/Planner cannot bypass the canonical venue command boundary'
 
 printf '%s\n' '[7/8] Step56 introduces no wall-clock economics/private real routing'
 if grep -Ein 'system_clock|steady_clock|high_resolution_clock|sleep_for|sleep_until|gettimeofday|clock_gettime|std::time|(^|[^[:alnum:]_])time\(' \
- "$ROOT/lib/src/runtime/full_system_replay_runtime_v1.h" \
- "$ROOT/lib/src/exchange/mock_exchange_adapter_v1.h" >"$TMP/clock"; then
+ "$ROOT/lib/src/runtime/replay_runtime.h" \
+ "$ROOT/lib/src/exchange/mock/exchange.h" >"$TMP/clock"; then
  cat "$TMP/clock" >&2
  fail 'wall/monotonic time leaked into Step56 business/economic path'
 fi
 if grep -Ein 'hyperliquid|private[_ -]?key|mnemonic|seed phrase|api wallet|smart[_ -]?order[_ -]?routing' \
- "$ROOT/lib/src/runtime/full_system_replay_runtime_v1.h" \
- "$ROOT/lib/src/exchange/mock_exchange_adapter_v1.h" >"$TMP/private"; then
+ "$ROOT/lib/src/runtime/replay_runtime.h" \
+ "$ROOT/lib/src/exchange/mock/exchange.h" >"$TMP/private"; then
  cat "$TMP/private" >&2
  fail 'private real-venue/smart-routing material leaked into Step56'
 fi

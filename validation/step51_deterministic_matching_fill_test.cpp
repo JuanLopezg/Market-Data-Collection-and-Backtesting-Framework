@@ -4,10 +4,10 @@
 #include <variant>
 #include <vector>
 
-#include "mock_deterministic_matching_fill_v1.h"
+#include "mock/matching.h"
 
 using namespace VenueContracts::V1;
-using namespace MockVenueV1;
+using namespace MockVenue;
 
 namespace {
 
@@ -48,7 +48,7 @@ LimitOrderIntent makeOrder(
 }
 
 void submit(
-    MockOrderAdmissionLifecycleV1& life,
+    MockOrders& life,
     const std::string& request_id,
     const LimitOrderIntent& order,
     Timestamp ts = 11)
@@ -61,7 +61,7 @@ void submit(
     life.clearEmittedEvents();
 }
 
-MarketBarObservationV1 bar(
+MarketBarObservation bar(
     const std::string& asset,
     Timestamp ts,
     double open,
@@ -70,7 +70,7 @@ MarketBarObservationV1 bar(
     double close,
     double volume)
 {
-    MarketBarObservationV1 x;
+    MarketBarObservation x;
     x.canonical_asset = asset;
     x.event_time = ts;
     x.bar.open = open;
@@ -106,9 +106,9 @@ int main()
 {
     // 1) Full GTC fill: Fill is economic authority and precedes FILLED update.
     {
-        MockOrderAdmissionLifecycleV1 life;
+        MockOrders life;
         submit(life, "s1", makeOrder(1, "BTCUSDT", Side::Buy, 0.001, 50000.0));
-        MockDeterministicMatchingFillV1 matcher(life);
+        MockMatching matcher(life);
         matcher.processBar(bar("BTCUSDT", 30, 49900.0, 50100.0, 49800.0, 50050.0, 1.0));
         assert(matcher.emittedEvents().size() == 2U);
         const auto& f = fillAt(matcher.emittedEvents(), 0);
@@ -127,44 +127,44 @@ int main()
 
     // 2) GTC no touch -> RESTING, no Fill.
     {
-        MockOrderAdmissionLifecycleV1 life;
+        MockOrders life;
         submit(life, "s2", makeOrder(2, "BTCUSDT", Side::Buy, 0.001, 49000.0));
-        MockDeterministicMatchingFillV1 matcher(life);
+        MockMatching matcher(life);
         matcher.processBar(bar("BTCUSDT", 30, 50000.0, 50100.0, 49500.0, 49900.0, 1.0));
         assert(matcher.emittedEvents().size() == 1U);
         assert(updateAt(matcher.emittedEvents(), 0).status == OrderLifecycleStatus::Resting);
-        assert(matcher.traces()[0].action == MatchActionV1::Rested);
+        assert(matcher.traces()[0].action == MatchAction::Rested);
     }
 
     // 3) Post-only crossing synthetic open -> REJECTED, no Fill.
     {
-        MockOrderAdmissionLifecycleV1 life;
+        MockOrders life;
         submit(life, "s3", makeOrder(3, "BTCUSDT", Side::Buy, 0.001, 50000.0, TimeInForce::Gtc, true));
-        MockDeterministicMatchingFillV1 matcher(life);
+        MockMatching matcher(life);
         matcher.processBar(bar("BTCUSDT", 30, 49900.0, 50100.0, 49800.0, 50000.0, 1.0));
         assert(matcher.emittedEvents().size() == 1U);
         const auto& u = updateAt(matcher.emittedEvents(), 0);
         assert(u.status == OrderLifecycleStatus::Rejected);
         assert(u.terminal_reason.classification == ErrorClass::PostOnlyWouldCross);
-        assert(matcher.traces()[0].action == MatchActionV1::RejectedPostOnly);
+        assert(matcher.traces()[0].action == MatchAction::RejectedPostOnly);
     }
 
     // 4) IOC no touch -> CANCELED.
     {
-        MockOrderAdmissionLifecycleV1 life;
+        MockOrders life;
         submit(life, "s4", makeOrder(4, "BTCUSDT", Side::Buy, 0.001, 49000.0, TimeInForce::Ioc));
-        MockDeterministicMatchingFillV1 matcher(life);
+        MockMatching matcher(life);
         matcher.processBar(bar("BTCUSDT", 30, 50000.0, 50100.0, 49500.0, 49900.0, 1.0));
         assert(matcher.emittedEvents().size() == 1U);
         assert(updateAt(matcher.emittedEvents(), 0).status == OrderLifecycleStatus::Canceled);
-        assert(matcher.traces()[0].action == MatchActionV1::IocCanceledNoFill);
+        assert(matcher.traces()[0].action == MatchAction::IocCanceledNoFill);
     }
 
     // 5) Partial GTC due shared participation, then complete next bar.
     {
-        MockOrderAdmissionLifecycleV1 life;
+        MockOrders life;
         submit(life, "s5", makeOrder(5, "BTCUSDT", Side::Buy, 0.001, 50000.0));
-        MockDeterministicMatchingFillV1 matcher(life);
+        MockMatching matcher(life);
         // 0.005 base volume * 10% = 0.0005 synthetic executable quantity.
         matcher.processBar(bar("BTCUSDT", 30, 49900.0, 50100.0, 49800.0, 50000.0, 0.005));
         assert(matcher.emittedEvents().size() == 2U);
@@ -181,9 +181,9 @@ int main()
 
     // 6) IOC partial -> Fill, PARTIALLY_FILLED, CANCELED remainder.
     {
-        MockOrderAdmissionLifecycleV1 life;
+        MockOrders life;
         submit(life, "s6", makeOrder(6, "BTCUSDT", Side::Buy, 0.001, 50000.0, TimeInForce::Ioc));
-        MockDeterministicMatchingFillV1 matcher(life);
+        MockMatching matcher(life);
         matcher.processBar(bar("BTCUSDT", 30, 49900.0, 50100.0, 49800.0, 50000.0, 0.005));
         assert(matcher.emittedEvents().size() == 3U);
         assert(std::holds_alternative<Fill>(matcher.emittedEvents()[0]));
@@ -191,20 +191,20 @@ int main()
         assert(updateAt(matcher.emittedEvents(), 2).status == OrderLifecycleStatus::Canceled);
         assert(life.findOrder(6)->status == OrderLifecycleStatus::Canceled);
         assert(matcher.traces().size() == 2U);
-        assert(matcher.traces()[1].action == MatchActionV1::IocCanceledRemainder);
+        assert(matcher.traces()[1].action == MatchAction::IocCanceledRemainder);
     }
 
     // 7) Latency is event-count based, not wall-clock based.
     {
-        MockOrderAdmissionLifecycleV1 life;
+        MockOrders life;
         submit(life, "s7", makeOrder(7, "ETHUSDT", Side::Buy, 0.01, 3000.0));
-        MatchingFillConfigV1 config;
+        MatchingFillConfig config;
         config.latency_events = 1U;
-        MockDeterministicMatchingFillV1 matcher(life, config);
+        MockMatching matcher(life, config);
         matcher.processBar(bar("ETHUSDT", 30, 2990.0, 3010.0, 2980.0, 3005.0, 10.0));
         assert(matcher.emittedEvents().empty());
         assert(life.findOrder(7)->status == OrderLifecycleStatus::Accepted);
-        assert(matcher.traces()[0].action == MatchActionV1::DeferredLatency);
+        assert(matcher.traces()[0].action == MatchAction::DeferredLatency);
 
         matcher.clearOutput();
         matcher.processBar(bar("ETHUSDT", 31, 2990.0, 3010.0, 2980.0, 3005.0, 10.0));
@@ -214,10 +214,10 @@ int main()
 
     // 8) Shared bar liquidity allocation is deterministic by ascending order id.
     {
-        MockOrderAdmissionLifecycleV1 life;
+        MockOrders life;
         submit(life, "s8a", makeOrder(80, "SOLUSDT", Side::Buy, 0.6, 150.0));
         submit(life, "s8b", makeOrder(81, "SOLUSDT", Side::Buy, 0.6, 150.0));
-        MockDeterministicMatchingFillV1 matcher(life);
+        MockMatching matcher(life);
         // volume 10 * 10% => total executable 1.0 SOL. id80 gets .6, id81 gets .4.
         matcher.processBar(bar("SOLUSDT", 30, 149.0, 151.0, 148.0, 150.0, 10.0));
         assert(matcher.emittedEvents().size() == 4U);
@@ -231,14 +231,14 @@ int main()
 
     // 9) Same seed/state/input gives identical synthetic price/id/quantity.
     {
-        MockOrderAdmissionLifecycleV1 lifeA;
-        MockOrderAdmissionLifecycleV1 lifeB;
+        MockOrders lifeA;
+        MockOrders lifeB;
         submit(lifeA, "det-a", makeOrder(90, "BTCUSDT", Side::Buy, 0.001, 50000.0));
         submit(lifeB, "det-b", makeOrder(90, "BTCUSDT", Side::Buy, 0.001, 50000.0));
-        MatchingFillConfigV1 config;
+        MatchingFillConfig config;
         config.deterministic_seed = 999U;
-        MockDeterministicMatchingFillV1 a(lifeA, config);
-        MockDeterministicMatchingFillV1 b(lifeB, config);
+        MockMatching a(lifeA, config);
+        MockMatching b(lifeB, config);
         const auto obs = bar("BTCUSDT", 77, 49900.0, 50100.0, 49800.0, 50000.0, 1.0);
         a.processBar(obs);
         b.processBar(obs);

@@ -7,7 +7,7 @@ fmt_dep                   = global_deps['fmt_dep']
 sqlite3_dep                = global_deps['sqlite3_dep']
 
 # ---- Bring in subdirectories ----
-subdir('common_types')
+subdir('logging')
 subdir('utils')
 subdir('data_types')
 subdir('contracts')
@@ -37,7 +37,7 @@ subdir('filter')
 
 # ---- Include directories for all submodules ----
 include_dir = include_directories(
-    'common_types',
+    'logging',
     'utils',
     'data_types',
     'contracts',
@@ -59,7 +59,6 @@ include_dir = include_directories(
     'recovery',
     'testing',
     'strategy',
-    'strategy/strategies',
     'ranker',
     'indicator',
     'universe',
@@ -68,7 +67,7 @@ include_dir = include_directories(
 
 # ---- Aggregate all sources from submodules ----
 lib_sources = []
-lib_sources += common_types_sources
+lib_sources += logging_sources
 lib_sources += utils_sources
 lib_sources += data_types_sources
 lib_sources += contracts_sources

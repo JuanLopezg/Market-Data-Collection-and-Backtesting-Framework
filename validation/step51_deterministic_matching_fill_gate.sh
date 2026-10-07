@@ -26,7 +26,7 @@ for f in \
  "$CFG/matching_fill_model_v1.json" "$CFG/matching_fill_manifest_v1.json" \
  "$ART/STEP_51_DETERMINISTIC_MATCHING_FILL_MODEL.md" \
  "$ART/STEP_52_IMPLEMENTATION_HANDOFF.json" "$ART/SHA256SUMS" \
- "$ROOT/lib/src/exchange/mock_deterministic_matching_fill_v1.h" \
+ "$ROOT/lib/src/exchange/mock/matching.h" \
  "$ROOT/validation/step51_deterministic_matching_fill_test.cpp"; do
  [[ -f "$f" ]] || fail "missing ${f#$ROOT/}"
 done
@@ -90,22 +90,22 @@ pass 'GTC/IOC/post-only/partial/full/shared-liquidity/latency/determinism behavi
 
 printf '%s\n' '[6/8] Step51 uses event time and contains no wall-clock economics'
 if grep -Ein 'system_clock|steady_clock|high_resolution_clock|sleep_for|sleep_until|time\(|gettimeofday|clock_gettime' \
- "$ROOT/lib/src/exchange/mock_deterministic_matching_fill_v1.h" >"$TMP/clock"; then
+ "$ROOT/lib/src/exchange/mock/matching.h" >"$TMP/clock"; then
  cat "$TMP/clock" >&2
  fail 'wall/monotonic clock primitive leaked into Step51 economic model'
 fi
-grep -Fq 'observation.event_time' "$ROOT/lib/src/exchange/mock_deterministic_matching_fill_v1.h" \
+grep -Fq 'observation.event_time' "$ROOT/lib/src/exchange/mock/matching.h" \
  || fail 'event-time fill timestamp not found'
 pass 'economic matching/fill timestamps depend only on supplied market event time'
 
 printf '%s\n' '[7/8] No Step52 accounting or private real-venue implementation slipped in'
 if grep -Ein 'cash_balance|equity_state|realized_pnl|unrealized_pnl|position_ledger|post_accounting_event|apply_funding' \
- "$ROOT/lib/src/exchange/mock_deterministic_matching_fill_v1.h" >"$TMP/account"; then
+ "$ROOT/lib/src/exchange/mock/matching.h" >"$TMP/account"; then
  cat "$TMP/account" >&2
  fail 'Step52 account/PnL implementation leaked into Step51'
 fi
 if grep -Ein 'hyperliquid|private[_ -]?key|mnemonic|seed phrase|api wallet|/exchange' \
- "$ROOT/lib/src/exchange/mock_deterministic_matching_fill_v1.h" >"$TMP/private"; then
+ "$ROOT/lib/src/exchange/mock/matching.h" >"$TMP/private"; then
  cat "$TMP/private" >&2
  fail 'private/concrete real-venue material leaked into Step51'
 fi

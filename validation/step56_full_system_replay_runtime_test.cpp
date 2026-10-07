@@ -9,12 +9,12 @@
 
 #include "entry_exit_only_rebalance_policy.h"
 #include "equal_weight_sizer.h"
-#include "full_system_replay_runtime_v1.h"
+#include "replay_runtime.h"
 #include "risk_constraints.h"
 #include "strategy.h"
 
-using namespace FullSystemReplayV1;
-using namespace MockVenueV1;
+using namespace Replay;
+using namespace MockVenue;
 
 namespace {
 
@@ -130,9 +130,9 @@ int main()
     PortfolioRiskEngine risk_engine(
         std::move(risk_configs));
 
-    NotionalOrderPlannerEngine planner;
+    NotionalOrderPlanner planner;
 
-    MockChaosConfigV1 chaos;
+    MockChaosConfig chaos;
     chaos.submit_limit = 100U;
     chaos.cancel_limit = 100U;
     chaos.modify_limit = 100U;
@@ -140,7 +140,7 @@ int main()
     chaos.reconcile_limit = 100U;
     chaos.stream_read_limit = 1000U;
 
-    MockExchangeAdapterV1 adapter(
+    MockExchange adapter(
         dir,
         chaos);
 
@@ -158,7 +158,7 @@ int main()
             VenueContracts::V1::Capability::UserStream
         }));
 
-    FullSystemReplayRuntimeV1 replay(
+    ReplayRuntime replay(
         strategy_engine,
         risk_engine,
         planner,

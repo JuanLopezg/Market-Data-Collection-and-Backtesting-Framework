@@ -15,23 +15,18 @@
 class IndicatorEngine;
 
 
-/**************************************************************************************
- * Type    : Strategy
- * Purpose : Abstract base class for strategy/opinion logic
- *
- * A Strategy reads market data and indicators and updates its SignalState.
- * It must not decide position quantity, create orders, process fills or calculate PnL.
- **************************************************************************************/
+// Abstract base class for strategy/opinion logic
+//
+// A Strategy reads market data and indicators and updates its SignalState.
+// It must not decide position quantity, create orders, process fills or calculate PnL.
 class Strategy {
 public:
     virtual ~Strategy() = default;
 
-    /**************************************************************************************
-     * Purpose : Update this strategy's current signals for one timestamp
-     *
-     * Signals are persistent. A strategy only changes a coin when its own rules say the
-     * desired exposure has changed; otherwise the existing SignalState remains unchanged.
-     **************************************************************************************/
+    // Update this strategy's current signals for one timestamp
+    //
+    // Signals are persistent. A strategy only changes a coin when its own rules say the
+    // desired exposure has changed; otherwise the existing SignalState remains unchanged.
     virtual void updateSignals(
         const MarketData& marketData,
         Timestamp ts,
@@ -39,16 +34,14 @@ public:
         const IndicatorEngine& indicators
     ) const = 0;
 
-    /**************************************************************************************
-     * Purpose : Return indicators required by this strategy
-     *
-     * Default implementation returns indicators required by:
-     *   - market filters
-     *   - universe selector
-     *   - ranker
-     *
-     * Concrete strategies should override this and append their own indicators.
-     **************************************************************************************/
+    // Return indicators required by this strategy
+    //
+    // Default implementation returns indicators required by:
+    // - market filters
+    // - universe selector
+    // - ranker
+    //
+    // Concrete strategies should override this and append their own indicators.
     virtual std::vector<IndicatorSpec> requiredIndicators() const;
 
     const std::string& name() const
@@ -57,9 +50,7 @@ public:
     }
 
 protected:
-    /**************************************************************************************
-     * Purpose : Construct a strategy with shared signal-generation configuration
-     **************************************************************************************/
+    // Construct a strategy with shared signal-generation configuration
     Strategy(
         std::string name,
         unsigned int maxActiveSignals,
@@ -69,10 +60,8 @@ protected:
         std::vector<std::unique_ptr<MarketFilter>> marketFilters = {}
     );
 
-    /**************************************************************************************
-     * Purpose : Check whether all strategy-level market filters pass
-     * Note    : Market filters should block new signals, not force existing signals to exit
-     **************************************************************************************/
+    // Check whether all strategy-level market filters pass
+    // Note    : Market filters should block new signals, not force existing signals to exit
     bool marketFiltersPass(
         const MarketData& marketData,
         Timestamp ts,

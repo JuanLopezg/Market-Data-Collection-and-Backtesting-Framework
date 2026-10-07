@@ -1,0 +1,107 @@
+#pragma once
+
+#include <stdexcept>
+
+#include "data_types.h"
+#include "decision_batch.h"
+#include "portfolio.h"
+#include "position_state.h"
+#include "price_snapshot.h"
+#include "rebalance_plan.h"
+
+// Quantity target for one strategy after sizing/rebalance resolution
+struct StrategyExecutionTarget {
+    StrategyID strategy_id = 0;
+    TargetPositionState positions;
+};
+
+// Resolve one strategy's decision intent into a monetary target portfolio
+//
+// Rules:
+// HOLD:
+// Preserve the already-filled virtual quantity. Its monetary exposure is simply
+// quantity * current execution reference price.
+//
+// FLAT:
+// Desired monetary exposure becomes 0.
+//
+// TARGET_WEIGHT:
+// Desired monetary exposure becomes targetWeight * referenceCapital.
+//
+// This does not create orders and does not mutate VirtualPositionState.
+class StrategyTargetResolver {
+public:
+    TargetPortfolio resolve(
+        const StrategyDecisionIntent& intent,
+        const VirtualPositionState& currentPositions,
+        const ExecutionReferencePrices& prices
+    ) const
+    {
+        TargetPortfolio target;
+
+        // Start from current filled quantities so missing decisions naturally mean HOLD.
+        for (const auto& [coin, quantity] : currentPositions.values()) {
+            if (!prices.contains(coin))
+                throw std::runtime_error("Missing execution reference price for held asset");
+
+            target.set(coin, quantity * prices.get(coin));
+        }
+
+        // Explicit decisions override the held exposure.
+        for (const auto& [coin, decision] : intent.decisions) {
+            switch (decision.action) {
+                case RebalanceAction::Hold:
+                    break;
+
+                case RebalanceAction::Flat:
+                    target.set(coin, 0.0);
+                    break;
+
+                case RebalanceAction::TargetWeight:
+                    target.set(coin, decision.target_weight * intent.reference_capital);
+                    break;
+            }
+        }
+
+        return target;
+    }
+
+    // Compatibility overload retained for direct callers while runtime migrates to DTOs.
+    TargetPortfolio resolve(
+        const RebalancePlan& plan,
+        const VirtualPositionState& currentPositions,
+        const ExecutionReferencePrices& prices
+    ) const
+    {
+        StrategyDecisionIntent intent;
+        intent.decision_timestamp = plan.timestamp();
+        intent.reference_capital = plan.referenceCapital();
+        intent.decisions = plan.values();
+        return resolve(intent, currentPositions, prices);
+    }
+};
+
+// Convert a monetary target portfolio into asset quantities before order planning.
+// The caller may supply one strategy's target; this conversion does not aggregate strategies.
+//
+// The reference price is only used to choose an order quantity. The final filled
+// quantity/value remains whatever the exchange actually executes.
+class QuantityTargetResolver {
+public:
+    TargetPositionState resolve(
+        const TargetPortfolio& accountTarget,
+        const ExecutionReferencePrices& prices
+    ) const
+    {
+        TargetPositionState targetPositions;
+
+        for (const auto& [coin, exposure] : accountTarget.values()) {
+            if (!prices.contains(coin))
+                throw std::runtime_error("Missing execution reference price for target asset");
+
+            targetPositions.set(coin, exposure / prices.get(coin));
+        }
+
+        return targetPositions;
+    }
+};

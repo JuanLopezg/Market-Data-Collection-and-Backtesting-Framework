@@ -1,17 +1,8 @@
-/*
- * binance_simulator_main.cpp
- *
- * Purpose: Starts the local Binance-compatible HTTP simulator backed by historical CSV data.
- *
- * Read this file from top to bottom:
- *   1. Parse command-line options.
- *   2. Load historical candles into HistoricalMarketData.
- *   3. Start BinanceHttpServer with a fixed simulated UTC clock.
- *
- * This file contains the executable entrypoint and service-level orchestration.
- * Keep reusable domain calculations in focused components; keep startup,
- * message flow, persistence boundaries, logging, and shutdown visible here.
- */
+// Starts the local Binance-compatible HTTP simulator backed by historical CSV data.
+//
+// 1. Parse command-line options.
+// 2. Load historical candles into HistoricalMarketData.
+// 3. Start BinanceHttpServer with a fixed simulated UTC clock.
 
 #include "binance_http_server.h"
 #include "historical_market_data.h"
@@ -28,9 +19,7 @@
 namespace po = boost::program_options;
 
 
-// ============================================================================
-// Internal helpers and service implementation
-// ============================================================================
+// Internal helpers and service implementation.
 
 namespace {
 
@@ -58,9 +47,7 @@ std::chrono::system_clock::time_point parseClockDate(const std::string& value)
 }
 
 
-// ============================================================================
-// Process entrypoint
-// ============================================================================
+// Process entrypoint.
 
 int main(int argc, char** argv)
 {

@@ -21,18 +21,18 @@
 
 #include "entry_exit_only_rebalance_policy.h"
 #include "equal_weight_sizer.h"
-#include "full_system_replay_runtime_v1.h"
+#include "replay_runtime.h"
 #include "indicator_ranker.h"
 #include "liquidity_universe.h"
-#include "manual_control_mock_pipeline_v1.h"
-#include "mock_accounting_fixed_point_v1.h"
-#include "pureRSI.h"
+#include "manual_trading.h"
+#include "mock/decimal.h"
+#include "validated/pure_rsi.h"
 #include "risk_constraints.h"
 #include "time_handler.h"
 
-using namespace FullSystemReplayV1;
-using namespace MockVenueV1;
-using namespace ManualControlV1;
+using namespace Replay;
+using namespace MockVenue;
+using namespace ManualControl;
 using namespace VenueContracts::V1;
 
 namespace {
@@ -229,13 +229,13 @@ std::string jsonEscape(const std::string& input)
     return out;
 }
 
-std::string reconState(ReconciliationStateV1 state)
+std::string reconState(ReconciliationState state)
 {
-    switch(state){case ReconciliationStateV1::Clean:return "CLEAN";case ReconciliationStateV1::Blocked:return "BLOCKED";case ReconciliationStateV1::Pending:return "PENDING";}
+    switch(state){case ReconciliationState::Clean:return "CLEAN";case ReconciliationState::Blocked:return "BLOCKED";case ReconciliationState::Pending:return "PENDING";}
     return "PENDING";
 }
 
-std::string issueKind(ReconciliationIssueKindV1 kind)
+std::string issueKind(ReconciliationIssueKind kind)
 {
     return std::to_string(static_cast<int>(kind));
 }
@@ -245,9 +245,9 @@ std::string accountingType(AccountingEventType type)
     return VenueContracts::V1::toString(type);
 }
 
-std::string ledgerKind(LedgerEntryKindV1 kind)
+std::string ledgerKind(LedgerEntryKind kind)
 {
-    switch(kind){case LedgerEntryKindV1::Fill:return "FILL";case LedgerEntryKindV1::TradingFee:return "TRADING_FEE";case LedgerEntryKindV1::Rebate:return "REBATE";case LedgerEntryKindV1::FundingPayment:return "FUNDING_PAYMENT";}
+    switch(kind){case LedgerEntryKind::Fill:return "FILL";case LedgerEntryKind::TradingFee:return "TRADING_FEE";case LedgerEntryKind::Rebate:return "REBATE";case LedgerEntryKind::FundingPayment:return "FUNDING_PAYMENT";}
     return "UNKNOWN";
 }
 
@@ -289,11 +289,11 @@ double quantityUnitsToDouble(const std::string& asset,std::int64_t units)
     return static_cast<double>(static_cast<long double>(units)/factor);
 }
 
-double moneyUnitsToDouble(std::int64_t units){return signedScaledToDouble(units,kMockMoneyScaleV1);}
-double moneyUnitsToDoubleU(std::uint64_t units){return static_cast<double>(units)/static_cast<double>(kMockMoneyFactorV1);}
+double moneyUnitsToDouble(std::int64_t units){return signedScaledToDouble(units,kMockMoneyScale);}
+double moneyUnitsToDoubleU(std::uint64_t units){return static_cast<double>(units)/static_cast<double>(kMockMoneyFactor);}
 
 std::string buildStateJson(
-    MockExchangeAdapterV1& adapter,
+    MockExchange& adapter,
     const std::string& phase,
     const std::string& date,
     Timestamp ts,
@@ -309,7 +309,7 @@ std::string buildStateJson(
 {
     const auto report=adapter.reconcile(ts);
     const auto account=adapter.chaos().runtime().account().accountSnapshot(ts);
-    MockReconciliationLedgerParityV1 ledger_builder;
+    MockReconciliation ledger_builder;
     const auto local=ledger_builder.buildLocalExpected(adapter.chaos().runtime().stream());
     const auto& orders=adapter.chaos().runtime().lifecycle().orders();
     const auto& stream=adapter.chaos().runtime().stream();
@@ -345,7 +345,7 @@ std::string buildStateJson(
     out<<"],\n\"equityHistory\":[";
     for(std::size_t i=0;i<equity_history.size();++i){if(i)out<<',';out<<"{\"label\":\""<<jsonEscape(equity_history[i].label)<<"\",\"equity\":"<<equity_history[i].equity<<"}";}
     out<<"],\n\"ledger\":{\"valid\":"<<(local.ledger.valid?"true":"false")<<",\"error\":\""<<jsonEscape(local.ledger.error)<<"\",\"headHash\":\""<<jsonEscape(local.ledger.head_hash)<<"\",\"entries\":[";
-    for(std::size_t i=0;i<local.ledger.entries.size();++i){if(i)out<<',';const auto& e=local.ledger.entries[i];std::string side="";if(e.kind==LedgerEntryKindV1::Fill)side=e.position_delta_units>=0?"BUY":"SELL";out<<"{\"sequence\":"<<e.stream_sequence<<",\"kind\":\""<<ledgerKind(e.kind)<<"\",\"entryId\":\""<<jsonEscape(e.entry_id)<<"\",\"eventTime\":"<<e.event_time<<",\"asset\":\""<<jsonEscape(e.asset)<<"\",\"orderId\":\""<<e.local_order_id<<"\",\"strategyId\":"<<e.strategy_id<<",\"nativeFillId\":\""<<jsonEscape(e.native_fill_id)<<"\",\"side\":\""<<side<<"\",\"positionDelta\":"<<quantityUnitsToDouble(e.asset,e.position_delta_units)<<",\"cashDelta\":"<<moneyUnitsToDouble(e.cash_delta_units)<<",\"realizedPnl\":"<<moneyUnitsToDouble(e.realized_pnl_units)<<",\"grossNotional\":"<<moneyUnitsToDoubleU(e.gross_notional_units)<<",\"entryHash\":\""<<jsonEscape(e.entry_hash)<<"\"}";}
+    for(std::size_t i=0;i<local.ledger.entries.size();++i){if(i)out<<',';const auto& e=local.ledger.entries[i];std::string side="";if(e.kind==LedgerEntryKind::Fill)side=e.position_delta_units>=0?"BUY":"SELL";out<<"{\"sequence\":"<<e.stream_sequence<<",\"kind\":\""<<ledgerKind(e.kind)<<"\",\"entryId\":\""<<jsonEscape(e.entry_id)<<"\",\"eventTime\":"<<e.event_time<<",\"asset\":\""<<jsonEscape(e.asset)<<"\",\"orderId\":\""<<e.local_order_id<<"\",\"strategyId\":"<<e.strategy_id<<",\"nativeFillId\":\""<<jsonEscape(e.native_fill_id)<<"\",\"side\":\""<<side<<"\",\"positionDelta\":"<<quantityUnitsToDouble(e.asset,e.position_delta_units)<<",\"cashDelta\":"<<moneyUnitsToDouble(e.cash_delta_units)<<",\"realizedPnl\":"<<moneyUnitsToDouble(e.realized_pnl_units)<<",\"grossNotional\":"<<moneyUnitsToDoubleU(e.gross_notional_units)<<",\"entryHash\":\""<<jsonEscape(e.entry_hash)<<"\"}";}
     out<<"]},\n";
     out<<"\"routableAssets\":[";for(std::size_t i=0;i<sorted_market.size();++i){if(i)out<<',';out<<"\""<<jsonEscape(sorted_market[i].coin)<<"\"";}out<<"],\n";
     out<<"\"manual\":{\"ready\":"<<(manual.ready?"true":"false")<<",\"blocker\":\""<<jsonEscape(manual.blocker)<<"\",\"decisionTimestamp\":"<<manual.decision_timestamp<<",\"executionTimestamp\":"<<manual.execution_timestamp<<",\"lastCorrelationId\":\""<<jsonEscape(manual.last_correlation_id)<<"\",\"lastStatus\":\""<<jsonEscape(manual.last_status)<<"\",\"lastDetail\":\""<<jsonEscape(manual.last_detail)<<"\"},\n";
@@ -354,7 +354,7 @@ std::string buildStateJson(
     return out.str();
 }
 
-void emitState(MockExchangeAdapterV1& adapter,const Args& args,const std::string& phase,const std::string& date,Timestamp ts,int day_index,int day_count,int rows_processed,const std::vector<MarketBarSnapshot>& market,std::vector<EquityPoint>& history,const ManualDisplay& manual,std::uint64_t& generation,const std::string& step57_fp,bool append_equity)
+void emitState(MockExchange& adapter,const Args& args,const std::string& phase,const std::string& date,Timestamp ts,int day_index,int day_count,int rows_processed,const std::vector<MarketBarSnapshot>& market,std::vector<EquityPoint>& history,const ManualDisplay& manual,std::uint64_t& generation,const std::string& step57_fp,bool append_equity)
 {
     ++generation;
     if(append_equity){const auto account=adapter.chaos().runtime().account().accountSnapshot(ts);history.push_back({date,account.equity});if(history.size()>80U)history.erase(history.begin());}
@@ -363,9 +363,9 @@ void emitState(MockExchangeAdapterV1& adapter,const Args& args,const std::string
     if(args.ui_delay_ms>0)std::this_thread::sleep_for(std::chrono::milliseconds(args.ui_delay_ms));
 }
 
-std::string manualStatus(ManualRouteStatusV1 status)
+std::string manualStatus(ManualRouteStatus status)
 {
-    switch(status){case ManualRouteStatusV1::Noop:return "NOOP";case ManualRouteStatusV1::Submitted:return "SUBMITTED";case ManualRouteStatusV1::RiskRejected:return "RISK_REJECTED";case ManualRouteStatusV1::ReconciliationBlocked:return "RECONCILIATION_BLOCKED";case ManualRouteStatusV1::VenueRejected:return "VENUE_REJECTED";case ManualRouteStatusV1::AmbiguousOrPending:return "AMBIGUOUS_OR_PENDING";}
+    switch(status){case ManualRouteStatus::Noop:return "NOOP";case ManualRouteStatus::Submitted:return "SUBMITTED";case ManualRouteStatus::RiskRejected:return "RISK_REJECTED";case ManualRouteStatus::ReconciliationBlocked:return "RECONCILIATION_BLOCKED";case ManualRouteStatus::VenueRejected:return "VENUE_REJECTED";case ManualRouteStatus::AmbiguousOrPending:return "AMBIGUOUS_OR_PENDING";}
     return "UNKNOWN";
 }
 
@@ -423,10 +423,10 @@ int main(int argc,char** argv)
         std::error_code ignored;std::filesystem::remove_all(args.durable,ignored);std::filesystem::create_directories(args.durable);
         for(const auto& e:std::filesystem::directory_iterator(args.state_dir/"requests"))if(e.is_regular_file())std::filesystem::remove(e.path(),ignored);
 
-        StrategySignalEngine strategy=makeStrategyEngine();PortfolioRiskEngine risk=makeRiskEngine();NotionalOrderPlannerEngine planner;
-        MockChaosConfigV1 chaos;chaos.auto_submit_faults=false;chaos.submit_limit=100000U;chaos.cancel_limit=100000U;chaos.modify_limit=100000U;chaos.market_source_limit=1000000U;chaos.reconcile_limit=100000U;chaos.stream_read_limit=1000000U;
-        MockExchangeAdapterV1 adapter(args.durable,chaos);
-        FullSystemReplayRuntimeV1 replay(strategy,risk,planner,{1U},adapter);
+        StrategySignalEngine strategy=makeStrategyEngine();PortfolioRiskEngine risk=makeRiskEngine();NotionalOrderPlanner planner;
+        MockChaosConfig chaos;chaos.auto_submit_faults=false;chaos.submit_limit=100000U;chaos.cancel_limit=100000U;chaos.modify_limit=100000U;chaos.market_source_limit=1000000U;chaos.reconcile_limit=100000U;chaos.stream_read_limit=1000000U;
+        MockExchange adapter(args.durable,chaos);
+        ReplayRuntime replay(strategy,risk,planner,{1U},adapter);
 
         const auto first=days.begin()->second.open_time;const auto real_reference=TimeHandler::Clock::now();const auto bias=first-real_reference;TimeHandler release_clock(args.speed,bias,real_reference);
         std::vector<EquityPoint> history;std::uint64_t generation=0U;int day_index=0;int rows_processed=0;ManualDisplay manual;
@@ -452,7 +452,7 @@ int main(int argc,char** argv)
 
         // Historical Strategy runtime is complete. The event handler may now be handed
         // to the already-validated Step57 manual pipeline without two owners competing.
-        ManualControlMockPipelineV1 manual_pipeline(adapter);
+        ManualTrading manual_pipeline(adapter);
         const auto closes=lastClosePrices(last);const auto opens=closes;
         const auto request_dir=args.state_dir/"requests";const auto processed_dir=args.state_dir/"processed";
         const auto idle_start=std::chrono::steady_clock::now();
@@ -467,11 +467,11 @@ int main(int argc,char** argv)
             if(req.reference_generation!=generation||req.decision_timestamp!=manual.decision_timestamp||req.execution_timestamp!=manual.execution_timestamp){
                 manual.last_status="STALE_REJECTED";manual.last_detail="request generation/timestamps no longer match current MANUAL_READY snapshot";
             } else {
-                ManualTargetIntentV1 intent;intent.request_id=req.request_id;intent.correlation_id=req.correlation_id;intent.actor=req.actor;intent.request_hash=req.request_hash;intent.decision_timestamp=req.decision_timestamp;intent.execution_timestamp=req.execution_timestamp;intent.asset_weights=req.targets;intent.cash_weight=req.cash_weight;
+                ManualTargetIntent intent;intent.request_id=req.request_id;intent.correlation_id=req.correlation_id;intent.actor=req.actor;intent.request_hash=req.request_hash;intent.decision_timestamp=req.decision_timestamp;intent.execution_timestamp=req.execution_timestamp;intent.asset_weights=req.targets;intent.cash_weight=req.cash_weight;
                 const auto result=manual_pipeline.route(intent,closes,opens);manual.last_status=manualStatus(result.status);manual.last_detail=result.reason;
-                if(result.status==ManualRouteStatusV1::Submitted){
+                if(result.status==ManualRouteStatus::Submitted){
                     const auto bars=flatManualBars(last,req.targets);const Timestamp fill_ts=req.execution_timestamp+1U;
-                    for(const auto& b:bars){MarketBarObservationV1 obs;obs.canonical_asset=b.coin;obs.event_time=fill_ts;obs.bar=b.bar;const auto source=manual_pipeline.processMarketBar(obs);if(source.status!=ChaosStatusV1::Delivered&&source.status!=ChaosStatusV1::DuplicateIgnored)throw std::runtime_error("manual fill bar rejected");}
+                    for(const auto& b:bars){MarketBarObservation obs;obs.canonical_asset=b.coin;obs.event_time=fill_ts;obs.bar=b.bar;const auto source=manual_pipeline.processMarketBar(obs);if(source.status!=ChaosStatus::Delivered&&source.status!=ChaosStatus::DuplicateIgnored)throw std::runtime_error("manual fill bar rejected");}
                     adapter.reconcile(fill_ts);manual.last_detail += "; deterministic MOCK bar processed and reconciliation refreshed";
                 }
             }

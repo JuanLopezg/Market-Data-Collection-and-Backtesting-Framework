@@ -1,9 +1,5 @@
-/*
- * File purpose: Defines the in-memory historical candle store and simulated clock used by the Binance simulator.
- *
- * Keep this file focused on this responsibility. Trading decisions belong in
- * their domain component; process orchestration belongs in the service application.
- */
+// Defines the in-memory historical candle store and simulated clock used by the Binance
+// simulator.
 
 #pragma once
 

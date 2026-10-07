@@ -6,19 +6,16 @@
 #include "rebalance_policy.h"
 
 
-/**************************************************************************************
- * Type    : ThresholdRebalancePolicy
- * Purpose : Rebalances when current weight drifts far enough from desired weight
- *
- * threshold is an absolute weight difference. Example: 0.02 means two percentage points.
- * Entries, exits and side reversals always trigger regardless of the threshold.
- *
- * The current weight is derived from the already-filled virtual quantity:
- *   currentWeight = currentQuantity * currentPrice / strategyCapital
- *
- * This policy does NOT convert the desired weight into quantity. That conversion belongs
- * to execution so the configured same-close/next-open convention can determine price.
- **************************************************************************************/
+// Rebalances when current weight drifts far enough from desired weight
+//
+// threshold is an absolute weight difference. Example: 0.02 means two percentage points.
+// Entries, exits and side reversals always trigger regardless of the threshold.
+//
+// The current weight is derived from the already-filled virtual quantity:
+// currentWeight = currentQuantity * currentPrice / strategyCapital
+//
+// This policy does NOT convert the desired weight into quantity. That conversion belongs
+// to execution so the configured same-close/next-open convention can determine price.
 class ThresholdRebalancePolicy final : public RebalancePolicy {
 private:
     double threshold_ = 0.0;

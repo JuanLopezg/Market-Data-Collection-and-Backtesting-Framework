@@ -11,17 +11,14 @@
 #include "covariance_estimator.h"
 
 
-/**************************************************************************************
- * Type    : SampleCovarianceEstimator
- * Purpose : Estimates annualized covariance from rolling close-to-close simple returns
- *
- * The estimator uses the most recent lookbackReturns valid return observations ending
- * at or before timestamp. A return observation is used only when every requested coin
- * has a finite, positive close on both consecutive market timestamps.
- *
- * periodsPerYear annualizes the per-bar covariance. For daily crypto data this will
- * normally be 365. The value is explicit so the risk code is not tied to one timeframe.
- **************************************************************************************/
+// Estimates annualized covariance from rolling close-to-close simple returns
+//
+// The estimator uses the most recent lookbackReturns valid return observations ending
+// at or before timestamp. A return observation is used only when every requested coin
+// has a finite, positive close on both consecutive market timestamps.
+//
+// periodsPerYear annualizes the per-bar covariance. For daily crypto data this will
+// normally be 365. The value is explicit so the risk code is not tied to one timeframe.
 class SampleCovarianceEstimator final : public CovarianceEstimator {
 private:
     std::size_t lookbackReturns_ = 0;
@@ -53,7 +50,7 @@ public:
         if (std::adjacent_find(orderedCoins.begin(), orderedCoins.end()) != orderedCoins.end())
             throw std::invalid_argument("Covariance request contains duplicate coins");
 
-        auto currentIt = marketData.upper_bound(timestamp);
+        auto currentIt = marketData.upper_bound(timestamp); // The preceding entry is the latest allowed observation.
         if (currentIt == marketData.begin())
             return std::nullopt;
 
@@ -91,6 +88,8 @@ public:
                 observation.push_back(currentClose / previousClose - 1.0);
             }
 
+            // Keep only complete cross-asset observations; each covariance entry must
+            // use the same dates rather than a different pairwise sample.
             if (valid)
                 returns.push_back(std::move(observation));
 
@@ -124,7 +123,7 @@ public:
                 for (const auto& observation : returns)
                     sum += (observation[i] - means[i]) * (observation[j] - means[j]);
 
-                const double value = (sum / (sampleCount - 1.0)) * periodsPerYear_;
+                const double value = (sum / (sampleCount - 1.0)) * periodsPerYear_; // Sample covariance, annualized.
                 covariance[i][j] = value;
                 covariance[j][i] = value;
             }

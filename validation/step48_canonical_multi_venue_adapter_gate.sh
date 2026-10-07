@@ -37,12 +37,12 @@ for file in \
   "$ART/STEP_48_CANONICAL_MULTI_VENUE_ADAPTER_CONTRACT.md" \
   "$ART/canonical_venue_adapter_contract_v1.json" \
   "$ART/SHA256SUMS" \
-  "$ROOT/lib/src/contracts/canonical_venue_identity_v1.h" \
-  "$ROOT/lib/src/contracts/canonical_venue_capabilities_v1.h" \
-  "$ROOT/lib/src/contracts/canonical_venue_errors_v1.h" \
-  "$ROOT/lib/src/contracts/canonical_venue_orders_v1.h" \
-  "$ROOT/lib/src/contracts/canonical_venue_account_v1.h" \
-  "$ROOT/lib/src/contracts/canonical_venue_events_v1.h" \
+  "$ROOT/lib/src/contracts/venue_identity.h" \
+  "$ROOT/lib/src/contracts/venue_capabilities.h" \
+  "$ROOT/lib/src/contracts/venue_errors.h" \
+  "$ROOT/lib/src/contracts/venue_orders.h" \
+  "$ROOT/lib/src/contracts/venue_account.h" \
+  "$ROOT/lib/src/contracts/venue_events.h" \
   "$ROOT/lib/src/exchange/canonical_venue_adapter.h" \
   "$ROOT/validation/step48_canonical_multi_venue_adapter_test.cpp"; do
   [[ -f "$file" ]] || fail "missing ${file#$ROOT/}"
@@ -92,12 +92,12 @@ pass 'CanonicalVenueAdapter and DTO/event vocabulary compile under C++17'
 printf '%s\n' '[5/8] v1 canonical headers contain no concrete venue/protocol/auth leakage'
 if grep -Ein \
   'hyperliquid|binance|coinbase|kraken|bybit|okx|(^|[^[:alnum:]_])rest([^[:alnum:]_]|$)|websocket|/info|/exchange|private[_ -]?key|seed phrase|mnemonic|signing|nonce|wallet' \
-  "$ROOT/lib/src/contracts/canonical_venue_identity_v1.h" \
-  "$ROOT/lib/src/contracts/canonical_venue_capabilities_v1.h" \
-  "$ROOT/lib/src/contracts/canonical_venue_errors_v1.h" \
-  "$ROOT/lib/src/contracts/canonical_venue_orders_v1.h" \
-  "$ROOT/lib/src/contracts/canonical_venue_account_v1.h" \
-  "$ROOT/lib/src/contracts/canonical_venue_events_v1.h" \
+  "$ROOT/lib/src/contracts/venue_identity.h" \
+  "$ROOT/lib/src/contracts/venue_capabilities.h" \
+  "$ROOT/lib/src/contracts/venue_errors.h" \
+  "$ROOT/lib/src/contracts/venue_orders.h" \
+  "$ROOT/lib/src/contracts/venue_account.h" \
+  "$ROOT/lib/src/contracts/venue_events.h" \
   "$ROOT/lib/src/exchange/canonical_venue_adapter.h" >"$TMP/leakage"; then
   cat "$TMP/leakage" >&2
   fail 'concrete venue/protocol/private-auth terminology leaked into canonical v1 code'
@@ -115,9 +115,9 @@ assert d['resultEnvelope']['operationPrevalidationFailureFabricatesItemResults']
 assert d['accounting']['amount']=='DECIMAL_STRING'
 assert 'UNKNOWN_REQUIRES_RECONCILIATION' in d['orderLifecycle']
 PY
-grep -Fq 'VenueLimit' "$ROOT/lib/src/contracts/canonical_venue_errors_v1.h" || fail 'VENUE_LIMIT missing'
-grep -Fq 'UnknownRequiresReconciliation' "$ROOT/lib/src/contracts/canonical_venue_orders_v1.h" || fail 'unknown/reconcile lifecycle missing'
-grep -Fq 'FundingPayment' "$ROOT/lib/src/contracts/canonical_venue_account_v1.h" || fail 'funding accounting missing'
+grep -Fq 'VenueLimit' "$ROOT/lib/src/contracts/venue_errors.h" || fail 'VENUE_LIMIT missing'
+grep -Fq 'UnknownRequiresReconciliation' "$ROOT/lib/src/contracts/venue_orders.h" || fail 'unknown/reconcile lifecycle missing'
+grep -Fq 'FundingPayment' "$ROOT/lib/src/contracts/venue_account.h" || fail 'funding accounting missing'
 pass 'Step47C lifecycle/idempotency/batch/error/accounting/product decisions are represented'
 
 printf '%s\n' '[7/8] Existing gateway/runtime path is not silently rewired'

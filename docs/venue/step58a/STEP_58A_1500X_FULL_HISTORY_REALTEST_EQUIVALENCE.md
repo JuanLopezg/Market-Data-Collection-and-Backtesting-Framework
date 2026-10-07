@@ -15,7 +15,7 @@ current replay.
 `realtest-parity` keeps the production-style full-system path while reproducing the
 historical research execution semantics needed for an apples-to-apples comparison:
 
-`PureRSI -> StrategySignalEngine -> PortfolioRiskEngine -> NotionalOrderPlannerEngine -> CanonicalVenueAdapter -> MOCK`
+`PureRSI -> StrategySignalEngine -> PortfolioRiskEngine -> NotionalOrderPlanner -> CanonicalVenueAdapter -> MOCK`
 
 The contract is:
 

@@ -8,50 +8,40 @@
 #include "indicator_spec.h"
 
 
-/**************************************************************************************
- * Type    : IndicatorEngine
- * Purpose : Caches parameterized indicator values
- *
- * The engine allows strategies, rankers, and universe selectors to request values like:
- *
- *   RSI(Close, 14) for BTC at timestamp X
- *   ATR(14)        for ETH at timestamp Y
- *   ROC(Close, 5)  for SOL at timestamp Z
- *
- * Indicator values should be precomputed before the backtest loop starts.
- *
- * Important design:
- *   IndicatorEngine does NOT permanently store raw OHLCVData.
- *   It only receives raw data during precompute(), then stores:
- *     - timestamp -> vector index maps
- *     - computed indicator values
- **************************************************************************************/
+// Caches parameterized indicator values
+//
+// The engine allows strategies, rankers, and universe selectors to request values like:
+//
+// RSI(Close, 14) for BTC at timestamp X
+// ATR(14)        for ETH at timestamp Y
+// ROC(Close, 5)  for SOL at timestamp Z
+//
+// Indicator values should be precomputed before the backtest loop starts.
+//
+// Important design:
+// IndicatorEngine does NOT permanently store raw OHLCVData.
+// It only receives raw data during precompute(), then stores:
+// - timestamp -> vector index maps
+// - computed indicator values
 class IndicatorEngine {
 public:
     IndicatorEngine() = default;
 
-    /**************************************************************************************
-     * Purpose : Precompute all requested indicators for all coins
-     **************************************************************************************/
+    // Precompute all requested indicators for all coins
     void precompute(
         const OHLCVData& rawData,
         const std::vector<IndicatorSpec>& specs
     );
 
-    /**************************************************************************************
-     * Purpose : Return one indicator value for coin + timestamp + spec
-     *
-     * Return : NaN if the value is unavailable, not precomputed, or out of range
-     **************************************************************************************/
+    // Return one indicator value for coin + timestamp + spec
+    //
     double value(
         const Coin& coin,
         Timestamp ts,
         const IndicatorSpec& spec
     ) const;
 
-    /**************************************************************************************
-     * Purpose : Check whether a precomputed value exists for coin + timestamp + spec
-     **************************************************************************************/
+    // Check whether a precomputed value exists for coin + timestamp + spec
     bool has(
         const Coin& coin,
         Timestamp ts,

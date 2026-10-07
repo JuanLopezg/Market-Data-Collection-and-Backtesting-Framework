@@ -4,23 +4,20 @@
 #include <cstddef>
 #include <stdexcept>
 #include <unordered_map>
-
 #include "data_types.h"
 
+// One quantity container; the aliases distinguish requested targets from actually filled strategy positions.
 
 using PositionQuantity = double;
 
 
-/**************************************************************************************
- * Type    : PositionState
- * Purpose : Generic quantity state by asset
- *
- * This representation is intentionally independent of strategy, backtest and live
- * execution. It can be used for actual account positions, strategy attribution or
- * desired account targets.
- *
- * Missing assets are treated as quantity 0.
- **************************************************************************************/
+// Generic quantity state by asset
+//
+// This representation is intentionally independent of strategy, backtest and live
+// execution. It can be used for actual account positions, strategy attribution or
+// desired account targets.
+//
+// Missing assets are treated as quantity 0.
 class PositionState {
 private:
     std::unordered_map<Coin, PositionQuantity> quantities_;
@@ -73,3 +70,25 @@ public:
         quantities_.clear();
     }
 };
+
+// Desired quantity by asset before execution
+//
+// It can represent one strategy target or the final net account target depending on
+// where it is used.
+using TargetPositionState = PositionState;
+
+// Filled quantities attributed internally to one strategy
+//
+// This is strategy-level accounting state, not a separate exchange position. Several
+// strategies may therefore hold opposing virtual quantities while the real account only
+// owns their net quantity.
+//
+// It must be updated from fills/internal allocation, never merely because a strategy
+// requested a new target.
+using VirtualPositionState = PositionState;
+
+// Execution-owned filled quantities exposed read-only to decision logic
+//
+// Decision may inspect this snapshot when applying rebalance policy, but only Execution
+// mutates the authoritative quantities in response to actual Fill events.
+using StrategyPositionSnapshot = std::unordered_map<StrategyID, VirtualPositionState>;

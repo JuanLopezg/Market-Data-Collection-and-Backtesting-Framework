@@ -1,17 +1,8 @@
-/*
- * exchange_gateway_main.cpp
- *
- * Purpose: Bridges northbound trading commands to an exchange backend and republishes exchange events.
- *
- * Read this file from top to bottom:
- *   1. Read runtime/control/backend stream configuration.
- *   2. Subscribe to submit, cancel, snapshot, or dry-run planning messages.
- *   3. Forward commands to the backend adapter and publish normalized order/fill/snapshot events.
- *
- * This file contains the executable entrypoint and service-level orchestration.
- * Keep reusable domain calculations in focused components; keep startup,
- * message flow, persistence boundaries, logging, and shutdown visible here.
- */
+// Bridges northbound trading commands to an exchange backend and republishes exchange events.
+//
+// 1. Read runtime/control/backend stream configuration.
+// 2. Subscribe to submit, cancel, snapshot, or dry-run planning messages.
+// 3. Forward commands to the backend adapter and publish normalized order/fill/snapshot events.
 
 #include <atomic>
 #include <csignal>
@@ -23,21 +14,18 @@
 #include <string>
 #include <utility>
 
-#include "contract_json_codec.h"
+#include "message_json.h"
 #include "exchange_gateway_adapter.h"
 #include "exchange_snapshot_request.h"
-#include "nats_backend_exchange_gateway_adapter.h"
-#include "nats_jetstream_message_bus.h"
+#include "adapters/backend_gateway.h"
+#include "jetstream_bus.h"
 #include "service_logging.h"
 #include "time_handler_factory.h"
 #include "time_utils.h"
-#include "transport_subjects.h"
+#include "message_subjects.h"
 
 
-
-// ============================================================================
-// Internal helpers and service implementation
-// ============================================================================
+// Internal helpers and service implementation.
 
 namespace {
 
@@ -100,10 +88,7 @@ const char* gatewayModeName(GatewayMode mode)
 }
 
 
-
-// ============================================================================
-// Command-line configuration
-// ============================================================================
+// Command-line configuration.
 
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
@@ -164,22 +149,19 @@ Options parseOptions(int argc, char** argv)
 }
 
 
-
-// ============================================================================
-// Service runtime and message-processing loop
-// ============================================================================
+// Service runtime and message-processing loop.
 
 class ExchangeGatewayRuntime {
 private:
     const Options options_;
     TimeHandler time_handler_;
-    NatsJetStreamMessageBus bus_;
-    std::unique_ptr<NatsBackendExchangeGatewayAdapter> adapter_;
+    JetStreamBus bus_;
+    std::unique_ptr<BackendGateway> adapter_;
 
-    DurableMessageBus::SubscriptionID submit_subscription_ = 0;
-    DurableMessageBus::SubscriptionID cancel_subscription_ = 0;
-    DurableMessageBus::SubscriptionID snapshot_request_subscription_ = 0;
-    DurableMessageBus::SubscriptionID notional_plan_subscription_ = 0;
+    MessageBus::SubscriptionID submit_subscription_ = 0;
+    MessageBus::SubscriptionID cancel_subscription_ = 0;
+    MessageBus::SubscriptionID snapshot_request_subscription_ = 0;
+    MessageBus::SubscriptionID notional_plan_subscription_ = 0;
     bool chaos_duplicate_fill_once_ = envFlag("ALGOTRADING_CHAOS_DUPLICATE_FILL_ONCE");
     bool chaos_duplicate_fill_done_ = false;
 
@@ -227,8 +209,8 @@ private:
             "OrderUpdateEvent"
         );
         bus_.publish(
-            TransportSubjects::ORDER_UPDATE,
-            ContractJsonCodec::encode(value),
+            MessageSubjects::ORDER_UPDATE,
+            MessageJson::encode(value),
             value.metadata.message_id
         );
         LG_INFO(
@@ -249,8 +231,8 @@ private:
             "FillEvent"
         );
         bus_.publish(
-            TransportSubjects::FILL,
-            ContractJsonCodec::encode(value),
+            MessageSubjects::FILL,
+            MessageJson::encode(value),
             value.metadata.message_id
         );
         LG_INFO(
@@ -268,8 +250,8 @@ private:
             FillEvent duplicate = value;
             duplicate.metadata.message_id += ":chaos-duplicate-transport";
             bus_.publish(
-                TransportSubjects::FILL,
-                ContractJsonCodec::encode(duplicate),
+                MessageSubjects::FILL,
+                MessageJson::encode(duplicate),
                 duplicate.metadata.message_id
             );
             chaos_duplicate_fill_done_ = true;
@@ -291,8 +273,8 @@ private:
             "ExchangeSnapshotEvent"
         );
         bus_.publish(
-            TransportSubjects::EXCHANGE_SNAPSHOT,
-            ContractJsonCodec::encode(value),
+            MessageSubjects::EXCHANGE_SNAPSHOT,
+            MessageJson::encode(value),
             value.metadata.message_id
         );
         LG_INFO(
@@ -309,7 +291,7 @@ private:
     {
         try {
             const SubmitOrderCommand command =
-                ContractJsonCodec::decodeSubmitOrderCommand(message.payload);
+                MessageJson::decodeSubmitOrderCommand(message.payload);
             validateMetadata(command.metadata);
             if (command.order.order_id == 0)
                 return DurableMessageDisposition::Terminate;
@@ -344,7 +326,7 @@ private:
     {
         try {
             const CancelOrderCommand command =
-                ContractJsonCodec::decodeCancelOrderCommand(message.payload);
+                MessageJson::decodeCancelOrderCommand(message.payload);
             validateMetadata(command.metadata);
             if (command.order_id == 0)
                 return DurableMessageDisposition::Terminate;
@@ -373,7 +355,7 @@ private:
     {
         try {
             const ExchangeSnapshotRequest request =
-                ContractJsonCodec::decodeExchangeSnapshotRequest(message.payload);
+                MessageJson::decodeExchangeSnapshotRequest(message.payload);
             validateMetadata(request.metadata);
             LG_INFO(
                 "service=exchange-gateway event=snapshot_request_forwarding message_id={} correlation_id={}",
@@ -397,7 +379,7 @@ private:
     {
         try {
             const NotionalOrderPlanBatch plan =
-                ContractJsonCodec::decodeNotionalOrderPlanBatch(message.payload);
+                MessageJson::decodeNotionalOrderPlanBatch(message.payload);
 
             validateMetadata(plan.metadata);
 
@@ -489,15 +471,15 @@ public:
         // validation is local through TimeHandler; no shared-clock control plane is used.
         bus_.ensureStream(
             options_.runtime_stream,
-            TransportSubjects::tradingRuntimeSubjects()
+            MessageSubjects::tradingRuntimeSubjects()
         );
         if (options_.mode == GatewayMode::Backend) {
             bus_.ensureStream(
                 options_.control_stream,
-                TransportSubjects::exchangeGatewayControlSubjects()
+                MessageSubjects::exchangeGatewayControlSubjects()
             );
 
-            adapter_ = std::make_unique<NatsBackendExchangeGatewayAdapter>(
+            adapter_ = std::make_unique<BackendGateway>(
                 options_.nats_url, options_.backend_stream
             );
             adapter_->setHandlers({
@@ -510,7 +492,7 @@ public:
                 consumer(
                     options_.runtime_stream,
                     "exchange-gateway-submit",
-                    TransportSubjects::SUBMIT_ORDER
+                    MessageSubjects::SUBMIT_ORDER
                 ),
                 [this](const BusMessage& message) { return onSubmit(message); }
             );
@@ -519,7 +501,7 @@ public:
                 consumer(
                     options_.runtime_stream,
                     "exchange-gateway-cancel",
-                    TransportSubjects::CANCEL_ORDER
+                    MessageSubjects::CANCEL_ORDER
                 ),
                 [this](const BusMessage& message) { return onCancel(message); }
             );
@@ -528,7 +510,7 @@ public:
                 consumer(
                     options_.control_stream,
                     "exchange-gateway-snapshot-request",
-                    TransportSubjects::EXCHANGE_SNAPSHOT_REQUEST
+                    MessageSubjects::EXCHANGE_SNAPSHOT_REQUEST
                 ),
                 [this](const BusMessage& message) {
                     return onSnapshotRequest(message);
@@ -542,7 +524,7 @@ public:
                 consumer(
                     options_.runtime_stream,
                     "exchange-gateway-hyperliquid-dry-run-plan",
-                    TransportSubjects::NOTIONAL_ORDER_PLAN
+                    MessageSubjects::NOTIONAL_ORDER_PLAN
                 ),
                 [this](const BusMessage& message) {
                     return onNotionalPlanDryRun(message);
@@ -615,10 +597,7 @@ public:
 } // namespace
 
 
-
-// ============================================================================
-// Process entrypoint
-// ============================================================================
+// Process entrypoint.
 
 int main(int argc, char** argv)
 {

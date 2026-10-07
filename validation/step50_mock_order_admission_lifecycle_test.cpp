@@ -4,11 +4,11 @@
 #include <variant>
 #include <vector>
 
-#include "mock_order_admission_lifecycle_v1.h"
-#include "mock_venue_catalog_v1.h"
+#include "mock/orders.h"
+#include "mock/catalog.h"
 
 using namespace VenueContracts::V1;
-using namespace MockVenueV1;
+using namespace MockVenue;
 
 namespace {
 
@@ -115,9 +115,9 @@ const OrderUpdate& updateAt(const std::vector<Event>& e, std::size_t i)
 
 int main()
 {
-    MockOrderAdmissionLifecycleV1 engine;
+    MockOrders engine;
 
-    const auto caps = MockOrderAdmissionLifecycleV1::capabilities();
+    const auto caps = MockOrders::capabilities();
     assert(caps.supports(Capability::SubmitOrder));
     assert(caps.supports(Capability::CancelOrder));
     assert(caps.supports(Capability::ModifyOrder));

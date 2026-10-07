@@ -2,13 +2,12 @@
 #include <set>
 #include <string>
 
-#include "mock_venue_catalog_v1.h"
-#include "mock_venue_catalog_version_v1.h"
-#include "mock_venue_rules_v1.h"
+#include "mock/catalog.h"
+#include "mock/rules.h"
 
 int main()
 {
-    using namespace MockVenueV1;
+    using namespace MockVenue;
 
     assert(context().valid());
     assert(context().venue_id == "MOCK");

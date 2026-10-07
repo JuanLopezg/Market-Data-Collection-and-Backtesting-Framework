@@ -18,7 +18,7 @@ require 'LiveExecutionIdentity::notionalOrderPlan' \
   'live_trading/order_planner_service/src/order_planner_service_main.cpp' \
   'OrderPlanner must use shared deterministic plan identity'
 require 'LiveExecutionIdentity::plannedEconomicOrder' \
-  'lib/src/runtime/notional_order_planner_engine.cpp' \
+  'lib/src/execution/planning/notional_order_planner.cpp' \
   'planner engine must assign deterministic per-order economic identity'
 require 'economic_order_id' \
   'lib/src/contracts/notional_order_planning.h' \
@@ -30,10 +30,10 @@ require 'reference_close' \
   'lib/src/contracts/notional_order_planning.h' \
   'planned notional order must carry exact reference_close'
 require 'Planned notional order deterministic identity mismatch' \
-  'lib/src/transport/contract_json_codec.cpp' \
+  'lib/src/transport/message_json.cpp' \
   'decoder must validate deterministic planned-order identity'
 require 'Planned notional order reference close mismatch' \
-  'lib/src/transport/contract_json_codec.cpp' \
+  'lib/src/transport/message_json.cpp' \
   'decoder must validate per-order close against batch close snapshot'
 
 if [[ $fail -ne 0 ]]; then

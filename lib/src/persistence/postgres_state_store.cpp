@@ -1,3 +1,6 @@
+// Store the operational snapshot as JSONB and keep fills in a separate audit table.
+// A transaction commits the optional fill and its resulting snapshot together.
+
 #include "postgres_state_store.h"
 
 #include <array>
@@ -18,6 +21,8 @@ namespace {
 using json = nlohmann::json;
 
 
+// Use enough significant digits for a double to survive a text/database round trip.
+// Default stream precision would change quantities or cash on restart.
 std::string encodeDoubleForPostgres(double value)
 {
     std::ostringstream stream;
@@ -82,39 +87,6 @@ void clear(PGresult* result)
 {
     if (result)
         PQclear(result);
-}
-
-
-json encodeFill(const Fill& fill)
-{
-    return {
-        {"fill_id", fill.fill_id},
-        {"order_id", fill.order_id},
-        {"strategy_id", fill.strategy_id},
-        {"timestamp", fill.timestamp},
-        {"coin", fill.coin},
-        {"side", static_cast<int>(fill.side)},
-        {"quantity", fill.quantity},
-        {"price", fill.price},
-        {"commission", fill.commission}
-    };
-}
-
-
-Fill decodeFill(const json& value)
-{
-    Fill fill;
-    fill.fill_id = value.at("fill_id").get<FillID>();
-    fill.order_id = value.at("order_id").get<OrderID>();
-    fill.strategy_id = value.at("strategy_id").get<StrategyID>();
-    fill.timestamp = value.at("timestamp").get<Timestamp>();
-    fill.coin = value.at("coin").get<Coin>();
-    fill.side = static_cast<OrderSide>(value.at("side").get<int>());
-    fill.quantity = value.at("quantity").get<double>();
-    fill.price = value.at("price").get<double>();
-    fill.commission = value.at("commission").get<double>();
-    fill.validate();
-    return fill;
 }
 
 
@@ -361,6 +333,7 @@ void PostgresStateStore::save(
 }
 
 
+// An absent singleton row means no saved runtime yet, not a zero-valued account.
 std::optional<TradingStateSnapshot> PostgresStateStore::load() const
 {
     PGresult* result = exec(

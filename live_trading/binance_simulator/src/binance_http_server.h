@@ -1,9 +1,5 @@
-/*
- * File purpose: Declares the small HTTP server that emulates the Binance endpoints used by local market-data tests.
- *
- * Keep this file focused on this responsibility. Trading decisions belong in
- * their domain component; process orchestration belongs in the service application.
- */
+// Declares the small HTTP server that emulates the Binance endpoints used by local market-data
+// tests.
 
 #pragma once
 

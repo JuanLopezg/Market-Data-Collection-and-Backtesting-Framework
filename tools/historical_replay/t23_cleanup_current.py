@@ -23,9 +23,9 @@ LEGACY_DIRS = [
     "tools/distributed_compare",
 ]
 EDIT_FILES = [
-    "lib/src/transport/contract_json_codec.h",
-    "lib/src/transport/contract_json_codec.cpp",
-    "lib/src/transport/transport_subjects.h",
+    "lib/src/transport/message_json.h",
+    "lib/src/transport/message_json.cpp",
+    "lib/src/transport/message_subjects.h",
     "live_trading/meson.build",
 ]
 
@@ -189,9 +189,9 @@ def main() -> int:
 
     try:
         transforms = {
-            "lib/src/transport/contract_json_codec.h": patch_codec_h,
-            "lib/src/transport/contract_json_codec.cpp": patch_codec_cpp,
-            "lib/src/transport/transport_subjects.h": patch_subjects,
+            "lib/src/transport/message_json.h": patch_codec_h,
+            "lib/src/transport/message_json.cpp": patch_codec_cpp,
+            "lib/src/transport/message_subjects.h": patch_subjects,
             "live_trading/meson.build": patch_live_meson,
         }
         for rel, fn in transforms.items():

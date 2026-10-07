@@ -1,9 +1,0 @@
-# T13 new historical replay business runtime.
-# T14 will wire these into an isolated Docker Compose topology.
-market-data
-strategy
-portfolio-risk
-execution-state
-order-planner
-exchange-gateway
-simulated-exchange

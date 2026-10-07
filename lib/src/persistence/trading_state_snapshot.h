@@ -5,13 +5,10 @@
 
 #include "data_types.h"
 #include "rebalance_plan.h"
-#include "tracked_order.h"
+#include "execution_order.h"
 
 
-/**************************************************************************************
- * Type    : StrategyStateSnapshot
- * Purpose : Persistable state owned by one StrategyInstance
- **************************************************************************************/
+// Persistable state owned by one StrategyInstance
 struct StrategyStateSnapshot {
     StrategyID strategy_id = 0;
     std::unordered_map<Coin, double> signals;
@@ -20,23 +17,17 @@ struct StrategyStateSnapshot {
 };
 
 
-/**************************************************************************************
- * Type    : PendingPlanSnapshot
- * Purpose : Strategy rebalance plan waiting for a later execution event
- **************************************************************************************/
+// Strategy rebalance plan waiting for a later execution event
 struct PendingPlanSnapshot {
     StrategyID strategy_id = 0;
     RebalancePlan plan{0, 0.0};
 };
 
 
-/**************************************************************************************
- * Type    : TradingStateSnapshot
- * Purpose : Minimal operational state required to resume a TradingEngine safely
- *
- * Analytics are intentionally excluded. Fills are stored as an append-only audit trail
- * and can later rebuild analytics independently from operational recovery.
- **************************************************************************************/
+// Minimal operational state required to resume a TradingEngine safely
+//
+// Analytics are intentionally excluded. Fills are stored as an append-only audit trail
+// and can later rebuild analytics independently from operational recovery.
 struct TradingStateSnapshot {
     static constexpr unsigned int CURRENT_SCHEMA_VERSION = 1;
 

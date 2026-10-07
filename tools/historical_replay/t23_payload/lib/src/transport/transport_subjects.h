@@ -8,7 +8,7 @@
  * Canonical routing subjects. These strings are transport-neutral; a NATS adapter uses
  * them as subjects while tests/in-process adapters use the exact same contract names.
  **************************************************************************************/
-namespace TransportSubjects {
+namespace MessageSubjects {
 inline constexpr const char* MARKET_DATA_RELEASE = "market.release.v1";
 inline constexpr const char* MARKET_DATA_UPDATED = "market.data.updated.v1";
 inline constexpr const char* MARKET_SLICE_CLOSED = "market.slice.closed.v1";

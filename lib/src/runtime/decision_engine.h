@@ -3,16 +3,13 @@
 #include "decision_batch.h"
 #include "indicator_engine.h"
 #include "strategy_instance.h"
-#include "strategy_position_snapshot.h"
+#include "position_state.h"
 
 
-/**************************************************************************************
- * Type    : DecisionEngine
- * Purpose : Own strategy-side decision state and produce transport-independent intent
- *
- * Decision reads execution-owned filled positions but cannot mutate them. Its output is a
- * DecisionBatch containing weights/reference capital, never executable quantities.
- **************************************************************************************/
+// Own strategy-side decision state and produce transport-independent intent
+//
+// Decision reads execution-owned filled positions but cannot mutate them. Its output is a
+// DecisionBatch containing weights/reference capital, never executable quantities.
 class DecisionEngine {
 private:
     StrategyPortfolio& strategies_;

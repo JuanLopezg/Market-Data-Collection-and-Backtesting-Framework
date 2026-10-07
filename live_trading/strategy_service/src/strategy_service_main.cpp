@@ -1,17 +1,9 @@
-/*
- * strategy_service_main.cpp
- *
- * Purpose: Reads committed market data, evaluates configured strategies, and publishes strategy intents.
- *
- * Read this file from top to bottom:
- *   1. Load strategy configuration and recover the latest durable checkpoint.
- *   2. Consume MarketDataUpdated only for completed business dates.
- *   3. Warm/read canonical history, calculate intents, persist the checkpoint, and publish StrategyIntentBatch.
- *
- * This file contains the executable entrypoint and service-level orchestration.
- * Keep reusable domain calculations in focused components; keep startup,
- * message flow, persistence boundaries, logging, and shutdown visible here.
- */
+// Reads committed market data, evaluates configured strategies, and publishes strategy intents.
+//
+// 1. Load strategy configuration and recover the latest durable checkpoint.
+// 2. Consume MarketDataUpdated only for completed business dates.
+// 3. Warm/read canonical history, calculate intents, persist the checkpoint, and publish
+// StrategyIntentBatch.
 
 #include <algorithm>
 #include <atomic>
@@ -38,23 +30,21 @@
 #include <nlohmann/json.hpp>
 
 #include "canonical_market_data_reader.h"
-#include "contract_json_codec.h"
+#include "message_json.h"
 #include "indicator_ranker.h"
 #include "liquidity_universe.h"
-#include "market_data_updated.h"
-#include "nats_jetstream_message_bus.h"
-#include "pureRSI.h"
+#include "market_messages.h"
+#include "jetstream_bus.h"
+#include "validated/pure_rsi.h"
 #include "service_logging.h"
 #include "strategy_signal_engine.h"
 #include "strategy_signal_instance.h"
 #include "time_handler_factory.h"
 #include "time_utils.h"
-#include "transport_subjects.h"
+#include "message_subjects.h"
 
 
-// ============================================================================
-// Internal helpers and service implementation
-// ============================================================================
+// Internal helpers and service implementation.
 
 namespace {
 
@@ -64,9 +54,7 @@ std::atomic<bool> running{true};
 void stopHandler(int) { running.store(false); }
 
 
-// ============================================================================
-// Command-line configuration
-// ============================================================================
+// Command-line configuration.
 
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
@@ -189,22 +177,6 @@ std::optional<Timestamp> configuredBootstrapCompletedUtcDate(const TimeHandlerCo
     return static_cast<Timestamp>(toYYYYMMDD(getPreviousDayDate(referenceUtcDate)));
 }
 
-void interruptibleSleepFor(std::chrono::steady_clock::duration duration)
-{
-    const auto deadline = std::chrono::steady_clock::now() + duration;
-    while (running.load()) {
-        const auto now = std::chrono::steady_clock::now();
-        if (now >= deadline)
-            return;
-        const auto remaining = deadline - now;
-        const auto chunk = std::min(
-            std::chrono::duration_cast<std::chrono::milliseconds>(remaining),
-            std::chrono::milliseconds(100));
-        if (chunk.count() > 0)
-            std::this_thread::sleep_for(chunk);
-    }
-}
-
 // BUSINESS wait: the deadline is evaluated against TimeHandler business time.
 // The short real sleep is only a TECHNICAL polling cadence so shutdown remains responsive.
 void interruptibleBusinessWaitUntil(
@@ -221,9 +193,7 @@ void interruptibleBusinessWaitUntil(
 }
 
 
-// ============================================================================
-// Durable PostgreSQL persistence helpers
-// ============================================================================
+// Durable PostgreSQL persistence helpers.
 
 class PgResult {
 private:
@@ -456,9 +426,7 @@ public:
 };
 
 
-// ============================================================================
-// Strategy configuration parsing and construction
-// ============================================================================
+// Strategy configuration parsing and construction.
 
 IndicatorKind parseIndicatorKind(const std::string& value)
 {
@@ -580,10 +548,7 @@ std::string intentMessageId(Timestamp timestamp)
 }
 
 
-
-// ============================================================================
-// Service runtime and message-processing loop
-// ============================================================================
+// Service runtime and message-processing loop.
 
 class StrategyServiceRuntime {
 private:
@@ -591,12 +556,12 @@ private:
     const TimeHandlerConfig time_config_;
     const TimeHandler time_handler_;
     const std::optional<Timestamp> bootstrap_completed_date_;
-    NatsJetStreamMessageBus bus_;
+    JetStreamBus bus_;
     CanonicalMarketDataReader market_reader_;
     Timestamp durable_checkpoint_timestamp_ = 0;
     std::unique_ptr<StrategyCheckpointStore> checkpoint_store_;
     std::unique_ptr<StrategySignalEngine> engine_;
-    DurableMessageBus::SubscriptionID market_update_subscription_ = 0;
+    MessageBus::SubscriptionID market_update_subscription_ = 0;
 
     void resetRuntimeState()
     {
@@ -616,7 +581,7 @@ private:
             return;
         }
 
-        StrategyIntentBatch intent = ContractJsonCodec::decodeStrategyIntentBatch(row->intent_payload);
+        StrategyIntentBatch intent = MessageJson::decodeStrategyIntentBatch(row->intent_payload);
         if (intent.timestamp != row->timestamp)
             throw std::logic_error("Persisted strategy checkpoint timestamp/intent mismatch");
         engine_->restore(intent);
@@ -676,7 +641,7 @@ private:
     DurableMessageDisposition onMarketDataUpdated(const BusMessage& message)
     {
         try {
-            const MarketDataUpdated update = ContractJsonCodec::decodeMarketDataUpdated(message.payload);
+            const MarketDataUpdated update = MessageJson::decodeMarketDataUpdated(message.payload);
 
             if (update.source != options_.market_data_source || update.timeframe != "1d") {
                 LG_WARN(
@@ -795,7 +760,7 @@ private:
                 const std::optional<StrategyCheckpointStore::Row> persisted = checkpoint_store_->rowFor(target);
                 if (persisted.has_value()) {
                     const MarketDataUpdated persistedUpdate =
-                        ContractJsonCodec::decodeMarketDataUpdated(persisted->update_payload);
+                        MessageJson::decodeMarketDataUpdated(persisted->update_payload);
                     if (!sameLogicalUpdate(persistedUpdate, update)) {
                         LG_ALERT(
                             "service=strategy event=market_update_checkpoint_conflict timestamp={} disposition=terminate",
@@ -893,9 +858,9 @@ private:
 
             // Same crash contract as before: deterministic publish first, durable checkpoint
             // second, ACK third. A crash after publish is safe to republish with the same ID.
-            const std::string encodedIntent = ContractJsonCodec::encode(output);
+            const std::string encodedIntent = MessageJson::encode(output);
             bus_.publish(
-                TransportSubjects::STRATEGY_INTENTS,
+                MessageSubjects::STRATEGY_INTENTS,
                 encodedIntent,
                 output.metadata.message_id
             );
@@ -950,7 +915,7 @@ public:
           bus_(options_.nats_url),
           market_reader_(options_.market_data_db)
     {
-        bus_.ensureStream(options_.stream, TransportSubjects::tradingRuntimeSubjects());
+        bus_.ensureStream(options_.stream, MessageSubjects::tradingRuntimeSubjects());
 
         resetRuntimeState();
 
@@ -967,7 +932,7 @@ public:
         DurableConsumerOptions consumer;
         consumer.stream = options_.stream;
         consumer.durable_name = "strategy-service-market-updates";
-        consumer.subject = TransportSubjects::MARKET_DATA_UPDATED;
+        consumer.subject = MessageSubjects::MARKET_DATA_UPDATED;
         consumer.ack_wait_ms = 30000;
         consumer.max_deliver = 20;
         consumer.max_ack_pending = 64;
@@ -996,7 +961,7 @@ public:
             options_.market_warmup_days,
             options_.market_top_n,
             options_.market_data_source,
-            TransportSubjects::MARKET_DATA_UPDATED,
+            MessageSubjects::MARKET_DATA_UPDATED,
             loopPeriod.count(),
             time_config_.speed,
             time_config_.identity()
@@ -1055,9 +1020,7 @@ public:
 } // namespace
 
 
-// ============================================================================
-// Process entrypoint
-// ============================================================================
+// Process entrypoint.
 
 int main(int argc, char** argv)
 {

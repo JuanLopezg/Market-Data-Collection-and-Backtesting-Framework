@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Quick integrity check for the sensitivity report tool folder."""
+"""Quick integrity check for the sensitivity report files in tools/."""
 from __future__ import annotations
 import json
 from pathlib import Path
@@ -30,4 +30,4 @@ requirements = (root / "requirements_sensitivity_report.txt").read_text(encoding
 if not all(any(line.startswith(package) for line in requirements) for package in ("pandas", "numpy", "matplotlib")):
     raise SystemExit("ERROR: requirements file is missing pandas, numpy, or matplotlib.")
 
-print("OK: sensitivity_report_tool_v3 is complete and internally consistent.")
+print("OK: sensitivity report files are complete and internally consistent.")

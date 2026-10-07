@@ -26,8 +26,8 @@ for f in \
  "$CFG/order_lifecycle_v1.json" "$CFG/order_lifecycle_manifest_v1.json" \
  "$ART/STEP_50_MOCK_ORDER_ADMISSION_AND_LIFECYCLE.md" \
  "$ART/STEP_51_IMPLEMENTATION_HANDOFF.json" "$ART/SHA256SUMS" \
- "$ROOT/lib/src/exchange/mock_decimal_grid_v1.h" \
- "$ROOT/lib/src/exchange/mock_order_admission_lifecycle_v1.h" \
+ "$ROOT/lib/src/exchange/mock/decimal.h" \
+ "$ROOT/lib/src/exchange/mock/orders.h" \
  "$ROOT/validation/step50_mock_order_admission_lifecycle_test.cpp"; do
   [[ -f "$f" ]] || fail "missing ${f#$ROOT/}"
 done
@@ -96,8 +96,8 @@ pass 'order admission, batch results, idempotency, cancel/modify and transition 
 printf '%s\n' '[6/8] No Step51/52 economic implementation is present'
 if grep -Ein \
  'matching[_ -]?engine|slippage|commission|funding_payment|realized_pnl|unrealized_pnl|cash_balance|apply_fill|create_fill' \
- "$ROOT/lib/src/exchange/mock_order_admission_lifecycle_v1.h" \
- "$ROOT/lib/src/exchange/mock_decimal_grid_v1.h" >"$TMP/leak"; then
+ "$ROOT/lib/src/exchange/mock/orders.h" \
+ "$ROOT/lib/src/exchange/mock/decimal.h" >"$TMP/leak"; then
   cat "$TMP/leak" >&2
   fail 'Step51/52 implementation leaked into Step50'
 fi
@@ -110,8 +110,8 @@ pass 'Step50 remains admission/lifecycle only'
 
 printf '%s\n' '[7/8] Private real-venue boundary remains untouched'
 if grep -Ein 'hyperliquid|private[_ -]?key|mnemonic|seed phrase|sign[_ -]?transaction|api wallet|/exchange' \
- "$ROOT/lib/src/exchange/mock_order_admission_lifecycle_v1.h" \
- "$ROOT/lib/src/exchange/mock_decimal_grid_v1.h" >"$TMP/private"; then
+ "$ROOT/lib/src/exchange/mock/orders.h" \
+ "$ROOT/lib/src/exchange/mock/decimal.h" >"$TMP/private"; then
   cat "$TMP/private" >&2
   fail 'private/concrete real-venue material leaked into Step50 code'
 fi

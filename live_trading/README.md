@@ -3,10 +3,11 @@
 This directory contains the executable services that connect the trading domain library to
 market data, durable messaging, persistence, planning, and exchange execution.
 
-The code is intentionally organized so a new reader can start at a tiny `*_main.cpp`, jump to
-one `*_application.cpp`, and then follow the domain types named in that application. The
-application layer should explain **when** and **why** components are called. Trading formulas
-and reusable domain behavior belong in the library, not here.
+Start at each service's `*_main.cpp`: its real startup, recovery, subscriptions and service
+loop remain visible there. Follow its domain components into `lib/` for trading formulas
+and reusable behavior. Separate service files exist for actual responsibilities, such as
+ingestion and HTTP serving. Each service has one `src/meson.build`; the top-level
+build enters it directly without an intermediate forwarding build file.
 
 ## Start here
 
@@ -23,9 +24,15 @@ Read the services in this order if you are new to the project:
 9. `binance_simulator` — standalone local HTTP simulator for Binance-style market-data requests.
 10. `execution_service` — direct execution-engine service path; inspect deployment/configuration before assuming it replaces `execution_state_service`.
 
-## Simple mental model
+## Service message flow
 
-The main live message flow visible in this directory is:
+The full service/component execution chain is shown below. The current default
+`deploy/live/` topology stops at `NotionalOrderPlan`; its execution-state
+service does not submit private orders. The gateway is an optional transport-only
+profile. Treat the downstream chain as a component responsibility map, not proof
+that the default LIVE deployment has exchange execution connected.
+
+The chain is:
 
 ```text
 Market data commit
@@ -39,7 +46,7 @@ Market data commit
     -> Order-planner service
     -> NotionalOrderPlan
     -> Execution-state service
-    -> exchange commands through MessageBusExchange
+    -> exchange commands through MessageExchange
     -> Exchange gateway
     -> exchange backend / simulated exchange
     -> OrderUpdate + Fill + ExchangeSnapshot
@@ -48,8 +55,8 @@ Market data commit
 ```
 
 The exact contract types and subjects are defined outside this directory. Do not infer a
-contract from a filename: follow the concrete message type and `TransportSubjects` value used
-by the application.
+contract from a filename: follow the concrete message type and `MessageSubjects` value used
+by the service.
 
 ## What each service owns
 
@@ -65,6 +72,25 @@ by the application.
 | `simulated_exchange_service` | Durable simulated backend | execution prices + backend commands | backend order/fill/snapshot events |
 | `execution_service` | Direct execution-engine path | decisions, prices, order updates, fills | persisted trading state / exchange actions |
 | `binance_simulator` | Local market-data HTTP simulation | historical CSV | Binance-compatible HTTP responses |
+
+## Market-data files
+
+Within `market_data_service/src/`, filenames describe their local responsibility:
+
+| Files | Responsibility |
+| --- | --- |
+| `market_data_service_main.cpp` | Startup, daily schedule, retries and shutdown |
+| `config.h/.cpp` | Configuration values and JSON validation |
+| `binance_client.h/.cpp` | Binance REST calls and bounded parallel downloads |
+| `ingestion.h/.cpp` | One daily refresh, validation and commit coordination |
+| `market_store.h/.cpp` | Canonical SQLite transactions and tracked-symbol history |
+| `update_publisher.h/.cpp` | Durable notification after a successful commit |
+
+The historical feed shares `market_store` so both writers use the same schema and commit
+rules. The HTTP simulator keeps its own candle store and HTTP server; it serves requests
+rather than writing the canonical database. These are useful responsibility boundaries,
+so they remain separate files. Service entrypoints retain their descriptive `*_main.cpp`
+names for navigation and operational tooling.
 
 ## Time has two meanings
 
@@ -84,8 +110,18 @@ When reading a message handler, look for the return value:
 - `Retry` means the service is not ready or hit a recoverable failure; redelivery is required.
 - `Terminate` means the message is invalid for this consumer and retrying it would not help.
 
-A recurring safety pattern is **persist before publish/ack**. Do not reverse that ordering
-without understanding crash recovery and idempotency.
+For durable routes, the ordering depends on which state the service owns:
+
+- Market-data ingestion commits SQLite before publishing its update notification.
+- Strategy, portfolio/risk, and order-planner services publish deterministic output, then
+  checkpoint, then acknowledge their input. A crash between publish and checkpoint causes
+  the same logical message to be published again.
+- Execution persists local order/cancel intent before dispatching exchange commands.
+- With PostgreSQL persistence, the simulated backend commits account/order state and its
+  outbox together, then publishes
+  the outbox. A restart can finish publication without applying the fills again.
+
+Keep these existing orders explicit; changing them changes crash recovery.
 
 ## Logs
 
@@ -112,10 +148,6 @@ For a typical service:
 
 ```text
 *_main.cpp
-    -> tiny executable entrypoint
-*_application.h
-    -> one public run function
-*_application.cpp
     -> CLI options
     -> persistence/recovery helpers (if local to the service)
     -> runtime class
@@ -125,7 +157,7 @@ other *.h/*.cpp
     -> focused reusable components owned by that service
 ```
 
-The application file may still be long when it represents one cohesive state machine. Prefer a
+The main file may still be long when it represents one cohesive state machine. Prefer a
 clear single state machine with named sections over scattering one runtime class across many tiny
 files. Split a component only when it has a genuinely independent responsibility.
 
@@ -134,7 +166,7 @@ files. Split a component only when it has a genuinely independent responsibility
 - Code, comments, log messages, and technical names are in English.
 - Prefer explicit code over clever code.
 - Prefer a descriptive 10-line function over a dense 3-line expression.
-- Keep `main()` boring.
+- Keep real orchestration readable in `main()`; do not introduce forwarding-only application wrappers.
 - Comments explain *why* ordering or state matters; they do not narrate obvious syntax.
 - Avoid historical `PATCH XX` / `STEP XX` comments in active code. Describe the current rule.
 - Do not duplicate trading calculations in services if the domain library already owns them.
@@ -145,13 +177,21 @@ files. Split a component only when it has a genuinely independent responsibility
 
 ## Building
 
-The repository Meson build owns these executables. From the repository root, the normal check is:
+Use WSL with the repository Meson build. From the repository root:
 
 ```bash
-meson setup <build-dir>
-meson compile -C <build-dir>
+meson compile -C build -j 3
+bash validation/live_pre_exchange_e2e_audit.sh
+bash validation/market_data_time_handler_audit.sh
+bash validation/historical_visibility_no_lookahead_test.sh
 ```
 
-After structural changes that could affect canonical replay behavior, also run the repository's
-canonical release gate. Build/test execution is intentionally left to the developer so validation
-happens in the real local environment.
+For a new build directory, run `meson setup <build-dir>` first. Cross-service structural
+changes also require the canonical replay release gate:
+
+```bash
+bash validation/step59_canonical_replay_release_gate.sh
+```
+
+The compact gate proves canonical replay behavior; it does not replace broker/database
+integration acceptance for the deployed live services.

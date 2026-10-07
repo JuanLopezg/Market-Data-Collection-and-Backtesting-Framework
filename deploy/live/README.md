@@ -1,14 +1,15 @@
-# LIVE pre-exchange topology (STEP 6E)
+# LIVE pre-exchange deployment
 
 This directory is the production-path deployment scaffold after the fake/replay clock cleanup.
-It is intentionally separate from `deploy/distributed_replay/`.
+The former shared-clock `deploy/distributed_replay/` topology has been removed.
+Run commands below from the repository root under WSL.
 
 The default topology starts only the exchange-agnostic LIVE path:
 
 `MarketData -> Strategy -> PortfolioRisk -> ExecutionState -> OrderPlanner`
 
 It does **not** start replay-controller or simulated-exchange, and it does **not** submit real exchange orders.
-`exchange-gateway` is packaged but is behind the optional Compose profile `exchange-edge` until STEP 7/8.
+`exchange-gateway` is packaged but is behind the optional Compose profile `exchange-edge` while private exchange integration remains unfinished.
 
 ## One-time preparation
 
@@ -45,7 +46,7 @@ If `storage/databases/database.db` already contains the canonical schema, the bo
 From the repository root:
 
 ```bash
-ninja -C build -j8
+meson compile -C build
 bash deploy/live/build_runtime_bundle.sh
 ```
 
@@ -92,11 +93,13 @@ docker compose --env-file deploy/live/.env -f deploy/live/docker-compose.yml \
   --profile exchange-edge up -d exchange-gateway
 ```
 
-STEP 7 will define the dry-run exchange preparation boundary. STEP 8 will be the first stage allowed to add authenticated Hyperliquid submission.
+This profile starts the gateway transport service only; it does not add a private
+venue implementation or enable real submit/cancel/fill lifecycle. Dashboard public
+TESTNET metadata/dry-run configuration is separate evidence, not a connected backend.
 
-## STEP 6F — final pre-exchange acceptance
+## Validate the pre-exchange boundary
 
-Before attaching STEP 7, run the structural gate:
+Run the current structural gate:
 
 ```bash
 bash validation/live_pre_exchange_e2e_audit.sh .
@@ -108,4 +111,28 @@ After a real daily cycle `T` has propagated through the running Compose topology
 bash validation/live_pre_exchange_runtime_acceptance.sh . YYYYMMDD
 ```
 
-The acceptance boundary is still `NotionalOrderPlan`; no real exchange order should be emitted. See `STEP6F_APPLY.md` for the required same-date event chain and restart/duplicate gate.
+The verifier checks the same `YYYYMMDD` in durable MarketData/Strategy,
+AccountSnapshot, Risk decision and Planner request/plan evidence, exactly one checkpoint
+per stage, and unchanged reference-close maps. Its source is
+`validation/live_pre_exchange_runtime_acceptance.sh`.
+
+The acceptance boundary remains `NotionalOrderPlan`. This verifier does not
+perform a complete restart/duplicate/broker-failure campaign. Canonical replay restart
+is tested separately by Step59; deployed service recovery remains its own acceptance
+work. See [CURRENT_STATE.md](../../CURRENT_STATE.md) and
+[validation/README.md](../../validation/README.md).
+
+## VPS log retention (future deployment task)
+
+Before final VPS deployment, implement and verify:
+
+- [ ] Persist diagnostic logs in a host directory that survives container restart/recreation.
+- [ ] Rotate daily into dated files per service, retaining the latest five days.
+- [ ] Automatically delete older diagnostic log files; keep disk usage bounded.
+- [ ] Preserve timestamps, service names and error context for troubleshooting; never log secrets.
+- [ ] Test day-boundary rotation, five-day cleanup and restart behavior on the VPS.
+
+Current Docker/application rotation is size-based; five retained files do not mean
+five retained days. This daily retention policy is planned, not implemented yet.
+Apply housekeeping to diagnostic logs, not trading journals, fills, checkpoints or
+other durable audit/accounting evidence.

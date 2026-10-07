@@ -1,9 +1,11 @@
+// Shared strategy setup: default selection/ranking, indicator requirements and entry filters.
+
 #include "strategy.h"
 
 #include <utility>
 #include <vector>
 
-#include "no_ranker.h"
+#include "alphabetical_ranker.h"
 
 
 Strategy::Strategy(
@@ -25,7 +27,7 @@ Strategy::Strategy(
         universeSelector_ = std::make_unique<AllUniverseSelector>();
 
     if (!ranker_)
-        ranker_ = std::make_unique<NoRanker>();
+        ranker_ = std::make_unique<AlphabeticalRanker>();
 }
 
 

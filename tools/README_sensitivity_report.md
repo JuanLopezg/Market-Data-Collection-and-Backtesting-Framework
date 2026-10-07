@@ -1,82 +1,45 @@
-# Sensitivity CSV analysis report tool (v3)
+# Sensitivity CSV analysis reports
 
-This folder analyses **completed parameter-sensitivity CSV studies**. It does not rerun backtests, apply fees/slippage, or perform out-of-sample validation.
+The program reads completed parameter-sensitivity CSV studies. It does not rerun
+backtests or establish fees/slippage/out-of-sample acceptance. A favorable in-sample
+verdict means a candidate needs further testing.
 
-## Important: keep this folder together
+The files already live directly in `tools/`:
 
-Do **not** copy files individually into `tools/`. Extract or copy the entire folder as:
+| File | Purpose |
+| --- | --- |
+| `sensitivity_report_main.py` | Report program. |
+| `sensitivity_report_config.json` | Analysis configuration. |
+| `requirements_sensitivity_report.txt` | Python dependencies. |
+| `verify_tool.py` | Program/configuration integrity check. |
+| `TOOL_VERSION.txt` | Tool version metadata. |
 
-```text
-tools/sensitivity_report_tool_v3/
-```
-
-The four core files must remain distinct:
-
-```text
-sensitivity_report_main.py          Python program
-sensitivity_report_config.json      JSON configuration
-requirements_sensitivity_report.txt Python dependencies
-verify_tool.py                      checks that the files were not mixed
-```
-
-## Install and run from WSL
-
-Assuming you are in your project's `build/` directory:
+## Run from the repository root under WSL
 
 ```bash
-# One-time: verify the folder has not been mixed up
-python3 ../tools/sensitivity_report_tool_v3/verify_tool.py
-
-# One-time: install Python packages
-python3 -m pip install -r ../tools/sensitivity_report_tool_v3/requirements_sensitivity_report.txt
-
-# Create / overwrite the report
-python3 ../tools/sensitivity_report_tool_v3/sensitivity_report_main.py \
-  --study-dir ../storage/backtests/sensitivity_results/local_refinement_v2 \
-  --config ../tools/sensitivity_report_tool_v3/sensitivity_report_config.json \
+python3 tools/verify_tool.py
+python3 -m pip install -r tools/requirements_sensitivity_report.txt
+python3 tools/sensitivity_report_main.py \
+  --study-dir storage/backtests/sensitivity_results/local_refinement_v2 \
+  --config tools/sensitivity_report_config.json \
   --overwrite
 ```
 
-When it finishes, open:
+Choose an existing completed study directory. `--overwrite` replaces its prior
+analysis report. Open `analysis_report/index.html` inside that study directory.
+`python3 tools/sensitivity_report_main.py --help` lists current options.
 
-```text
-../storage/backtests/sensitivity_results/local_refinement_v2/analysis_report/index.html
-```
+## Output and interpretation
 
-From WSL:
+The report writes HTML, summary/configuration CSV/JSON, per-strategy integrity checks,
+enriched successful runs, candidate rankings, Pareto frontiers, distributions,
+parameter marginals and pairwise heatmaps.
 
-```bash
-explorer.exe "$(wslpath -w ../storage/backtests/sensitivity_results/local_refinement_v2/analysis_report/index.html)"
-```
+Checks cover failed/invalid/duplicate and zero-trade runs; return/drawdown/Calmar/trade
+distributions; median/quantile robustness; nearest-neighbor robustness; and conservative
+in-sample triage. Means are diagnostic, not proof of robustness.
 
-## Output
-
-The report creates:
-
-```text
-analysis_report/
-├── index.html
-├── summary.csv
-├── analysis_config_used.json
-├── <Strategy>/
-│   ├── integrity_checks.csv
-│   ├── successful_runs_enriched.csv
-│   ├── top_candidates.csv
-│   ├── pareto_frontier.csv
-│   ├── distributions.png
-│   ├── return_vs_drawdown.png
-│   ├── marginal_<parameter>.png/.csv
-│   └── heatmap_<parameter_A>__<parameter_B>.png/.csv
-```
-
-## What the report checks
-
-- row counts, failed/invalid results, duplicates and zero-trade combinations;
-- distributions of return, drawdown, Calmar and trade count;
-- mean, median and P25–P75 statistics (mean is diagnostic; median/quantiles are robustness signals);
-- pairwise heatmaps for return, drawdown, Calmar and pass rate;
-- return–drawdown Pareto frontier;
-- nearest-neighbour robustness;
-- a conservative in-sample triage verdict.
-
-A favourable verdict only means that the strategy is worth testing next under fees/slippage and out-of-sample data.
+Keep the configuration used with the report. Validate promising candidates through the
+current replay workflow, realistic execution assumptions and out-of-sample studies.
+Unmigrated research study generators still use the frozen research runtime; this report
+tool analyzes their completed CSVs and does not replace their migration.

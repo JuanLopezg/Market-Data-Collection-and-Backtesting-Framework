@@ -14,7 +14,7 @@ say_fail() { echo "FAIL: $*" >&2; fail=1; }
 while IFS= read -r hit; do
   [[ -z "$hit" ]] && continue
   case "$hit" in
-    *"live_trading/market_data_service/src/market_data_store.cpp"*) ;;
+    *"live_trading/market_data_service/src/market_store.cpp"*) ;;
     *) say_fail "unexpected direct SQLite C API use in LIVE service: $hit" ;;
   esac
 done < <(grep -RIn --exclude='*.md' --exclude='*.txt' --exclude='*.sh' -E 'sqlite3_(open|prepare|step|exec|bind|column|close|finalize)' \

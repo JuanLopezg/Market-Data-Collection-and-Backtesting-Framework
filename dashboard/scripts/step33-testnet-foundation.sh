@@ -134,7 +134,7 @@ GATEWAY="$PROJECT_ROOT/live_trading/exchange_gateway/src/exchange_gateway_main.c
 grep -q 'HyperliquidDryRun' "$GATEWAY" || fail "Hyperliquid dry-run mode is not present in current ExchangeGateway"
 grep -q 'hyperliquid-dry-run' "$GATEWAY" || fail "hyperliquid-dry-run CLI mode is missing"
 grep -q 'exchange-gateway-hyperliquid-dry-run-plan' "$GATEWAY" || fail "dry-run durable consumer is missing"
-grep -q 'TransportSubjects::NOTIONAL_ORDER_PLAN' "$GATEWAY" || fail "dry-run does not consume the notional-plan boundary"
+grep -q 'MessageSubjects::NOTIONAL_ORDER_PLAN' "$GATEWAY" || fail "dry-run does not consume the notional-plan boundary"
 grep -q 'real_submission=false' "$GATEWAY" || fail "ExchangeGateway service-ready evidence no longer declares real_submission=false"
 grep -q 'no backend and no real submission path' "$GATEWAY" || fail "dry-run no-submission safety marker is missing"
 pass "current C++ gateway exposes the audited Hyperliquid prepare-only boundary"

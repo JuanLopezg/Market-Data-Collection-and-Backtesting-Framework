@@ -15,45 +15,22 @@
 #include <ctime>
 
 
-/**************************************************************************************
- * Purpose : CURL write callback used to accumulate incoming HTTP response data into
- *
- *           a std::string. libcurl calls this function repeatedly while downloading
- *           content. The user-provided buffer (userp) is appended to as data arrives.
- *
- * Args    : contents - Pointer to the downloaded data chunk.
- *           size     - Size of each element (usually 1).
- *           nmemb    - Number of elements in this chunk.
- *           userp    - Pointer to the std::string accumulator.
- *
- * Return  : size_t   - Total bytes processed (size * nmemb), required by libcurl.
- **************************************************************************************/
-size_t writeCallback(void* contents, size_t size, size_t nmemb, void* userp)
-{
-    ((std::string*)userp)->append((char*)contents, size * nmemb);
-    return size * nmemb;
-}
-
-
-/**************************************************************************************
- * Purpose : Generate a unique backtest database path using the current UTC timestamp
- *
- * This function validates that the provided path exists and is a directory, then
- * generates a filename of the form:
- *
- * backtest_YYMMDD_HHMMSS.db
- *
- * using the current UTC time. If a file with the generated name already exists,
- * an exception is thrown. The function does not create the file; it only returns
- * the resolved path.
- *
- * Args    : directory - path to an existing directory
- *
- * Return  : Full filesystem path for the new backtest database
- *
- * Throws  : std::runtime_error if the path does not exist, is not a directory,
- *           or if a file with the generated name already exists
- **************************************************************************************/
+// Generate a unique backtest database path using the current UTC timestamp
+//
+// This function validates that the provided path exists and is a directory, then
+// generates a filename of the form:
+//
+// backtest_YYMMDD_HHMMSS.db
+//
+// using the current UTC time. If a file with the generated name already exists,
+// an exception is thrown. The function does not create the file; it only returns
+// the resolved path.
+//
+// Args    : directory - path to an existing directory
+//
+//
+// Throws  : std::runtime_error if the path does not exist, is not a directory,
+// or if a file with the generated name already exists
 std::filesystem::path generateBacktestDbPath(
     const std::filesystem::path& directory)
 {
@@ -192,7 +169,7 @@ OHLCVData loadDatabaseFromSQLite(
     OHLCVData ohlcvData;
     std::string path = database_path.string();
 
-    // ================= OPEN DB =================
+    // This compatibility loader logs open/prepare failures and returns empty data.
     sqlite3* db = nullptr;
 
     if (sqlite3_open(path.c_str(), &db) != SQLITE_OK)
@@ -201,7 +178,7 @@ OHLCVData loadDatabaseFromSQLite(
         return ohlcvData;
     }
 
-    // ================= PREPARE QUERY =================
+    // A zero end date deliberately disables the upper bound for offline loading.
     const char* sql =
         "SELECT pair, date, open, high, low, close, volume "
         "FROM ohlcv_data "
@@ -225,7 +202,7 @@ OHLCVData loadDatabaseFromSQLite(
     sqlite3_bind_int(stmt, 2, static_cast<int>(end_date));
     sqlite3_bind_int(stmt, 3, static_cast<int>(end_date));
 
-    // ================= READ ROWS =================
+    // Preserve per-asset chronological keys for indicator calculation.
     while (sqlite3_step(stmt) == SQLITE_ROW)
     {
         const char* pair_c =
@@ -255,25 +232,10 @@ OHLCVData loadDatabaseFromSQLite(
 }
 
 
-/**************************************************************************************
- * Purpose : Load OHLCV market data from a SQLite database into an OHLCVData structure
- *
- * This function opens the SQLite database located at the provided filesystem path
- * and executes a query against the `ohlcv_data` table. All rows with
- *
- * date >= start_date and date <= end_date
- *
- * are retrieved and ordered by pair and date in ascending order.
- *
- * end_date = 0 disables the upper date limit.
- *
- * Args    : database_path - filesystem path to the SQLite database file
- *           start_date    - minimum date to load (inclusive), format YYYYMMDD
- *           end_date      - maximum date to load (inclusive), format YYYYMMDD
- *
- * Return  : OHLCVData populated with all matching OHLCV rows from the database;
- *           returns an empty OHLCVData object on failure
- **************************************************************************************/
+// Dispatch offline OHLCV loading by extension: .csv or .db (SQLite).
+// Date bounds are inclusive YYYYMMDD; end_date = 0 means no upper bound.
+// Open/prepare/unsupported-extension failures log and return empty data; malformed
+// CSV numeric fields can throw. This is not the bounded canonical live reader.
 OHLCVData loadDatabase(
     std::filesystem::path database_path,
     Timestamp start_date,

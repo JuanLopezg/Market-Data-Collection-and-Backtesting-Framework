@@ -1,20 +1,18 @@
 #include "data_types.h"
 
 
-/**************************************************************************************
- * Purpose : Build market data from raw OHLCV data
- *
- * This function reorganizes the raw OHLCV data from:
- *
- *   coin -> timestamp -> OHLCV
- *
- * into:
- *
- *   timestamp -> coin -> BarData
- *
- * It intentionally does not calculate any indicators.
- * Indicators are now handled separately by IndicatorEngine.
- **************************************************************************************/
+// Build market data from raw OHLCV data
+//
+// This function reorganizes the raw OHLCV data from:
+//
+// coin -> timestamp -> OHLCV
+//
+// into:
+//
+// timestamp -> coin -> BarData
+//
+// It intentionally does not calculate any indicators.
+// Indicators are now handled separately by IndicatorEngine.
 MarketData buildMarketData(const OHLCVData& raw)
 {
     MarketData marketData;
@@ -44,13 +42,11 @@ MarketData buildMarketData(const OHLCVData& raw)
 }
 
 
-/**************************************************************************************
- * Purpose : Compatibility wrapper for previous code
- *
- * Older code used buildEnriched().
- * The new architecture no longer enriches BarData with indicators, so this simply
- * delegates to buildMarketData().
- **************************************************************************************/
+// Compatibility wrapper for previous code
+//
+// Older code used buildEnriched().
+// The new architecture no longer enriches BarData with indicators, so this simply
+// delegates to buildMarketData().
 EnrichedData buildEnriched(const OHLCVData& raw)
 {
     return buildMarketData(raw);

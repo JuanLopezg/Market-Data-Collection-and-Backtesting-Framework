@@ -26,8 +26,8 @@ for f in \
  "$CFG/accounting_v1.json" "$CFG/accounting_manifest_v1.json" \
  "$ART/STEP_52_MOCK_ACCOUNT_MARGIN_POSITIONS_ACCOUNTING.md" \
  "$ART/STEP_53_IMPLEMENTATION_HANDOFF.json" "$ART/SHA256SUMS" \
- "$ROOT/lib/src/exchange/mock_accounting_fixed_point_v1.h" \
- "$ROOT/lib/src/exchange/mock_account_margin_positions_accounting_v1.h" \
+ "$ROOT/lib/src/exchange/mock/decimal.h" \
+ "$ROOT/lib/src/exchange/mock/account.h" \
  "$ROOT/validation/step52_mock_account_margin_positions_accounting_test.cpp"; do
   [[ -f "$f" ]] || fail "missing ${f#$ROOT/}"
 done
@@ -97,11 +97,11 @@ pass 'fill accounting, fees, funding, rebates, positions, PnL, margin and order 
 
 printf '%s\n' '[6/8] Fill remains sole position execution authority and no wall clock enters economics'
 grep -Fq 'std::holds_alternative<Fill>' \
- "$ROOT/lib/src/exchange/mock_account_margin_positions_accounting_v1.h" \
+ "$ROOT/lib/src/exchange/mock/account.h" \
  || fail 'canonical Fill consumption path missing'
 if grep -Ein 'system_clock|steady_clock|high_resolution_clock|sleep_for|sleep_until|gettimeofday|clock_gettime|std::time|time\(' \
- "$ROOT/lib/src/exchange/mock_account_margin_positions_accounting_v1.h" \
- "$ROOT/lib/src/exchange/mock_accounting_fixed_point_v1.h" >"$TMP/clock"; then
+ "$ROOT/lib/src/exchange/mock/account.h" \
+ "$ROOT/lib/src/exchange/mock/decimal.h" >"$TMP/clock"; then
  cat "$TMP/clock" >&2
  fail 'wall/monotonic clock primitive leaked into Step52 economics'
 fi
@@ -109,8 +109,8 @@ pass 'positions change only through canonical Fill and timestamps are supplied e
 
 printf '%s\n' '[7/8] Step53/private real-venue concerns remain deferred'
 if grep -Ein 'fstream|ofstream|ifstream|sqlite|postgres|nats|jetstream|reconnect|socket|hyperliquid|private[_ -]?key|mnemonic|seed phrase|api wallet|/exchange' \
- "$ROOT/lib/src/exchange/mock_account_margin_positions_accounting_v1.h" \
- "$ROOT/lib/src/exchange/mock_accounting_fixed_point_v1.h" >"$TMP/future"; then
+ "$ROOT/lib/src/exchange/mock/account.h" \
+ "$ROOT/lib/src/exchange/mock/decimal.h" >"$TMP/future"; then
  cat "$TMP/future" >&2
  fail 'Step53 persistence/stream or private real-venue implementation leaked into Step52'
 fi

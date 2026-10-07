@@ -1,17 +1,10 @@
-/*
- * execution_state_service_main.cpp
- *
- * Purpose: Owns durable execution/account state, reconciliation, planning handoff, and exchange-event processing.
- *
- * Read this file from top to bottom:
- *   1. Restore durable execution state and reconcile it with the exchange snapshot.
- *   2. Turn portfolio decisions into planning requests and consume notional plans.
- *   3. Track orders/fills, publish account snapshots, and close each execution cycle only when state is complete.
- *
- * This file contains the executable entrypoint and service-level orchestration.
- * Keep reusable domain calculations in focused components; keep startup,
- * message flow, persistence boundaries, logging, and shutdown visible here.
- */
+// Owns durable execution/account state, reconciliation, planning handoff, and exchange-event
+// processing.
+//
+// 1. Restore durable execution state and reconcile it with the exchange snapshot.
+// 2. Turn portfolio decisions into planning requests and consume notional plans.
+// 3. Track orders/fills, publish account snapshots, and close each execution cycle only when
+// state is complete.
 
 #include <algorithm>
 #include <atomic>
@@ -33,19 +26,18 @@
 
 #include "account.h"
 #include "canonical_market_data_reader.h"
-#include "contract_json_codec.h"
-#include "daily_close_snapshot.h"
+#include "message_json.h"
+#include "market_messages.h"
 #include "decision_batch.h"
 #include "exchange_snapshot_event.h"
 #include "exchange_snapshot_request.h"
 #include "execution_engine.h"
-#include "execution_cycle_complete.h"
-#include "execution_planning_state.h"
-#include "market_data_updated.h"
+#include "execution_messages.h"
+#include "planning/planning_state.h"
 #include "live_execution_identity.h"
 #include "notional_order_planning.h"
-#include "message_bus_exchange.h"
-#include "nats_jetstream_message_bus.h"
+#include "adapters/message_exchange.h"
+#include "jetstream_bus.h"
 #include "postgres_state_store.h"
 #include "reconciler.h"
 #include "service_logging.h"
@@ -53,13 +45,10 @@
 #include "time_handler_factory.h"
 #include "time_utils.h"
 #include "trading_state_snapshot.h"
-#include "transport_subjects.h"
+#include "message_subjects.h"
 
 
-
-// ============================================================================
-// Internal helpers and service implementation
-// ============================================================================
+// Internal helpers and service implementation.
 
 namespace {
 
@@ -101,10 +90,7 @@ std::optional<Timestamp> configuredReplayBootstrapCompletedUtcDate(const TimeHan
 }
 
 
-
-// ============================================================================
-// Command-line configuration
-// ============================================================================
+// Command-line configuration.
 
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
@@ -202,10 +188,7 @@ Options parseOptions(int argc, char** argv)
 }
 
 
-
-// ============================================================================
-// Service runtime and message-processing loop
-// ============================================================================
+// Service runtime and message-processing loop.
 
 class ExecutionStateServiceRuntime {
 private:
@@ -216,12 +199,12 @@ private:
     std::vector<StrategyID> strategy_ids_;
     std::unordered_map<StrategyID, std::string> strategy_names_;
 
-    NatsJetStreamMessageBus bus_;
+    JetStreamBus bus_;
     CanonicalMarketDataReader market_reader_;
     std::unique_ptr<PostgresStateStore> store_;
     Account account_;
     TradeRecorder trade_recorder_;
-    MessageBusExchange exchange_;
+    MessageExchange exchange_;
     ExecutionEngine engine_;
     Reconciler reconciler_;
 
@@ -239,11 +222,11 @@ private:
         envFlag("ALGOTRADING_CHAOS_NAK_FILL_AFTER_PERSIST_ONCE");
     bool chaos_nak_fill_after_persist_done_ = false;
 
-    DurableMessageBus::SubscriptionID exchange_snapshot_subscription_ = 0;
-    DurableMessageBus::SubscriptionID exchange_event_subscription_ = 0;
-    DurableMessageBus::SubscriptionID decision_subscription_ = 0;
-    DurableMessageBus::SubscriptionID notional_plan_subscription_ = 0;
-    DurableMessageBus::SubscriptionID market_update_account_subscription_ = 0;
+    MessageBus::SubscriptionID exchange_snapshot_subscription_ = 0;
+    MessageBus::SubscriptionID exchange_event_subscription_ = 0;
+    MessageBus::SubscriptionID decision_subscription_ = 0;
+    MessageBus::SubscriptionID notional_plan_subscription_ = 0;
+    MessageBus::SubscriptionID market_update_account_subscription_ = 0;
 
     TradingStateSnapshot snapshot() const
     {
@@ -317,8 +300,8 @@ private:
         }
 
         bus_.publish(
-            TransportSubjects::ACCOUNT_SNAPSHOT,
-            ContractJsonCodec::encode(value),
+            MessageSubjects::ACCOUNT_SNAPSHOT,
+            MessageJson::encode(value),
             value.metadata.message_id
         );
         LG_INFO(
@@ -362,8 +345,8 @@ private:
         value.state_revision = planningState().state_revision;
 
         bus_.publish(
-            TransportSubjects::EXECUTION_CYCLE_COMPLETE,
-            ContractJsonCodec::encode(value),
+            MessageSubjects::EXECUTION_CYCLE_COMPLETE,
+            MessageJson::encode(value),
             value.metadata.message_id
         );
         LG_INFO(
@@ -535,8 +518,8 @@ private:
         request.state = state;
 
         bus_.publish(
-            TransportSubjects::NOTIONAL_ORDER_PLANNING_REQUEST,
-            ContractJsonCodec::encode(request),
+            MessageSubjects::NOTIONAL_ORDER_PLANNING_REQUEST,
+            MessageJson::encode(request),
             request.metadata.message_id
         );
         bus_.flush();
@@ -579,7 +562,7 @@ private:
                 return DurableMessageDisposition::Retry;
 
             const NotionalOrderPlanBatch plan =
-                ContractJsonCodec::decodeNotionalOrderPlanBatch(message.payload);
+                MessageJson::decodeNotionalOrderPlanBatch(message.payload);
 
             const Timestamp newestCompleted = newestCompletedUtcDate(time_handler_);
             if (plan.decision_timestamp > newestCompleted) {
@@ -746,8 +729,8 @@ private:
             "exchange-snapshot-request:" + std::to_string(nonce);
 
         bus_.publish(
-            TransportSubjects::EXCHANGE_SNAPSHOT_REQUEST,
-            ContractJsonCodec::encode(request),
+            MessageSubjects::EXCHANGE_SNAPSHOT_REQUEST,
+            MessageJson::encode(request),
             request.metadata.message_id
         );
         LG_INFO(
@@ -790,7 +773,7 @@ private:
     {
         try {
             const ExchangeSnapshotEvent value =
-                ContractJsonCodec::decodeExchangeSnapshotEvent(message.payload);
+                MessageJson::decodeExchangeSnapshotEvent(message.payload);
             if (value.snapshot.timestamp == 0)
                 return DurableMessageDisposition::Terminate;
 
@@ -846,7 +829,7 @@ private:
             if (!reconciled_)
                 return DurableMessageDisposition::Retry;
 
-            const MarketDataUpdated update = ContractJsonCodec::decodeMarketDataUpdated(message.payload);
+            const MarketDataUpdated update = MessageJson::decodeMarketDataUpdated(message.payload);
             if (update.completed_through == 0 || update.source != options_.market_data_source || update.timeframe != "1d")
                 return DurableMessageDisposition::Terminate;
 
@@ -930,7 +913,7 @@ private:
     DurableMessageDisposition onDecision(const BusMessage& message)
     {
         try {
-            const DecisionBatch batch = ContractJsonCodec::decodeDecisionBatch(message.payload);
+            const DecisionBatch batch = MessageJson::decodeDecisionBatch(message.payload);
             if (batch.decision_timestamp == 0 || !validateDecisionStrategies(batch))
                 return DurableMessageDisposition::Terminate;
 
@@ -1009,7 +992,7 @@ private:
     DurableMessageDisposition onOrderUpdate(const BusMessage& message)
     {
         try {
-            const OrderUpdateEvent value = ContractJsonCodec::decodeOrderUpdateEvent(message.payload);
+            const OrderUpdateEvent value = MessageJson::decodeOrderUpdateEvent(message.payload);
             LG_INFO(
                 "service=execution-state event=order_update_received order_id={} timestamp={} status={} exchange_order_id={} message={}",
                 value.update.order_id,
@@ -1034,7 +1017,7 @@ private:
     DurableMessageDisposition onFill(const BusMessage& message)
     {
         try {
-            const FillEvent value = ContractJsonCodec::decodeFillEvent(message.payload);
+            const FillEvent value = MessageJson::decodeFillEvent(message.payload);
             LG_INFO(
                 "service=execution-state event=fill_received fill_id={} order_id={} strategy_id={} timestamp={} coin={} side={} quantity={} price={} commission={}",
                 value.fill.fill_id,
@@ -1103,9 +1086,9 @@ private:
 
     DurableMessageDisposition onExchangeEvent(const BusMessage& message)
     {
-        if (message.subject == TransportSubjects::ORDER_UPDATE)
+        if (message.subject == MessageSubjects::ORDER_UPDATE)
             return onOrderUpdate(message);
-        if (message.subject == TransportSubjects::FILL)
+        if (message.subject == MessageSubjects::FILL)
             return onFill(message);
         return DurableMessageDisposition::Terminate;
     }
@@ -1139,10 +1122,10 @@ public:
             strategy_names_.emplace(strategy.strategy_id, strategy.name);
         }
 
-        bus_.ensureStream(options_.stream, TransportSubjects::tradingRuntimeSubjects());
+        bus_.ensureStream(options_.stream, MessageSubjects::tradingRuntimeSubjects());
         bus_.ensureStream(
             options_.exchange_control_stream,
-            TransportSubjects::exchangeGatewayControlSubjects()
+            MessageSubjects::exchangeGatewayControlSubjects()
         );
 
         store_ = std::make_unique<PostgresStateStore>(options_.postgres_connection);
@@ -1165,25 +1148,25 @@ public:
         }
 
         exchange_snapshot_subscription_ = bus_.subscribe(
-            consumer("execution-state-exchange-snapshot", TransportSubjects::EXCHANGE_SNAPSHOT),
+            consumer("execution-state-exchange-snapshot", MessageSubjects::EXCHANGE_SNAPSHOT),
             [this](const BusMessage& message) { return onExchangeSnapshot(message); }
         );
         // Exchange truth remains continuously processed even though economic decisions
         // are daily. Fills/reconciliation are safety state, not a once-a-day signal.
         exchange_event_subscription_ = bus_.subscribe(
-            consumer("execution-state-exchange-events", TransportSubjects::EXECUTION_EVENT_FILTER),
+            consumer("execution-state-exchange-events", MessageSubjects::EXECUTION_EVENT_FILTER),
             [this](const BusMessage& message) { return onExchangeEvent(message); }
         );
         decision_subscription_ = bus_.subscribe(
-            consumer("execution-state-live-decisions", TransportSubjects::DECISION_BATCH),
+            consumer("execution-state-live-decisions", MessageSubjects::DECISION_BATCH),
             [this](const BusMessage& message) { return onDecision(message); }
         );
         notional_plan_subscription_ = bus_.subscribe(
-            consumer("execution-state-notional-plans", TransportSubjects::NOTIONAL_ORDER_PLAN),
+            consumer("execution-state-notional-plans", MessageSubjects::NOTIONAL_ORDER_PLAN),
             [this](const BusMessage& message) { return onNotionalOrderPlan(message); }
         );
         market_update_account_subscription_ = bus_.subscribe(
-            consumer("execution-state-market-data-account", TransportSubjects::MARKET_DATA_UPDATED),
+            consumer("execution-state-market-data-account", MessageSubjects::MARKET_DATA_UPDATED),
             [this](const BusMessage& message) {
                 return onMarketDataUpdatedForAccountSnapshot(message);
             }
@@ -1242,10 +1225,7 @@ public:
 } // namespace
 
 
-
-// ============================================================================
-// Process entrypoint
-// ============================================================================
+// Process entrypoint.
 
 int main(int argc, char** argv)
 {

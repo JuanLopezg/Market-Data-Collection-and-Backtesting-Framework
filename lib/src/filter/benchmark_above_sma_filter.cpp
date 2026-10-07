@@ -1,3 +1,5 @@
+// Evaluate the benchmark regime at the requested bar; a missing benchmark or SMA fails the filter.
+
 #include "benchmark_above_sma_filter.h"
 
 #include <cmath>

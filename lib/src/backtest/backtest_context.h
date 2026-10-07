@@ -13,12 +13,13 @@
 #include "indicator_engine.h"
 #include "price_snapshot.h"
 #include "strategy_instance.h"
-#include "target_portfolio.h"
+#include "portfolio.h"
 #include "trade_recorder.h"
 #include "volatility_diagnostic.h"
 
 
-struct AccountSnapshot {
+// One point in the backtest cash, realized-balance and marked-equity history.
+struct BacktestAccountSnapshot {
     Timestamp timestamp = 0;
     double cash = 0.0;
     Balance balance = 0.0;
@@ -26,13 +27,10 @@ struct AccountSnapshot {
 };
 
 
-/**************************************************************************************
- * Type    : BacktestContext
- * Purpose : Shared historical data, configured strategies and actual simulated account
- *
- * BacktestContext no longer derives account state from Trade objects. Account changes
- * from Fill objects; TradeRecord is analytics reconstructed separately from fills.
- **************************************************************************************/
+// Shared historical data, configured strategies and actual simulated account
+//
+// BacktestContext no longer derives account state from Trade objects. Account changes
+// from Fill objects; TradeRecord is analytics reconstructed separately from fills.
 class BacktestContext {
 private:
     MarketData market_data_;
@@ -43,7 +41,7 @@ private:
     double initial_capital_ = 0.0;
     double market_commission_rate_ = 0.0;
 
-    std::vector<AccountSnapshot> account_history_;
+    std::vector<BacktestAccountSnapshot> account_history_;
     std::vector<std::pair<Balance, Equity>> balance_equity_historic_;
     TradeRecorder trade_recorder_;
     std::vector<VolatilityDiagnosticSnapshot> volatility_diagnostics_;
@@ -117,8 +115,8 @@ public:
     TradeRecorder& GetTradeRecorder() { return trade_recorder_; }
     const TradeRecorder& GetTradeRecorder() const { return trade_recorder_; }
 
-    std::vector<AccountSnapshot>& GetAccountHistory() { return account_history_; }
-    const std::vector<AccountSnapshot>& GetAccountHistory() const { return account_history_; }
+    std::vector<BacktestAccountSnapshot>& GetAccountHistory() { return account_history_; }
+    const std::vector<BacktestAccountSnapshot>& GetAccountHistory() const { return account_history_; }
 
     void recordVolatilityDiagnostic(
         Timestamp ts,
@@ -157,6 +155,8 @@ public:
         );
     }
 
+    // Compatibility reporting view reconstructed from fill-based analytics.
+    // These Trade objects never drive account state or execution.
     const std::map<TradeID, Trade>& GetTradesHistory() const
     {
         legacy_trade_cache_.clear();
@@ -215,8 +215,8 @@ public:
         });
 
         // Backtest chart semantics:
-        //   Balance = initial capital + PnL from fully closed trades only.
-        //   Equity  = marked account value, including open/unrealized PnL.
+        // Balance = initial capital + PnL from fully closed trades only.
+        // Equity  = marked account value, including open/unrealized PnL.
         balance_equity_historic_.emplace_back(balance, equity);
     }
 

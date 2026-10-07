@@ -7,13 +7,10 @@
 #include "execution_order.h"
 
 
-/**************************************************************************************
- * Type    : Fill
- * Purpose : Quantity that actually executed at the exchange
- *
- * Position/account state changes only from Fill objects. Creating a target or submitting
- * an order never implies that anything was executed.
- **************************************************************************************/
+// Quantity that actually executed at the exchange
+//
+// Position/account state changes only from Fill objects. Creating a target or submitting
+// an order never implies that anything was executed.
 struct Fill {
     FillID fill_id = 0;
     OrderID order_id = 0;

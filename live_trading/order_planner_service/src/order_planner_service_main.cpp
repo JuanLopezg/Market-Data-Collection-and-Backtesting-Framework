@@ -1,17 +1,8 @@
-/*
- * order_planner_service_main.cpp
- *
- * Purpose: Converts notional planning requests into deterministic executable notional order plans.
- *
- * Read this file from top to bottom:
- *   1. Recover the latest durable planning checkpoint.
- *   2. Validate a planning request against current execution state.
- *   3. Build, persist, and publish the notional order plan exactly once per business date.
- *
- * This file contains the executable entrypoint and service-level orchestration.
- * Keep reusable domain calculations in focused components; keep startup,
- * message flow, persistence boundaries, logging, and shutdown visible here.
- */
+// Converts notional planning requests into deterministic executable notional order plans.
+//
+// 1. Recover the latest durable planning checkpoint.
+// 2. Validate a planning request against current execution state.
+// 3. Build, persist, and publish the notional order plan exactly once per business date.
 
 #include <algorithm>
 #include <atomic>
@@ -31,25 +22,22 @@
 
 #include <libpq-fe.h>
 
-#include "contract_json_codec.h"
-#include "execution_planning_state.h"
-#include "execution_reference_prices.h"
+#include "message_json.h"
+#include "planning/planning_state.h"
+#include "price_snapshot.h"
 #include "live_execution_identity.h"
-#include "nats_jetstream_message_bus.h"
-#include "notional_order_planner_engine.h"
+#include "jetstream_bus.h"
+#include "planning/notional_order_planner.h"
 #include "notional_order_planning.h"
 #include "order_manager.h"
 #include "service_logging.h"
-#include "strategy_position_snapshot.h"
+#include "position_state.h"
 #include "time_handler_factory.h"
 #include "time_utils.h"
-#include "transport_subjects.h"
+#include "message_subjects.h"
 
 
-
-// ============================================================================
-// Internal helpers and service implementation
-// ============================================================================
+// Internal helpers and service implementation.
 
 namespace {
 
@@ -109,9 +97,7 @@ void interruptibleBusinessWaitUntil(
 }
 
 
-// ============================================================================
-// Command-line configuration
-// ============================================================================
+// Command-line configuration.
 
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
@@ -158,9 +144,7 @@ Options parseOptions(int argc, char** argv)
 }
 
 
-// ============================================================================
-// Durable PostgreSQL persistence helpers
-// ============================================================================
+// Durable PostgreSQL persistence helpers.
 
 class PgResult {
 private:
@@ -310,9 +294,7 @@ public:
 };
 
 
-// ============================================================================
-// Service runtime and message-processing loop
-// ============================================================================
+// Service runtime and message-processing loop.
 
 class OrderPlannerServiceRuntime {
 private:
@@ -320,10 +302,10 @@ private:
     const TimeHandlerConfig time_config_;
     const TimeHandler time_handler_;
     const std::optional<Timestamp> replay_bootstrap_completed_date_;
-    NatsJetStreamMessageBus bus_;
-    NotionalOrderPlannerEngine planner_;
+    JetStreamBus bus_;
+    NotionalOrderPlanner planner_;
     OrderPlannerCheckpointStore checkpoint_store_;
-    DurableMessageBus::SubscriptionID request_subscription_ = 0;
+    MessageBus::SubscriptionID request_subscription_ = 0;
     Timestamp latest_checkpoint_ = 0;
 
     DurableConsumerOptions consumer() const
@@ -331,7 +313,7 @@ private:
         DurableConsumerOptions result;
         result.stream = options_.stream;
         result.durable_name = "order-planner-live-notional-requests";
-        result.subject = TransportSubjects::NOTIONAL_ORDER_PLANNING_REQUEST;
+        result.subject = MessageSubjects::NOTIONAL_ORDER_PLANNING_REQUEST;
         result.ack_wait_ms = 30000;
         result.max_deliver = 20;
         result.max_ack_pending = 64;
@@ -427,7 +409,7 @@ private:
     {
         try {
             const NotionalOrderPlanningRequest request =
-                ContractJsonCodec::decodeNotionalOrderPlanningRequest(message.payload);
+                MessageJson::decodeNotionalOrderPlanningRequest(message.payload);
             validate(request);
 
             const Timestamp newestCompleted = newestCompletedBusinessUtcDate(time_handler_);
@@ -507,9 +489,9 @@ private:
             output.submit_orders = planning.submit_orders;
             output.global_target_notional_usd = planning.global_target.values();
 
-            const std::string encoded = ContractJsonCodec::encode(output);
+            const std::string encoded = MessageJson::encode(output);
             bus_.publish(
-                TransportSubjects::NOTIONAL_ORDER_PLAN,
+                MessageSubjects::NOTIONAL_ORDER_PLAN,
                 encoded,
                 output.metadata.message_id
             );
@@ -573,7 +555,7 @@ public:
           bus_(options_.nats_url),
           checkpoint_store_(options_.postgres)
     {
-        bus_.ensureStream(options_.stream, TransportSubjects::tradingRuntimeSubjects());
+        bus_.ensureStream(options_.stream, MessageSubjects::tradingRuntimeSubjects());
         latest_checkpoint_ = checkpoint_store_.latestTimestamp();
         request_subscription_ = bus_.subscribe(consumer(), [this](const BusMessage& message) {
             return onRequest(message);
@@ -636,9 +618,7 @@ public:
 } // namespace
 
 
-// ============================================================================
-// Process entrypoint
-// ============================================================================
+// Process entrypoint.
 
 int main(int argc, char** argv)
 {

@@ -1,26 +1,66 @@
 #pragma once
 
 #include <cmath>
-#include <cstddef>
 #include <stdexcept>
+#include <cstddef>
 #include <unordered_map>
-
 #include "data_types.h"
-#include "rebalance_decision.h"
+
+// Rebalance actions and the timestamp/capital snapshot used to resolve their eventual execution quantity.
+
+// Describes what a strategy wants to do with one asset target
+//
+// Hold:
+// Keep the already-filled virtual quantity unchanged.
+//
+// Flat:
+// Fully close the strategy's virtual position in this asset.
+//
+// TargetWeight:
+// Resize/open the strategy to the supplied weight. Conversion to an executable
+// quantity happens later, using the configured execution timing and fill price.
+enum class RebalanceAction {
+    Hold,
+    Flat,
+    TargetWeight
+};
 
 
-/**************************************************************************************
- * Type    : RebalancePlan
- * Purpose : Strategy-level sizing/rebalance decisions produced for one timestamp
- *
- * referenceCapital is the strategy capital snapshot used when target weights were
- * calculated. It is intentionally stored with the plan so execution can later convert:
- *
- *   target weight * reference capital -> target monetary exposure -> quantity
- *
- * using the configured execution/fill price, not the strategy calculation close.
- * HOLD decisions are normally omitted from the map; missing coin therefore means HOLD.
- **************************************************************************************/
+struct RebalanceDecision {
+    RebalanceAction action = RebalanceAction::Hold;
+    double target_weight = 0.0;
+
+    static RebalanceDecision hold()
+    {
+        return {RebalanceAction::Hold, 0.0};
+    }
+
+    static RebalanceDecision flat()
+    {
+        return {RebalanceAction::Flat, 0.0};
+    }
+
+    static RebalanceDecision targetWeight(double weight)
+    {
+        if (!std::isfinite(weight))
+            throw std::invalid_argument("Rebalance target weight must be finite");
+
+        if (weight == 0.0)
+            return flat();
+
+        return {RebalanceAction::TargetWeight, weight};
+    }
+};
+
+// Strategy-level sizing/rebalance decisions produced for one timestamp
+//
+// referenceCapital is the strategy capital snapshot used when target weights were
+// calculated. It is intentionally stored with the plan so execution can later convert:
+//
+// target weight * reference capital -> target monetary exposure -> quantity
+//
+// using the configured execution/fill price, not the strategy calculation close.
+// HOLD decisions are normally omitted from the map; missing coin therefore means HOLD.
 class RebalancePlan {
 private:
     Timestamp timestamp_ = 0;

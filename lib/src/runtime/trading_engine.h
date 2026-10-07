@@ -10,14 +10,11 @@
 #include "trading_state_snapshot.h"
 
 
-/**************************************************************************************
- * Type    : TradingEngine
- * Purpose : Backward-compatible in-process facade over DecisionEngine + ExecutionEngine
- *
- * Runtimes keep the validated API while strategy decision work and executable order/fill
- * work are now delegated to explicit engines. This is the first structural split before
- * transport DTOs and distributed service boundaries are introduced.
- **************************************************************************************/
+// Backward-compatible in-process facade over DecisionEngine + ExecutionEngine
+//
+// Runtimes keep the validated API while strategy decision work and executable order/fill
+// work are now delegated to explicit engines. This is the first structural split before
+// transport DTOs and distributed service boundaries are introduced.
 class TradingEngine {
 private:
     StrategyPortfolio& strategies_;

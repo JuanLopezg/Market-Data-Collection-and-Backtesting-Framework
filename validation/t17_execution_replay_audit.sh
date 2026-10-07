@@ -23,11 +23,11 @@ assert 'class HistoricalOpenCsvSource' in source_h
 assert 'Parse exactly the visible-at-open prefix' in source_cpp
 assert 'std::getline(stream, openField' in source_cpp
 assert 'event=execution_open_published' in feeder
-assert 'TransportSubjects::EXECUTION_PRICES' in feeder
+assert 'MessageSubjects::EXECUTION_PRICES' in feeder
 assert '*nextOpen > businessDate' in feeder
 assert 'previousDay(static_cast<unsigned int>(day.date))' in feeder
 
-assert 'TransportSubjects::NOTIONAL_ORDER_PLAN' in execution
+assert 'MessageSubjects::NOTIONAL_ORDER_PLAN' in execution
 assert 'execution-state-notional-plans' in execution
 assert 'order.notional_usd / order.reference_close' in execution
 assert 'nextDay(static_cast<unsigned int>(plan.decision_timestamp))' in execution

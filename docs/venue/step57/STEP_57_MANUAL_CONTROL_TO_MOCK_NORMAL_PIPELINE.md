@@ -6,7 +6,7 @@ Step57 closes the **trading-control core path** for a confirmed manual target wi
 
 The canonical flow is:
 
-`confirmed/hash-bound manual target -> ManualPortfolioRiskEngineV1 -> DecisionBatch -> NotionalOrderPlannerEngine -> CanonicalVenueAdapter -> MockExchangeAdapterV1 -> Step50 admission -> Step51 Fill -> Step52 accounting -> Step54/55 reconciliation gate`
+`confirmed/hash-bound manual target -> ManualPortfolioRiskEngineV1 -> DecisionBatch -> NotionalOrderPlanner -> CanonicalVenueAdapter -> MockExchangeAdapterV1 -> Step50 admission -> Step51 Fill -> Step52 accounting -> Step54/55 reconciliation gate`
 
 ## Manual target contract
 
@@ -18,7 +18,7 @@ No symbol guessing is allowed. Every non-cash asset must have an explicit enable
 
 `ManualPortfolioRiskEngineV1` is the missing PortfolioRisk-side manual transformation. It applies the shared `RiskConstraints` primitive. Step57 deliberately **rejects** a request when hard constraints would mutate the operator's requested target rather than silently routing a different target.
 
-The engine emits the same `DecisionBatch` contract consumed by the production `NotionalOrderPlannerEngine`.
+The engine emits the same `DecisionBatch` contract consumed by the production `NotionalOrderPlanner`.
 
 ## Planning and execution
 

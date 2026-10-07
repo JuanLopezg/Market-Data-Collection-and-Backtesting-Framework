@@ -15,14 +15,11 @@
 class IndicatorEngine;
 
 
-/**************************************************************************************
- * Type    : StrategySignalInstance
- * Purpose : Signal-only runtime ownership for one Strategy
- *
- * Unlike StrategyInstance, this object intentionally owns no PortfolioSizer,
- * RiskConstraints, RebalancePolicy or virtual positions. It is therefore suitable for
- * the standalone strategy-service boundary.
- **************************************************************************************/
+// Signal-only runtime ownership for one Strategy
+//
+// Unlike StrategyInstance, this object intentionally owns no PortfolioSizer,
+// RiskConstraints, RebalancePolicy or virtual positions. It is therefore suitable for
+// the standalone strategy-service boundary.
 class StrategySignalInstance {
 private:
     StrategyID strategy_id_ = 0;

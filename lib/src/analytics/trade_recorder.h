@@ -13,13 +13,10 @@
 #include "trade_record.h"
 
 
-/**************************************************************************************
- * Type    : TradeRecorder
- * Purpose : Build analytics trade campaigns from strategy-attributed fills
- *
- * A campaign starts when a strategy/asset virtual position leaves zero and ends when it
- * returns to zero. Rebalancing fills inside that interval remain part of the same trade.
- **************************************************************************************/
+// Build analytics trade campaigns from strategy-attributed fills
+//
+// A campaign starts when a strategy/asset virtual position leaves zero and ends when it
+// returns to zero. Rebalancing fills inside that interval remain part of the same trade.
 class TradeRecorder {
 private:
     struct OpenTrade {
@@ -139,13 +136,15 @@ public:
                 return;
             }
 
+            // An opposite-side fill first reduces the current campaign. If it crosses zero,
+            // the remaining quantity opens a new campaign on the next loop iteration.
             const double closeQuantity = std::min(
                 std::abs(remaining),
                 std::abs(state.net_quantity)
             );
             const double fillQuantity = std::abs(fill.signedQuantity());
             const double closeCommission = fillQuantity > 0.0
-                ? fill.commission * (closeQuantity / fillQuantity) : 0.0;
+                ? fill.commission * (closeQuantity / fillQuantity) : 0.0; // Split reversal fees by quantity.
             const double closeSigned = remaining > 0.0 ? closeQuantity : -closeQuantity;
 
             state.cash_flow -= closeSigned * fill.price;
@@ -191,7 +190,7 @@ public:
             const double mark = marks.get(record.coin);
             record.end = timestamp;
             record.exit_price = mark;
-            record.pnl = state.cash_flow + state.net_quantity * mark - record.commission;
+            record.pnl = state.cash_flow + state.net_quantity * mark - record.commission; // Mark the remaining position.
             record.exited = false;
             result.push_back(std::move(record));
         }

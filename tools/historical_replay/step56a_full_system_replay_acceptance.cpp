@@ -18,15 +18,15 @@
 
 #include "entry_exit_only_rebalance_policy.h"
 #include "equal_weight_sizer.h"
-#include "full_system_replay_runtime_v1.h"
+#include "replay_runtime.h"
 #include "indicator_ranker.h"
 #include "liquidity_universe.h"
-#include "pureRSI.h"
+#include "validated/pure_rsi.h"
 #include "risk_constraints.h"
 #include "time_handler.h"
 
-using namespace FullSystemReplayV1;
-using namespace MockVenueV1;
+using namespace Replay;
+using namespace MockVenue;
 
 namespace {
 
@@ -251,12 +251,12 @@ PortfolioRiskEngine makeRiskEngine()
     return PortfolioRiskEngine(std::move(configs));
 }
 
-std::string reconciliationState(ReconciliationStateV1 state)
+std::string reconciliationState(ReconciliationState state)
 {
     switch (state) {
-    case ReconciliationStateV1::Pending: return "PENDING";
-    case ReconciliationStateV1::Clean: return "CLEAN";
-    case ReconciliationStateV1::Blocked: return "BLOCKED";
+    case ReconciliationState::Pending: return "PENDING";
+    case ReconciliationState::Clean: return "CLEAN";
+    case ReconciliationState::Blocked: return "BLOCKED";
     }
     return "UNKNOWN";
 }
@@ -292,9 +292,9 @@ int main(int argc, char** argv)
 
         StrategySignalEngine strategy = makeStrategyEngine();
         PortfolioRiskEngine risk = makeRiskEngine();
-        NotionalOrderPlannerEngine planner;
+        NotionalOrderPlanner planner;
 
-        MockChaosConfigV1 chaos;
+        MockChaosConfig chaos;
         chaos.auto_submit_faults = false;
         chaos.submit_limit = 100000U;
         chaos.cancel_limit = 100000U;
@@ -306,8 +306,8 @@ int main(int argc, char** argv)
         std::error_code ignored;
         std::filesystem::remove_all(args.durable,ignored);
 
-        MockExchangeAdapterV1 adapter(args.durable,chaos);
-        FullSystemReplayRuntimeV1 replay(
+        MockExchange adapter(args.durable,chaos);
+        ReplayRuntime replay(
             strategy,
             risk,
             planner,

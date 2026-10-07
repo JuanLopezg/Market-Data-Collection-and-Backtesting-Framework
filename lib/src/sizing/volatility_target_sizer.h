@@ -12,18 +12,15 @@
 #include "volatility_target.h"
 
 
-/**************************************************************************************
- * Type    : VolatilityTargetSizer
- * Purpose : Produces strategy target weights by scaling signal shape to a vol target
- *
- * Signal values are used directly as the relative portfolio shape. No arbitrary 10%
- * base weight and no monetary capital are introduced before volatility targeting.
- *
- * Example:
- *   signals: BTC +1.0, ETH +0.5
- *   shape  : BTC +1.0, ETH +0.5
- *   -> covariance -> expected vol -> scaling -> TargetWeights
- **************************************************************************************/
+// Produces strategy target weights by scaling signal shape to a vol target
+//
+// Signal values are used directly as the relative portfolio shape. No arbitrary 10%
+// base weight and no monetary capital are introduced before volatility targeting.
+//
+// Example:
+// signals: BTC +1.0, ETH +0.5
+// shape  : BTC +1.0, ETH +0.5
+// -> covariance -> expected vol -> scaling -> TargetWeights
 class VolatilityTargetSizer final : public PortfolioSizer {
 private:
     std::unique_ptr<CovarianceEstimator> covarianceEstimator_;
@@ -68,7 +65,7 @@ public:
 
         const auto covariance = covarianceEstimator_->estimate(marketData, timestamp, coins);
         if (!covariance)
-            return std::nullopt;
+            return std::nullopt; // Missing history is different from an intentionally empty target.
 
         const double estimatedVolatility = volatilityEstimator_.estimate(signalShape, *covariance);
         const auto scaled = volatilityTarget_.apply(signalShape, estimatedVolatility);
@@ -100,7 +97,7 @@ public:
 
         const auto covariance = covarianceEstimator_->estimate(marketData, timestamp, coins);
         if (!covariance)
-            return std::nullopt;
+            return std::nullopt; // No covariance estimate means no volatility diagnostic.
 
         PortfolioSizingDiagnostics result;
         result.active_assets = signals.activeCount();

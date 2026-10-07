@@ -33,6 +33,8 @@ StrategyInstance& TradingEngine::strategyById(StrategyID strategyId)
 }
 
 
+// Execution owns filled quantities. StrategyInstance keeps a convenience mirror
+// for callers; restore and event processing refresh it from execution state.
 void TradingEngine::syncStrategyPositionMirrors()
 {
     for (auto& strategy : strategies_)
@@ -61,9 +63,7 @@ void TradingEngine::checkpoint() const
 }
 
 
-/**************************************************************************************
- * Purpose : Restore persisted operational state without submitting/canceling any orders
- **************************************************************************************/
+// Restore persisted operational state without submitting/canceling any orders
 void TradingEngine::restoreState(const TradingStateSnapshot& snapshot)
 {
     if (snapshot.schema_version != TradingStateSnapshot::CURRENT_SCHEMA_VERSION)
@@ -142,9 +142,7 @@ void TradingEngine::restoreState(const TradingStateSnapshot& snapshot)
 }
 
 
-/**************************************************************************************
- * Purpose : Rebuild non-operational TradeRecorder analytics from the persisted fill log
- **************************************************************************************/
+// Rebuild non-operational TradeRecorder analytics from the persisted fill log
 void TradingEngine::rebuildTradeRecorder(const std::vector<Fill>& fills)
 {
     std::vector<Fill> ordered = fills;
@@ -167,9 +165,7 @@ void TradingEngine::rebuildTradeRecorder(const std::vector<Fill>& fills)
 }
 
 
-/**************************************************************************************
- * Purpose : Create a plain-data operational snapshot suitable for persistence/recovery
- **************************************************************************************/
+// Create a plain-data operational snapshot suitable for persistence/recovery
 TradingStateSnapshot TradingEngine::stateSnapshot() const
 {
     TradingStateSnapshot snapshot;
@@ -217,9 +213,7 @@ void TradingEngine::persist(const std::optional<Fill>& newFill) const
 }
 
 
-/**************************************************************************************
- * Purpose : Update strategy decision state at one completed market-data slice
- **************************************************************************************/
+// Update strategy decision state at one completed market-data slice
 void TradingEngine::onBarClose(
     const MarketData& marketData,
     Timestamp ts,
@@ -239,9 +233,7 @@ void TradingEngine::onBarClose(
 }
 
 
-/**************************************************************************************
- * Purpose : Resolve pending decision intent at executable prices
- **************************************************************************************/
+// Resolve pending decision intent at executable prices
 void TradingEngine::executePendingPlans(
     Timestamp ts,
     const ExecutionReferencePrices& prices
@@ -258,6 +250,8 @@ void TradingEngine::executePendingPlans(
         [this](const std::optional<Fill>& fill) { persist(fill); }
     );
 
+    // Clear intent after the local plan is persisted and commands are dispatched.
+    // Venue acceptance and fills may still arrive asynchronously.
     if (hadPendingPlans) {
         decision_engine_.clearPendingDecisions();
         persist();
@@ -265,9 +259,7 @@ void TradingEngine::executePendingPlans(
 }
 
 
-/**************************************************************************************
- * Purpose : Route queued asynchronous exchange lifecycle events
- **************************************************************************************/
+// Route queued asynchronous exchange lifecycle events
 void TradingEngine::processExchangeEvents()
 {
     execution_engine_.processExchangeEvents(

@@ -1,3 +1,5 @@
+// Rank the current eligible bars by their requested indicator, then assign 1-based ranks.
+
 #include "indicator_ranker.h"
 
 #include <algorithm>
@@ -51,11 +53,11 @@ RankedUniverse IndicatorRanker::rank(
             const bool bValid = std::isfinite(b.score);
 
             if (aValid != bValid) {
-                return aValid;
+                return aValid; // Finite scores sort before unavailable or invalid ones.
             }
 
             if (a.score == b.score) {
-                return a.coin < b.coin;
+                return a.coin < b.coin; // Equal numeric scores use symbol order, independent of hash-map iteration.
             }
 
             return descending_

@@ -7,18 +7,14 @@
 #include "contract_metadata.h"
 #include "decision_batch.h"
 #include "execution_order.h"
-#include "execution_price_snapshot.h"
-#include "tracked_order.h"
+#include "execution_messages.h"
 
 
-/**************************************************************************************
- * Type    : ExecutionPlanningStateSnapshot
- * Purpose : Immutable execution-state input required to create an order plan
- *
- * The planner does not own this state. A reconciliation/execution-state authority
- * publishes it and later validates/applies the returned plan before exchange commands
- * are emitted.
- **************************************************************************************/
+// Immutable execution-state input required to create an order plan
+//
+// The planner does not own this state. A reconciliation/execution-state authority
+// publishes it and later validates/applies the returned plan before exchange commands
+// are emitted.
 struct ExecutionPlanningStateSnapshot {
     std::uint64_t state_revision = 0;
     std::vector<StrategyID> strategy_ids;
@@ -28,10 +24,7 @@ struct ExecutionPlanningStateSnapshot {
 };
 
 
-/**************************************************************************************
- * Type    : OrderPlanningRequest
- * Purpose : Self-contained deterministic request for close-T intent at open T+1
- **************************************************************************************/
+// Self-contained deterministic request for close-T intent at open T+1
 struct OrderPlanningRequest {
     ContractMetadata metadata;
     Timestamp decision_timestamp = 0;
@@ -42,13 +35,10 @@ struct OrderPlanningRequest {
 };
 
 
-/**************************************************************************************
- * Type    : OrderPlanBatch
- * Purpose : Pure planner output; no exchange side effects have happened yet
- *
- * next_order_id is the value that the execution-state authority must persist if this
- * plan is accepted. global_target_exposure is included for audit/comparison only.
- **************************************************************************************/
+// Pure planner output; no exchange side effects have happened yet
+//
+// next_order_id is the value that the execution-state authority must persist if this
+// plan is accepted. global_target_exposure is included for audit/comparison only.
 struct OrderPlanBatch {
     ContractMetadata metadata;
     Timestamp decision_timestamp = 0;

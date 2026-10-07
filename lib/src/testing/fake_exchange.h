@@ -14,18 +14,15 @@
 #include "exchange_snapshot.h"
 
 
-/**************************************************************************************
- * Type    : FakeExchange
- * Purpose : Deterministic asynchronous exchange used by local live-style tests
- *
- * submitOrder/cancelOrder only record commands. Tests explicitly choose when the
- * exchange accepts/rejects/cancels/fills an order, so partial and delayed execution can
- * be reproduced without sleeping, threads, sockets or a real API.
- *
- * FakeExchange also owns an exchange-side cash/position/open-order view. snapshot()
- * therefore exercises the same recovery/reconciliation boundary a future LiveExchange
- * adapter will have to populate from its API.
- **************************************************************************************/
+// Deterministic asynchronous exchange used by local live-style tests
+//
+// submitOrder/cancelOrder only record commands. Tests explicitly choose when the
+// exchange accepts/rejects/cancels/fills an order, so partial and delayed execution can
+// be reproduced without sleeping, threads, sockets or a real API.
+//
+// FakeExchange also owns an exchange-side cash/position/open-order view. snapshot()
+// therefore exercises the same recovery/reconciliation boundary a future LiveExchange
+// adapter will have to populate from its API.
 class FakeExchange final : public Exchange {
 private:
     struct FakeOpenOrder {
@@ -84,9 +81,7 @@ public:
             throw std::invalid_argument("Fake exchange quantity epsilon must be finite and non-negative");
     }
 
-    /**************************************************************************************
-     * Purpose : Record submission without immediately ACKing/filling it
-     **************************************************************************************/
+    // Record submission without immediately ACKing/filling it
     void submitOrder(const ExecutionOrder& order) override
     {
         if (order.order_id == 0)
@@ -101,9 +96,7 @@ public:
         ++submit_count_;
     }
 
-    /**************************************************************************************
-     * Purpose : Record a cancel command; confirmation remains explicitly controlled
-     **************************************************************************************/
+    // Record a cancel command; confirmation remains explicitly controlled
     void cancelOrder(OrderID orderId) override
     {
         auto it = active_orders_.find(orderId);
@@ -160,9 +153,7 @@ public:
         active_orders_.erase(orderId);
     }
 
-    /**************************************************************************************
-     * Purpose : Emit one partial/final fill and mutate exchange-side account truth
-     **************************************************************************************/
+    // Emit one partial/final fill and mutate exchange-side account truth
     Fill fillOrder(OrderID orderId, double quantity, double price, Timestamp timestamp)
     {
         FakeOpenOrder& order = require(orderId);
@@ -218,9 +209,7 @@ public:
         return fill;
     }
 
-    /**************************************************************************************
-     * Purpose : Replay the latest FillID to test idempotent reconnect/event handling
-     **************************************************************************************/
+    // Replay the latest FillID to test idempotent reconnect/event handling
     void replayLastFill()
     {
         if (!last_fill_)

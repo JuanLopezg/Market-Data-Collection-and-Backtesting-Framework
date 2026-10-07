@@ -1,10 +1,7 @@
 #include "time_utils.h"
 
-/**************************************************************************************
- * Purpose : Returns the current local time as a formatted string with millisecond precision.
- * Args    : None
- * Return  : std::string - Local timestamp in the format "YYYY-MM-DD HH:MM:SS.mmm"
- **************************************************************************************/
+// Returns the current local time as a formatted string with millisecond precision.
+// Args    : None
 std::string nowString() {
     using namespace std::chrono;
 
@@ -18,11 +15,8 @@ std::string nowString() {
 }
 
 
-/**************************************************************************************
- * Purpose : Returns the current UTC time with millisecond precision.
- * Args    : None
- * Return  : std::string - UTC time formatted as "HH:MM:SS.mmm UTC"
- **************************************************************************************/
+// Returns the current UTC time with millisecond precision.
+// Args    : None
 std::string currentUtcTimestamp()
 {
     return currentUtcTimestamp(std::chrono::system_clock::now());
@@ -41,11 +35,8 @@ std::string currentUtcTimestamp(std::chrono::system_clock::time_point now)
 }
 
 
-/**************************************************************************************
- * Purpose : Computes the remaining time until the next UTC midnight (00:00:00).
- * Args    : None
- * Return  : std::string - Formatted duration "HHh MMm SSs until UTC midnight"
- **************************************************************************************/
+// Computes the remaining time until the next UTC midnight (00:00:00).
+// Args    : None
 std::string timeUntilUtcMidnight()
 {
     return timeUntilUtcMidnight(std::chrono::system_clock::now());
@@ -71,11 +62,8 @@ std::string timeUntilUtcMidnight(std::chrono::system_clock::time_point now)
 }
 
 
-/**************************************************************************************
- * Purpose : Retrieves the current UTC calendar date (year, month, day).
- * Args    : None
- * Return  : std::chrono::year_month_day - Current date in UTC.
- **************************************************************************************/
+// Retrieves the current UTC calendar date (year, month, day).
+// Args    : None
 std::chrono::year_month_day getCurrentUtcDate()
 {
     return getCurrentUtcDate(std::chrono::system_clock::now());
@@ -90,11 +78,8 @@ std::chrono::year_month_day getCurrentUtcDate(std::chrono::system_clock::time_po
 }
 
 
-/**************************************************************************************
- * Purpose : Computes the date of the previous day relative to the input date.
- * Args    : ymd - A chrono::year_month_day representing the current date.
- * Return  : std::chrono::year_month_day - The previous day's date.
- **************************************************************************************/
+// Computes the date of the previous day relative to the input date.
+// Args    : ymd - A chrono::year_month_day representing the current date.
 std::chrono::year_month_day getPreviousDayDate(std::chrono::year_month_day ymd)
 {
     using namespace std::chrono;
@@ -106,11 +91,8 @@ std::chrono::year_month_day getPreviousDayDate(std::chrono::year_month_day ymd)
 }
 
 
-/**************************************************************************************
- * Purpose : Formats a chrono::year_month_day into a "YYYY-MM-DD" string.
- * Args    : ymd - Date to format.
- * Return  : std::string - Formatted date string.
- **************************************************************************************/
+// Formats a chrono::year_month_day into a "YYYY-MM-DD" string.
+// Args    : ymd - Date to format.
 std::string formatYMD(std::chrono::year_month_day ymd)
 {
     int y = int(ymd.year());
@@ -126,11 +108,8 @@ std::string formatYMD(std::chrono::year_month_day ymd)
 }
 
 
-/**************************************************************************************
- * Purpose : Computes the next UTC midnight (00:00:00 of the following day).
- * Args    : None
- * Return  : std::chrono::system_clock::time_point - Timestamp of next midnight UTC.
- **************************************************************************************/
+// Computes the next UTC midnight (00:00:00 of the following day).
+// Args    : None
 std::chrono::system_clock::time_point computeNextMidnightUTC() {
     return computeNextMidnightUTC(std::chrono::system_clock::now());
 }
@@ -144,16 +123,13 @@ std::chrono::system_clock::time_point computeNextMidnightUTC(std::chrono::system
     return midnightNext;
 }
 
-/**************************************************************************************
- * Purpose : Converts a std::chrono::year_month_day into an integer of the form
- *           YYYYMMDD. This compact representation is useful for storage, comparison,
- *           hashing, and use as keys in maps (backtesting datasets, caching, etc.).
- *
- * Args    : ymd - The chrono date to convert.
- *
- * Return  : int - The encoded date as YYYYMMDD.
- *            Example: 2024/01/18 → 20240118
- **************************************************************************************/
+// Converts a std::chrono::year_month_day into an integer of the form
+// YYYYMMDD. This compact representation is useful for storage, comparison,
+// hashing, and use as keys in maps (backtesting datasets, caching, etc.).
+//
+// Args    : ymd - The chrono date to convert.
+//
+// Example: 2024/01/18 -> 20240118
 int toYYYYMMDD(std::chrono::year_month_day ymd)
 {
     int y = int(ymd.year());
@@ -163,20 +139,15 @@ int toYYYYMMDD(std::chrono::year_month_day ymd)
 }
 
 
-/**************************************************************************************
- * Purpose : Converts an integer date in the format YYYYMMDD into a Unix timestamp
- *           expressed in milliseconds since epoch (UTC). This is required for all
- *           Binance Kline API requests, which expect startTime as ms since 1970.
- *
- * Args    : yyyymmdd - Integer encoded date (YYYYMMDD).
- *
- * Return  : long - Unix timestamp in milliseconds since epoch at 00:00:00 UTC of
- *                  the given date.
- *
- * Notes   :
- *    - Conversion is performed directly from std::chrono::sys_days, so the result is
- *      always UTC and does not depend on the host machine timezone.
- **************************************************************************************/
+// Converts an integer date in the format YYYYMMDD into a Unix timestamp
+// expressed in milliseconds since epoch (UTC). This is required for all
+// Binance Kline API requests, which expect startTime as ms since 1970.
+//
+// Args    : yyyymmdd - Integer encoded date (YYYYMMDD).
+//
+// Notes   :
+// - Conversion is performed directly from std::chrono::sys_days, so the result is
+// always UTC and does not depend on the host machine timezone.
 long toUnixMillis(int yyyymmdd)
 {
     int y = yyyymmdd / 10000;

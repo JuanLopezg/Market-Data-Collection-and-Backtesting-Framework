@@ -59,12 +59,12 @@ def patch_risk(path):
         text,
         '''    const TimeHandlerConfig time_config_;
     const TimeHandler time_handler_;
-    NatsJetStreamMessageBus bus_;
+    JetStreamBus bus_;
 ''',
         '''    const TimeHandlerConfig time_config_;
     const TimeHandler time_handler_;
     const std::optional<Timestamp> replay_bootstrap_completed_date_;
-    NatsJetStreamMessageBus bus_;
+    JetStreamBus bus_;
 ''',
         "risk member"
     )
@@ -180,12 +180,12 @@ def patch_planner(path):
         text,
         '''    const TimeHandlerConfig time_config_;
     const TimeHandler time_handler_;
-    NatsJetStreamMessageBus bus_;
+    JetStreamBus bus_;
 ''',
         '''    const TimeHandlerConfig time_config_;
     const TimeHandler time_handler_;
     const std::optional<Timestamp> replay_bootstrap_completed_date_;
-    NatsJetStreamMessageBus bus_;
+    JetStreamBus bus_;
 ''',
         "planner member"
     )

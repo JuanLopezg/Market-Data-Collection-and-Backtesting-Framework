@@ -19,15 +19,15 @@
 
 #include "entry_exit_only_rebalance_policy.h"
 #include "equal_weight_sizer.h"
-#include "full_system_replay_runtime_v1.h"
+#include "replay_runtime.h"
 #include "indicator_ranker.h"
 #include "liquidity_universe.h"
-#include "pureRSI.h"
+#include "validated/pure_rsi.h"
 #include "risk_constraints.h"
 #include "time_handler.h"
 
-using namespace FullSystemReplayV1;
-using namespace MockVenueV1;
+using namespace Replay;
+using namespace MockVenue;
 
 namespace {
 
@@ -282,19 +282,19 @@ PortfolioRiskEngine makeRiskEngine()
     return PortfolioRiskEngine(std::move(configs));
 }
 
-std::string reconciliationState(ReconciliationStateV1 state)
+std::string reconciliationState(ReconciliationState state)
 {
     switch (state) {
-    case ReconciliationStateV1::Pending: return "PENDING";
-    case ReconciliationStateV1::Clean: return "CLEAN";
-    case ReconciliationStateV1::Blocked: return "BLOCKED";
+    case ReconciliationState::Pending: return "PENDING";
+    case ReconciliationState::Clean: return "CLEAN";
+    case ReconciliationState::Blocked: return "BLOCKED";
     }
     return "UNKNOWN";
 }
 
 void exportFillsForRealTest(
     const std::filesystem::path& path,
-    const std::vector<UserStreamEnvelopeV1>& stream,
+    const std::vector<UserStreamEnvelope>& stream,
     const std::unordered_map<std::string,std::string>& source_to_canonical)
 {
     std::unordered_map<std::string,std::string> canonical_to_source;
@@ -367,9 +367,9 @@ int main(int argc, char** argv)
 
         StrategySignalEngine strategy = makeStrategyEngine();
         PortfolioRiskEngine risk = makeRiskEngine();
-        NotionalOrderPlannerEngine planner;
+        NotionalOrderPlanner planner;
 
-        MockChaosConfigV1 chaos;
+        MockChaosConfig chaos;
         chaos.auto_submit_faults = false;
         chaos.submit_limit = 100000U;
         chaos.cancel_limit = 100000U;
@@ -381,14 +381,14 @@ int main(int argc, char** argv)
         std::error_code ignored;
         std::filesystem::remove_all(args.durable,ignored);
 
-        MatchingFillConfigV1 matching;
+        MatchingFillConfig matching;
         if (args.profile == "realtest-parity") {
             matching.participation_ppm = 1000000U;
             matching.max_adverse_slippage_ppm = 0U;
         }
 
-        MockExchangeAdapterV1 adapter(args.durable,chaos,matching);
-        FullSystemReplayRuntimeV1 replay(
+        MockExchange adapter(args.durable,chaos,matching);
+        ReplayRuntime replay(
             strategy,
             risk,
             planner,
@@ -480,7 +480,7 @@ int main(int argc, char** argv)
         out << "  \"realizedPnl\": " << margin.realized_pnl << ",\n";
         out << "  \"unrealizedPnl\": " << margin.unrealized_pnl << ",\n";
         out << "  \"grossExposure\": " << margin.gross_exposure << ",\n";
-        out << "  \"feesPaid\": " << signedScaledToDouble(adapter.chaos().runtime().account().feesPaidUnits(),kMockMoneyScaleV1) << ",\n";
+        out << "  \"feesPaid\": " << signedScaledToDouble(adapter.chaos().runtime().account().feesPaidUnits(),kMockMoneyScale) << ",\n";
         out << "  \"reconciliation\": \"" << reconciliationState(reconciliation.state) << "\",\n";
         out << "  \"reconciliationIssues\": " << reconciliation.issues.size() << ",\n";
         out << "  \"routeSafe\": " << (replay.routeSafe() ? "true" : "false") << ",\n";

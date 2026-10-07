@@ -1,17 +1,9 @@
-/*
- * historical_market_data_service_main.cpp
- *
- * Purpose: Feeds canonical historical market data and execution-open prices without exposing future candle data.
- *
- * Read this file from top to bottom:
- *   1. Advance independent CSV cursors using business time.
- *   2. Publish only the open price while a daily candle is still in progress.
- *   3. Commit completed daily candles to SQLite before publishing MarketDataUpdated.
- *
- * This file contains the executable entrypoint and service-level orchestration.
- * Keep reusable domain calculations in focused components; keep startup,
- * message flow, persistence boundaries, logging, and shutdown visible here.
- */
+// Feeds canonical historical market data and execution-open prices without exposing future
+// candle data.
+//
+// 1. Advance independent CSV cursors using business time.
+// 2. Publish only the open price while a daily candle is still in progress.
+// 3. Commit completed daily candles to SQLite before publishing MarketDataUpdated.
 
 #include <algorithm>
 #include <atomic>
@@ -27,21 +19,19 @@
 #include <string>
 #include <thread>
 
-#include "contract_json_codec.h"
-#include "execution_price_snapshot.h"
+#include "message_json.h"
+#include "execution_messages.h"
 #include "historical_csv_source.h"
-#include "market_data_store.h"
-#include "market_data_updated.h"
-#include "nats_jetstream_message_bus.h"
+#include "market_store.h"
+#include "market_messages.h"
+#include "jetstream_bus.h"
 #include "service_logging.h"
 #include "time_handler_factory.h"
 #include "time_utils.h"
-#include "transport_subjects.h"
+#include "message_subjects.h"
 
 
-// ============================================================================
-// Internal helpers and service implementation
-// ============================================================================
+// Internal helpers and service implementation.
 
 namespace {
 
@@ -54,9 +44,7 @@ void stopHandler(int)
 }
 
 
-// ============================================================================
-// Command-line configuration
-// ============================================================================
+// Command-line configuration.
 
 struct Options {
     std::string nats_url = "nats://127.0.0.1:4222";
@@ -201,7 +189,7 @@ std::string executionOpenMessageId(Timestamp date)
 }
 
 void publishExecutionOpen(
-    NatsJetStreamMessageBus& bus,
+    JetStreamBus& bus,
     const HistoricalExecutionOpen& day)
 {
     if (day.date == 0 || day.prices.empty())
@@ -218,8 +206,8 @@ void publishExecutionOpen(
     event.prices = day.prices;
 
     bus.publish(
-        TransportSubjects::EXECUTION_PRICES,
-        ContractJsonCodec::encode(event),
+        MessageSubjects::EXECUTION_PRICES,
+        MessageJson::encode(event),
         event.metadata.message_id
     );
     bus.flush();
@@ -235,7 +223,7 @@ void publishExecutionOpen(
 }
 
 void publishDay(
-    NatsJetStreamMessageBus& bus,
+    JetStreamBus& bus,
     const Options& options,
     const HistoricalMarketDay& day)
 {
@@ -254,8 +242,8 @@ void publishDay(
     event.requested_symbols = event.tracked_symbols;
     event.downloaded_rows = static_cast<std::uint64_t>(day.rowCount());
 
-    const std::string payload = ContractJsonCodec::encode(event);
-    bus.publish(TransportSubjects::MARKET_DATA_UPDATED, payload, event.metadata.message_id);
+    const std::string payload = MessageJson::encode(event);
+    bus.publish(MessageSubjects::MARKET_DATA_UPDATED, payload, event.metadata.message_id);
     bus.flush();
 
     LG_INFO(
@@ -270,7 +258,7 @@ void publishDay(
 
 void commitAndPublish(
     MarketDataStore& store,
-    NatsJetStreamMessageBus& bus,
+    JetStreamBus& bus,
     const Options& options,
     const HistoricalMarketDay& day)
 {
@@ -295,9 +283,7 @@ void commitAndPublish(
 } // namespace
 
 
-// ============================================================================
-// Process entrypoint
-// ============================================================================
+// Process entrypoint.
 
 int main(int argc, char** argv)
 {
@@ -326,8 +312,8 @@ int main(int argc, char** argv)
         HistoricalCsvSource source(options.historical_data);
         HistoricalOpenCsvSource openSource(options.historical_data);
         MarketDataStore store(options.market_data_db);
-        NatsJetStreamMessageBus bus(options.nats_url);
-        bus.ensureStream(options.stream, TransportSubjects::tradingRuntimeSubjects());
+        JetStreamBus bus(options.nats_url);
+        bus.ensureStream(options.stream, MessageSubjects::tradingRuntimeSubjects());
 
         const TrackedMarketData existing = store.loadTracked();
         const Timestamp checkpoint = trackedDate(existing);

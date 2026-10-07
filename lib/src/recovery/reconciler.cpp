@@ -108,6 +108,7 @@ ReconciliationReport Reconciler::compare(
         }
     }
 
+    // Match each venue order at most once; duplicate local claims must not hide drift.
     std::unordered_set<std::size_t> matchedExchangeOrders;
 
     for (const TrackedOrder& localOrder : local.orders) {

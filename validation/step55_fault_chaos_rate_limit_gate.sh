@@ -28,8 +28,8 @@ for f in \
  "$ART/STEP_55_FAULT_CHAOS_RATE_LIMIT_ENGINE.md" \
  "$ART/STEP_56_IMPLEMENTATION_HANDOFF.json" \
  "$ART/SHA256SUMS" \
- "$ROOT/lib/src/exchange/mock_chaos_prng_v1.h" \
- "$ROOT/lib/src/exchange/mock_fault_chaos_rate_limit_v1.h" \
+ "$ROOT/lib/src/exchange/mock/random.h" \
+ "$ROOT/lib/src/exchange/mock/faults.h" \
  "$ROOT/validation/step55_fault_chaos_rate_limit_test.cpp"; do
   [[ -f "$f" ]] || fail "missing ${f#$ROOT/}"
 done
@@ -104,19 +104,19 @@ pass 'disconnect/reconnect, stale snapshot, delay/loss, duplicates, out-of-order
 
 printf '%s\n' '[6/8] Chaos/rate-limit decisions use no wall-clock timer or sleep'
 if grep -Ein 'system_clock|steady_clock|high_resolution_clock|sleep_for|sleep_until|gettimeofday|clock_gettime|std::time|(^|[^[:alnum:]_])time\(' \
- "$ROOT/lib/src/exchange/mock_chaos_prng_v1.h" \
- "$ROOT/lib/src/exchange/mock_fault_chaos_rate_limit_v1.h" >"$TMP/clock"; then
+ "$ROOT/lib/src/exchange/mock/random.h" \
+ "$ROOT/lib/src/exchange/mock/faults.h" >"$TMP/clock"; then
  cat "$TMP/clock" >&2
  fail 'wall/monotonic time leaked into Step55 fault selection/rate-limit behavior'
 fi
-grep -Fq 'deterministicPpmDrawV1' "$ROOT/lib/src/exchange/mock_fault_chaos_rate_limit_v1.h" || fail 'deterministic seed selector missing'
-grep -Fq 'evidenceFingerprint' "$ROOT/lib/src/exchange/mock_fault_chaos_rate_limit_v1.h" || fail 'chaos evidence fingerprint missing'
+grep -Fq 'deterministicPpmDrawV1' "$ROOT/lib/src/exchange/mock/faults.h" || fail 'deterministic seed selector missing'
+grep -Fq 'evidenceFingerprint' "$ROOT/lib/src/exchange/mock/faults.h" || fail 'chaos evidence fingerprint missing'
 pass 'fault decisions and rate-limit recovery depend only on seed/input ordinals/supplied event time'
 
 printf '%s\n' '[7/8] Step56/private real-venue wiring has not slipped in'
 if grep -Ein 'hyperliquid|private[_ -]?key|mnemonic|seed phrase|api wallet|smart[_ -]?order|portfolio[_ -]?risk|order[_ -]?planner|strategy.*submit' \
- "$ROOT/lib/src/exchange/mock_fault_chaos_rate_limit_v1.h" \
- "$ROOT/lib/src/exchange/mock_chaos_prng_v1.h" >"$TMP/future"; then
+ "$ROOT/lib/src/exchange/mock/faults.h" \
+ "$ROOT/lib/src/exchange/mock/random.h" >"$TMP/future"; then
  cat "$TMP/future" >&2
  fail 'Step56/private real-venue/full-system concern leaked into Step55 code'
 fi

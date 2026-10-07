@@ -4,22 +4,19 @@
 #include <cmath>
 #include <stdexcept>
 
-#include "target_weights.h"
+#include "portfolio_weights.h"
 
 
-/**************************************************************************************
- * Type    : RiskConstraints
- * Purpose : Applies hard percentage-based limits to strategy target weights
- *
- * maxGrossLeverage:
- *   Maximum sum of absolute target weights. Example: 1.50 means 150% gross exposure.
- *
- * maxAssetWeight:
- *   Maximum absolute weight for any single asset. Example: 0.20 means 20%.
- *
- * Both limits are dimensionless and therefore apply before strategy capital is introduced.
- * A value of 0 disables all exposure through that limit.
- **************************************************************************************/
+// Applies hard percentage-based limits to strategy target weights
+//
+// maxGrossLeverage:
+// Maximum sum of absolute target weights. Example: 1.50 means 150% gross exposure.
+//
+// maxAssetWeight:
+// Maximum absolute weight for any single asset. Example: 0.20 means 20%.
+//
+// Both limits are dimensionless and therefore apply before strategy capital is introduced.
+// A value of 0 disables all exposure through that limit.
 class RiskConstraints {
 private:
     double maxGrossLeverage_ = 0.0;

@@ -4,7 +4,7 @@
 
 Step56A runs the frozen real historical OHLCV source through the complete in-process production-engine chain:
 
-`TimeHandler -> StrategyPureRSI -> StrategySignalEngine -> PortfolioRiskEngine -> NotionalOrderPlannerEngine -> CanonicalVenueAdapter -> MockExchangeAdapterV1 -> Fill -> Accounting -> Recovery -> Reconciliation/Ledger`
+`TimeHandler -> StrategyPureRSI -> StrategySignalEngine -> PortfolioRiskEngine -> NotionalOrderPlanner -> CanonicalVenueAdapter -> MockExchangeAdapterV1 -> Fill -> Accounting -> Recovery -> Reconciliation/Ledger`
 
 ## Acceptance window
 
@@ -24,7 +24,7 @@ Mapping SHA-256: `f83fe5ae3ebb128331bfcf97d678aa78d58138c7f2bb9b2f370502fcb7d69f
 
 ## PureRSI and portfolio semantics
 
-The runner uses the production `StrategyPureRSI`, `StrategySignalEngine`, `PortfolioRiskEngine` and `NotionalOrderPlannerEngine` with the frozen configuration semantics:
+The runner uses the production `StrategyPureRSI`, `StrategySignalEngine`, `PortfolioRiskEngine` and `NotionalOrderPlanner` with the frozen configuration semantics:
 
 - top 20 by SMA Volume(25);
 - RSI(7), using the project's indicator implementation;

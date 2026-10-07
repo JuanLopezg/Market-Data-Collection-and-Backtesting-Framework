@@ -26,9 +26,9 @@ for f in \
  "$ART/STEP_57_MANUAL_CONTROL_TO_MOCK_NORMAL_PIPELINE.md" \
  "$ART/STEP_58_IMPLEMENTATION_HANDOFF.json" \
  "$ART/SHA256SUMS" \
- "$ROOT/lib/src/contracts/manual_target_intent_v1.h" \
- "$ROOT/lib/src/runtime/manual_portfolio_risk_engine_v1.h" \
- "$ROOT/lib/src/runtime/manual_control_mock_pipeline_v1.h" \
+ "$ROOT/lib/src/contracts/manual_target.h" \
+ "$ROOT/lib/src/risk/manual_portfolio_risk.h" \
+ "$ROOT/lib/src/runtime/manual_trading.h" \
  "$ROOT/tools/manual_control/step57_mock_manual_pipeline_cli.cpp" \
  "$ROOT/validation/step57_manual_control_mock_pipeline_test.cpp"; do
  [[ -f "$f" ]] || fail "missing ${f#$ROOT/}"
@@ -82,12 +82,12 @@ pass 'confirmed target -> manual risk -> production planner -> canonical MOCK po
 printf '%s\n' '[5/8] C++20 manual-control normal-pipeline suite passes'
 CXX="${CXX:-c++}"
 INCLUDES=()
-for d in account analytics common_types contracts data_types exchange execution filter indicator market portfolio position ranker rebalance risk runtime signal sizing strategy universe utils; do
+for d in account analytics logging contracts data_types exchange execution filter indicator market portfolio position ranker rebalance risk runtime signal sizing strategy universe utils; do
  INCLUDES+=("-I$ROOT/lib/src/$d")
 done
 "$CXX" -std=c++20 -Wall -Wextra -Werror -pedantic "${INCLUDES[@]}" \
  "$ROOT/validation/step57_manual_control_mock_pipeline_test.cpp" \
- "$ROOT/lib/src/runtime/notional_order_planner_engine.cpp" \
+ "$ROOT/lib/src/execution/planning/notional_order_planner.cpp" \
  -o "$TMP/step57_test"
 "$TMP/step57_test"
 pass 'manual target entry/noop/flat traverses risk -> planner -> canonical MOCK -> fills/accounting/reconciliation'
@@ -95,17 +95,17 @@ pass 'manual target entry/noop/flat traverses risk -> planner -> canonical MOCK 
 printf '%s\n' '[6/8] CLI trading-control harness compiles and uses the same Step57 pipeline'
 "$CXX" -std=c++20 -Wall -Wextra -Werror -pedantic "${INCLUDES[@]}" \
  "$ROOT/tools/manual_control/step57_mock_manual_pipeline_cli.cpp" \
- "$ROOT/lib/src/runtime/notional_order_planner_engine.cpp" \
+ "$ROOT/lib/src/execution/planning/notional_order_planner.cpp" \
  -o "$TMP/step57_cli"
 "$TMP/step57_cli" "$TMP/cli-state" BTCUSDT 25 100 >"$TMP/cli.out"
 grep -q 'status=1 submits=1' "$TMP/cli.out" || { cat "$TMP/cli.out" >&2; fail 'CLI did not submit through Step57 pipeline'; }
 pass 'dedicated trading-control harness reaches MOCK normal pipeline without dashboard/browser exchange access'
 
 printf '%s\n' '[7/8] No direct planner-to-MOCK/private real-venue bypass slipped in'
-grep -Fq 'CanonicalVenueAdapter& venue_' "$ROOT/lib/src/runtime/manual_control_mock_pipeline_v1.h" || fail 'canonical venue boundary missing'
-grep -Fq 'venue_.submitOrders(batch)' "$ROOT/lib/src/runtime/manual_control_mock_pipeline_v1.h" || fail 'manual submit does not cross canonical adapter'
+grep -Fq 'CanonicalVenueAdapter& venue_' "$ROOT/lib/src/runtime/manual_trading.h" || fail 'canonical venue boundary missing'
+grep -Fq 'venue_.submitOrders(batch)' "$ROOT/lib/src/runtime/manual_trading.h" || fail 'manual submit does not cross canonical adapter'
 if grep -Ein 'runtime\(\)\.submit\(|lifecycle\(\)\.submit\(|chaos\(\)\.submit\(|hyperliquid|private[_ -]?key|mnemonic|seed phrase|api wallet|smart[_ -]?order' \
- "$ROOT/lib/src/runtime/manual_control_mock_pipeline_v1.h" "$ROOT/lib/src/runtime/manual_portfolio_risk_engine_v1.h" >"$TMP/bypass"; then
+ "$ROOT/lib/src/runtime/manual_trading.h" "$ROOT/lib/src/risk/manual_portfolio_risk.h" >"$TMP/bypass"; then
  cat "$TMP/bypass" >&2
  fail 'direct MOCK/private/smart-routing bypass detected'
 fi

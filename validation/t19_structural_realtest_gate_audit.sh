@@ -22,7 +22,7 @@ assert "rt.get('result')!='PASS'" in r
 assert "regraded_without_replay" in r
 assert "resuming at T20" in q
 assert "t19_full_history_realtest_summary.json" in q
-assert "t23_cleanup.py" in q and "t23_no_legacy_clock_audit.sh" in q
+assert "t23_cleanup.py" in q and "no_legacy_clock_audit.sh" in q
 print('PASS: T19b structural gate separated from T19c economic RealTest gate')
 print('PASS: existing accepted T19 evidence can be regraded without replay')
 print('PASS: T20-T24 resume remains fail-closed before destructive T23 cleanup')

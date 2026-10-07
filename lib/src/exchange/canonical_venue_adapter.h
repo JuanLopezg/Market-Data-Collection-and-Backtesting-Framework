@@ -2,27 +2,24 @@
 
 #include <functional>
 
-#include "canonical_venue_account_v1.h"
-#include "canonical_venue_capabilities_v1.h"
-#include "canonical_venue_events_v1.h"
-#include "canonical_venue_orders_v1.h"
+#include "venue_account.h"
+#include "venue_capabilities.h"
+#include "venue_events.h"
+#include "venue_orders.h"
 
-/**************************************************************************************
- * Type    : CanonicalVenueAdapter
- * Purpose : Common execution interface shared by MOCK and concrete trading venues.
- *
- * This interface defines the behavior expected by higher-level trading code. Credentials,
- * private routing, network protocols and venue-specific details belong in concrete adapters.
- *
- * Contract rules:
- * - context() identifies the explicitly configured venue/environment.
- * - capabilities() is authoritative; callers do not branch on venue_id.
- * - unsupported required capability blocks that route; no silent venue fallback.
- * - client_order_id is not proof of native idempotent submission.
- * - ambiguous submit outcomes must reconcile before any retry unless the adapter
- *   explicitly advertises IdempotentSubmit and its concrete semantics permit retry.
- * - all asynchronous output is emitted as the ordered canonical Event stream.
- **************************************************************************************/
+// Common execution interface shared by MOCK and concrete trading venues.
+//
+// This interface defines the behavior expected by higher-level trading code. Credentials,
+// private routing, network protocols and venue-specific details belong in concrete adapters.
+//
+// Contract rules:
+// - context() identifies the explicitly configured venue/environment.
+// - capabilities() is authoritative; callers do not branch on venue_id.
+// - unsupported required capability blocks that route; no silent venue fallback.
+// - client_order_id is not proof of native idempotent submission.
+// - ambiguous submit outcomes must reconcile before any retry unless the adapter
+// explicitly advertises IdempotentSubmit and its concrete semantics permit retry.
+// - all asynchronous output is emitted as the ordered canonical Event stream.
 class CanonicalVenueAdapter {
 public:
     using EventHandler = std::function<void(const VenueContracts::V1::Event&)>;
