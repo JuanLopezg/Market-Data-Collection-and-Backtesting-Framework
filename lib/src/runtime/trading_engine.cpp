@@ -51,6 +51,10 @@ void TradingEngine::requireTradingEnabled() const
 
 void TradingEngine::attachStateStore(StateStore& stateStore)
 {
+    for (const auto& strategy : strategies_) {
+        if (strategy.strategy().requiresTradeObservations())
+            throw std::logic_error("Conditional research strategies do not support durable TradingEngine recovery yet");
+    }
     // Do not write here: a live runtime must be able to inspect/recover an existing DB
     // before any fresh in-memory state has a chance to overwrite it.
     state_store_ = &stateStore;
@@ -222,6 +226,16 @@ void TradingEngine::onBarClose(
 {
     requireTradingEnabled();
 
+    for (const auto& strategy : strategies_) {
+        if (!strategy.strategy().requiresTradeObservations())
+            continue;
+        std::vector<TradeRecord> ownedTrades;
+        for (const auto& trade : trade_recorder_.allTrades(marks, ts)) {
+            if (trade.strategy_id == strategy.id() && !trade.exited)
+                ownedTrades.push_back(trade);
+        }
+        strategy.strategy().observeTrades(ownedTrades);
+    }
     decision_engine_.onBarClose(
         marketData,
         ts,

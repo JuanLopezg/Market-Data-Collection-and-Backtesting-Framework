@@ -22,6 +22,9 @@ class Exchange {
 public:
     virtual ~Exchange() = default;
 
+    virtual bool supportsStopEntries() const { return false; }
+    virtual bool supportsShortBrackets() const { return false; }
+
     virtual void submitOrder(const ExecutionOrder& order) = 0;
     virtual void cancelOrder(OrderID orderId) = 0;
     virtual std::vector<ExchangeEvent> drainEvents() = 0;

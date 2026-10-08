@@ -190,13 +190,21 @@ public:
                     currentPrice = barIt->second.close;
             }
 
-            const RebalanceDecision decision = rebalance_policy_->decide(
+            RebalanceDecision decision = rebalance_policy_->decide(
                 signal,
                 desiredWeight,
                 currentQuantity,
                 currentPrice,
                 strategyCapital
             );
+
+            if (strategy_->requiresStopEntries() && currentQuantity == 0.0 &&
+                decision.action == RebalanceAction::TargetWeight) {
+                decision = RebalanceDecision::stopEntry(
+                    decision.target_weight, strategy_->entryStopPrice(coin)
+                );
+                decision.protective_stop_price = strategy_->protectiveStopPrice(coin);
+            }
 
             plan.set(coin, decision);
             if (last_sizing_diagnostics_ && decision.action != RebalanceAction::Hold)

@@ -10,6 +10,7 @@
 #include "ranker.h"
 #include "signal_state.h"
 #include "universe_selector.h"
+#include "trade_record.h"
 
 
 class IndicatorEngine;
@@ -22,6 +23,14 @@ class IndicatorEngine;
 class Strategy {
 public:
     virtual ~Strategy() = default;
+
+    // Conditional research strategies observe actual campaigns, never invent fills.
+    // Default strategies continue to use the existing signal/market-order workflow.
+    virtual bool requiresStopEntries() const { return false; }
+    virtual bool requiresTradeObservations() const { return requiresStopEntries(); }
+    virtual void observeTrades(const std::vector<TradeRecord>&) const {}
+    virtual double entryStopPrice(const Coin&) const { return 0.0; }
+    virtual double protectiveStopPrice(const Coin&) const { return 0.0; }
 
     // Update this strategy's current signals for one timestamp
     //

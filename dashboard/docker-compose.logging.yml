@@ -1,0 +1,20 @@
+# Add last to the dashboard production Compose files after installing the host receiver.
+x-daily-logging: &daily_logging
+  driver: syslog
+  options:
+    syslog-address: "tcp://127.0.0.1:5514"
+    syslog-format: "rfc5424micro"
+    tag: "algotrading.{{.Name}}"
+    mode: "non-blocking"
+    max-buffer-size: "4m"
+    cache-disabled: "false"
+    cache-max-size: "10m"
+    cache-max-file: "3"
+
+services:
+  dashboard-api:
+    logging: !override
+      <<: *daily_logging
+  dashboard-web:
+    logging: !override
+      <<: *daily_logging

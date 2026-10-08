@@ -21,43 +21,6 @@ struct DatedEquityPoint {
     Equity equity = 0.0;
 };
 
-bool splitTimestamp(Timestamp timestamp, int& year, unsigned int& month, unsigned int& day)
-{
-    year = static_cast<int>(timestamp / 10000U);
-    month = (timestamp / 100U) % 100U;
-    day = timestamp % 100U;
-
-    return year > 0 && month >= 1U && month <= 12U && day >= 1U && day <= 31U;
-}
-
-// Days since an arbitrary civil-date epoch. Only date differences are used.
-long long daysFromCivil(int year, unsigned int month, unsigned int day)
-{
-    year -= month <= 2U ? 1 : 0;
-    const int era = (year >= 0 ? year : year - 399) / 400;
-    const unsigned int yearOfEra = static_cast<unsigned int>(year - era * 400);
-    const unsigned int monthPrime = month > 2U ? month - 3U : month + 9U;
-    const unsigned int dayOfYear = (153U * monthPrime + 2U) / 5U + day - 1U;
-    const unsigned int dayOfEra =
-        yearOfEra * 365U + yearOfEra / 4U - yearOfEra / 100U + dayOfYear;
-
-    return static_cast<long long>(era) * 146097LL + static_cast<long long>(dayOfEra);
-}
-
-bool timestampToDayNumber(Timestamp timestamp, long long& dayNumber)
-{
-    int year = 0;
-    unsigned int month = 0;
-    unsigned int day = 0;
-
-    if (!splitTimestamp(timestamp, year, month, day)) {
-        return false;
-    }
-
-    dayNumber = daysFromCivil(year, month, day);
-    return true;
-}
-
 std::vector<DatedEquityPoint> alignEquityCurve(
     const std::vector<std::pair<Balance, Equity>>& balanceEquityHistoric,
     const MarketData& marketData
@@ -731,7 +694,18 @@ BacktestMetrics calculateBacktestMetrics(
                 );
             }
         }
-        totalHoldingBars += static_cast<double>(trade->barsHeld);
+        // CURRENT fill-derived reporting records have no legacy barsHeld counter.
+        // Count observed asset bars inclusively, preserving the legacy convention
+        // when other assets continue trading through a gap in this asset's data.
+        const auto entryBar = marketData.lower_bound(trade->start_);
+        const auto exitBar = marketData.upper_bound(trade->end_);
+        const auto holdingBars = trade->barsHeld > 0
+            ? trade->barsHeld
+            : (trade->start_ <= trade->end_
+                ? std::count_if(entryBar, exitBar, [&](const auto& slice) {
+                    return slice.second.contains(trade->coin_);
+                  }) : 0);
+        totalHoldingBars += static_cast<double>(holdingBars);
         metrics.grossTurnover +=
             std::abs(trade->size_) * (std::abs(trade->entry_) + std::abs(trade->exit_));
 
@@ -807,7 +781,7 @@ BacktestMetrics calculateBacktestMetrics(
         metrics.turnoverMultiple = metrics.grossTurnover / meanEquity;
     }
 
-    if (!marketData.empty() && !closedTrades.empty()) {
+    if (!marketData.empty() && !tradesHistory.empty()) {
         std::vector<Timestamp> timestamps;
         timestamps.reserve(marketData.size());
 
@@ -818,8 +792,16 @@ BacktestMetrics calculateBacktestMetrics(
 
         std::vector<int> exposureChanges(timestamps.size() + 1U, 0);
 
-        for (const Trade* trade : closedTrades) {
-            if (trade->start_ == 0U || trade->end_ == 0U || trade->end_ < trade->start_) {
+        // Exposure includes campaigns still held at the cutoff. Closed-trade
+        // statistics and Monte Carlo continue to exclude their unrealized PnL.
+        for (const auto& [tradeId, record] : tradesHistory) {
+            (void)tradeId;
+            if (settings.excludeSimulatedTrades && record.isSimulated_)
+                continue;
+            const Trade* trade = &record;
+            const Timestamp exposureEnd = trade->exited_
+                ? trade->end_ : timestamps.back();
+            if (trade->start_ == 0U || exposureEnd < trade->start_) {
                 continue;
             }
 
@@ -827,7 +809,7 @@ BacktestMetrics calculateBacktestMetrics(
                 timestamps.begin(), timestamps.end(), trade->start_
             );
             const auto endIt = std::upper_bound(
-                timestamps.begin(), timestamps.end(), trade->end_
+                timestamps.begin(), timestamps.end(), exposureEnd
             );
 
             if (startIt == timestamps.end() || startIt >= endIt) {

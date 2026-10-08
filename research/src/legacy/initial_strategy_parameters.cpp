@@ -1,13 +1,9 @@
-#include "backtest.h"
-#include "all_strategies.h"
+#include "backtester.h"
+#include "research_strategy_definitions.h"
 #include "backtest_metrics.h"
 #include "backtest_html_report.h"
 #include "database_utils.h"
-#include "indicator_ranker.h"
-#include "indicator_spec.h"
-#include "liquidity_universe.h"
 #include "logger.h"
-#include "universe_selector.h"
 
 #include <algorithm>
 #include <chrono>
@@ -23,27 +19,14 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <fstream>
+#include <boost/program_options.hpp>
 
 namespace {
 
-using ParameterValues = std::map<std::string, double>;
+using namespace research_studies;
 
-struct SensitivityParameterDefinition {
-    std::string key;
-    std::string displayName;
-    double minimum = 0.0;
-    double maximum = 0.0;
-    double spacing = 1.0;
-    bool enabled = false;
-};
-
-struct StrategyDefinition {
-    std::string name;
-    ParameterValues currentParameters;
-    std::vector<SensitivityParameterDefinition> sensitivityParameters;
-    std::function<std::unique_ptr<Strategy>(const ParameterValues&)> create;
-    std::function<bool(const ParameterValues&)> isValidCombination;
-};
+bool compactSensitivity = false;
 
 struct ActiveSensitivityParameter {
     const SensitivityParameterDefinition* definition = nullptr;
@@ -182,496 +165,6 @@ private:
     std::chrono::steady_clock::time_point start_;
 };
 
-double parameterOr(
-    const ParameterValues& parameters,
-    const std::string& key,
-    double fallback
-)
-{
-    const auto iterator = parameters.find(key);
-    return iterator == parameters.end() ? fallback : iterator->second;
-}
-
-unsigned int unsignedParameterOr(
-    const ParameterValues& parameters,
-    const std::string& key,
-    unsigned int fallback
-)
-{
-    const double value = parameterOr(
-        parameters,
-        key,
-        static_cast<double>(fallback)
-    );
-
-    if (!std::isfinite(value) || value <= 0.0) {
-        return 0U;
-    }
-
-    const double upperBound = static_cast<double>(
-        std::numeric_limits<unsigned int>::max()
-    );
-    return static_cast<unsigned int>(std::llround(std::min(value, upperBound)));
-}
-
-std::unique_ptr<UniverseSelector> makeTopLiquidityUniverse()
-{
-    constexpr unsigned int topLiquidityCount = 20;
-
-    return std::make_unique<TopNLiquidityUniverse>(
-        IndicatorSpec{
-            IndicatorKind::SMA,
-            PriceField::Volume,
-            25
-        },
-        topLiquidityCount,
-        true
-    );
-}
-
-std::vector<SensitivityParameterDefinition> makeSensitivityParameters(
-    std::initializer_list<SensitivityParameterDefinition> parameters
-)
-{
-    return std::vector<SensitivityParameterDefinition>(
-        
-        parameters.begin(),
-        parameters.end()
-    );
-}
-
-std::vector<StrategyDefinition> makeStrategyDefinitions(
-    double feeMaker,
-    double feeTaker,
-    double commissionEntryFactor,
-    double commissionExitFactor
-)
-{
-    std::vector<StrategyDefinition> definitions;
-
-    definitions.push_back(StrategyDefinition{
-        "BargainChaser",
-        {
-            {"maxPositionsOpen", 10.0},
-            {"riskPerTrade", 0.10},
-            {"maxRankingPosition", 999999.0},
-            {"barsUntilExit", 2.0},
-            {"fallPercentage", 10.0},
-            {"movingAverageLength", 50.0},
-            {"rankerRocLength", 1.0}
-        },
-        makeSensitivityParameters({
-            {"barsUntilExit", "Bars until exit", 1.0, 20.0, 2.0, true},
-            {"fallPercentage", "Fall percentage", 5.0, 20.0, 2.5, true},
-            {"movingAverageLength", "Moving-average length", 20.0, 100.0, 10.0, true},
-            {"rankerRocLength", "Ranker ROC length", 1.0, 30.0, 2.0, true},
-            {"maxPositionsOpen", "Maximum open positions", 1.0, 20.0, 1.0, false},
-            {"riskPerTrade", "Risk per trade", 0.02, 0.20, 0.02, false}
-        }),
-        [=](const ParameterValues& parameters) {
-            const unsigned int maxPositionsOpen = unsignedParameterOr(
-                parameters, "maxPositionsOpen", 10U
-            );
-            const double riskPerTrade = parameterOr(
-                parameters, "riskPerTrade", 0.10
-            );
-            const unsigned int maxRankingPosition = unsignedParameterOr(
-                parameters, "maxRankingPosition", 999999U
-            );
-            const unsigned int barsUntilExit = unsignedParameterOr(
-                parameters, "barsUntilExit", 2U
-            );
-            const double fallPercentage = parameterOr(
-                parameters, "fallPercentage", 10.0
-            );
-            const unsigned int movingAverageLength = unsignedParameterOr(
-                parameters, "movingAverageLength", 50U
-            );
-            const unsigned int rankerRocLength = unsignedParameterOr(
-                parameters, "rankerRocLength", 1U
-            );
-
-            auto universeSelector = makeTopLiquidityUniverse();
-            auto ranker = std::make_unique<IndicatorRanker>(
-                IndicatorSpec{IndicatorKind::ROC, PriceField::Close, rankerRocLength},
-                false
-            );
-
-            return std::make_unique<StrategyBargainChaser>(
-                maxPositionsOpen,
-                riskPerTrade,
-                std::move(universeSelector),
-                std::move(ranker),
-                commissionEntryFactor,
-                commissionExitFactor,
-                maxRankingPosition,
-                barsUntilExit,
-                fallPercentage,
-                movingAverageLength
-            );
-        },
-        [](const ParameterValues&) { return true; }
-    });
-
-    definitions.push_back(StrategyDefinition{
-        "ATRBreakout",
-        {
-            {"heldBars", 2.0},
-            {"atrMultiple", 0.75},
-            {"atrLength", 3.0},
-            {"momentumScoreLength", 30.0},
-            {"quantityPercent", 10.0},
-            {"maxPositionsOpen", 10.0},
-            {"maxRankingPosition", 999999.0}
-        },
-        makeSensitivityParameters({
-            {"heldBars", "Held bars", 1.0, 20.0, 2.0, true},
-            {"atrMultiple", "ATR multiple", 0.25, 1.50, 0.25, true},
-            {"atrLength", "ATR length", 1.0, 11.0, 1.0, true},
-            {"momentumScoreLength", "Momentum score length", 10.0, 60.0, 5.0, true},
-            {"quantityPercent", "Quantity (%)", 2.0, 20.0, 2.0, false},
-            {"maxPositionsOpen", "Maximum open positions", 1.0, 20.0, 1.0, false}
-        }),
-        [=](const ParameterValues& parameters) {
-            const unsigned int heldBars = unsignedParameterOr(parameters, "heldBars", 2U);
-            const double atrMultiple = parameterOr(parameters, "atrMultiple", 0.75);
-            const unsigned int atrLength = unsignedParameterOr(parameters, "atrLength", 3U);
-            const unsigned int momentumScoreLength = unsignedParameterOr(
-                parameters, "momentumScoreLength", 30U
-            );
-            const double quantityPercent = parameterOr(parameters, "quantityPercent", 10.0);
-            const unsigned int maxPositionsOpen = unsignedParameterOr(
-                parameters, "maxPositionsOpen", 10U
-            );
-            const unsigned int maxRankingPosition = unsignedParameterOr(
-                parameters, "maxRankingPosition", 999999U
-            );
-
-            auto universeSelector = makeTopLiquidityUniverse();
-            auto ranker = std::make_unique<IndicatorRanker>(
-                IndicatorSpec{
-                    IndicatorKind::ROC,
-                    PriceField::Close,
-                    momentumScoreLength
-                },
-                true
-            );
-
-            return std::make_unique<StrategyATRBreakout>(
-                maxPositionsOpen,
-                quantityPercent / 100.0,
-                std::move(universeSelector),
-                std::move(ranker),
-                commissionEntryFactor,
-                commissionExitFactor,
-                maxRankingPosition,
-                heldBars,
-                atrMultiple,
-                atrLength
-            );
-        },
-        [](const ParameterValues&) { return true; }
-    });
-
-    definitions.push_back(StrategyDefinition{
-        "MRShort",
-        {
-            {"rsiLength", 5.0},
-            {"rsiEntry", 70.0},
-            {"btcMovingAverageLength", 50.0},
-            {"entryAtrMultiple", 0.30},
-            {"entryAtrLength", 5.0},
-            {"heldBars", 3.0},
-            {"quantityPercent", 10.0},
-            {"maxPositionsOpen", 10.0},
-            {"maxRankingPosition", 1000000.0},
-            {"rankerRocLength", 30.0}
-        },
-        makeSensitivityParameters({
-            {"rsiLength", "RSI length", 2.0, 14.0, 1.0, true},
-            {"rsiEntry", "RSI entry", 55.0, 90.0, 5.0, true},
-            {"heldBars", "Held bars", 1.0, 20.0, 2.0, true},
-            {"entryAtrMultiple", "Entry ATR multiple", 0.0, 1.0, 0.1, true},
-            {"entryAtrLength", "Entry ATR length", 5.0, 5.0, 1.0, false},
-            {"btcMovingAverageLength", "BTC moving-average length", 50.0, 50.0, 1.0, false},
-            {"rankerRocLength", "Ranker ROC length", 10.0, 60.0, 5.0, false},
-            {"quantityPercent", "Quantity (%)", 2.0, 20.0, 2.0, false},
-            {"maxPositionsOpen", "Maximum open positions", 1.0, 20.0, 1.0, false}
-        }),
-        [=](const ParameterValues& parameters) {
-            const unsigned int rsiLength = unsignedParameterOr(parameters, "rsiLength", 5U);
-            const double rsiEntry = parameterOr(parameters, "rsiEntry", 70.0);
-            const unsigned int btcMovingAverageLength = unsignedParameterOr(
-                parameters, "btcMovingAverageLength", 50U
-            );
-            const double entryAtrMultiple = parameterOr(
-                parameters, "entryAtrMultiple", 0.30
-            );
-            const unsigned int entryAtrLength = unsignedParameterOr(
-                parameters, "entryAtrLength", 5U
-            );
-            const unsigned int heldBars = unsignedParameterOr(parameters, "heldBars", 3U);
-            const double quantityPercent = parameterOr(parameters, "quantityPercent", 10.0);
-            const unsigned int maxPositionsOpen = unsignedParameterOr(
-                parameters, "maxPositionsOpen", 10U
-            );
-            const unsigned int maxRankingPosition = unsignedParameterOr(
-                parameters, "maxRankingPosition", 1000000U
-            );
-            const unsigned int rankerRocLength = unsignedParameterOr(
-                parameters, "rankerRocLength", 30U
-            );
-
-            auto universeSelector = makeTopLiquidityUniverse();
-            auto ranker = std::make_unique<IndicatorRanker>(
-                IndicatorSpec{IndicatorKind::ROC, PriceField::Close, rankerRocLength},
-                true
-            );
-
-            return std::make_unique<StrategyMRShort>(
-                maxPositionsOpen,
-                quantityPercent / 100.0,
-                std::move(universeSelector),
-                std::move(ranker),
-                feeTaker,
-                feeTaker,
-                maxRankingPosition,
-                rsiLength,
-                rsiEntry,
-                btcMovingAverageLength,
-                entryAtrMultiple,
-                entryAtrLength,
-                heldBars,
-                "BTC"
-            );
-        },
-        [](const ParameterValues&) { return true; }
-    });
-
-    definitions.push_back(StrategyDefinition{
-        "PureMom",
-        {
-            {"heldBars", 7.0},
-            {"rocLength", 7.0},
-            {"btcMovingAverageLength", 50.0},
-            {"quantityPercent", 10.0},
-            {"maxPositionsOpen", 3.0},
-            {"maxRankingPosition", static_cast<double>(std::numeric_limits<unsigned int>::max())}
-        },
-        makeSensitivityParameters({
-            {"heldBars", "Held bars", 1.0, 14.0, 1.0, true},
-            {"rocLength", "ROC length", 3.0, 15.0, 2.0, true},
-            {"btcMovingAverageLength", "BTC moving-average length", 50.0, 50.0, 1.0, false},
-            {"quantityPercent", "Quantity (%)", 2.0, 20.0, 2.0, false},
-            {"maxPositionsOpen", "Maximum open positions", 1.0, 10.0, 1.0, false}
-        }),
-        [=](const ParameterValues& parameters) {
-            const unsigned int heldBars = unsignedParameterOr(parameters, "heldBars", 7U);
-            const unsigned int rocLength = unsignedParameterOr(parameters, "rocLength", 7U);
-            const unsigned int btcMovingAverageLength = unsignedParameterOr(
-                parameters, "btcMovingAverageLength", 50U
-            );
-            const double quantityPercent = parameterOr(parameters, "quantityPercent", 10.0);
-            const unsigned int maxPositionsOpen = unsignedParameterOr(
-                parameters, "maxPositionsOpen", 3U
-            );
-            const unsigned int maxRankingPosition = unsignedParameterOr(
-                parameters,
-                "maxRankingPosition",
-                std::numeric_limits<unsigned int>::max()
-            );
-
-            auto universeSelector = makeTopLiquidityUniverse();
-            auto ranker = std::make_unique<IndicatorRanker>(
-                IndicatorSpec{IndicatorKind::ROC, PriceField::Close, rocLength},
-                true
-            );
-
-            return std::make_unique<StrategyPureMom>(
-                maxPositionsOpen,
-                quantityPercent / 100.0,
-                std::move(universeSelector),
-                std::move(ranker),
-                feeTaker,
-                feeTaker,
-                maxRankingPosition,
-                heldBars,
-                btcMovingAverageLength,
-                "BTC"
-            );
-        },
-        [](const ParameterValues&) { return true; }
-    });
-
-    definitions.push_back(StrategyDefinition{
-        "PureRSI",
-        {
-            {"rsiLength", 7.0},
-            {"rsiEntry", 80.0},
-            {"rsiExit", 70.0},
-            {"quantityPercent", 10.0},
-            {"maxPositionsOpen", 10.0},
-            {"maxRankingPosition", 1000000.0}
-        },
-        makeSensitivityParameters({
-            {"rsiLength", "RSI length", 2.0, 20.0, 1.0, true},
-            {"rsiEntry", "RSI entry", 60.0, 90.0, 5.0, true},
-            {"rsiExit", "RSI exit", 40.0, 75.0, 5.0, true},
-            {"quantityPercent", "Quantity (%)", 2.0, 20.0, 2.0, false},
-            {"maxPositionsOpen", "Maximum open positions", 1.0, 20.0, 1.0, false}
-        }),
-        [=](const ParameterValues& parameters) {
-            const unsigned int rsiLength = unsignedParameterOr(parameters, "rsiLength", 7U);
-            const double rsiEntry = parameterOr(parameters, "rsiEntry", 80.0);
-            const double rsiExit = parameterOr(parameters, "rsiExit", 70.0);
-            const double quantityPercent = parameterOr(parameters, "quantityPercent", 10.0);
-            const unsigned int maxPositionsOpen = unsignedParameterOr(
-                parameters, "maxPositionsOpen", 10U
-            );
-            const unsigned int maxRankingPosition = unsignedParameterOr(
-                parameters, "maxRankingPosition", 1000000U
-            );
-
-            auto universeSelector = makeTopLiquidityUniverse();
-            auto ranker = std::make_unique<IndicatorRanker>(
-                IndicatorSpec{IndicatorKind::RSI, PriceField::Close, rsiLength},
-                true
-            );
-
-            return std::make_unique<StrategyPureRSI>(
-                maxPositionsOpen,
-                quantityPercent / 100.0,
-                std::move(universeSelector),
-                std::move(ranker),
-                feeTaker,
-                feeTaker,
-                maxRankingPosition,
-                rsiLength,
-                rsiEntry,
-                rsiExit
-            );
-        },
-        [](const ParameterValues& parameters) {
-            return parameterOr(parameters, "rsiEntry", 0.0) >
-                   parameterOr(parameters, "rsiExit", 0.0);
-        }
-    });
-
-    definitions.push_back(StrategyDefinition{
-        "MRRSILong",
-        {
-            {"rsiLength", 3.0},
-            {"rsiEntryLevel", 10.0},
-            {"momentumLength", 30.0},
-            {"heldBars", 1.0},
-            {"quantityPercent", 10.0},
-            {"maxPositionsOpen", 10.0},
-            {"maxRankingPosition", static_cast<double>(std::numeric_limits<unsigned int>::max())}
-        },
-        makeSensitivityParameters({
-            {"rsiLength", "RSI length", 2.0, 20.0, 2.0, true},
-            {"rsiEntryLevel", "RSI entry level", 5.0, 35.0, 5.0, true},
-            {"heldBars", "Held bars", 1.0, 20.0, 2.0, true},
-            {"momentumLength", "Momentum length", 10.0, 60.0, 5.0, true},
-            {"quantityPercent", "Quantity (%)", 2.0, 20.0, 2.0, false},
-            {"maxPositionsOpen", "Maximum open positions", 1.0, 20.0, 1.0, false}
-        }),
-        [=](const ParameterValues& parameters) {
-            const unsigned int rsiLength = unsignedParameterOr(parameters, "rsiLength", 3U);
-            const double rsiEntryLevel = parameterOr(parameters, "rsiEntryLevel", 10.0);
-            const unsigned int momentumLength = unsignedParameterOr(
-                parameters, "momentumLength", 30U
-            );
-            const unsigned int heldBars = unsignedParameterOr(parameters, "heldBars", 1U);
-            const double quantityPercent = parameterOr(parameters, "quantityPercent", 10.0);
-            const unsigned int maxPositionsOpen = unsignedParameterOr(
-                parameters, "maxPositionsOpen", 10U
-            );
-            const unsigned int maxRankingPosition = unsignedParameterOr(
-                parameters,
-                "maxRankingPosition",
-                std::numeric_limits<unsigned int>::max()
-            );
-
-            auto universeSelector = makeTopLiquidityUniverse();
-            auto ranker = std::make_unique<IndicatorRanker>(
-                IndicatorSpec{IndicatorKind::ROC, PriceField::Close, momentumLength},
-                true
-            );
-
-            return std::make_unique<StrategyMRRSILong>(
-                maxPositionsOpen,
-                quantityPercent / 100.0,
-                std::move(universeSelector),
-                std::move(ranker),
-                feeMaker,
-                feeTaker,
-                maxRankingPosition,
-                rsiLength,
-                rsiEntryLevel,
-                heldBars
-            );
-        },
-        [](const ParameterValues&) { return true; }
-    });
-
-    definitions.push_back(StrategyDefinition{
-        "XHBreakout",
-        {
-            {"xH", 50.0},
-            {"fastMovingAverageLength", 5.0},
-            {"momentumLength", 30.0},
-            {"quantityPercent", 10.0},
-            {"maxPositionsOpen", 10.0},
-            {"maxRankingPosition", 9999999.0}
-        },
-        makeSensitivityParameters({
-            {"xH", "XH lookback", 10.0, 100.0, 10.0, true},
-            {"fastMovingAverageLength", "Fast moving-average length", 1.0, 15.0, 2.0, true},
-            {"momentumLength", "Momentum length", 10.0, 60.0, 5.0, true},
-            {"quantityPercent", "Quantity (%)", 2.0, 20.0, 2.0, false},
-            {"maxPositionsOpen", "Maximum open positions", 1.0, 20.0, 1.0, false}
-        }),
-        [=](const ParameterValues& parameters) {
-            const unsigned int xH = unsignedParameterOr(parameters, "xH", 50U);
-            const unsigned int fastMovingAverageLength = unsignedParameterOr(
-                parameters, "fastMovingAverageLength", 5U
-            );
-            const unsigned int momentumLength = unsignedParameterOr(
-                parameters, "momentumLength", 30U
-            );
-            const double quantityPercent = parameterOr(parameters, "quantityPercent", 10.0);
-            const unsigned int maxPositionsOpen = unsignedParameterOr(
-                parameters, "maxPositionsOpen", 10U
-            );
-            const unsigned int maxRankingPosition = unsignedParameterOr(
-                parameters, "maxRankingPosition", 9999999U
-            );
-
-            auto universeSelector = makeTopLiquidityUniverse();
-            auto ranker = std::make_unique<IndicatorRanker>(
-                IndicatorSpec{IndicatorKind::ROC, PriceField::Close, momentumLength},
-                true
-            );
-
-            return std::make_unique<StrategyXHBreakout>(
-                maxPositionsOpen,
-                quantityPercent / 100.0,
-                std::move(universeSelector),
-                std::move(ranker),
-                feeMaker,
-                feeTaker,
-                maxRankingPosition,
-                xH,
-                fastMovingAverageLength
-            );
-        },
-        [](const ParameterValues&) { return true; }
-    });
-
-    return definitions;
-}
-
 std::vector<double> makeSweepValues(
     const SensitivityParameterDefinition& parameter
 )
@@ -726,6 +219,8 @@ std::vector<ActiveSensitivityParameter> activeSensitivityParameters(
             continue;
         }
 
+        if (compactSensitivity && values.size() > 2)
+            values = {values.front(), values.back()};
         active.push_back(ActiveSensitivityParameter{&parameter, std::move(values)});
     }
 
@@ -796,24 +291,8 @@ BacktestMetrics runSingleBacktest(
     const BacktestMetricsSettings& metricsSettings
 )
 {
-    unsigned int lastTradeId = 0U;
-    double balance = initialBalance;
-    double equity = initialBalance;
-
-    std::vector<std::unique_ptr<Strategy>> strategies;
-    strategies.push_back(definition.create(parameters));
-
-    BacktestContext context(
-        ohlcvData,
-        strategies,
-        balance,
-        equity,
-        lastTradeId,
-        feeMaker,
-        feeTaker,
-        false
-    );
-
+    (void)feeMaker;
+    BacktestContext context(ohlcvData, makeStudyPortfolio(definition, parameters), initialBalance, feeTaker);
     Backtester tester(context);
     tester.loop();
     tester.closeTrades();
@@ -851,6 +330,7 @@ std::vector<ParameterSensitivityReport> runParameterSensitivity(
     double feeMaker,
     double feeTaker,
     const BacktestMetricsSettings& baseMetricsSettings,
+    const std::filesystem::path& resultsPath,
     SensitivityProgressReporter& progress
 )
 {
@@ -886,6 +366,15 @@ std::vector<ParameterSensitivityReport> runParameterSensitivity(
 
     ParameterValues parameters = definition.currentParameters;
     progress.setStrategy(definition.name);
+    std::ofstream results(resultsPath);
+    results.exceptions(std::ios::failbit | std::ios::badbit);
+    results << "run_id,net_return_percent,max_drawdown_percent,trade_count";
+    for (const auto& [key, value] : definition.currentParameters) {
+        (void)value;
+        results << ',' << key;
+    }
+    results << '\n' << std::setprecision(17);
+    std::size_t runId = 0;
 
     enumerateSensitivityCombinations(
         definition,
@@ -902,6 +391,13 @@ std::vector<ParameterSensitivityReport> runParameterSensitivity(
                 feeTaker,
                 sensitivityMetricsSettings
             );
+            results << ++runId << ',' << metrics.netReturnPercent << ','
+                    << metrics.maxDrawdownPercent << ',' << metrics.tradeCount;
+            for (const auto& [key, value] : combination) {
+                (void)key;
+                results << ',' << value;
+            }
+            results << '\n';
 
             for (std::size_t parameterIndex = 0U;
                  parameterIndex < active.size();
@@ -967,27 +463,18 @@ BacktestMetrics runStrategyAndWriteReport(
     SensitivityProgressReporter* progress
 )
 {
-    unsigned int lastTradeId = 0U;
-    double balance = initialBalance;
-    double equity = initialBalance;
-
-    std::vector<std::unique_ptr<Strategy>> strategies;
-    strategies.push_back(definition.create(definition.currentParameters));
-
-    BacktestContext context(
-        ohlcvData,
-        strategies,
-        balance,
-        equity,
-        lastTradeId,
-        feeMaker,
-        feeTaker,
-        false
-    );
-
+    (void)feeMaker;
+    BacktestContext context(ohlcvData, makeStudyPortfolio(definition, definition.currentParameters), initialBalance, feeTaker);
     Backtester tester(context);
     tester.loop();
     tester.closeTrades();
+
+    tester.storeTradesCSV(reportPath.parent_path() / (definition.name + "_trades.csv"));
+    std::ofstream accountOutput(reportPath.parent_path() / (definition.name + "_account.csv"));
+    accountOutput.exceptions(std::ios::failbit | std::ios::badbit);
+    accountOutput << "timestamp,cash,balance,equity\n" << std::setprecision(17);
+    for (const auto& snapshot : context.GetAccountHistory())
+        accountOutput << snapshot.timestamp << ',' << snapshot.cash << ',' << snapshot.balance << ',' << snapshot.equity << '\n';
 
     BacktestMetrics metrics = calculateBacktestMetrics(
         definition.name,
@@ -1007,17 +494,19 @@ BacktestMetrics runStrategyAndWriteReport(
             feeMaker,
             feeTaker,
             metricsSettings,
+            reportPath.parent_path() / (definition.name + "_sensitivity.csv"),
             *progress
         );
     }
 
-    (void)writeBacktestHtmlReport(
+    if (!writeBacktestHtmlReport(
         reportPath,
         metrics,
         context.GetBalanceEquityHistoric(),
         context.GetMarketData(),
         parameterSensitivity
-    );
+    ))
+        throw std::runtime_error("Could not write report for " + definition.name);
 
     return metrics;
 }
@@ -1025,126 +514,100 @@ BacktestMetrics runStrategyAndWriteReport(
 } // namespace
 
 int main(int argc, char** argv)
+try
 {
-    (void)argc;
-    (void)argv;
-
-    Logger::Instance().Setup(
-        true,   // debug enabled
-        false,  // quiet
-        "",     // file appender
-        "",     // rolling appender
-        true    // include header
-    );
-
-    const std::string databasePath =
-        "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/databases/1d_cmc.csv";
-
-    constexpr double initialBalance = 100000.0;
-
-    // Keep identical to the validated RealTest-matching setup.
-    constexpr double feeTaker = 0.0;
-    constexpr double feeMaker = 0.0;
-    constexpr double commissionEntryFactor = 0.0;
-    constexpr double commissionExitFactor = 0.0;
-
-    constexpr bool runParameterSensitivity = true;
-
-    const BacktestMetricsSettings metricsSettings{
-        .periodsPerYear = 365.0,
-        .excludeSimulatedTrades = true
+    namespace options = boost::program_options;
+    std::string databasePath, outputRoot, studyId, selectedStrategy, grid;
+    Timestamp startDate, endDate;
+    double feeTaker;
+    options::options_description arguments("Initial strategy parameter study");
+    arguments.add_options()
+        ("help,h", "Show study options")
+        ("database", options::value(&databasePath)->default_value("storage/databases/1d_cmc.csv"), "Daily CSV/SQLite input")
+        ("start", options::value(&startDate)->default_value(20200101), "Cold start YYYYMMDD, inclusive")
+        ("end", options::value(&endDate)->default_value(20200416), "Cutoff YYYYMMDD, inclusive")
+        ("output-root", options::value(&outputRoot)->default_value("storage/backtests/strategy_reports"), "Study parent directory")
+        ("study-id", options::value(&studyId)->default_value(""), "New directory name; existing studies are rejected")
+        ("strategy", options::value(&selectedStrategy)->default_value("all"), "Strategy name or all")
+        ("grid", options::value(&grid)->default_value("none"), "none, compact endpoints, or original full grid")
+        ("fee-taker", options::value(&feeTaker)->default_value(0.0), "Commission fraction per fill");
+    options::variables_map values;
+    options::store(options::parse_command_line(argc, argv, arguments), values);
+    if (values.count("help")) {
+        std::cout << arguments << '\n';
+        return 0;
+    }
+    options::notify(values);
+    const auto validDate = [](Timestamp date) {
+        const std::chrono::year_month_day calendar{std::chrono::year(static_cast<int>(date / 10000)),
+            std::chrono::month((date / 100) % 100), std::chrono::day(date % 100)};
+        return date >= 19000101 && date <= 99991231 && calendar.ok();
     };
-
-    LG_INFO("Database loading started");
-    OHLCVData ohlcvData = loadDatabase(databasePath, 00000000);
-    LG_INFO("Database loaded successfully");
-
-    const std::vector<StrategyDefinition> strategyDefinitions =
-        makeStrategyDefinitions(
-            feeMaker,
-            feeTaker,
-            commissionEntryFactor,
-            commissionExitFactor
-        );
-
-    std::size_t totalSensitivityRuns = 0U;
-    if (runParameterSensitivity) {
-        for (const StrategyDefinition& definition : strategyDefinitions) {
-            const std::size_t strategyRuns = countSensitivityCombinations(definition);
-            totalSensitivityRuns += strategyRuns;
-            LG_INFO(
-                "Sensitivity grid {}: {} valid isolated backtests",
-                definition.name,
-                strategyRuns
-            );
-        }
-        LG_INFO(
-            "Total parameter-sensitivity grid: {} isolated backtests",
-            totalSensitivityRuns
-        );
+    if (!validDate(startDate) || !validDate(endDate) || startDate > endDate)
+        throw std::invalid_argument("Require valid start <= end dates");
+    if (grid != "none" && grid != "compact" && grid != "full")
+        throw std::invalid_argument("Grid must be none, compact or full");
+    if (!std::isfinite(feeTaker) || feeTaker < 0.0)
+        throw std::invalid_argument("Fee must be finite and non-negative");
+    if (studyId.empty())
+        studyId = "current_initial_" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
+    if (studyId == "." || studyId == ".." || studyId.find_first_of("/\\,\"\r\n") != std::string::npos)
+        throw std::invalid_argument("Study ID must be a directory name without CSV delimiters");
+    auto definitions = makeStrategyDefinitions();
+    if (selectedStrategy != "all") {
+        std::erase_if(definitions, [&](const auto& definition) { return definition.name != selectedStrategy; });
+        if (definitions.empty())
+            throw std::invalid_argument("Unknown strategy: " + selectedStrategy);
     }
-
+    if (!std::filesystem::is_regular_file(databasePath))
+        throw std::invalid_argument("Input database does not exist: " + databasePath);
+    Logger::Instance().Setup(false, false, "", "", true);
+    const OHLCVData data = loadDatabase(databasePath, startDate, endDate);
+    if (data.data.empty())
+        throw std::runtime_error("No market data in the selected window");
+    const auto directory = std::filesystem::path(outputRoot) / studyId;
+    std::filesystem::create_directories(directory.parent_path());
+    if (!std::filesystem::create_directory(directory))
+        throw std::runtime_error("Study directory already exists: " + directory.string());
+    compactSensitivity = grid == "compact";
+    std::size_t runs = 0;
+    if (grid != "none") {
+        for (const auto& definition : definitions)
+            runs += countSensitivityCombinations(definition);
+    }
     std::unique_ptr<SensitivityProgressReporter> progress;
-    if (runParameterSensitivity && totalSensitivityRuns > 0U) {
-        progress = std::make_unique<SensitivityProgressReporter>(
-            totalSensitivityRuns
-        );
-    }
-
-    std::map<std::string, BacktestMetrics> metricsCache;
-
-    const std::filesystem::path reportsDirectory =
-        "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/strategy_reports";
-
-    for (const StrategyDefinition& definition : strategyDefinitions) {
-        LG_INFO("============================================================");
-        LG_INFO("Running isolated backtest for strategy: {}", definition.name);
-
-        BacktestMetrics metrics = runStrategyAndWriteReport(
-            definition,
-            ohlcvData,
-            initialBalance,
-            feeMaker,
-            feeTaker,
-            metricsSettings,
-            reportsDirectory / (definition.name + ".html"),
-            progress.get()
-        );
-
-        if (progress) {
-            std::cout << '\n';
-        }
+    if (runs > 0)
+        progress = std::make_unique<SensitivityProgressReporter>(runs);
+    BacktestMetricsSettings settings{.periodsPerYear = 365.0, .excludeSimulatedTrades = true,
+        .databaseTimeframe = "1d", .annualizationBenchmarkSymbol = "BTC"};
+    std::ofstream summary(directory / "metrics.csv");
+    summary.exceptions(std::ios::failbit | std::ios::badbit);
+    summary << "strategy,net_return_percent,max_drawdown_percent,trade_count,final_equity\n" << std::setprecision(17);
+    std::ofstream metadata(directory / "study_metadata.csv");
+    metadata.exceptions(std::ios::failbit | std::ios::badbit);
+    metadata << "study_id,runtime,start,end,fee_taker,grid\n" << std::setprecision(17)
+             << studyId << ",CURRENT," << startDate << ',' << endDate << ',' << feeTaker << ',' << grid << '\n';
+    std::ofstream ranges(directory / "parameter_grid.csv");
+    ranges.exceptions(std::ios::failbit | std::ios::badbit);
+    ranges << "strategy,parameter,current,minimum,maximum,spacing,enabled\n" << std::setprecision(17);
+    for (const auto& definition : definitions) {
+        for (const auto& parameter : definition.sensitivityParameters)
+            ranges << definition.name << ',' << parameter.key << ',' << definition.currentParameters.at(parameter.key)
+                   << ',' << parameter.minimum << ',' << parameter.maximum << ',' << parameter.spacing
+                   << ',' << parameter.enabled << '\n';
+        const auto metrics = runStrategyAndWriteReport(definition, data, 100000.0, 0.0, feeTaker,
+            settings, directory / (definition.name + ".html"), progress.get());
         logBacktestMetrics(metrics);
-        metricsCache.insert_or_assign(definition.name, std::move(metrics));
+        summary << definition.name << ',' << metrics.netReturnPercent << ',' << metrics.maxDrawdownPercent
+                << ',' << metrics.tradeCount << ',' << metrics.finalEquity << '\n';
     }
-
-    if (progress) {
+    if (progress)
         progress->finish();
-    }
-
-    LG_INFO("============================================================");
-    LG_INFO(
-        "Completed {} isolated strategy backtests. Static HTML reports are in: {}",
-        metricsCache.size(),
-        reportsDirectory.string()
-    );
-
-    for (const auto& [strategyName, metrics] : metricsCache) {
-        LG_INFO(
-            "Summary {}: return={:.2f}% annualized={:.2f}% max_dd={:.2f}% "
-            "sharpe={:.3f} sortino={:.3f} calmar={:.3f} "
-            "profit_factor={:.3f} trades={}",
-            strategyName,
-            metrics.netReturnPercent,
-            metrics.annualizedReturnPercent,
-            metrics.maxDrawdownPercent,
-            metrics.sharpeRatio,
-            metrics.sortinoRatio,
-            metrics.calmarRatio,
-            metrics.profitFactor,
-            metrics.tradeCount
-        );
-    }
-
+    std::cout << "CURRENT initial parameter study: " << directory << '\n';
     return 0;
+}
+catch (const std::exception& error)
+{
+    std::cerr << "Initial parameter study failed: " << error.what() << '\n';
+    return 1;
 }

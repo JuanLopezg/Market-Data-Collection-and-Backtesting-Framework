@@ -110,6 +110,20 @@ CanonicalMarketDataReader::~CanonicalMarketDataReader()
         sqlite3_close(db_);
 }
 
+std::string CanonicalMarketDataReader::quoteVolumeColumn() const
+{
+    sqlite3_stmt* stmt = nullptr;
+    requireSqlite(sqlite3_prepare_v2(db_, "PRAGMA table_info(ohlcv_data);", -1, &stmt, nullptr),
+                  db_, "Inspect canonical OHLCV schema failed");
+    bool present = false;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const auto* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        if (name && std::string(name) == "quote_volume") present = true;
+    }
+    sqlite3_finalize(stmt);
+    return present ? "quote_volume" : "NULL";
+}
+
 void CanonicalMarketDataReader::requireSchema() const
 {
     const char* sql =
@@ -261,7 +275,7 @@ CanonicalMarketDataWindow CanonicalMarketDataReader::loadWindow(
         throw std::logic_error("Canonical market-data window has no requested symbols");
 
     const std::string sql =
-        "SELECT pair, date, open, high, low, close, volume FROM ohlcv_data "
+        "SELECT pair, date, open, high, low, close, volume, " + quoteVolumeColumn() + " FROM ohlcv_data "
         "WHERE date BETWEEN ? AND ? AND pair IN (" + placeholders(requested.size()) + ") "
         "ORDER BY pair ASC, date ASC;";
 
@@ -299,6 +313,8 @@ CanonicalMarketDataWindow CanonicalMarketDataReader::loadWindow(
         bar.low = sqlite3_column_double(stmt, 4);
         bar.close = sqlite3_column_double(stmt, 5);
         bar.volume = sqlite3_column_double(stmt, 6);
+        if (sqlite3_column_type(stmt, 7) != SQLITE_NULL)
+            bar.quote_volume = sqlite3_column_double(stmt, 7);
         if (!validBar(bar)) {
             sqlite3_finalize(stmt);
             throw std::logic_error(
@@ -335,6 +351,7 @@ CanonicalMarketDataWindow CanonicalMarketDataReader::loadWindow(
         current.low = barIt->second.low;
         current.close = barIt->second.close;
         current.volume = barIt->second.volume;
+        current.quote_volume = barIt->second.quote_volume;
         current.barNumber = static_cast<unsigned int>(coinIt->second.size());
         currentBars.emplace(symbol, current);
     }
@@ -377,7 +394,7 @@ MarketData CanonicalMarketDataReader::loadMarketDataWindow(
 
     std::vector<Coin> requested(symbols.begin(), symbols.end());
     const std::string sql =
-        "SELECT pair, date, open, high, low, close, volume FROM ohlcv_data "
+        "SELECT pair, date, open, high, low, close, volume, " + quoteVolumeColumn() + " FROM ohlcv_data "
         "WHERE date BETWEEN ? AND ? AND pair IN (" + placeholders(requested.size()) + ") "
         "ORDER BY date ASC, pair ASC;";
 
@@ -416,6 +433,8 @@ MarketData CanonicalMarketDataReader::loadMarketDataWindow(
         bar.low = sqlite3_column_double(stmt, 4);
         bar.close = sqlite3_column_double(stmt, 5);
         bar.volume = sqlite3_column_double(stmt, 6);
+        if (sqlite3_column_type(stmt, 7) != SQLITE_NULL)
+            bar.quote_volume = sqlite3_column_double(stmt, 7);
         if (!validBar(bar)) {
             sqlite3_finalize(stmt);
             throw std::logic_error(
@@ -430,6 +449,7 @@ MarketData CanonicalMarketDataReader::loadMarketDataWindow(
         current.low = bar.low;
         current.close = bar.close;
         current.volume = bar.volume;
+        current.quote_volume = bar.quote_volume;
         current.barNumber = 0;
         result[rowDate].emplace(pair, current);
     }

@@ -1,0 +1,529 @@
+# Current public data, virtual funds and simulated execution.
+name: ${PAPER_PROJECT:-algotrading-paper}
+x-runtime:
+  image: algotrading-runtime:paper
+  build: &id001
+    context: ./.runtime_bundle
+  init: true
+  restart: unless-stopped
+  environment: &id002
+    ALGOTRADING_LOG_DEBUG: ${ALGOTRADING_LOG_DEBUG:-0}
+    ALGOTRADING_LOG_QUIET: ${ALGOTRADING_LOG_QUIET:-0}
+    ALGOTRADING_LOG_DIR: ${ALGOTRADING_LOG_DIR:-}
+  logging:
+    driver: json-file
+    options:
+      max-size: 25m
+      max-file: '2'
+  networks:
+  - paper
+services:
+  nats:
+    image: nats:2.10-alpine
+    command:
+    - -js
+    - -m
+    - '8222'
+    - --store_dir
+    - /data
+    volumes:
+    - nats-data:/data
+    networks:
+    - paper
+    logging:
+      driver: json-file
+      options:
+        max-size: 25m
+        max-file: '2'
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: algotrading_paper
+      POSTGRES_USER: algotrading
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run manage.py prepare}
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U algotrading -d algotrading_paper
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+    - postgres-data:/var/lib/postgresql/data
+    networks:
+    - paper
+    logging:
+      driver: json-file
+      options:
+        max-size: 25m
+        max-file: '2'
+  market-data-volume-init:
+    image: alpine:3.20
+    command:
+    - sh
+    - -c
+    - mkdir -p /data/market && chown -R 10001:10001 /data/market && chmod 0777 /data/market
+    volumes:
+    - market-data-db:/data/market:rw
+    restart: 'no'
+    networks:
+    - paper
+    logging:
+      driver: json-file
+      options:
+        max-size: 25m
+        max-file: '2'
+  market-data-db-init:
+    image: algotrading-runtime:paper
+    build: *id001
+    init: true
+    restart: 'no'
+    environment: *id002
+    logging:
+      driver: json-file
+      options:
+        max-size: 25m
+        max-file: '2'
+    networks:
+    - paper
+    command:
+    - algotrading_historical_market_data_service
+    - --market-data-db
+    - /data/market/database.db
+    - --init-only
+    volumes:
+    - market-data-db:/data/market:rw
+    depends_on:
+      market-data-volume-init:
+        condition: service_completed_successfully
+  strategy:
+    image: algotrading-runtime:paper
+    build: *id001
+    init: true
+    restart: unless-stopped
+    environment: *id002
+    logging:
+      driver: json-file
+      options:
+        max-size: 25m
+        max-file: '2'
+    networks:
+    - paper
+    command:
+    - algotrading_strategy_service
+    - --nats-url
+    - nats://nats:4222
+    - --stream
+    - ALGOTRADING_PAPER_RUNTIME
+    - --strategy-config
+    - ${STRATEGY_CONFIG:-/opt/algotrading/config/strategies/pure_rsi_quote_volume.json}
+    - --market-data-db
+    - /data/market/database.db
+    - --market-warmup-days
+    - ${MARKET_WARMUP_DAYS:-100}
+    - --market-top-n
+    - '50'
+    - --market-data-source
+    - binance
+    - --postgres
+    - host=postgres port=5432 dbname=algotrading_paper user=algotrading password=${POSTGRES_PASSWORD:?run
+      manage.py prepare}
+    volumes:
+    - market-data-db:/data/market:rw
+    depends_on:
+      nats:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      market-data-db-init:
+        condition: service_completed_successfully
+  portfolio-risk:
+    image: algotrading-runtime:paper
+    build: *id001
+    init: true
+    restart: unless-stopped
+    environment: *id002
+    logging:
+      driver: json-file
+      options:
+        max-size: 25m
+        max-file: '2'
+    networks:
+    - paper
+    command:
+    - algotrading_portfolio_risk_service
+    - --nats-url
+    - nats://nats:4222
+    - --stream
+    - ALGOTRADING_PAPER_RUNTIME
+    - --portfolio-config
+    - ${PORTFOLIO_CONFIG:-/opt/algotrading/config/portfolio/pure_rsi_equal_weight.json}
+    - --market-data-db
+    - /data/market/database.db
+    - --market-history-buffer-days
+    - ${MARKET_HISTORY_BUFFER_DAYS:-5}
+    - --postgres
+    - host=postgres port=5432 dbname=algotrading_paper user=algotrading password=${POSTGRES_PASSWORD:?run
+      manage.py prepare}
+    volumes:
+    - market-data-db:/data/market:rw
+    depends_on:
+      nats:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      market-data-db-init:
+        condition: service_completed_successfully
+  execution-state:
+    image: algotrading-runtime:paper
+    build: *id001
+    init: true
+    restart: unless-stopped
+    environment: *id002
+    logging:
+      driver: json-file
+      options:
+        max-size: 25m
+        max-file: '2'
+    networks:
+    - paper
+    command:
+    - algotrading_execution_state_service
+    - --nats-url
+    - nats://nats:4222
+    - --postgres
+    - host=postgres port=5432 dbname=algotrading_paper user=algotrading password=${POSTGRES_PASSWORD:?run
+      manage.py prepare}
+    - --stream
+    - ALGOTRADING_PAPER_RUNTIME
+    - --exchange-control-stream
+    - ALGOTRADING_PAPER_EXCHANGE_CONTROL
+    - --market-data-db
+    - /data/market/database.db
+    - --market-data-source
+    - binance
+    - --initial-cash
+    - ${INITIAL_CASH:-100000}
+    - --strategy
+    - 1:Pure_RSI
+    volumes:
+    - market-data-db:/data/market:rw
+    depends_on:
+      nats:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      market-data-db-init:
+        condition: service_completed_successfully
+  order-planner:
+    image: algotrading-runtime:paper
+    build: *id001
+    init: true
+    restart: unless-stopped
+    environment: *id002
+    logging:
+      driver: json-file
+      options:
+        max-size: 25m
+        max-file: '2'
+    networks:
+    - paper
+    command:
+    - algotrading_order_planner_service
+    - --nats-url
+    - nats://nats:4222
+    - --stream
+    - ALGOTRADING_PAPER_RUNTIME
+    - --postgres
+    - host=postgres port=5432 dbname=algotrading_paper user=algotrading password=${POSTGRES_PASSWORD:?run
+      manage.py prepare}
+    depends_on:
+      nats:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+  exchange-gateway:
+    image: algotrading-runtime:paper
+    build: *id001
+    init: true
+    restart: unless-stopped
+    environment: *id002
+    logging:
+      driver: json-file
+      options:
+        max-size: 25m
+        max-file: '2'
+    networks:
+    - paper
+    command:
+    - algotrading_exchange_gateway
+    - --nats-url
+    - nats://nats:4222
+    - --stream
+    - ALGOTRADING_PAPER_RUNTIME
+    - --control-stream
+    - ALGOTRADING_PAPER_EXCHANGE_CONTROL
+    - --backend-stream
+    - ALGOTRADING_PAPER_EXCHANGE_BACKEND
+    - --mode
+    - backend
+    - --poll-timeout-ms
+    - '50'
+    depends_on:
+      nats:
+        condition: service_started
+  simulated-exchange:
+    image: algotrading-runtime:paper
+    build: *id001
+    init: true
+    restart: unless-stopped
+    environment: *id002
+    logging:
+      driver: json-file
+      options:
+        max-size: 25m
+        max-file: '2'
+    networks:
+    - paper
+    command:
+    - algotrading_simulated_exchange_service
+    - --nats-url
+    - nats://nats:4222
+    - --stream
+    - ALGOTRADING_PAPER_RUNTIME
+    - --backend-stream
+    - ALGOTRADING_PAPER_EXCHANGE_BACKEND
+    - --postgres
+    - host=postgres port=5432 dbname=algotrading_paper user=algotrading password=${POSTGRES_PASSWORD:?run
+      manage.py prepare}
+    - --initial-cash
+    - ${INITIAL_CASH:-100000}
+    - --commission-rate
+    - ${COMMISSION_RATE:-0.0}
+    - --poll-timeout-ms
+    - '50'
+    depends_on:
+      nats:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+  market-data:
+    image: algotrading-runtime:paper
+    build: *id001
+    init: true
+    restart: unless-stopped
+    environment: *id002
+    logging:
+      driver: json-file
+      options:
+        max-size: 25m
+        max-file: '2'
+    networks:
+    - paper
+    command:
+    - algotrading_market_data_service
+    - --config
+    - /opt/algotrading/paper/market_data_config.json
+    volumes:
+    - market-data-db:/data/market:rw
+    - ${PAPER_RUN_DIR:?run manage.py prepare}/market_data_config.json:/opt/algotrading/paper/market_data_config.json:ro
+    depends_on:
+      nats:
+        condition: service_started
+      market-data-db-init:
+        condition: service_completed_successfully
+  dashboard-api:
+    environment:
+      DASHBOARD_DATA_PROVIDER: real
+      DASHBOARD_POSTGRES_DSN: host=postgres port=5432 dbname=algotrading_paper user=algotrading
+        password=${POSTGRES_PASSWORD:?run manage.py prepare}
+      DASHBOARD_NATS_URL: nats://nats:4222
+      DASHBOARD_NATS_MONITOR_URL: http://nats:8222
+      DASHBOARD_NATS_STREAM: ALGOTRADING_PAPER_RUNTIME
+      DASHBOARD_RUNTIME_MODE: PAPER
+      DASHBOARD_MARKET_DATA_DB: /data/market/database.db
+      DASHBOARD_MARKET_TOP_N: ${MARKET_TOP_N:-50}
+      DASHBOARD_MARKET_HISTORY_DAYS: ${MARKET_WARMUP_DAYS:-100}
+      DASHBOARD_STRATEGY_UNIVERSE_N: '20'
+      DASHBOARD_QUOTE_VOLUME: ${QUOTE_VOLUME:-true}
+      DASHBOARD_QUOTE_VOLUME_FROM: ${QUOTE_VOLUME_FROM:-}
+      DASHBOARD_SOURCE_PROBE_TIMEOUT: 1s
+      DASHBOARD_EXECUTION_VENUE: SIMULATED
+      DASHBOARD_VENUE_TARGET_ENVIRONMENT: PAPER
+      DASHBOARD_EXCHANGE_GATEWAY_MODE: backend
+      DASHBOARD_ALERT_STORE_DIR: /data/watchdog
+      DASHBOARD_MANUAL_AUDIT_DIR: /data/manual-audit
+      DASHBOARD_ALERT_ACK_DIR: /data/alert-ack
+      DASHBOARD_HOST_METRICS_FILE: /data/telemetry/host.json
+      DASHBOARD_HOST_METRICS_PROJECT: ${PAPER_PROJECT:-algotrading-paper}
+      DASHBOARD_AUTH_ALLOW_DEMO: 'false'
+      DASHBOARD_AUTH_COOKIE_SECURE: 'false'
+      DASHBOARD_VIEWER_PASSWORD: ${DASHBOARD_VIEWER_PASSWORD:?run manage.py prepare}
+    volumes:
+    - market-data-db:/data/market:ro
+    - ${PAPER_RUN_DIR:?}/telemetry:/data/telemetry:ro
+    - dashboard-watchdog-data:/data/watchdog:ro
+    - dashboard-manual-audit-data:/data/manual-audit
+    - dashboard-alert-ack-data:/data/alert-ack
+    networks:
+    - paper
+    build:
+      context: ../../dashboard/dashboard-api
+    image: algotrading-paper-dashboard-api:local
+    group_add:
+    - '10001'
+    logging:
+      driver: json-file
+      options:
+        max-size: 25m
+        max-file: '2'
+  dashboard-watchdog:
+    build:
+      context: ../../dashboard/dashboard-api
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 10s
+    entrypoint:
+    - /dashboard-watchdog
+    environment:
+      DASHBOARD_DATA_PROVIDER: real
+      DASHBOARD_POSTGRES_DSN: host=postgres port=5432 dbname=algotrading_paper user=algotrading
+        password=${POSTGRES_PASSWORD:?run manage.py prepare}
+      DASHBOARD_NATS_URL: nats://nats:4222
+      DASHBOARD_NATS_MONITOR_URL: http://nats:8222
+      DASHBOARD_NATS_STREAM: ALGOTRADING_PAPER_RUNTIME
+      DASHBOARD_RUNTIME_MODE: PAPER
+      DASHBOARD_MARKET_DATA_DB: /data/market/database.db
+      DASHBOARD_MARKET_TOP_N: ${MARKET_TOP_N:-50}
+      DASHBOARD_MARKET_HISTORY_DAYS: ${MARKET_WARMUP_DAYS:-100}
+      DASHBOARD_STRATEGY_UNIVERSE_N: '20'
+      DASHBOARD_QUOTE_VOLUME: ${QUOTE_VOLUME:-true}
+      DASHBOARD_QUOTE_VOLUME_FROM: ${QUOTE_VOLUME_FROM:-}
+      DASHBOARD_SOURCE_PROBE_TIMEOUT: 1s
+      DASHBOARD_EXECUTION_VENUE: SIMULATED
+      DASHBOARD_VENUE_TARGET_ENVIRONMENT: PAPER
+      DASHBOARD_EXCHANGE_GATEWAY_MODE: backend
+      DASHBOARD_ALERT_STORE_DIR: /data/watchdog
+      DASHBOARD_MANUAL_AUDIT_DIR: /data/manual-audit
+      DASHBOARD_ALERT_ACK_DIR: /data/alert-ack
+      DASHBOARD_HOST_METRICS_FILE: /data/telemetry/host.json
+      DASHBOARD_HOST_METRICS_PROJECT: ${PAPER_PROJECT:-algotrading-paper}
+      DASHBOARD_WATCHDOG_INTERVAL: 15s
+      DASHBOARD_WATCHDOG_SWEEP_TIMEOUT: 8s
+    volumes:
+    - market-data-db:/data/market:ro
+    - ${PAPER_RUN_DIR:?}/telemetry:/data/telemetry:ro
+    - dashboard-watchdog-data:/data/watchdog
+    mem_limit: 64m
+    cpus: 0.2
+    pids_limit: 64
+    read_only: true
+    tmpfs:
+    - /tmp:size=16m,noexec,nosuid,nodev
+    security_opt:
+    - no-new-privileges:true
+    cap_drop:
+    - ALL
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - test -s /data/watchdog/status.json
+      interval: 30s
+      timeout: 3s
+      start_period: 15s
+      retries: 3
+    networks:
+    - paper
+    image: algotrading-paper-dashboard-api:local
+    group_add:
+    - '10001'
+    logging:
+      driver: json-file
+      options:
+        max-size: 25m
+        max-file: '2'
+  dashboard-alert-notifier:
+    build:
+      context: ../../dashboard/dashboard-api
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 10s
+    entrypoint:
+    - /dashboard-alert-notifier
+    environment:
+      DASHBOARD_ALERT_STORE_DIR: /data/watchdog
+      DASHBOARD_NOTIFIER_STORE_DIR: ${DASHBOARD_NOTIFIER_STORE_DIR:-}
+      DASHBOARD_NOTIFIER_TEST_SINK_FILE: /data/notifier/test-sink.jsonl
+      DASHBOARD_NOTIFIER_SINK: TEST_FILE
+      DASHBOARD_NOTIFIER_MIN_SEVERITY: ${DASHBOARD_NOTIFIER_MIN_SEVERITY:-WARN}
+      DASHBOARD_NOTIFIER_INTERVAL: ${DASHBOARD_NOTIFIER_INTERVAL:-5s}
+      DASHBOARD_NOTIFIER_COOLDOWN: ${DASHBOARD_NOTIFIER_COOLDOWN:-5m}
+      DASHBOARD_NOTIFIER_SWEEP_TIMEOUT: ${DASHBOARD_NOTIFIER_SWEEP_TIMEOUT:-10s}
+      DASHBOARD_NOTIFIER_SOURCE_MAX_BYTES: ${DASHBOARD_NOTIFIER_SOURCE_MAX_BYTES:-67108864}
+    volumes:
+    - dashboard-watchdog-data:/data/watchdog:ro
+    - dashboard-alert-notifier-data:/data/notifier
+    mem_limit: 48m
+    cpus: 0.15
+    pids_limit: 48
+    read_only: true
+    tmpfs:
+    - /tmp:size=8m,noexec,nosuid,nodev
+    security_opt:
+    - no-new-privileges:true
+    cap_drop:
+    - ALL
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - store=$${DASHBOARD_NOTIFIER_STORE_DIR:-}; if [ -z "$$store" ]; then if [ "$${DASHBOARD_NOTIFIER_SINK:-TEST_FILE}"
+        = TELEGRAM ]; then store=/data/notifier/telegram; else store=/data/notifier;
+        fi; fi; test -s "$$store/status.json" && grep -q '"lastSuccessAt"' "$$store/status.json"
+      interval: 30s
+      timeout: 3s
+      start_period: 15s
+      retries: 3
+    networks:
+    - paper
+    image: algotrading-paper-dashboard-api:local
+    group_add:
+    - '10001'
+    logging:
+      driver: json-file
+      options:
+        max-size: 25m
+        max-file: '2'
+  dashboard-web:
+    build:
+      context: ../../dashboard
+      args:
+        VITE_DASHBOARD_DATA_MODE: api
+        VITE_DASHBOARD_API_BASE_URL: /api
+        VITE_DASHBOARD_API_TIMEOUT_MS: 8000
+    restart: unless-stopped
+    depends_on:
+      dashboard-api:
+        condition: service_healthy
+    ports:
+    - 127.0.0.1:${PAPER_DASHBOARD_PORT:-8092}:80
+    mem_limit: 96m
+    cpus: 0.25
+    pids_limit: 96
+    networks:
+    - paper
+    image: algotrading-paper-dashboard-web:local
+    logging:
+      driver: json-file
+      options:
+        max-size: 25m
+        max-file: '2'
+networks:
+  paper: {}
+volumes:
+  nats-data: {}
+  postgres-data: {}
+  market-data-db: {}
+  dashboard-watchdog-data: {}
+  dashboard-manual-audit-data: {}
+  dashboard-alert-ack-data: {}
+  dashboard-alert-notifier-data: {}

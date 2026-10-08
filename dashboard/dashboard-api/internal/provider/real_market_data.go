@@ -41,6 +41,7 @@ type realMarketData struct {
 	SignalDataAvailable   bool                       `json:"signalDataAvailable"`
 	SignalCycleAligned    bool                       `json:"signalCycleAligned"`
 	CanonicalTopN         int                        `json:"canonicalTopN"`
+	LiquidityLabel        string                     `json:"liquidityLabel"`
 	HistoryDays           int                        `json:"historyDays"`
 }
 
@@ -156,7 +157,7 @@ func (p *Real) loadMarketDataResource(ctx context.Context) (realMarketData, erro
 	}
 
 	strategyCheckpoint, checkpointErr := p.postgres.LatestStrategyCheckpoint(ctx)
-	return buildRealMarketData(window, strategyCheckpoint, checkpointErr, canonicalTopN, historyDays, universeN), nil
+	return buildRealMarketData(window, strategyCheckpoint, checkpointErr, canonicalTopN, historyDays, universeN, p.cfg), nil
 }
 
 func buildRealMarketData(
@@ -164,7 +165,16 @@ func buildRealMarketData(
 	checkpoint pgstore.StrategyCheckpoint,
 	checkpointErr error,
 	canonicalTopN, historyDays, universeN int,
+	configs ...RealConfig,
 ) realMarketData {
+	cfg := RealConfig{}
+	if len(configs) > 0 {
+		cfg = configs[0]
+	}
+	liquidityLabel := "SMA Volume 25"
+	if cfg.QuoteVolume {
+		liquidityLabel = "SMA Quote Volume 25 (USDT)"
+	}
 	barsByAsset := make(map[string][]sqlitemarket.Bar)
 	for _, bar := range window.Bars {
 		barsByAsset[bar.Pair] = append(barsByAsset[bar.Pair], bar)
@@ -174,12 +184,20 @@ func buildRealMarketData(
 	}
 
 	candidates := make([]marketCandidate, 0, len(window.Ranking))
+	missingQuoteRows := 0
 	for _, ranked := range window.Ranking {
 		bars := barsByAsset[ranked.Pair]
 		if !hasBarOnDate(bars, window.LatestDate) {
 			continue
 		}
-		sma := latestSMAOnRows(bars, pureRSILiquidityLength, func(bar sqlitemarket.Bar) float64 { return bar.Volume })
+		if cfg.QuoteVolume && len(bars) >= pureRSILiquidityLength {
+			for _, bar := range bars[len(bars)-pureRSILiquidityLength:] {
+				if !isFinite(liquidityValue(bar, true)) {
+					missingQuoteRows++
+				}
+			}
+		}
+		sma := latestSMAOnRows(bars, pureRSILiquidityLength, func(bar sqlitemarket.Bar) float64 { return liquidityValue(bar, cfg.QuoteVolume) })
 		if !isFinite(sma) {
 			continue
 		}
@@ -199,6 +217,9 @@ func buildRealMarketData(
 	universe := append([]marketCandidate(nil), candidates[:universeN]...)
 
 	aligned := checkpointErr == nil && checkpoint.Timestamp == window.LatestDate && checkpoint.Update.CompletedThrough == window.LatestDate && checkpoint.Intents.Timestamp == window.LatestDate && int(checkpoint.Update.ActiveTopN) == canonicalTopN
+	if cfg.QuoteVolume && cfg.QuoteVolumeFrom != "" && fmt.Sprintf("%08d", checkpoint.Timestamp) < cfg.QuoteVolumeFrom {
+		aligned = false
+	}
 	signals := map[string]float64{}
 	activeSignals := 0
 	if aligned {
@@ -289,7 +310,10 @@ func buildRealMarketData(
 	if aligned && strings.TrimSpace(checkpoint.Update.Source) != "" {
 		source = checkpoint.Update.Source + " → canonical SQLite"
 	}
-	note := fmt.Sprintf("OHLCV and the daily exchange ranking are read directly from the canonical SQLite database. SMA Volume(25) and RSI(7) are recomputed with the same formulas over the same bounded %d-calendar-day strategy window. Durable StrategyIntent state is joined only when its checkpoint timestamp exactly matches the SQLite ranking frontier.", historyDays)
+	note := fmt.Sprintf("OHLCV and the daily exchange ranking are read directly from the canonical SQLite database. %s and RSI(7) are recomputed with the same formulas over the same bounded %d-calendar-day strategy window. Durable StrategyIntent state is joined only when its checkpoint timestamp exactly matches the SQLite ranking frontier.", liquidityLabel, historyDays)
+	if cfg.QuoteVolumeFrom != "" {
+		note += " Quote-volume strategy takes effect from completed candle " + cfg.QuoteVolumeFrom + "; earlier durable cycles are preserved."
+	}
 	if !aligned {
 		note += " The latest Strategy checkpoint is missing or not cycle-aligned, so this page does not mix its signals into the current market cycle."
 	}
@@ -308,12 +332,12 @@ func buildRealMarketData(
 			MissingCandles:      missingCandles,
 			DuplicateTimestamps: window.Integrity.DuplicateRows,
 			Gaps:                gapCount,
-			InvalidRows:         window.Integrity.InvalidRows,
+			InvalidRows:         window.Integrity.InvalidRows + missingQuoteRows,
 		},
 		Universe:            rows,
 		CandidateRejections: rejections,
 		StrategySnapshot: realMarketStrategySnapshot{
-			Ranking:      fmt.Sprintf("Top %d by SMA Volume(25) inside canonical top-%d", universeN, canonicalTopN),
+			Ranking:      fmt.Sprintf("Top %d by %s inside canonical top-%d", universeN, liquidityLabel, canonicalTopN),
 			EntryRule:    "RSI(7) > 80",
 			ExitRule:     "RSI(7) < 70",
 			MaxPositions: "10 persistent signals",
@@ -326,6 +350,7 @@ func buildRealMarketData(
 		SignalCycleAligned:  aligned,
 		CanonicalTopN:       canonicalTopN,
 		HistoryDays:         historyDays,
+		LiquidityLabel:      liquidityLabel,
 	}
 }
 
@@ -355,6 +380,16 @@ func describeMarketSignal(rsi, signal float64, aligned bool, activeSignals int) 
 		return "FLAT", "FLAT", "FREE", "Below the exit threshold; no long exposure requested.", "normal"
 	}
 	return "FLAT", "WAIT", "FREE", "Between entry and exit thresholds with no active persistent signal.", "normal"
+}
+
+func liquidityValue(bar sqlitemarket.Bar, quote bool) float64 {
+	if !quote {
+		return bar.Volume
+	}
+	if bar.QuoteVolume == nil || !isFinite(*bar.QuoteVolume) || *bar.QuoteVolume < 0 {
+		return math.NaN()
+	}
+	return *bar.QuoteVolume
 }
 
 func latestSMAOnRows(bars []sqlitemarket.Bar, length int, value func(sqlitemarket.Bar) float64) float64 {

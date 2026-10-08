@@ -35,6 +35,13 @@ public:
         const std::vector<MarketDataDownloadRequest>& requests,
         std::size_t maxParallelRequests) const;
 
+    // Read only the first price of an already-started daily candle, never its
+    // unfinished high/low/close/volume. Missing or misdated opens fail the cycle.
+    std::unordered_map<Coin, double> fetchOpeningPrices(
+        std::chrono::year_month_day date,
+        const std::vector<std::string>& symbols,
+        std::size_t maxParallelRequests) const;
+
 private:
     std::string base_url_;
 

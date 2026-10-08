@@ -40,6 +40,8 @@ MarketDataConfig loadMarketDataConfig(const std::filesystem::path& path)
         config.nats_url = root.at("nats_url").get<std::string>();
     if (root.contains("stream"))
         config.stream = root.at("stream").get<std::string>();
+    if (root.contains("publish_paper_execution_prices"))
+        config.publish_paper_execution_prices = root.at("publish_paper_execution_prices").get<bool>();
     if (root.contains("ranking_size"))
         config.ranking_size = root.at("ranking_size").get<std::size_t>();
     if (root.contains("active_top_n"))

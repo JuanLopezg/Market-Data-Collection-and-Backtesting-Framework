@@ -1,6 +1,7 @@
 #include "execution_engine.h"
 
 #include <algorithm>
+#include <cmath>
 #include <unordered_set>
 #include <stdexcept>
 #include <utility>
@@ -126,6 +127,27 @@ void ExecutionEngine::processExchangeEvent(
     if (const auto* update = std::get_if<OrderUpdate>(&event)) {
         order_manager_.onOrderUpdate(*update);
         persist(std::nullopt);
+        const TrackedOrder parent = *order_manager_.find(update->order_id);
+        if (parent.request.parent_order_id == 0 && parent.request.protective_stop_price > 0.0 &&
+            isTerminalExecutionOrderStatus(parent.status) && parent.filled_quantity > 0.0) {
+            // A repeated terminal event must not create a second bracket, even
+            // after the first child has filled or has been canceled.
+            for (const auto& [id, order] : order_manager_.orders()) {
+                (void)id;
+                if (order.request.parent_order_id == parent.request.order_id)
+                    return;
+            }
+            ExecutionOrder cover(next_order_id_++, parent.request.strategy_id,
+                update->timestamp, update->timestamp, parent.request.coin,
+                OrderSide::Buy, parent.filled_quantity);
+            cover.parent_order_id = parent.request.order_id;
+            cover.protective_stop_price = parent.request.protective_stop_price;
+            order_manager_.track(cover);
+            persist(std::nullopt);
+            exchange_.submitOrder(cover);
+            order_manager_.markSubmitted(cover.order_id, update->timestamp);
+            persist(std::nullopt);
+        }
         return;
     }
 
@@ -172,6 +194,12 @@ void ExecutionEngine::applyOrderPlan(
 
     std::unordered_set<OrderID> submitIds;
     for (const ExecutionOrder& order : plan.submit_orders) {
+        order.validateConditional();
+        if (order.entry_stop_price != 0.0 && !exchange_.supportsStopEntries())
+            throw std::invalid_argument("Exchange adapter does not support stop entries");
+        if ((order.protective_stop_price != 0.0 || order.parent_order_id != 0) &&
+            !exchange_.supportsShortBrackets())
+            throw std::invalid_argument("Exchange adapter does not support short brackets");
         if (!submitIds.insert(order.order_id).second)
             throw std::invalid_argument("Order plan contains duplicate submit order id");
         if (order.order_id < next_order_id_ || order.order_id >= plan.next_order_id)

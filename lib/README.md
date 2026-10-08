@@ -4,6 +4,14 @@
 Start with an orchestration file, then follow the components it calls. Service entrypoints live
 in `live_trading/`; research entrypoints live in `research/`.
 
+Daily bars retain source `volume` and optional actual `quote_volume`; NaN means the
+older source has no quote turnover. `PriceField::QuoteVolume` supports notional
+liquidity selection without changing existing `Volume` semantics or historical dataset units. Canonical SQLite
+reads accept old schemas as unavailable quote data. Optional market-slice JSON fields
+preserve quote turnover and reject conflicting redeliveries; old wire output is
+unchanged when quote data is unavailable. SMA recovers after missing rows leave its
+window. PAPER opts into the quote profile; the accepted historical baseline does not.
+
 ## Reading the code
 
 For the simulation that is compared with RealTest, read these files in order:
@@ -29,8 +37,9 @@ evidence; PureRSI is currently the only one. Shared interfaces, instances and si
 orchestration stay at the root of `src/strategy/`. Strategies should enter `validated/`
 only after their intended behavior has accepted test or replay evidence.
 
-`research/src/legacy/runtime/` contains the older research implementation. Unmigrated
-breakout strategies belong there, not among the current strategies. The ignored local
+The frozen research runtime and comparison target have been removed. Useful
+research experiments use current APIs under
+`research/src/common/`; they are separate from the validated catalog. The ignored local
 `src/strategy/on_hold/` experiments are outside the supported build.
 
 ## Start here
@@ -198,11 +207,19 @@ the previously used durable interface; no replacement wrappers or new subfolders
 | `exchange_gateway_adapter.h` | Gateway-to-backend contract used by executable services. |
 | `adapters/message_exchange.h/.cpp` | `MessageExchange`: execution commands published through the durable message bus. |
 | `adapters/backend_gateway.h/.cpp` | `BackendGateway`: gateway routing to a private JetStream backend stream. |
-| `adapters/simulated_exchange.h` | Lightweight next-open market-order simulator used by the in-process backtester. |
+| `adapters/simulated_exchange.h` | Next-open market simulator, one-bar long/short research stops and fill-sized short protective covers, matched after completed bars. |
 | `mock/` | Complete deterministic venue used by canonical replay and fault/recovery validation. |
 
 These boundaries serve different current workflows. The lightweight simulator and
 the complete MOCK venue have different matching/accounting responsibilities.
+Research stop entries carry a trigger in the in-process quantity planner and
+simulator; gap fills preserve approved monetary value. They are not supported
+by service JSON, schema-v1 durable storage or other exchange adapters, which reject
+them explicitly. MRShort brackets create one protective cover from actual filled
+units, with parent linkage preventing duplicate covers. The simulator cancels the
+cover before a timed market exit. Stateful research strategies also reject
+durable-store attachment. Research experiment definitions remain outside the
+validated catalog.
 All nested sources are listed by the existing exchange build file; there are no
 forwarding headers or separate build files for the subfolders.
 

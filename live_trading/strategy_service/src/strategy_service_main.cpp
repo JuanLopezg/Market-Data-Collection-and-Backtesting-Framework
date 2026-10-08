@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <cmath>
 #include <iostream>
 #include <iterator>
 #include <limits>
@@ -450,6 +451,7 @@ PriceField parsePriceField(const std::string& value)
     if (value == "Low") return PriceField::Low;
     if (value == "Close") return PriceField::Close;
     if (value == "Volume") return PriceField::Volume;
+    if (value == "QuoteVolume") return PriceField::QuoteVolume;
     throw std::invalid_argument("Unsupported indicator source: " + value);
 }
 
@@ -624,6 +626,21 @@ private:
             options_.market_top_n,
             activeBefore
         );
+
+        // A quote-volume configuration must not silently turn missing quote history into flat signals.
+        for (const auto& strategy : engine_->strategies()) {
+            for (const auto& spec : strategy.requiredIndicators()) {
+                if (spec.source != PriceField::QuoteVolume) continue;
+                for (const auto& [coin, current] : window.market_data.at(date)) {
+                    const auto& history = window.raw_data.data.at(coin);
+                    unsigned int checked = 0;
+                    for (auto it = history.rbegin(); it != history.rend() && checked < spec.length + spec.offset; ++it, ++checked) {
+                        if (!std::isfinite(it->second.quote_volume) || it->second.quote_volume < 0.0)
+                            throw std::runtime_error("Required quote-volume history is missing for " + coin);
+                    }
+                }
+            }
+        }
 
         LG_INFO(
             "service=strategy event=market_window_loaded timestamp={} warmup_days={} ranked_symbols={} active_history_symbols={} history_symbols={} history_rows={}",

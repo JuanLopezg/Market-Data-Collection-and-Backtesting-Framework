@@ -2,7 +2,7 @@ export type HealthState = 'READY' | 'DEGRADED' | 'PAUSED'
 export type ReconciliationState = 'CLEAN' | 'PENDING' | 'DRIFT' | 'BLOCKED'
 export type PositionAlignmentState = 'ALIGNED' | 'PENDING' | 'DRIFT' | 'BLOCKED' | 'UNKNOWN'
 export type Severity = 'INFO' | 'WARN' | 'CRITICAL'
-export type TradingMode = 'LIVE' | 'TESTNET' | 'REPLAY'
+export type TradingMode = 'LIVE' | 'TESTNET' | 'REPLAY' | 'PAPER'
 export type PipelineStageState = 'OK' | 'CHANGED' | 'PENDING' | 'BLOCKED'
 
 export interface ShellStatus {
@@ -838,6 +838,7 @@ export interface StrategySnapshot {
 }
 
 export interface MarketDataData {
+  liquidityLabel?: string
   source: string
   latestCompletedCandle: string
   healthyAssets: number
@@ -866,6 +867,10 @@ export type AlertStatus = 'ACTIVE' | 'ACKNOWLEDGED' | 'RESOLVED'
 export type AuditActorType = 'SYSTEM' | 'OPERATOR' | 'HUMAN'
 
 export interface VpsHealth {
+  ramLabel?: string
+  diskLabel?: string
+  diskAvailableGiB?: number
+  clockObserved?: boolean
   cpuPct: number
   ramPct: number
   diskPct: number
@@ -890,6 +895,7 @@ export interface ContainerHealthRow {
 }
 
 export interface TradingServiceHealthRow {
+  processRunning?: boolean
   service: string
   ready: boolean
   mode: TradingMode
@@ -945,6 +951,7 @@ export interface ReadinessDependency {
 }
 
 export interface InfrastructureData {
+  telemetryObservedAt?: string
   readiness: HealthState
   readinessReason: string
   lastUpdated: string

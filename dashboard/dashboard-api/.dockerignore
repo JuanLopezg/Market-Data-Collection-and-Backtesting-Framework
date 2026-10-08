@@ -1,2 +1,8 @@
 .git
 *.log
+.env*
+*.key
+*.pem
+**/.env*
+**/*.key
+**/*.pem

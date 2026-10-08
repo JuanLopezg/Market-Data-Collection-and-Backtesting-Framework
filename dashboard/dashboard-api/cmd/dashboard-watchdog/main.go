@@ -116,14 +116,23 @@ func configuredRealProvider() (*provider.Real, error) {
 	environment := strings.ToUpper(strings.TrimSpace(envOr("DASHBOARD_VENUE_TARGET_ENVIRONMENT", "TESTNET")))
 	gateway := strings.ToLower(strings.TrimSpace(envOr("DASHBOARD_EXCHANGE_GATEWAY_MODE", "hyperliquid-dry-run")))
 	publicURL := strings.TrimSpace(envOr("DASHBOARD_HYPERLIQUID_PUBLIC_INFO_URL", "https://api.hyperliquid-testnet.xyz/info"))
-	if venue != "HYPERLIQUID" || environment != "TESTNET" || gateway != "hyperliquid-dry-run" {
+	paper := strings.TrimSpace(os.Getenv("DASHBOARD_RUNTIME_MODE")) == "PAPER" &&
+		venue == "SIMULATED" && environment == "PAPER" && gateway == "backend"
+	if strings.TrimSpace(os.Getenv("DASHBOARD_RUNTIME_MODE")) == "PAPER" && !paper {
+		return nil, fmt.Errorf("PAPER requires SIMULATED venue, PAPER environment and backend gateway")
+	}
+	if !paper && (venue != "HYPERLIQUID" || environment != "TESTNET" || gateway != "hyperliquid-dry-run") {
 		return nil, fmt.Errorf("watchdog must remain on HYPERLIQUID TESTNET hyperliquid-dry-run")
 	}
-	if err := validateTestnetInfoURL(publicURL); err != nil {
+	if paper {
+		publicURL = ""
+	} else if err := validateTestnetInfoURL(publicURL); err != nil {
 		return nil, err
 	}
 
 	return provider.NewReal(provider.RealConfig{
+		HostMetricsFile:        strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_FILE")),
+		HostMetricsProject:     strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_PROJECT")),
 		PostgreSQLDSN:          strings.TrimSpace(os.Getenv("DASHBOARD_POSTGRES_DSN")),
 		NATSURL:                strings.TrimSpace(os.Getenv("DASHBOARD_NATS_URL")),
 		NATSMonitorURL:         strings.TrimSpace(os.Getenv("DASHBOARD_NATS_MONITOR_URL")),
@@ -132,6 +141,8 @@ func configuredRealProvider() (*provider.Real, error) {
 		RuntimeMode:            strings.TrimSpace(envOr("DASHBOARD_RUNTIME_MODE", "LIVE")),
 		MarketTopN:             marketTopN,
 		MarketHistoryDays:      historyDays,
+		QuoteVolume:            os.Getenv("DASHBOARD_QUOTE_VOLUME") == "true",
+		QuoteVolumeFrom:        strings.TrimSpace(os.Getenv("DASHBOARD_QUOTE_VOLUME_FROM")),
 		StrategyUniverseN:      universeN,
 		ProbeTimeout:           probeTimeout,
 		ExecutionVenue:         venue,

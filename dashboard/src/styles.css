@@ -65,6 +65,13 @@
 .e2e-proof-step p { margin: 0 0 7px; color: var(--muted); font-size: 11px; line-height: 1.45; }
 .e2e-proof-step > small { display: block; color: var(--muted); font-size: 9px; overflow-wrap: anywhere; }
 .e2e-proof-note { margin-top: 10px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+
+/* Operational measurements must remain legible at normal browser zoom. */
+.infra-summary .mini-metric { min-width: 0; padding: 16px; }
+.infra-summary .mini-metric > span { font-size: 13px; }
+.infra-summary .mini-metric > small { font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.infra-table td, .infra-table th { font-size: 13px; padding: 12px; }
+.dependency-row small, .infra-kv span, .infra-detail-grid span { font-size: 12px; line-height: 1.5; }
 @media (max-width: 1180px) {
   .e2e-proof-head, .e2e-proof-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

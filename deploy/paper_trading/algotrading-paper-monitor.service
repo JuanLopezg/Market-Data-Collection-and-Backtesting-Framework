@@ -1,0 +1,23 @@
+[Unit]
+Description=Paper stack host/container telemetry (read-only observation)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/algotrading
+ExecStart=/usr/bin/python3 /opt/algotrading/deploy/paper_trading/monitor.py --project algotrading-paper --output /opt/algotrading/storage/paper_trading/telemetry/host.json --disk-path /opt/algotrading/storage
+Restart=on-failure
+RestartSec=10
+# Docker inspection needs the Docker socket. This is a host-only service;
+# the dashboard receives the JSON snapshot and never receives socket access.
+User=root
+UMask=0022
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/algotrading/storage/paper_trading/telemetry
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

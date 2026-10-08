@@ -9,6 +9,7 @@
 #include <mutex>
 #include <set>
 #include <thread>
+#include <stdexcept>
 
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
@@ -245,8 +246,10 @@ BinanceFetchResult BinanceMarketDataClient::fetchDailyBars(
                     }
 
                     for (const auto& row : rows) {
-                        if (!row.is_array() || row.size() < 6)
-                            continue;
+                        if (!row.is_array() || row.size() < 8) {
+                            failed = true;
+                            break;
+                        }
                         try {
                             const long long openTime = row.at(0).get<long long>();
                             const auto date = dateFromOpenTime(openTime);
@@ -260,15 +263,23 @@ BinanceFetchResult BinanceMarketDataClient::fetchDailyBars(
                             bar.low = std::stod(row.at(3).get<std::string>());
                             bar.close = std::stod(row.at(4).get<std::string>());
                             bar.volume = std::stod(row.at(5).get<std::string>());
+                            // USD-M kline field 7 is actual quote-asset turnover, not volume * close.
+                            bar.quote_volume = std::stod(row.at(7).get<std::string>());
+                            if (!std::isfinite(bar.quote_volume) || bar.quote_volume < 0.0)
+                                throw std::runtime_error("Invalid kline quote volume");
                             local.data[request.symbol][static_cast<Timestamp>(toYYYYMMDD(date))] = bar;
                         }
                         catch (const std::exception& error) {
                             LG_WARN(
-                                "service=market-data event=kline_row_ignored symbol={} error={}",
+                                "service=market-data event=kline_row_invalid symbol={} error={}",
                                 request.symbol, error.what()
                             );
+                            failed = true;
+                            break;
                         }
                     }
+
+                    if (failed) break;
 
                     pageStart = pageEnd + std::chrono::days(1);
                 }
@@ -294,4 +305,49 @@ BinanceFetchResult BinanceMarketDataClient::fetchDailyBars(
         std::unique(result.failed_symbols.begin(), result.failed_symbols.end()),
         result.failed_symbols.end());
     return result;
+}
+
+std::unordered_map<Coin, double> BinanceMarketDataClient::fetchOpeningPrices(
+    std::chrono::year_month_day date,
+    const std::vector<std::string>& symbols,
+    std::size_t maxParallelRequests) const
+{
+    std::unordered_map<Coin, double> prices;
+    std::mutex mutex;
+    bool failed = false;
+    const auto start = unixMillis(date);
+    const std::size_t parallel = std::max<std::size_t>(1, maxParallelRequests);
+    for (std::size_t first = 0; first < symbols.size(); first += parallel) {
+        std::vector<std::thread> workers;
+        for (std::size_t index = first; index < std::min(first + parallel, symbols.size()); ++index) {
+            workers.emplace_back([&, symbol = symbols[index]] {
+                try {
+                    const std::string url = base_url_ + "/fapi/v1/klines?symbol=" + symbol +
+                        "&interval=1d&limit=1&startTime=" + std::to_string(start) +
+                        "&endTime=" + std::to_string(start + 86400000 - 1);
+                    std::string response;
+                    if (!httpGet(url, response, "paper-open:" + symbol))
+                        throw std::runtime_error("Paper opening-price request failed");
+                    const auto rows = json::parse(response);
+                    if (!rows.is_array() || rows.empty() || !rows.at(0).is_array() || rows.at(0).size() < 2 ||
+                        rows.at(0).at(0).get<long long>() != start)
+                        throw std::runtime_error("Paper opening-price candle is absent or misdated");
+                    const double price = std::stod(rows.at(0).at(1).get<std::string>());
+                    if (!std::isfinite(price) || price <= 0)
+                        throw std::runtime_error("Paper opening price must be finite and positive");
+                    std::lock_guard<std::mutex> lock(mutex);
+                    prices.emplace(symbol, price);
+                } catch (const std::exception&) {
+                    std::lock_guard<std::mutex> lock(mutex);
+                    failed = true;
+                    LG_WARN("service=market-data event=paper_open_unavailable symbol={} action=retry_cycle", symbol);
+                }
+            });
+        }
+        for (auto& worker : workers)
+            worker.join();
+    }
+    if (failed || prices.size() != symbols.size())
+        throw std::runtime_error("Paper execution requires a complete, correctly dated opening-price snapshot");
+    return prices;
 }

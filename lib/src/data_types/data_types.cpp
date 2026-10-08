@@ -30,6 +30,7 @@ MarketData buildMarketData(const OHLCVData& raw)
             bar.low       = ohlcv.low;
             bar.close     = ohlcv.close;
             bar.volume    = ohlcv.volume;
+            bar.quote_volume = ohlcv.quote_volume;
             bar.barNumber = barNumber;
 
             marketData[ts][coin] = bar;

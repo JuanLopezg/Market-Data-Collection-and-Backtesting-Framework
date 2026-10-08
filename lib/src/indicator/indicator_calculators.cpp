@@ -35,6 +35,8 @@ double getField(const OHLCV& bar, PriceField source)
             return bar.close;
         case PriceField::Volume:
             return bar.volume;
+        case PriceField::QuoteVolume:
+            return bar.quote_volume >= 0.0 ? bar.quote_volume : invalidValue();
         default:
             return invalidValue();
     }
@@ -95,15 +97,18 @@ std::vector<double> calculateSMA(
     const std::size_t len = static_cast<std::size_t>(length);
 
     double sum = 0.0;
+    std::size_t missing = 0;
 
     for (std::size_t i = 0; i < n; ++i) {
-        sum += values[i];
+        if (std::isfinite(values[i])) sum += values[i];
+        else ++missing;
 
         if (i >= len) {
-            sum -= values[i - len];
+            if (std::isfinite(values[i - len])) sum -= values[i - len];
+            else --missing;
         }
 
-        if (i + 1 >= len) {
+        if (i + 1 >= len && missing == 0) {
             result[i] = sum / static_cast<double>(len);
         }
     }

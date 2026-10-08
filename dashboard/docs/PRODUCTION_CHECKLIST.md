@@ -22,7 +22,7 @@ Before making the dashboard reachable from the Internet:
 - [ ] Caddy certificate volumes are persistent.
 - [ ] Root filesystems are read-only and `no-new-privileges`/capability drops remain present.
 - [ ] CPU/RAM/PID limits and Docker log rotation are active.
-- [ ] VPS diagnostic logs persist across restart, rotate daily and retain five days with automatic cleanup; see [VPS log retention](../../deploy/live/README.md#vps-log-retention-future-deployment-task).
+- [ ] Install the host receiver/cleanup units and add the dashboard logging overlay; verify VPS logs survive restart/recreation, retain today/yesterday and trim older entries at 50 MiB per daily file; see [VPS log retention](../../deploy/live/README.md#vps-log-retention).
 - [ ] `./scripts/production-preflight.sh .env.production` passes.
 - [ ] Caddy obtains a trusted TLS certificate and HTTP redirects to HTTPS.
 - [ ] `/health` and `/api/health` work over HTTPS.
@@ -47,3 +47,10 @@ Before any future state-changing LIVE controls:
 - [ ] Verify implemented manual-intent and alert-acknowledgement stores survive restart and remain separate from trading truth.
 - [ ] Route every control through the normal risk/execution business pipeline.
 - [ ] Never add a browser-to-exchange path.
+
+Remaining product and live acceptance is ordered in the
+[project roadmap](../../docs/ROADMAP.md), including chart/timeframe behavior,
+Pipeline/Risk/Infrastructure completeness, funding/BTC collateral, real Telegram
+delivery, Manual Control after venue integration, the simplest fast-backtest
+performance baseline, and CPU/RAM profiles during complete backtests and live trading.
+Unchecked roadmap requirements are not completed by passing deployment preflight.

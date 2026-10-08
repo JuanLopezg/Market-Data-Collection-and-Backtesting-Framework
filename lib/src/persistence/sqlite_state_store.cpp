@@ -131,6 +131,7 @@ void SQLiteStateStore::save(
     const std::optional<Fill>& newFill
 )
 {
+    snapshot.requireMarketOnly();
     exec("BEGIN IMMEDIATE TRANSACTION;");
 
     try {

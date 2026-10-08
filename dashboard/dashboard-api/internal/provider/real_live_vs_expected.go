@@ -137,7 +137,7 @@ func (p *Real) liveVsExpected(ctx context.Context) (realLiveVsExpected, error) {
 	if err != nil {
 		return realLiveVsExpected{}, fmt.Errorf("read canonical behaviour baseline window: %w", err)
 	}
-	return buildRealLiveVsExpected(window, canonicalTopN, universeN), nil
+	return buildRealLiveVsExpected(window, canonicalTopN, universeN, p.cfg), nil
 }
 
 func step45Coverage(marketState, marketDetail string) []realLiveVsExpectedCoverage {
@@ -149,8 +149,21 @@ func step45Coverage(marketState, marketDetail string) []realLiveVsExpectedCovera
 	}
 }
 
-func buildRealLiveVsExpected(window sqlitemarket.BehaviourWindow, canonicalTopN, universeN int) realLiveVsExpected {
-	observations := computeDailyBehaviour(window, universeN)
+func buildRealLiveVsExpected(window sqlitemarket.BehaviourWindow, canonicalTopN, universeN int, configs ...RealConfig) realLiveVsExpected {
+	cfg := RealConfig{}
+	if len(configs) > 0 {
+		cfg = configs[0]
+	}
+	if cfg.QuoteVolumeFrom != "" {
+		ranking := make([]sqlitemarket.DailyRankingRow, 0)
+		for _, row := range window.Ranking {
+			if fmt.Sprintf("%08d", row.Date) >= cfg.QuoteVolumeFrom {
+				ranking = append(ranking, row)
+			}
+		}
+		window.Ranking = ranking
+	}
+	observations := computeDailyBehaviour(window, universeN, cfg.QuoteVolume)
 	checkedAt := timeNowUTC()
 	if len(observations) < 6 {
 		return realLiveVsExpected{
@@ -192,7 +205,7 @@ func buildRealLiveVsExpected(window sqlitemarket.BehaviourWindow, canonicalTopN,
 		},
 		{
 			ID: "liquidity-concentration", Family: "RISK", Label: "Top-5 Liquidity Concentration",
-			Description: "Share of reconstructed top-20 SMA Volume(25) represented by the five largest candidates. It is a market concentration diagnostic, not a portfolio exposure limit.",
+			Description: "Share of reconstructed top-20 configured SMA liquidity(25) represented by the five largest candidates. It is a market concentration diagnostic, not a portfolio exposure limit.",
 			Values:      obsValues(observations, func(o dailyBehaviourObservation) float64 { return o.LiquidityTop5SharePct }),
 			Format:      func(v float64) string { return fmt.Sprintf("%.1f%%", v) },
 		},
@@ -229,7 +242,7 @@ func buildRealLiveVsExpected(window sqlitemarket.BehaviourWindow, canonicalTopN,
 		ContractVersion: "step45-v1", Status: "VALIDATED_LIMITED", Validated: true, ProjectionReady: true,
 		ObservationMode:     "LATEST_COMPLETED_CANONICAL_MARKET_DAY",
 		BaselineLabel:       "Canonical SQLite rolling baseline",
-		BaselineWindow:      fmt.Sprintf("%d-day bounded window · %s → %s · latest day excluded from baseline statistics · top-%d by SMA Volume(25) inside canonical top-%d", len(observations), formatMarketDate(firstDate), formatMarketDate(latestDate), universeN, canonicalTopN),
+		BaselineWindow:      fmt.Sprintf("%d-day bounded window · %s → %s · latest day excluded from baseline statistics · top-%d by configured SMA liquidity(25) inside canonical top-%d", len(observations), formatMarketDate(firstDate), formatMarketDate(latestDate), universeN, canonicalTopN),
 		BaselineFingerprint: behaviourBaselineFingerprint(baseline, canonicalTopN, universeN), BaselineObservationCount: len(baseline), BaselineExcludesLatest: true,
 		LatestObservation: formatMarketDate(latestDate),
 		MetricCount:       len(metrics), NormalCount: counts["NORMAL"], ElevatedCount: counts["ELEVATED"], AbnormalCount: counts["ABNORMAL"], CriticalCount: counts["CRITICAL"],
@@ -273,7 +286,7 @@ func maxIntStep45(a, b int) int {
 // allowing wall clock to enter any economic calculation.
 func timeNowUTC() string { return time.Now().UTC().Format(time.RFC3339) }
 
-func computeDailyBehaviour(window sqlitemarket.BehaviourWindow, universeN int) []dailyBehaviourObservation {
+func computeDailyBehaviour(window sqlitemarket.BehaviourWindow, universeN int, quoteVolume ...bool) []dailyBehaviourObservation {
 	rankingByDate := make(map[uint64][]sqlitemarket.DailyRankingRow)
 	dates := make([]uint64, 0)
 	seenDates := make(map[uint64]struct{})
@@ -303,7 +316,7 @@ func computeDailyBehaviour(window sqlitemarket.BehaviourWindow, universeN int) [
 			if !hasBarOnDate(bars, date) {
 				continue
 			}
-			sma := latestSMAOnRows(bars, pureRSILiquidityLength, func(bar sqlitemarket.Bar) float64 { return bar.Volume })
+			sma := latestSMAOnRows(bars, pureRSILiquidityLength, func(bar sqlitemarket.Bar) float64 { return liquidityValue(bar, len(quoteVolume) > 0 && quoteVolume[0]) })
 			rsi := latestRSIOnRows(bars, pureRSILength)
 			if !isFinite(sma) || !isFinite(rsi) {
 				continue

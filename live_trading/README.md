@@ -9,6 +9,14 @@ and reusable behavior. Separate service files exist for actual responsibilities,
 ingestion and HTTP serving. Each service has one `src/meson.build`; the top-level
 build enters it directly without an intermediate forwarding build file.
 
+PAPER defaults to quote-notional liquidity: actual Binance daily quote turnover,
+SMA 25, top 20 inside the exchange top-50 candidate set. The ingestor stores and
+backfills `ohlcv_data.quote_volume` for completed candles; invalid quote data prevents
+publication. The strategy refuses missing required quote history. Ordinary LIVE and
+the canonical historical profile keep their existing configuration. Existing PAPER
+upgrades require a backed-up, checked configuration-identity migration preserving
+completed checkpoints; see `deploy/paper_trading/README.md`.
+
 ## Start here
 
 Read the services in this order if you are new to the project:
@@ -31,6 +39,11 @@ The full service/component execution chain is shown below. The current default
 service does not submit private orders. The gateway is an optional transport-only
 profile. Treat the downstream chain as a component responsibility map, not proof
 that the default LIVE deployment has exchange execution connected.
+
+The separate [paper deployment](../deploy/paper_trading/README.md) connects these
+services to the simulated exchange using current public data. Opt-in ingestion
+publishes only open(T+1) for execution, outside completed feature bars. It does not
+enable private orders in default LIVE.
 
 The chain is:
 

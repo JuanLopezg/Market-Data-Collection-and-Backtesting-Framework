@@ -14,6 +14,8 @@ struct MarketDataConfig {
 
     std::string nats_url = "nats://127.0.0.1:4222";
     std::string stream = "ALGOTRADING_RUNTIME";
+    // Opt-in simulated execution only; the ordinary LIVE deployment stays pre-exchange.
+    bool publish_paper_execution_prices = false;
 
     std::size_t ranking_size = 100;
     std::size_t active_top_n = 50;

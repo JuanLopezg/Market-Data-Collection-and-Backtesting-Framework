@@ -51,7 +51,8 @@ bool validBar(const OHLCV& bar)
         !std::isfinite(bar.high) || bar.high <= 0.0 ||
         !std::isfinite(bar.low) || bar.low <= 0.0 ||
         !std::isfinite(bar.close) || bar.close <= 0.0 ||
-        !std::isfinite(bar.volume) || bar.volume < 0.0)
+        !std::isfinite(bar.volume) || bar.volume < 0.0 ||
+        (!std::isnan(bar.quote_volume) && (!std::isfinite(bar.quote_volume) || bar.quote_volume < 0.0)))
         return false;
 
     return bar.high >= std::max({bar.open, bar.close, bar.low}) &&
@@ -119,6 +120,7 @@ void MarketDataStore::ensureSchema()
         "  low REAL NOT NULL,"
         "  close REAL NOT NULL,"
         "  volume REAL NOT NULL,"
+        "  quote_volume REAL,"
         "  PRIMARY KEY(pair, date)"
         ");"
         "CREATE INDEX IF NOT EXISTS idx_ohlcv_date ON ohlcv_data(date);"
@@ -134,6 +136,17 @@ void MarketDataStore::ensureSchema()
         "  UNIQUE(date, pair)"
         ");"
     );
+    // Additive migration: keep old base volumes; download missing quote history from Binance.
+    sqlite3_stmt* columns = nullptr;
+    if (sqlite3_prepare_v2(db_, "PRAGMA table_info(ohlcv_data);", -1, &columns, nullptr) != SQLITE_OK)
+        throw std::runtime_error("Cannot inspect OHLCV schema");
+    bool hasQuoteVolume = false;
+    while (sqlite3_step(columns) == SQLITE_ROW) {
+        const auto* name = reinterpret_cast<const char*>(sqlite3_column_text(columns, 1));
+        if (name && std::string(name) == "quote_volume") hasQuoteVolume = true;
+    }
+    sqlite3_finalize(columns);
+    if (!hasQuoteVolume) exec("ALTER TABLE ohlcv_data ADD COLUMN quote_volume REAL;");
 }
 
 TrackedMarketData MarketDataStore::loadTracked() const
@@ -312,6 +325,24 @@ std::vector<MarketDataDownloadRequest> MarketDataStore::buildDownloadPlan(
             }
         }
 
+        // Also backfill existing candles whose quote turnover was not stored by older versions.
+        sqlite3_stmt* missingQuote = nullptr;
+        const char* quoteSQL = "SELECT MIN(date) FROM ohlcv_data WHERE pair = ? "
+            "AND date BETWEEN ? AND ? AND (quote_volume IS NULL OR quote_volume < 0);";
+        if (sqlite3_prepare_v2(db_, quoteSQL, -1, &missingQuote, nullptr) != SQLITE_OK)
+            throw std::runtime_error("Cannot prepare missing quote-volume query");
+        sqlite3_bind_text(missingQuote, 1, symbol.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(missingQuote, 2, toYYYYMMDD(std::chrono::year_month_day{
+            targetSys - std::chrono::days(minimumHistoryDays - 1)}));
+        sqlite3_bind_int(missingQuote, 3, toYYYYMMDD(targetDate));
+        if (sqlite3_step(missingQuote) == SQLITE_ROW && sqlite3_column_type(missingQuote, 0) != SQLITE_NULL) {
+            const auto missingStart = fromYYYYMMDD(sqlite3_column_int(missingQuote, 0));
+            if (!needsDownload || std::chrono::sys_days{missingStart} < std::chrono::sys_days{startDate})
+                startDate = missingStart;
+            needsDownload = true;
+        }
+        sqlite3_finalize(missingQuote);
+
         if (needsDownload && std::chrono::sys_days{startDate} <= targetSys)
             result.push_back({symbol, startDate, targetDate});
     }
@@ -348,11 +379,12 @@ void MarketDataStore::storeTrackedNoTransaction(const TrackedMarketData& tracked
 void MarketDataStore::storeBarsNoTransaction(const OHLCVData& bars)
 {
     const char* sql =
-        "INSERT INTO ohlcv_data(pair, date, open, high, low, close, volume) "
-        "VALUES(?, ?, ?, ?, ?, ?, ?) "
+        "INSERT INTO ohlcv_data(pair, date, open, high, low, close, volume, quote_volume) "
+        "VALUES(?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(pair, date) DO UPDATE SET "
         "open=excluded.open, high=excluded.high, low=excluded.low, "
-        "close=excluded.close, volume=excluded.volume;";
+        "close=excluded.close, volume=excluded.volume, "
+        "quote_volume=coalesce(excluded.quote_volume, ohlcv_data.quote_volume);";
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)
@@ -374,6 +406,9 @@ void MarketDataStore::storeBarsNoTransaction(const OHLCVData& bars)
             sqlite3_bind_double(stmt, 5, bar.low);
             sqlite3_bind_double(stmt, 6, bar.close);
             sqlite3_bind_double(stmt, 7, bar.volume);
+            // Historical base-only replay remains explicit NULL, never an estimated quote turnover.
+            if (std::isnan(bar.quote_volume)) sqlite3_bind_null(stmt, 8);
+            else sqlite3_bind_double(stmt, 8, bar.quote_volume);
 
             if (sqlite3_step(stmt) != SQLITE_DONE) {
                 const std::string error = sqlite3_errmsg(db_);

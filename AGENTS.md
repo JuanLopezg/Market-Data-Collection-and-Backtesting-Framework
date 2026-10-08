@@ -68,6 +68,6 @@ Do not run full-history/slow visual tests unless the task requires them.
 2. Migrate `research/` to CURRENT `lib/` APIs and behavior.
 3. Remove `research/src/legacy/runtime/` only after useful research tools are migrated.
 4. Build the generated `.ai/` context/index layer.
-5. Continue VPS and Hyperliquid TESTNET/shadow/mainnet-readiness work.
+5. Continue VPS and exchange-readiness work using `docs/ROADMAP.md`: compare Kraken/Hyperliquid coverage and BTC collateral first; Kraken is preferred for the initial small live test, subject to validation.
 
 Do not treat the frozen research legacy runtime as permanent architecture.

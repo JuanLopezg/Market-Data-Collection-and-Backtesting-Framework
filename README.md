@@ -8,6 +8,7 @@ unfinished.
 ## Start here
 
 - [Current state and accepted evidence](CURRENT_STATE.md)
+- [Remaining roadmap and user requirements](docs/ROADMAP.md)
 - [Documentation index](docs/README.md)
 - [Architecture](docs/codex/ARCHITECTURE_FULL.md)
 - [Library](lib/README.md), [live services](live_trading/README.md),
@@ -17,6 +18,11 @@ unfinished.
 For coding work, read [AGENTS.md](AGENTS.md), then the two context/architecture
 files it names and the relevant README. Source and current test output take
 precedence over documentation.
+
+Generate local file/component navigation with `python3 tools/generate_ai_index.py`.
+Open `.ai/README.md`, and check freshness with
+`python3 tools/generate_ai_index.py --check`. The generated directory stays ignored
+by Git. See the [index guide](docs/codex/AI_INDEX.md) for scope and exclusions.
 
 ## Replay
 

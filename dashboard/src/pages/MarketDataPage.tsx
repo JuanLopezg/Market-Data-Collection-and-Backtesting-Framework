@@ -10,6 +10,7 @@ function DataState({ state }: { state: MarketDataState }) {
 }
 
 function MarketView({ data }: { data: MarketDataData }) {
+  const liquidityLabel = data.liquidityLabel ?? 'SMA Volume 25'
   const real = data.sourceMode === 'REAL'
   const integrityIssues = data.integrity.missingCandles + data.integrity.duplicateTimestamps + data.integrity.gaps + data.integrity.invalidRows
   const signalAligned = !real || data.signalCycleAligned === true
@@ -25,7 +26,7 @@ function MarketView({ data }: { data: MarketDataData }) {
     <section className="market-summary">
       <div className="mini-metric"><span>Source</span><strong>{data.source}</strong><small>{real ? `Top-${data.canonicalTopN ?? '—'} canonical ranking` : 'Canonical market-data source'}</small></div>
       <div className="mini-metric"><span>Healthy assets</span><strong className={data.staleAssets === 0 ? 'positive' : 'warning'}>{data.healthyAssets}/{data.totalAssets}</strong><small>{data.staleAssets} stale</small></div>
-      <div className="mini-metric"><span>Strategy universe</span><strong>{data.universeSize}</strong><small>{real ? `SMA Volume(25), ${data.historyDays ?? '—'}d bounded history` : 'Top liquidity candidates'}</small></div>
+      <div className="mini-metric"><span>Strategy universe</span><strong>{data.universeSize}</strong><small>{real ? `${liquidityLabel}, ${data.historyDays ?? '—'}d bounded history` : 'Top liquidity candidates'}</small></div>
       <div className="mini-metric"><span>Active signals</span><strong>{signalAligned ? data.activeSignals : '—'}</strong><small>{signalAligned ? `${data.availableSlots} strategy slots free` : 'Strategy checkpoint not cycle-aligned'}</small></div>
       <div className="mini-metric"><span>Integrity</span><strong className={integrityIssues === 0 ? 'positive' : 'warning'}>{integrityIssues === 0 ? 'VALID' : 'WARN'}</strong><small>{data.integrity.missingCandles} missing · {data.integrity.gaps} gap runs</small></div>
     </section>
@@ -41,8 +42,8 @@ function MarketView({ data }: { data: MarketDataData }) {
       </Panel>
     </section>
 
-    <Panel title="Universe & Strategy Diagnostics" right={<span className="muted">SMA Volume 25 · RSI 7{real ? ' · canonical recompute' : ''}</span>}>
-      <div className="table-wrap"><table className="wide-table market-table"><thead><tr><th>Rank</th><th>Asset</th><th>SMA Volume 25</th><th>RSI 7</th><th>Signal</th><th>Signal State</th><th>Slot</th><th>Diagnostic</th></tr></thead><tbody>{data.universe.map(row => <tr key={row.asset}><td>#{row.rank}</td><td><strong>{row.asset}</strong></td><td>{row.smaVolumeLabel}</td><td className={row.rsi >= 80 ? 'positive' : ''}>{row.rsi.toFixed(1)}</td><td><span className={`signal signal--${row.signal.toLowerCase()}`}>{row.signal}</span></td><td>{row.signalState}</td><td>{row.slotState}</td><td><span className={row.diagnosticTone === 'warn' ? 'warning' : row.diagnosticTone === 'bad' ? 'negative' : 'muted'}>{row.diagnostic}</span></td></tr>)}</tbody></table></div>
+    <Panel title="Universe & Strategy Diagnostics" right={<span className="muted">{liquidityLabel} · RSI 7{real ? ' · canonical recompute' : ''}</span>}>
+      <div className="table-wrap"><table className="wide-table market-table"><thead><tr><th>Rank</th><th>Asset</th><th>{liquidityLabel}</th><th>RSI 7</th><th>Signal</th><th>Signal State</th><th>Slot</th><th>Diagnostic</th></tr></thead><tbody>{data.universe.map(row => <tr key={row.asset}><td>#{row.rank}</td><td><strong>{row.asset}</strong></td><td>{row.smaVolumeLabel}</td><td className={row.rsi >= 80 ? 'positive' : ''}>{row.rsi.toFixed(1)}</td><td><span className={`signal signal--${row.signal.toLowerCase()}`}>{row.signal}</span></td><td>{row.signalState}</td><td>{row.slotState}</td><td><span className={row.diagnosticTone === 'warn' ? 'warning' : row.diagnosticTone === 'bad' ? 'negative' : 'muted'}>{row.diagnostic}</span></td></tr>)}</tbody></table></div>
     </Panel>
 
     <section className="market-grid market-grid--bottom">

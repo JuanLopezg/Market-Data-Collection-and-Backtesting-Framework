@@ -1,0 +1,78 @@
+# VPS overlay: start the host receiver before recreating containers with this file.
+x-daily-logging: &daily_logging
+  driver: syslog
+  options:
+    syslog-address: "tcp://127.0.0.1:5514"
+    syslog-format: "rfc5424micro"
+    tag: "algotrading.{{.Name}}"
+    mode: "non-blocking"
+    max-buffer-size: "4m"
+    cache-disabled: "false"
+    cache-max-size: "25m"
+    cache-max-file: "2"
+
+services:
+  nats:
+    logging: !override
+      <<: *daily_logging
+  postgres:
+    logging: !override
+      <<: *daily_logging
+  market-data:
+    logging: !override
+      <<: *daily_logging
+    environment:
+      ALGOTRADING_LOG_QUIET: "0"
+      ALGOTRADING_LOG_DIR: ""
+  strategy:
+    logging: !override
+      <<: *daily_logging
+    environment:
+      ALGOTRADING_LOG_QUIET: "0"
+      ALGOTRADING_LOG_DIR: ""
+  portfolio-risk:
+    logging: !override
+      <<: *daily_logging
+    environment:
+      ALGOTRADING_LOG_QUIET: "0"
+      ALGOTRADING_LOG_DIR: ""
+  execution-state:
+    logging: !override
+      <<: *daily_logging
+    environment:
+      ALGOTRADING_LOG_QUIET: "0"
+      ALGOTRADING_LOG_DIR: ""
+  order-planner:
+    logging: !override
+      <<: *daily_logging
+    environment:
+      ALGOTRADING_LOG_QUIET: "0"
+      ALGOTRADING_LOG_DIR: ""
+  exchange-gateway:
+    logging: !override
+      <<: *daily_logging
+    environment:
+      ALGOTRADING_LOG_QUIET: "0"
+      ALGOTRADING_LOG_DIR: ""
+
+  simulated-exchange:
+    logging: !override
+      <<: *daily_logging
+  dashboard-api:
+    logging: !override
+      <<: *daily_logging
+  dashboard-web:
+    logging: !override
+      <<: *daily_logging
+  dashboard-watchdog:
+    logging: !override
+      <<: *daily_logging
+  dashboard-alert-notifier:
+    logging: !override
+      <<: *daily_logging
+  market-data-volume-init:
+    logging: !override
+      <<: *daily_logging
+  market-data-db-init:
+    logging: !override
+      <<: *daily_logging

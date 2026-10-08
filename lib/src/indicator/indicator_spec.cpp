@@ -72,6 +72,8 @@ std::string priceFieldToString(PriceField field)
             return "Close";
         case PriceField::Volume:
             return "Volume";
+        case PriceField::QuoteVolume:
+            return "QuoteVolume";
         default:
             return "UnknownField";
     }

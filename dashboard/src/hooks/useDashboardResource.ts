@@ -44,6 +44,13 @@ export function useDashboardResource<K extends ResourceKey>(resource: K): Dashbo
   const retry = useCallback(() => setAttempt(value => value + 1), [])
 
   useEffect(() => {
+    // Host telemetry changes independently of trading events, including quiet days.
+    if (resource !== 'getInfrastructure') return
+    const timer = window.setInterval(retry, 10000)
+    return () => window.clearInterval(timer)
+  }, [resource, retry])
+
+  useEffect(() => {
     const resourceName = streamResourceName[resource]
     if (!resourceName) return
     let pendingRefresh: number | null = null

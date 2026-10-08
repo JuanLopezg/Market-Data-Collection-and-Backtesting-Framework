@@ -1,0 +1,8 @@
+# Keep infrastructure and the API available after a host reboot, like the workers.
+services:
+  nats:
+    restart: unless-stopped
+  postgres:
+    restart: unless-stopped
+  dashboard-api:
+    restart: unless-stopped

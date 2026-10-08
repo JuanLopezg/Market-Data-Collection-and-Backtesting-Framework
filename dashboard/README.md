@@ -46,6 +46,19 @@ service internals. `VITE_*` settings are public bundle data; never put secrets t
 
 ## Observe canonical replay
 
+For an isolated five-minute CPU/RAM study with a 100-day canonical replay,
+the service sandbox and dashboard included, run from the repository root under WSL:
+
+```bash
+python3 research/replay.py resources --days 100 --seconds 300 --open
+```
+
+This builds before measurement, uses a separate loopback port, polls authenticated
+read resources and stops its own project automatically. It produces an offline
+HTML graph and keeps existing dashboard/LIVE state intact. The UI observes canonical
+simulation state; background services use a separate synthetic fixture. See
+[research/REPLAY.md](../research/REPLAY.md) for the workload and resource-scope limits.
+
 From the repository root:
 
 ```bash
@@ -65,6 +78,13 @@ The compact release gate checks simulation equality/restart/pacing without a bro
 The slow paced browser campaign is separate acceptance work, not implied by that gate.
 
 ## Observe the running live stack
+
+For current public data with virtual funds, use the separate
+[paper deployment](../deploy/paper_trading/README.md). Infrastructure reads a fresh
+host snapshot for CPU/RAM/disk and project container measurements, without a Docker
+socket mount. Stale readings become unavailable. Container health is separate from
+trading readiness and clock sync remains unmeasured. The normal real overlay below
+does not configure this optional snapshot by default.
 
 Start the trading stack described in [deploy/live/README.md](../deploy/live/README.md).
 Then, from the repository root:
@@ -115,6 +135,13 @@ Use current provider handlers, resource responses and readiness contracts to det
 implemented capabilities; do not treat a catalog label as execution authorization.
 
 ## Documentation and source navigation
+
+The [project roadmap](../docs/ROADMAP.md) records pending Overview chart/timeframe
+work, Pipeline/Risk investigations, Infrastructure completeness/readability,
+perpetual funding/collateral accounting, Telegram setup, Manual Control execution
+testing and Live vs. Expected baseline acceptance. Existing Hyperliquid public
+integration is current implementation, not the initial live-venue priority;
+Kraken is preferred subject to the roadmap's coverage and BTC-collateral checks.
 
 | Guide | Purpose |
 | --- | --- |

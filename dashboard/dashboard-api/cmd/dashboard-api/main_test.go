@@ -46,6 +46,21 @@ func TestConfiguredProviderRejectsTradingGatewayModeInStep34(t *testing.T) {
 	}
 }
 
+func TestConfiguredProviderPaperRequiresFullySimulatedBoundary(t *testing.T) {
+	t.Setenv("DASHBOARD_DATA_PROVIDER", "real")
+	t.Setenv("DASHBOARD_RUNTIME_MODE", "PAPER")
+	t.Setenv("DASHBOARD_EXECUTION_VENUE", "SIMULATED")
+	t.Setenv("DASHBOARD_VENUE_TARGET_ENVIRONMENT", "PAPER")
+	t.Setenv("DASHBOARD_EXCHANGE_GATEWAY_MODE", "backend")
+	if _, err := configuredProvider(); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DASHBOARD_EXECUTION_VENUE", "HYPERLIQUID")
+	if _, err := configuredProvider(); err == nil {
+		t.Fatal("Mixed paper/private venue configuration accepted")
+	}
+}
+
 func TestValidateHyperliquidTestnetInfoURL(t *testing.T) {
 	if err := validateHyperliquidTestnetInfoURL("https://api.hyperliquid-testnet.xyz/info"); err != nil {
 		t.Fatalf("expected official testnet info URL to pass: %v", err)

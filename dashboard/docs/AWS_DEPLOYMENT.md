@@ -3,6 +3,14 @@
 Run commands in this guide from the dashboard directory, not its docs subfolder.
 See [PRODUCTION_CHECKLIST.md](PRODUCTION_CHECKLIST.md) for deployment checks.
 
+Persistent daily host logging is implemented in
+[deploy/live/logging](../../deploy/live/README.md#vps-log-retention). Install its
+receiver/cleanup units on the Linux Docker host before adding
+`-f docker-compose.logging.yml` last to the dashboard's production/real deployment
+command. This retains today and yesterday outside container lifetimes, with a
+50 MiB limit per daily file and automatic trimming of older entries. Actual VPS
+restart/day-boundary/retention acceptance remains pending.
+
 The Control Dashboard is an observability/control layer. It must remain removable without affecting trading.
 
 ## Network boundary

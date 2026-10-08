@@ -4,3 +4,9 @@ dist
 .vscode
 *.log
 dashboard-api
+.env*
+*.key
+*.pem
+**/.env*
+**/*.key
+**/*.pem

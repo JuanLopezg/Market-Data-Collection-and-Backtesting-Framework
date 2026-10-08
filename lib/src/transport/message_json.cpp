@@ -45,6 +45,8 @@ ContractMetadata metadataFromJson(const json& value)
 
 json executionOrderToJson(const ExecutionOrder& order)
 {
+    if (order.entry_stop_price != 0.0 || order.protective_stop_price != 0.0 || order.parent_order_id != 0)
+        throw std::invalid_argument("Service wire contract does not support stop entries");
     return {
         {"order_id", order.order_id},
         {"strategy_id", order.strategy_id},
@@ -59,6 +61,8 @@ json executionOrderToJson(const ExecutionOrder& order)
 
 ExecutionOrder executionOrderFromJson(const json& value)
 {
+    if (value.value("entry_stop_price", 0.0) != 0.0 || value.value("protective_stop_price", 0.0) != 0.0 || value.value("parent_order_id", OrderID{0}) != 0)
+        throw std::invalid_argument("Service wire contract does not support stop entries");
     return ExecutionOrder(
         value.at("order_id").get<OrderID>(),
         value.at("strategy_id").get<StrategyID>(),
@@ -266,6 +270,8 @@ std::string encode(const MarketSliceSnapshot& value)
             {"close", item.bar.close},
             {"volume", item.bar.volume}
         });
+        if (std::isfinite(item.bar.quote_volume))
+            bars.back()["quote_volume"] = item.bar.quote_volume;
     }
 
     return dump(json{
@@ -290,6 +296,8 @@ MarketSliceSnapshot decodeMarketSliceSnapshot(const std::string& payload)
         item.bar.low = barValue.at("low").get<double>();
         item.bar.close = barValue.at("close").get<double>();
         item.bar.volume = barValue.at("volume").get<double>();
+        if (barValue.contains("quote_volume") && !barValue.at("quote_volume").is_null())
+            item.bar.quote_volume = barValue.at("quote_volume").get<double>();
         result.bars.push_back(std::move(item));
     }
 
@@ -346,6 +354,8 @@ std::string encode(const DecisionBatch& value)
     for (const StrategyDecisionIntent& strategy : value.strategies) {
         json decisions = json::array();
         for (const auto& [coin, decision] : strategy.decisions) {
+            if (decision.entry_stop_price != 0.0 || decision.protective_stop_price != 0.0)
+                throw std::invalid_argument("Service wire contract does not support stop intents");
             decisions.push_back({
                 {"coin", coin},
                 {"action", static_cast<int>(decision.action)},
@@ -387,6 +397,8 @@ DecisionBatch decodeDecisionBatch(const std::string& payload)
         );
 
         for (const json& decisionValue : strategyValue.at("decisions")) {
+            if (decisionValue.value("entry_stop_price", 0.0) != 0.0 || decisionValue.value("protective_stop_price", 0.0) != 0.0)
+                throw std::invalid_argument("Service wire contract does not support stop intents");
             RebalanceDecision decision;
             decision.action = static_cast<RebalanceAction>(decisionValue.at("action").get<int>());
             decision.target_weight = decisionValue.at("target_weight").get<double>();

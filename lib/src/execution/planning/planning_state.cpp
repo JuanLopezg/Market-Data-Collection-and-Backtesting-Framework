@@ -91,6 +91,17 @@ std::uint64_t executionPlanningStateRevision(
         hashString(hash, order->request.coin);
         hashUnsigned(hash, static_cast<std::uint64_t>(order->request.side));
         hashDouble(hash, order->request.quantity);
+        if (order->request.entry_stop_price != 0.0) {
+            hashDouble(hash, order->request.entry_stop_price);
+            hashUnsigned(hash, order->request.created_at);
+            hashUnsigned(hash, order->request.active_from);
+        }
+        if (order->request.protective_stop_price != 0.0 || order->request.parent_order_id != 0) {
+            hashDouble(hash, order->request.protective_stop_price);
+            hashUnsigned(hash, order->request.parent_order_id);
+            hashUnsigned(hash, order->request.created_at);
+            hashUnsigned(hash, order->request.active_from);
+        }
         hashUnsigned(hash, static_cast<std::uint64_t>(order->status));
         hashDouble(hash, order->filled_quantity);
         hashUnsigned(hash, static_cast<std::uint64_t>(order->cancel_requested ? 1U : 0U));

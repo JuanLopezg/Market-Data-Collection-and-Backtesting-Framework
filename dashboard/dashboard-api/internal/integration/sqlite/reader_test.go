@@ -49,6 +49,23 @@ func TestQuotedStringListEscapesValues(t *testing.T) {
 	}
 }
 
+func TestPaperReaderExplicitlyRequiresQuoteVolume(t *testing.T) {
+	runner := &fakeRunner{responses: [][]byte{
+		[]byte(`[{"latest_date":20260919}]`),
+		[]byte(`[{"rank":1,"pair":"BTCUSDT","quote_volume":1000}]`),
+		[]byte(`[{"pair":"BTCUSDT","date":20260919,"volume":10,"quote_volume":800}]`),
+		[]byte(`[{"duplicateRows":0,"invalidRows":0}]`),
+	}}
+	reader := NewReader(ReaderConfig{DatabasePath: "/data/market/database.db", Runner: runner, IncludeQuoteVolume: true})
+	window, err := reader.LoadStrategyWindow(context.Background(), 50, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(runner.queries[2], "volume, quote_volume FROM ohlcv_data") || window.Bars[0].QuoteVolume == nil || *window.Bars[0].QuoteVolume != 800 {
+		t.Fatalf("quote turnover was not read explicitly: %+v %#v", window, runner.queries)
+	}
+}
+
 func TestLoadBehaviourWindowReadsDailyRankingAndWarmupBars(t *testing.T) {
 	runner := &fakeRunner{responses: [][]byte{
 		[]byte(`[{"latest_date":20260919}]`),

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -8,6 +9,44 @@ import (
 	sqlitemarket "control-dashboard-api/internal/integration/sqlite"
 	"control-dashboard-api/internal/tradingwire"
 )
+
+func TestQuoteLiquidityUsesTradedNotionalAndPreservesOldCycle(t *testing.T) {
+	btc := makeTrendBars("BTCUSDT", 20260821, 30)
+	pepe := makeTrendBars("PEPEUSDT", 20260821, 30)
+	for i := range btc {
+		btc[i].Volume = 10
+		pepe[i].Volume = 1e12
+		btcQuote, pepeQuote := 1e9, 1e6
+		btc[i].QuoteVolume = &btcQuote
+		pepe[i].QuoteVolume = &pepeQuote
+	}
+	window := sqlitemarket.StrategyWindow{LatestDate: 20260919,
+		Ranking: []sqlitemarket.RankingRow{{Rank: 1, Pair: "BTCUSDT"}, {Rank: 2, Pair: "PEPEUSDT"}},
+		Bars:    append(btc, pepe...)}
+	checkpoint := pgstore.StrategyCheckpoint{Timestamp: 20260919,
+		Update:  tradingwire.MarketDataUpdated{CompletedThrough: 20260919, ActiveTopN: 50},
+		Intents: tradingwire.StrategyIntentBatch{Timestamp: 20260919}}
+	base := buildRealMarketData(window, checkpoint, nil, 50, 100, 1)
+	quote := buildRealMarketData(window, checkpoint, nil, 50, 100, 1,
+		RealConfig{QuoteVolume: true, QuoteVolumeFrom: "20260920"})
+	if base.Universe[0].Asset != "PEPEUSDT" || quote.Universe[0].Asset != "BTCUSDT" || quote.Universe[0].SMAVolumeLabel != "1.00B" {
+		t.Fatalf("ranking must use actual quote turnover: base=%+v quote=%+v", base.Universe, quote.Universe)
+	}
+	if quote.SignalCycleAligned || quote.LiquidityLabel != "SMA Quote Volume 25 (USDT)" {
+		t.Fatalf("old cycle must not be relabeled as a quote-volume decision: %+v", quote)
+	}
+	quote = buildRealMarketData(window, checkpoint, nil, 50, 100, 1,
+		RealConfig{QuoteVolume: true, QuoteVolumeFrom: "20260919"})
+	if !quote.SignalCycleAligned {
+		t.Fatal("new metric cycle should align")
+	}
+	btc[29].QuoteVolume = nil
+	window.Bars = append(btc, pepe...)
+	quote = buildRealMarketData(window, checkpoint, nil, 50, 100, 1, RealConfig{QuoteVolume: true})
+	if quote.Universe[0].Asset != "PEPEUSDT" || !math.IsNaN(liquidityValue(btc[29], true)) || quote.Integrity.InvalidRows != 1 {
+		t.Fatal("missing quote turnover must never fall back to base units or volume * close")
+	}
+}
 
 func TestBuildRealMarketDataRecomputesVerifiedIndicatorsAndJoinsOnlyAlignedSignals(t *testing.T) {
 	bars := make([]sqlitemarket.Bar, 0, 60)

@@ -6,6 +6,12 @@ For current research acceptance, use the single public replay wrapper rather tha
 python3 research/replay.py {fast|system|dashboard}
 ```
 
+For bounded local resource profiling, `python3 research/replay.py resources --days
+100 --seconds 300 --open` starts an isolated canonical replay plus service sandbox
+and dashboard, measures CPU/RAM, writes an offline HTML graph and stops its own
+project. Setup is outside the timed window. See [research/REPLAY.md](../../research/REPLAY.md)
+for the separate canonical/synthetic workloads and acceptance limits.
+
 Current canonical source dataset: `deploy/historical_replay/run/1d_cmc_by_date.csv`, derived from the historical source and covering the accepted full-history window `2020-01-01..2025-10-13`.
 
 The `realtest-parity` profile preserves original OHLCV and reproduces the research Backtester next-open execution economics with zero parity fees/slippage and no execution volume-capacity limit. `system` and `dashboard` have been validated to the same full-history fingerprint:
@@ -25,6 +31,11 @@ Full-history evidence above still has manually reviewed RealTest differences; it
 ---
 
 ## Isolated historical service deployment
+
+For a bounded controlled environment before renting a VPS, use the
+[local service campaign](../../validation/LOCAL_SERVICE_CAMPAIGN.md). It derives
+this topology into a new project with generated fixture/state/configuration and
+leaves this deployment's existing run files, volumes and image tag intact.
 
 The Compose workflow below remains useful for service integration and anti-lookahead checks. It is separate from the public canonical RealTest acceptance entrypoint. Run its commands from the repository root.
 

@@ -1,5 +1,6 @@
 #include "quantity_order_planner.h"
 
+#include <cmath>
 #include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
@@ -66,6 +67,23 @@ QuantityOrderPlannerResult QuantityOrderPlanner::createPlan(
 
         TargetPortfolio monetaryTarget;
         const auto intentIt = intents.find(strategyId);
+        ExecutionReferencePrices sizingPrices = prices;
+        if (intentIt != intents.end()) {
+            for (const auto& [coin, decision] : intentIt->second->decisions) {
+                if (decision.entry_stop_price == 0.0)
+                    continue;
+                if (decision.action != RebalanceAction::TargetWeight ||
+                    decision.target_weight == 0.0 || currentPositions.get(coin) != 0.0 ||
+                    !std::isfinite(decision.entry_stop_price) || decision.entry_stop_price <= 0.0)
+                    throw std::invalid_argument("Stop intent must open a flat target with a valid trigger");
+                // The execution open is already known here. A short gap increases
+                // units, so submit its actual executable quantity rather than an
+                // entry-price cap that would violate fill quantity validation.
+                sizingPrices.set(coin, decision.target_weight < 0.0 && prices.contains(coin)
+                    ? std::min(decision.entry_stop_price, prices.get(coin))
+                    : decision.entry_stop_price);
+            }
+        }
         if (intentIt != intents.end()) {
             monetaryTarget = strategy_target_resolver_.resolve(
                 *intentIt->second,
@@ -85,7 +103,7 @@ QuantityOrderPlannerResult QuantityOrderPlanner::createPlan(
         monetaryTargets.push_back(monetaryTarget);
 
         TargetPositionState quantityTarget =
-            quantity_target_resolver_.resolve(monetaryTarget, prices);
+            quantity_target_resolver_.resolve(monetaryTarget, sizingPrices);
 
         // HOLD means preserve the already-filled quantity exactly. Converting a held
         // quantity through monetary exposure (q * price) and back (exposure / price)
@@ -116,13 +134,45 @@ QuantityOrderPlannerResult QuantityOrderPlanner::createPlan(
     QuantityOrderPlannerResult result;
     result.global_target = portfolio_aggregator_.aggregate(monetaryTargets);
     result.next_order_id = nextOrderId;
+    // Protective covers are conditional exits, not pending directional exposure.
+    // Remove them from the builder view, then cancel a bracket before any resize.
+    OrderManager directionalOrders;
+    std::vector<TrackedOrder> directionalState;
+    const bool hasProtectiveOrders = std::any_of(orderManager.orders().begin(), orderManager.orders().end(),
+        [](const auto& item) { return item.second.isOpen() && item.second.request.parent_order_id != 0; });
+    if (hasProtectiveOrders) {
+        for (const auto& [id, order] : orderManager.orders()) {
+            (void)id;
+            if (order.request.parent_order_id == 0)
+                directionalState.push_back(order);
+        }
+        directionalOrders.restore(directionalState, {});
+    }
     result.execution_plan = quantity_order_builder_.createMarketPlan(
         quantityTargets,
         currentStrategyPositions,
-        orderManager,
+        hasProtectiveOrders ? directionalOrders : orderManager,
         executionTimestamp,
         executionTimestamp,
         result.next_order_id
     );
+    for (auto& order : result.execution_plan.orders_to_submit) {
+        for (const auto& [id, tracked] : orderManager.orders()) {
+            if (tracked.request.parent_order_id != 0 && tracked.isOpen() && !tracked.cancel_requested &&
+                tracked.request.strategy_id == order.strategy_id && tracked.request.coin == order.coin)
+                result.execution_plan.order_ids_to_cancel.push_back(id);
+        }
+        const auto intent = intents.find(order.strategy_id);
+        if (intent == intents.end())
+            continue;
+        const auto decision = intent->second->decisions.find(order.coin);
+        if (decision != intent->second->decisions.end() && decision->second.entry_stop_price != 0.0) {
+            if (executionTimestamp <= intent->second->decision_timestamp)
+                throw std::invalid_argument("Stop entry must activate after its decision close");
+            order.entry_stop_price = decision->second.entry_stop_price;
+            order.protective_stop_price = decision->second.protective_stop_price;
+            order.created_at = intent->second->decision_timestamp;
+        }
+    }
     return result;
 }

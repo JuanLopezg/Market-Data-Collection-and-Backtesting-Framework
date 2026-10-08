@@ -4,6 +4,14 @@ Checked against `dashboard-api/internal/server/server.go` and current provider
 handlers on 2026-10-07. Browser requests are same-origin under `/api`.
 The frontend contract is independent of runtime SQL schemas and NATS subjects.
 
+Market Data adds optional `liquidityLabel` without changing `smaVolumeLabel`.
+PAPER returns `SMA Quote Volume 25 (USDT)` and actual 25-row mean quote turnover.
+Required missing quote rows contribute to integrity issues. A pre-cutover durable
+signal checkpoint is not joined into the new metric preview (`signalCycleAligned`
+is false). `DASHBOARD_QUOTE_VOLUME` selects the metric and
+`DASHBOARD_QUOTE_VOLUME_FROM` identifies the first completed cycle under it. The
+rolling input baseline excludes pre-cutover cycles and requires six observations.
+
 ## Operational and authentication endpoints
 
 | Method | Endpoint | Access and meaning |
@@ -32,7 +40,7 @@ All following endpoints use GET and require a valid session.
 | `/api/execution` | Current durable orders and bounded fills. |
 | `/api/risk` | Approved decision and exact persisted signals/account inputs. |
 | `/api/market-data` | Canonical ranking/OHLCV, indicator reconstruction and aligned strategy signals. |
-| `/api/infrastructure` | Bounded PostgreSQL/NATS/file diagnostics; unknown host/service facts stay unknown. |
+| `/api/infrastructure` | Bounded PostgreSQL/NATS/file diagnostics; optional fresh host telemetry adds CPU/RAM/disk, container health and `telemetryObservedAt`. `processRunning` is liveness, not `ready`; stale/missing measurements stay unknown. |
 | `/api/alerts-audit` | Current derived alerts, watchdog lifecycle, audit and acknowledgement evidence. |
 | `/api/live-vs-expected` | Versioned market/strategy-input anomaly projection with deferred coverage explicit. |
 | `/api/manual-control` | Current capabilities/reference target and preview information. |

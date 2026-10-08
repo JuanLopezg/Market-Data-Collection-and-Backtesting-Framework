@@ -18,6 +18,7 @@ struct MarketDataIngestionSummary {
     std::size_t maintained_symbols = 0;
     std::size_t requested_symbols = 0;
     std::size_t downloaded_rows = 0;
+    std::unordered_map<Coin, double> paper_opening_prices;
 };
 
 // Coordinates one atomic daily market-data refresh from Binance into canonical storage.

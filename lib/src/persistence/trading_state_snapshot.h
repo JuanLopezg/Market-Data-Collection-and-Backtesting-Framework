@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdexcept>
 #include <unordered_map>
 #include <vector>
 
@@ -43,4 +44,21 @@ struct TradingStateSnapshot {
     std::vector<PendingPlanSnapshot> pending_plans;
     std::vector<TrackedOrder> orders;
     std::vector<FillID> processed_fill_ids;
+
+    // Schema v1 has no conditional-order fields. Reject before a transaction,
+    // rather than dropping a trigger and recovering an unintended market order.
+    void requireMarketOnly() const
+    {
+        for (const auto& order : orders) {
+            if (order.request.entry_stop_price != 0.0 || order.request.protective_stop_price != 0.0 || order.request.parent_order_id != 0)
+                throw std::invalid_argument("Durable schema v1 does not support stop entries");
+        }
+        for (const auto& pending : pending_plans) {
+            for (const auto& [coin, decision] : pending.plan.values()) {
+                (void)coin;
+                if (decision.entry_stop_price != 0.0 || decision.protective_stop_price != 0.0)
+                    throw std::invalid_argument("Durable schema v1 does not support stop intents");
+            }
+        }
+    }
 };

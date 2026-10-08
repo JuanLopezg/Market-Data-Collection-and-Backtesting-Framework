@@ -273,6 +273,7 @@ void PostgresStateStore::save(
     const std::optional<Fill>& newFill
 )
 {
+    snapshot.requireMarketOnly();
     PGresult* result = exec(impl_->connection, "BEGIN;");
     clear(result);
 

@@ -19,10 +19,13 @@ Neither is a cumulative development diary.
 | Area | Guide |
 | --- | --- |
 | Project entrypoint and build | [Root README](../README.md) |
+| Ordered remaining work and user requirements | [Roadmap](ROADMAP.md) |
 | Library domains and reading order | [lib](../lib/README.md) |
 | Live service ownership, timing and durability | [live_trading](../live_trading/README.md) |
 | Replay modes, cutoff, pacing and resume | [research/replay](../research/REPLAY.md) |
 | Tests, structural audits and integration checks | [validation](../validation/README.md) |
+| Controlled local service/recovery environment before renting a VPS | [Local campaign](../validation/LOCAL_SERVICE_CAMPAIGN.md) |
+| Generated local repository navigation | [AI index](codex/AI_INDEX.md) |
 | Dashboard providers and local use | [dashboard](../dashboard/README.md) |
 | Dashboard HTTP boundary | [API contract](../dashboard/docs/API_CONTRACT.md) |
 | Dashboard source ownership | [Source map](../dashboard/docs/REAL_DATA_SOURCE_MAP.md) |
@@ -30,6 +33,7 @@ Neither is a cumulative development diary.
 | Dashboard VPS deployment | [Deployment](../dashboard/docs/AWS_DEPLOYMENT.md) |
 | Dashboard production review | [Checklist](../dashboard/docs/PRODUCTION_CHECKLIST.md) |
 | Live Compose stack | [Live deploy](../deploy/live/README.md) |
+| Current-data paper stack and dashboard host telemetry | [Paper trading](../deploy/paper_trading/README.md) |
 | Isolated distributed historical stack | [Historical deploy](../deploy/historical_replay/README.md) |
 | Sensitivity CSV analysis | [Report tool](../tools/README_sensitivity_report.md) |
 
@@ -46,8 +50,9 @@ investigated, not hidden by regenerating hashes.
 These `.txt`/JSON/CSV files are runtime or integrity inputs, not disposable prose.
 `config/historical_replay/runtime_manifest.txt` is a packaging input.
 
-`research/src/legacy/runtime/README.md` documents the temporary frozen research
-dependency. Removing its README or runtime does not complete migration.
+The research consumer inventory and CURRENT reporting workflows are maintained in
+`research/REPLAY.md`. The frozen research runtime was removed after all useful
+consumers migrated; accepted migration evidence remains in `CURRENT_STATE.md`.
 
 `storage/` and `deploy/historical_replay/run/` contain datasets, user reports,
 accepted replay output and generated evidence/logs. They are not the current

@@ -25,7 +25,8 @@ enum class PriceField {
     High,
     Low,
     Close,
-    Volume
+    Volume,
+    QuoteVolume
 };
 
 

@@ -5,8 +5,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BUILD="${BUILD_DIR:-$ROOT/build}"
 BUNDLE="$SCRIPT_DIR/.runtime_bundle"
+KIND=LIVE
+if [[ "${1:-}" == "--paper" ]]; then
+    BUNDLE="$ROOT/deploy/paper_trading/.runtime_bundle"
+    KIND=PAPER
+elif [[ $# -ne 0 ]]; then
+    echo 'Usage: build_runtime_bundle.sh [--paper]' >&2; exit 1
+fi
 
-# LIVE bundle only. Replay controller and simulated exchange are intentionally absent.
+# Default LIVE bundle. The explicit PAPER option adds its isolated simulated backend.
 BINARIES=(
     "$BUILD/live_trading/market_data_service/src/algotrading_market_data_service"
     "$BUILD/live_trading/strategy_service/src/algotrading_strategy_service"
@@ -16,9 +23,15 @@ BINARIES=(
     "$BUILD/live_trading/exchange_gateway/src/algotrading_exchange_gateway"
 )
 ALGOLIB="$BUILD/lib/src/libalgolib.so"
+if [[ "$KIND" == PAPER ]]; then
+    BINARIES+=(
+        "$BUILD/live_trading/simulated_exchange_service/src/algotrading_simulated_exchange_service"
+        "$BUILD/live_trading/historical_market_data_service/src/algotrading_historical_market_data_service"
+    )
+fi
 
 for file in "${BINARIES[@]}" "$ALGOLIB"; do
-    [[ -e "$file" ]] || { echo "Missing LIVE runtime artifact: $file" >&2; exit 1; }
+    [[ -e "$file" ]] || { echo "Missing $KIND runtime artifact: $file" >&2; exit 1; }
 done
 
 rm -rf "$BUNDLE"
@@ -63,6 +76,6 @@ for file in "${BINARIES[@]}" "$ALGOLIB"; do
 done
 
 chmod +x "$BUNDLE/bin/"*
-echo "LIVE runtime bundle ready: $BUNDLE"
-echo "LIVE executables: ${#BINARIES[@]}"
+echo "$KIND runtime bundle ready: $BUNDLE"
+echo "$KIND executables: ${#BINARIES[@]}"
 echo "Bundled shared libraries: $(find "$BUNDLE/lib" -maxdepth 1 -type f | wc -l)"

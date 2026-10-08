@@ -19,7 +19,11 @@ if [[ ! -f "$COMPOSE" || ! -f "$BUNDLE" ]]; then
 fi
 
 # Production topology must not contain replay/fake-clock services/options.
-if grep -Eni 'replay-controller|algotrading_replay_controller|simulated-exchange|algotrading_simulated_exchange_service|--runtime-mode|--simulation-id|CLOCK_STATE|CLOCK_CONTROL|CLOCK_SYNC_REQUEST|REPLAY_' "$COMPOSE" "$BUNDLE" "$ENV_EXAMPLE"; then
+# The shared bundler has an explicit --paper branch, targeting a different directory.
+# Inspect default LIVE code after excluding only that guarded binary append block.
+DEFAULT_BUNDLE="$(awk '/^if \[\[ "\$KIND" == PAPER \]\]; then$/ { paper=1; next } paper && /^fi$/ { paper=0; next } !paper { print }' "$BUNDLE")"
+if grep -Eni 'replay-controller|algotrading_replay_controller|simulated-exchange|algotrading_simulated_exchange_service|--runtime-mode|--simulation-id|CLOCK_STATE|CLOCK_CONTROL|CLOCK_SYNC_REQUEST|REPLAY_' "$COMPOSE" "$ENV_EXAMPLE" ||
+   grep -Eni 'replay-controller|algotrading_replay_controller|simulated-exchange|algotrading_simulated_exchange_service|--runtime-mode|--simulation-id|CLOCK_STATE|CLOCK_CONTROL|CLOCK_SYNC_REQUEST|REPLAY_' <<<"$DEFAULT_BUNDLE"; then
     bad "LIVE deploy contains replay/fake-clock dependency markers"
 fi
 

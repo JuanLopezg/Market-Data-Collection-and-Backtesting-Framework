@@ -4,6 +4,7 @@
 #include <map>
 #include <vector>
 #include <unordered_map>
+#include <limits>
 
 
 // Type aliases
@@ -70,6 +71,8 @@ struct OHLCV {
     double low    = 0.0;
     double close  = 0.0;
     double volume = 0.0;
+    // Actual traded notional in the quote asset; NaN means unavailable in older data.
+    double quote_volume = std::numeric_limits<double>::quiet_NaN();
 };
 
 
@@ -99,6 +102,7 @@ struct BarData {
     double volume = 0.0;
 
     unsigned int barNumber = 0;
+    double quote_volume = std::numeric_limits<double>::quiet_NaN();
 };
 
 

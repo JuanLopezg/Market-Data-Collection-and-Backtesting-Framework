@@ -9,6 +9,7 @@
 
 #include "message_json.h"
 #include "market_messages.h"
+#include "execution_messages.h"
 #include "jetstream_bus.h"
 #include "service_logging.h"
 #include "time_utils.h"
@@ -64,6 +65,20 @@ void MarketDataUpdatePublisher::publish(const MarketDataIngestionSummary& summar
     // ID are deterministic/idempotent.
     JetStreamBus bus(nats_url_);
     bus.ensureStream(stream_, MessageSubjects::tradingRuntimeSubjects());
+
+    if (!summary.paper_opening_prices.empty()) {
+        ExecutionPriceSnapshot prices;
+        prices.metadata = event.metadata;
+        prices.metadata.message_id = "paper-execution-open:" + std::to_string(completedThrough);
+        prices.decision_timestamp = completedThrough;
+        prices.timestamp = static_cast<Timestamp>(nextDay(static_cast<unsigned int>(completedThrough)));
+        prices.metadata.produced_at = prices.timestamp;
+        prices.metadata.correlation_id = prices.metadata.message_id;
+        prices.prices = summary.paper_opening_prices;
+        bus.publish(MessageSubjects::EXECUTION_PRICES, MessageJson::encode(prices), prices.metadata.message_id);
+        LG_INFO("service=market-data event=paper_execution_open_published decision_timestamp={} execution_timestamp={} prices={}",
+                prices.decision_timestamp, prices.timestamp, prices.prices.size());
+    }
 
     const std::string payload = MessageJson::encode(event);
     bus.publish(

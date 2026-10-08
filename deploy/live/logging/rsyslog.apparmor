@@ -1,0 +1,17 @@
+# Ubuntu's rsyslogd profile includes /etc/apparmor.d/rsyslog.d/ snippets.
+# Keep confinement enabled while allowing this host-only diagnostic receiver.
+/etc/algotrading/logging/rsyslog.conf r,
+/var/lib/algotrading-logs/ rw,
+/var/lib/algotrading-logs/** rwk,
+/run/algotrading-logs/ rw,
+/run/algotrading-logs/** rwk,
+/var/log/algotrading/ rw,
+/var/log/algotrading/** rwk,
+network inet stream,
+
+# omprog runs the bounded writer under the same rsyslog profile.
+/usr/bin/python3{,.[0-9],.1[0-9]} ix,
+/usr/local/lib/algotrading/clean_daily_logs.py r,
+include <abstractions/python>
+/usr/lib/python3{,.[0-9],.1[0-9]}/ r,
+/usr/lib/python3{,.[0-9],.1[0-9]}/**/ r,

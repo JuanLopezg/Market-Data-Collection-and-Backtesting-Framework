@@ -854,7 +854,7 @@ def execute_fast(args: argparse.Namespace) -> dict:
     return summary
 
 
-def execute_full(args: argparse.Namespace) -> dict:
+def execute_full(args: argparse.Namespace, *, run_command=run, state_dir: Path | None = None) -> dict:
     ensure_required_files()
     start, end, selected_days = resolve_window(args)
     runner = build_full_runner(args.rebuild)
@@ -912,7 +912,8 @@ def execute_full(args: argparse.Namespace) -> dict:
         cmd += ["--pace-start", args.pace_start, "--pace-end", args.pace_end]
 
     if mode == "dashboard":
-        state_dir = ROOT / "deploy/historical_replay/run/step58_dashboard"
+        isolated_state = state_dir is not None
+        state_dir = state_dir or ROOT / "deploy/historical_replay/run/step58_dashboard"
         state_dir.mkdir(parents=True, exist_ok=True)
         if args.dashboard_up:
             dashboard_up()
@@ -934,14 +935,14 @@ def execute_full(args: argparse.Namespace) -> dict:
             "--visual-end", visual_end,
             "--ui-delay-ms", str(delay_ms),
         ]
-        print("Dashboard: http://localhost:8080")
+        print("Dashboard state: " + str(state_dir) if isolated_state else "Dashboard: http://localhost:8080")
         print(
             f"Visual window: {visual_start}..{visual_end}; "
             f"{delay_ms} ms per OPEN/CLOSE phase"
         )
 
     log = run_dir / "runtime.log"
-    run(cmd, log=log)
+    run_command(cmd, log=log)
 
     runtime_summary = json.loads(summary_path.read_text(encoding="utf-8"))
     if args.stop_after_days is not None:
@@ -1009,6 +1010,13 @@ def parser() -> argparse.ArgumentParser:
         )
     )
     sub = p.add_subparsers(dest="mode", required=True)
+
+    resources = sub.add_parser("resources", help="isolated full backtest, dashboard and timed CPU/RAM HTML report")
+    resources.add_argument("--days", type=int, default=100)
+    resources.add_argument("--seconds", type=int, default=300)
+    resources.add_argument("--skip-build", action="store_true", help="reuse previously validated service binaries; dashboard images still build from source")
+    resources.add_argument("--open", action="store_true", help="open the dashboard and HTML report in the Windows browser")
+    resources.set_defaults(func=execute_resources)
 
     def window_args(sp: argparse.ArgumentParser) -> None:
         sp.add_argument("--label")
@@ -1097,6 +1105,11 @@ def parser() -> argparse.ArgumentParser:
     return p
 
 
+def execute_resources(args: argparse.Namespace) -> dict:
+    from resource_profile import profile
+    return profile(args, sys.modules[__name__])
+
+
 def main() -> int:
     args = parser().parse_args()
     if hasattr(args, "speed") and (not math.isfinite(args.speed) or args.speed <= 0):
@@ -1106,6 +1119,10 @@ def main() -> int:
             raise SystemExit("ERROR: --visual-day-minutes must be finite and positive")
 
     summary = args.func(args)
+    if args.mode == "resources":
+        print("RESOURCE-PROFILE: " + summary["result"])
+        print("HTML report: " + summary["report"])
+        return 0 if summary["result"] == "PASS" else 1
     if summary.get("result") == "CHECKPOINTED":
         print("\n============================================================")
         print("CANONICAL REPLAY: CHECKPOINTED — READY TO RESUME")

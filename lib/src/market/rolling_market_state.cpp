@@ -20,7 +20,8 @@ void validateBar(const MarketBarSnapshot& value)
         !std::isfinite(bar.high) || bar.high <= 0.0 ||
         !std::isfinite(bar.low) || bar.low <= 0.0 ||
         !std::isfinite(bar.close) || bar.close <= 0.0 ||
-        !std::isfinite(bar.volume) || bar.volume < 0.0)
+        !std::isfinite(bar.volume) || bar.volume < 0.0 ||
+        (!std::isnan(bar.quote_volume) && (!std::isfinite(bar.quote_volume) || bar.quote_volume < 0.0)))
         throw std::invalid_argument("Market slice contains invalid OHLCV data");
 }
 
@@ -30,7 +31,9 @@ bool sameBar(const OHLCV& left, const OHLCV& right)
            left.high == right.high &&
            left.low == right.low &&
            left.close == right.close &&
-           left.volume == right.volume;
+           left.volume == right.volume &&
+           (left.quote_volume == right.quote_volume ||
+            (std::isnan(left.quote_volume) && std::isnan(right.quote_volume)));
 }
 
 PriceSnapshot pricesFor(
@@ -103,6 +106,7 @@ bool RollingMarketState::append(const MarketSliceSnapshot& slice)
         bar.low = ohlcv.low;
         bar.close = ohlcv.close;
         bar.volume = ohlcv.volume;
+        bar.quote_volume = ohlcv.quote_volume;
         bar.barNumber = ++bar_counts_[coin]; // Count this asset's observed bars, not global market dates.
         marketBars.emplace(coin, bar);
     }

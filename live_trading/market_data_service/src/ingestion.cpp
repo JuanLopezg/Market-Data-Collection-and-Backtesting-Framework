@@ -123,6 +123,20 @@ MarketDataIngestionSummary MarketDataIngestor::run(std::chrono::year_month_day t
     for (const auto& [_, byDate] : fetched.bars.data)
         rows += byDate.size();
 
+    std::unordered_map<Coin, double> paperPrices;
+    if (config_.publish_paper_execution_prices) {
+        std::vector<std::string> symbols;
+        for (const auto& [symbol, days] : tracked.days_since_top_n) {
+            if (days <= config_.retain_after_top_n_days && universe.eligible_symbols.contains(symbol))
+                symbols.push_back(symbol);
+        }
+        // Opening prices are kept outside completed-bar SQLite and cannot enter
+        // strategy features. Only the simulated exchange receives open(T+1).
+        paperPrices = binance_.fetchOpeningPrices(
+            std::chrono::year_month_day{std::chrono::sys_days{targetDate} + std::chrono::days{1}},
+            symbols, config_.max_parallel_requests);
+    }
+
     // Important durability boundary: tracker + ranking + OHLCV are committed together.
     // The caller publishes MARKET_DATA_UPDATED only AFTER this commit returns.
     store.commitDailyUpdate(tracked, fetched.bars, ranked, targetDate);
@@ -140,6 +154,7 @@ MarketDataIngestionSummary MarketDataIngestor::run(std::chrono::year_month_day t
     summary.maintained_symbols = maintained;
     summary.requested_symbols = plan.size();
     summary.downloaded_rows = rows;
+    summary.paper_opening_prices = std::move(paperPrices);
 
     LG_INFO(
         "service=market-data event=daily_ingestion_committed target_date={} ranked={} top_n={} tracked={} maintained={} requested={} downloaded_rows={}",

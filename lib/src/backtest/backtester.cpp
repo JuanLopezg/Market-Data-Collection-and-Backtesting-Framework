@@ -125,6 +125,11 @@ void Backtester::loop()
         // Plans built from the previous completed close become executable now.
         executePendingPlansAtOpen(ts, bars);
 
+        simulated_exchange_.processStopEntriesAtClose(ts, bars);
+        trading_engine_.processExchangeEvents();
+        simulated_exchange_.processProtectiveStopsAtClose(ts, bars);
+        trading_engine_.processExchangeEvents();
+
         // Mark account at this completed close before sizing today's strategy signals.
         const PriceSnapshot closePrices = buildClosePrices(bars);
         backtest_context_.recordAccountSnapshot(ts, closePrices);

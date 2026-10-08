@@ -4,6 +4,12 @@ Checked against current C++ stores/services and Go source readers on 2026-10-07.
 This guide describes implemented read paths and their limits. The runtime owns trading
 truth; the dashboard must not invent missing canonical accounting or decision evidence.
 
+PAPER liquidity reads `ohlcv_data.quote_volume` (actual completed-binance-kline
+USDT turnover), while old LIVE/replay profiles read source `volume`. The display label
+comes from the provider, not a hardcoded UI unit. Quote selection and rolling input
+diagnostics share the same helper; cutover metadata prevents joining old signals or
+mixing base-unit and quote-notional distributions.
+
 ## PostgreSQL: trading-owned state
 
 Writer: `lib/src/persistence/postgres_state_store.cpp`.
@@ -101,7 +107,7 @@ cannot be declared a current reconciliation result.
 | Pipeline / Why | Timestamp-aligned daily checkpoint chain and order/fill proof. Unpersisted intermediate strategy/risk transformations remain unavailable. |
 | Risk | Exact approved DecisionBatch and persisted signals/account inputs. Raw sizing, binding constraints, active-limit provenance and breach diagnostics need runtime-owned payloads. |
 | Market Data | Canonical daily ranking/OHLCV, formula-checked indicators and date-aligned signals. Candidate rejection explanations are not first-class persisted evidence. |
-| Infrastructure | PostgreSQL/NATS diagnostics and canonical file probes. Host/container/service health is unknown without a verified adapter. |
+| Infrastructure | PostgreSQL/NATS diagnostics and canonical file probes. Optional `DASHBOARD_HOST_METRICS_FILE` supplies fresh CPU/RAM/disk and project container observations; unavailable/stale telemetry stays unknown. The paper stack configures this read-only snapshot without a Docker socket mount. Container health does not prove pipeline readiness or clock sync. |
 | Ledger | Immutable fill-derived cash/asset deltas, aggregate diagnostics and deterministic recent-window fingerprint. Not durable cost basis, realized/unrealized PnL or historical equity. |
 | Live vs Expected | Versioned/fingerprinted market and strategy-input anomaly projection. Execution, accounting and accepted-replay baseline families remain deferred. |
 | Alerts / Audit | Derived evidence plus durable watchdog lifecycle, manual-intent audit, human acknowledgements and notifier status. These are observability records, not fills. |
@@ -141,8 +147,9 @@ See [API_CONTRACT.md](API_CONTRACT.md) for routes and
 
 Complete accounting needs a durable runtime-owned cost-basis/realized/unrealized-PnL
 ledger and historical equity projection. Risk/pipeline explanation needs persisted
-transform/binding-rule provenance. Service heartbeats and verified clock/host telemetry
-need their own operational source contracts. Private venue execution and trading-control
+transform/binding-rule provenance. Business heartbeats and verified clock synchronization
+remain pending; host/container resource telemetry has an optional fresh snapshot contract.
+Private venue execution and trading-control
 delivery must use the normal strategy/risk/planning/execution lifecycle.
 
 These gaps must be filled at their owners; dashboard reconstruction cannot establish

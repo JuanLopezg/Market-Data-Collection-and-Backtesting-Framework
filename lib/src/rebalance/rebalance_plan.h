@@ -29,6 +29,9 @@ enum class RebalanceAction {
 struct RebalanceDecision {
     RebalanceAction action = RebalanceAction::Hold;
     double target_weight = 0.0;
+    // Optional one-following-bar stop entry. Zero keeps market execution.
+    double entry_stop_price = 0.0;
+    double protective_stop_price = 0.0;
 
     static RebalanceDecision hold()
     {
@@ -49,6 +52,14 @@ struct RebalanceDecision {
             return flat();
 
         return {RebalanceAction::TargetWeight, weight};
+    }
+
+    static RebalanceDecision stopEntry(double weight, double triggerPrice)
+    {
+        if (!std::isfinite(weight) || weight == 0.0 ||
+            !std::isfinite(triggerPrice) || triggerPrice <= 0.0)
+            throw std::invalid_argument("Stop entry requires nonzero weight and positive trigger price");
+        return {RebalanceAction::TargetWeight, weight, triggerPrice};
     }
 };
 

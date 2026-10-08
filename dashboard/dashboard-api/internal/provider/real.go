@@ -18,6 +18,8 @@ import (
 // RealConfig configures read-only source access. No command/control endpoint is
 // exposed by this provider.
 type RealConfig struct {
+	HostMetricsFile        string
+	HostMetricsProject     string
 	PostgreSQLDSN          string
 	NATSURL                string
 	NATSMonitorURL         string
@@ -26,6 +28,8 @@ type RealConfig struct {
 	RuntimeMode            string
 	MarketTopN             int
 	MarketHistoryDays      int
+	QuoteVolume            bool
+	QuoteVolumeFrom        string
 	StrategyUniverseN      int
 	ProbeTimeout           time.Duration
 	ExecutionVenue         string
@@ -110,8 +114,9 @@ func NewReal(cfg RealConfig) *Real {
 		jetstream:   natsdiag.NewJetStreamReader(cfg.NATSURL, cfg.NATSStream, maxDuration(cfg.ProbeTimeout, 1500*time.Millisecond)),
 		subscriber:  natsdiag.NewSubjectSubscriber(cfg.NATSURL, natsdiag.AuditedRuntimeSubjects, maxDuration(cfg.ProbeTimeout, 1500*time.Millisecond)),
 		marketData: sqlitemarket.NewReader(sqlitemarket.ReaderConfig{
-			DatabasePath: cfg.MarketDataDB,
-			Timeout:      maxDuration(cfg.ProbeTimeout, 2*time.Second),
+			DatabasePath:       cfg.MarketDataDB,
+			IncludeQuoteVolume: cfg.QuoteVolume,
+			Timeout:            maxDuration(cfg.ProbeTimeout, 2*time.Second),
 		}),
 		venuePublic: hldiag.NewPublicClient(cfg.VenuePublicInfoURL, cfg.VenuePublicTimeout),
 	}
@@ -288,7 +293,7 @@ func (p *Real) RuntimeStateSummary(ctx context.Context) map[string]any {
 func (p *Real) runtimeMode() string {
 	mode := strings.ToUpper(strings.TrimSpace(p.cfg.RuntimeMode))
 	switch mode {
-	case "LIVE", "TESTNET", "REPLAY":
+	case "LIVE", "TESTNET", "REPLAY", "PAPER":
 		return mode
 	default:
 		return "LIVE"

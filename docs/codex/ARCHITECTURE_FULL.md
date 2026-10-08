@@ -1,9 +1,18 @@
 # Current architecture and source navigation
 
-This is the current architecture map, checked against source on 2026-10-07.
+This is the current architecture map, checked against source on 2026-10-08.
 [The documentation index](../README.md) lists the maintained guides;
 [CURRENT_STATE.md](../../CURRENT_STATE.md) records validation evidence and limitations.
+[The roadmap](../ROADMAP.md) owns ordered pending requirements and venue-selection priorities.
 Source and current build/test output take precedence over these descriptions.
+
+PAPER liquidity uses a separate `pure_rsi_quote_volume.json` profile and actual
+Binance completed-kline quote turnover. `OHLCV.quote_volume` is optional for older
+base-only data; the live SQLite writer migrates/backfills it, the canonical reader
+loads it without estimating, and `PriceField::QuoteVolume` exposes it to indicators.
+Source `volume` keeps its existing replay/capacity meaning. Dashboard PAPER uses the
+same metric, preserves old cycle provenance through `QUOTE_VOLUME_FROM`, and starts
+its rolling comparison after that boundary. See the PAPER guide for state migration.
 
 ## Repository map
 
@@ -14,14 +23,20 @@ Source and current build/test output take precedence over these descriptions.
 | `research/` | Public replay CLI, canonical runner and research executables. |
 | `dashboard/` | React UI, Go read-model API, observability stores and deployment. |
 | `validation/` | Current release gate, component tests and focused source audits. |
-| `deploy/` | LIVE and isolated historical Compose deployments and packaging. |
+| `deploy/` | LIVE, current-data paper and isolated historical Compose deployments and packaging. |
 | `config/` | Runtime configuration, source-symbol maps and venue registries. |
 | `docs/` | Documentation index, agent handoff and frozen venue specifications. |
 | `storage/` | Historical inputs, reports and accepted run evidence. |
 | `tools/` | Analysis utilities and historical diagnostic runners. |
+| `.ai/` | Ignored generated file/component navigation, refreshed from the current working tree. |
 
 Generated replay state and outputs live under `deploy/historical_replay/run/`.
 They are evidence or runtime data, not additional implementation directories.
+
+`python3 tools/generate_ai_index.py` creates `.ai/README.md`, `components.md`
+and `index.json`; `--check` detects stale output. The generated index links to
+maintained guides and source instead of owning architecture/readiness prose.
+The [index guide](AI_INDEX.md) defines inputs, exclusions and navigation limits.
 
 ## Library responsibilities
 
@@ -152,6 +167,29 @@ writer and gates historical visibility before committing each day.
 Follow the actual handler/store ordering when changing a service. Do not assume every
 service has the same commit/publish sequence.
 
+`validation/transport_persistence_integration_test.py` exercises current transport
+and PostgreSQL adapters against isolated real infrastructure, including SQL rollback
+and commit-before-ACK consumer failure followed by broker/database restart. Its
+fixture handler uses recovered fill IDs to avoid applying economics twice; audit
+row deduplication alone is insufficient. This component proof is separate from
+full deployed-service recovery and VPS acceptance.
+
+`validation/local_service_campaign.py` prepares a bounded controlled environment
+from the historical Compose topology with an internal network, fresh named state,
+generated credentials and current service binaries. It provides pipeline evidence,
+duplicate/fault injection, test-database checkpoint/outbox barriers, append-only
+daily captures and Docker resource samples. Its simulated exchange is isolated
+from LIVE/private routing; [the runbook](../../validation/LOCAL_SERVICE_CAMPAIGN.md)
+defines the acceptance limits and cleanup commands.
+
+`research/replay.py resources` adds bounded resource orchestration, not another
+replay engine. `resource_profile.py` owns the isolated service/dashboard lifecycle,
+Docker/optional Windows sampling and read-only client; `resource_report.py` writes
+the offline CPU/RAM graph. It invokes the existing canonical dashboard path with
+private output/state directories. Its background service fixture and canonical
+backtest remain distinct workloads. Builds are outside the timed window; failures
+keep partial evidence and shutdown is confined to the generated project.
+
 ### Business versus technical time
 
 `lib/src/utils/time_handler.*` controls economically visible time.
@@ -166,16 +204,75 @@ It is a separate integration workflow, not the canonical RealTest release entryp
 
 ## Research migration
 
-Six executables still use `research/src/legacy/runtime/`:
-HTML metrics/reports, BTC moving-average experiments, initial parameter studies,
-multi-strategy experiments, statistical studies and XH-breakout testing.
-Their exact entrypoint names are listed in the handoff and legacy runtime README. Their frozen engine is temporary
-compatibility support, not the intended architecture.
+All six useful research consumers use CURRENT lib APIs. The frozen runtime and
+comparison target have been removed after migration. The `src/legacy/` directory
+name remains for the entrypoints; it does not imply an old execution engine.
 
-The next task is to map those consumers to current APIs, beginning with the HTML report
-tool: preserve its reports/data contracts, build it against CURRENT `lib/`, and
-compare a bounded study before migrating the remaining tools. Delete the frozen runtime
-only after useful consumers have migrated. Exact source paths and the research backlog
+The HTML report source now builds CURRENT PureRSI and research Donchian/XH/XH-ATR reporting as
+`algotrading_research_html`, using current `Backtester`, strategy instances,
+equal-weight sizing and fill-derived account/analytics. Its CSV/HTML contracts remain;
+execution settings, baseline trades and account snapshots provide extra evidence.
+The reporting gate checks explicit CSV/HTML contracts and CURRENT accounting
+without compiling a second economic implementation.
+The source-level consumer inventory and bounded study controls live in
+[research/REPLAY.md](../../research/REPLAY.md).
+
+Donchian's signals remain research-only; its exits now follow CURRENT next-open
+execution rather than the old same-close fill. XH/XH-ATR use one-bar stop entries:
+close fixes trigger/notional; the completed following bar determines crossing,
+gap fills preserve monetary amount, and untriggered or missing-asset entries expire.
+Actual fills drive current positions/accounting. Exits wait for a later open;
+no future-bar lookup or forced same-close cutoff exit occurs. ATR trailing state
+reconstructs from actual entry and completed bars, excluding entry-bar high.
+The simulator supports this research path; service wire/schema-v1 durable state
+and other adapters reject stop entries. No durable/live stop support is claimed.
+The XH robustness consumer now uses the same CURRENT strategy, sizing and accounting,
+retaining its own full grids and reporting contracts. Initial parameter studies and
+statistics now share seven CURRENT research configurations in
+`research/src/common/research_strategy_definitions.h`. Timed strategies observe
+fill-derived campaigns and count observed asset bars. Market entries may signal
+an exit at entry-bar close; ATR/MRShort timed exits exclude that close. MRShort
+uses a one-bar short stop and a protective cover sized from actual fills. The
+simulator preserves its explicit bullish/bearish entry-bar OHLC assumption;
+later stops cover at max(stop, open). Timed market covers cancel their bracket.
+Schema/wire guards reject bracket fields as well as entry stops, and stateful
+research strategies reject durable-store attachment.
+BTC moving-average reporting now reuses the shared PureMom/MRShort definitions,
+with its original SMA sweep and CSV/HTML contracts. The scenario consumer now uses
+CURRENT APIs for all eight isolated strategy families and 18 dataset definitions.
+`research/src/legacy/multi_strategy_main.cpp` owns settings and study orchestration;
+`research/src/common/scenario_reports.*` owns embedded charts and correlation reports.
+Shared short/momentum signals accept per-scenario benchmark symbols, with BTC defaults.
+Benchmarks come from the same bounded market data as trading. Synthetic intraday keys
+are retained; annualization uses explicit bar frequencies. All useful consumers have
+current paths. Generated `.ai/` navigation is available. Daily host logging has a
+locally tested rsyslog receiver, bounded diagnostic writer, minute retention timer
+and optional LIVE/dashboard overlays. Daily host logs retain today/yesterday and
+trim older entries before a file exceeds 50 MiB;
+VPS installation, initial PAPER cycle, boot recovery and receiver restart pass;
+multi-day/fault/capacity acceptance and private venue readiness remain pending.
+
+`deploy/paper_trading/` is a separate current-public-data stack with virtual funds
+and the durable simulated exchange. Ingestion opt-in fetches only open(T+1), publishes
+the execution-price contract before the completed T update, and keeps unfinished
+candles out of feature SQLite. Service sizing retains close(T); simulated opening
+fills are not live-price or canonical-sizing parity evidence. The paper bundle option
+targets its own directory; default LIVE packaging remains separate. A host collector
+writes atomic JSON, read by dashboard API with project/schema/freshness checks.
+Infrastructure refreshes CPU/RAM/disk and container observations every 10 seconds.
+Dashboard market mounts are read-only; observer-created writable SQLite WAL/SHM
+must not prevent ingestion. VPS systemd startup waits for the loopback receiver,
+with scoped AppArmor permissions, and receiver restart does not stop PAPER.
+No dashboard Docker socket; process health does not establish trading readiness.
+Clock sync remains unmeasured. Local capture reuses the two-day/50-MiB daily writer;
+the optional VPS overlay covers all services. See [paper operations](../../deploy/paper_trading/README.md).
+The [VPS equivalence procedure](../../deploy/live/README.md#local-to-vps-equivalence-acceptance)
+compares source/input identity, configured builds, packaging, non-secret settings
+and bounded Step59 results before separate deployed-cycle acceptance.
+Kraken is the likely initial live venue, subject to perpetual coverage and BTC
+collateral/account eligibility checks against Hyperliquid. Existing Hyperliquid
+public/testnet components describe current source, not the selected future venue.
+Exact source paths and the research backlog
 are in [CONTEXT_FULL.txt](CONTEXT_FULL.txt).
 
 ## Dashboard boundary

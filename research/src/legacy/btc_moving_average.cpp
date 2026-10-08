@@ -1,5 +1,6 @@
-#include "backtest.h"
-#include "all_strategies.h"
+#include "backtester.h"
+#include "research_strategy_definitions.h"
+#include <boost/program_options.hpp>
 #include "backtest_metrics.h"
 #include "backtest_html_report.h"
 #include "database_utils.h"
@@ -31,24 +32,10 @@
 
 namespace {
 
-using ParameterValues = std::map<std::string, double>;
-
-struct SensitivityParameterDefinition {
-    std::string key;
-    std::string displayName;
-    double minimum = 0.0;
-    double maximum = 0.0;
-    double spacing = 1.0;
-    bool enabled = false;
-};
-
-struct StrategyDefinition {
-    std::string name;
-    ParameterValues currentParameters;
-    std::vector<SensitivityParameterDefinition> sensitivityParameters;
-    std::function<std::unique_ptr<Strategy>(const ParameterValues&)> create;
-    std::function<bool(const ParameterValues&)> isValidCombination;
-};
+using research_studies::ParameterValues;
+using research_studies::SensitivityParameterDefinition;
+using research_studies::StrategyDefinition;
+using research_studies::parameterOr;
 
 struct ActiveSensitivityParameter {
     const SensitivityParameterDefinition* definition = nullptr;
@@ -204,296 +191,42 @@ private:
     std::chrono::steady_clock::time_point start_;
 };
 
-double parameterOr(
-    const ParameterValues& parameters,
-    const std::string& key,
-    double fallback
-)
+std::vector<StrategyDefinition> makeStrategyDefinitions()
 {
-    const auto iterator = parameters.find(key);
-    return iterator == parameters.end() ? fallback : iterator->second;
-}
-
-unsigned int unsignedParameterOr(
-    const ParameterValues& parameters,
-    const std::string& key,
-    unsigned int fallback
-)
-{
-    const double value = parameterOr(
-        parameters,
-        key,
-        static_cast<double>(fallback)
-    );
-
-    if (!std::isfinite(value) || value <= 0.0) {
-        return 0U;
+    auto definitions = research_studies::makeStrategyDefinitions();
+    std::erase_if(definitions, [](const auto& definition) {
+        return definition.name != "MRShort" && definition.name != "PureMom";
+    });
+    // Reuse the current signal and portfolio configurations, while preserving
+    // this study's original fixed parameters and enabled BTC SMA sweep.
+    for (auto& definition : definitions) {
+        if (definition.name == "MRShort") {
+            definition.sensitivityParameters = {
+                {"rsiLength", "RSI length", 5.0, 5.0, 1.0, false},
+                {"rsiEntry", "RSI entry", 70.0, 70.0, 1.0, false},
+                {"heldBars", "Held bars", 3.0, 3.0, 1.0, false},
+                {"entryAtrMultiple", "Entry ATR multiple", 0.30, 0.30, 0.10, false},
+                {"entryAtrLength", "Entry ATR length", 5.0, 5.0, 1.0, false},
+                {"btcMovingAverageLength", "BTC moving-average length", 10.0, 200.0, 5.0, true},
+                {"rankerRocLength", "Ranker ROC length", 30.0, 30.0, 1.0, false},
+                {"quantityPercent", "Quantity (%)", 10.0, 10.0, 1.0, false},
+                {"maxPositionsOpen", "Maximum open positions", 10.0, 10.0, 1.0, false}
+            };
+        }
+        if (definition.name == "PureMom") {
+            definition.sensitivityParameters = {
+                {"heldBars", "Held bars", 7.0, 7.0, 1.0, false},
+                {"rocLength", "ROC length", 7.0, 7.0, 1.0, false},
+                {"btcMovingAverageLength", "BTC moving-average length", 10.0, 200.0, 5.0, true},
+                {"quantityPercent", "Quantity (%)", 10.0, 10.0, 1.0, false},
+                {"maxPositionsOpen", "Maximum open positions", 3.0, 3.0, 1.0, false}
+            };
+        }
     }
-
-    const double upperBound = static_cast<double>(
-        std::numeric_limits<unsigned int>::max()
-    );
-    return static_cast<unsigned int>(std::llround(std::min(value, upperBound)));
-}
-
-std::unique_ptr<UniverseSelector> makeTopLiquidityUniverse()
-{
-    constexpr unsigned int topLiquidityCount = 20;
-
-    return std::make_unique<TopNLiquidityUniverse>(
-        IndicatorSpec{
-            IndicatorKind::SMA,
-            PriceField::Volume,
-            25
-        },
-        topLiquidityCount,
-        true
-    );
-}
-
-std::vector<SensitivityParameterDefinition> makeSensitivityParameters(
-    std::initializer_list<SensitivityParameterDefinition> parameters
-)
-{
-    return std::vector<SensitivityParameterDefinition>(
-        parameters.begin(),
-        parameters.end()
-    );
-}
-
-std::vector<StrategyDefinition> makeStrategyDefinitions(
-    double feeMaker,
-    double feeTaker,
-    double commissionEntryFactor,
-    double commissionExitFactor
-)
-{
-    std::vector<StrategyDefinition> definitions;
-
-    definitions.push_back(StrategyDefinition{
-        "MRShort",
-        {
-            {"rsiLength", 5.0},
-            {"rsiEntry", 70.0},
-            {"btcMovingAverageLength", 50.0},
-            {"entryAtrMultiple", 0.30},
-            {"entryAtrLength", 5.0},
-            {"heldBars", 3.0},
-            {"quantityPercent", 10.0},
-            {"maxPositionsOpen", 10.0},
-            {"maxRankingPosition", 1000000.0},
-            {"rankerRocLength", 30.0}
-        },
-        makeSensitivityParameters({
-            {"rsiLength", "RSI length", 5.0, 5.0, 1.0, false},
-            {"rsiEntry", "RSI entry", 70.0, 70.0, 1.0, false},
-            {"heldBars", "Held bars", 3.0, 3.0, 1.0, false},
-            {"entryAtrMultiple", "Entry ATR multiple", 0.30, 0.30, 0.10, false},
-            {"entryAtrLength", "Entry ATR length", 5.0, 5.0, 1.0, false},
-
-            {"btcMovingAverageLength",
-            "BTC moving-average length",
-            10.0,
-            200.0,
-            5.0,
-            true},
-
-            {"rankerRocLength", "Ranker ROC length", 30.0, 30.0, 1.0, false},
-            {"quantityPercent", "Quantity (%)", 10.0, 10.0, 1.0, false},
-            {"maxPositionsOpen", "Maximum open positions", 10.0, 10.0, 1.0, false}
-        }),
-        [=](const ParameterValues& parameters) {
-            const unsigned int rsiLength = unsignedParameterOr(
-                parameters,
-                "rsiLength",
-                5U
-            );
-
-            const double rsiEntry = parameterOr(
-                parameters,
-                "rsiEntry",
-                70.0
-            );
-
-            const unsigned int btcMovingAverageLength = unsignedParameterOr(
-                parameters,
-                "btcMovingAverageLength",
-                50U
-            );
-
-            const double entryAtrMultiple = parameterOr(
-                parameters,
-                "entryAtrMultiple",
-                0.30
-            );
-
-            const unsigned int entryAtrLength = unsignedParameterOr(
-                parameters,
-                "entryAtrLength",
-                5U
-            );
-
-            const unsigned int heldBars = unsignedParameterOr(
-                parameters,
-                "heldBars",
-                3U
-            );
-
-            const double quantityPercent = parameterOr(
-                parameters,
-                "quantityPercent",
-                10.0
-            );
-
-            const unsigned int maxPositionsOpen = unsignedParameterOr(
-                parameters,
-                "maxPositionsOpen",
-                10U
-            );
-
-            const unsigned int maxRankingPosition = unsignedParameterOr(
-                parameters,
-                "maxRankingPosition",
-                1000000U
-            );
-
-            const unsigned int rankerRocLength = unsignedParameterOr(
-                parameters,
-                "rankerRocLength",
-                30U
-            );
-
-            auto universeSelector = makeTopLiquidityUniverse();
-
-            auto ranker = std::make_unique<IndicatorRanker>(
-                IndicatorSpec{
-                    IndicatorKind::ROC,
-                    PriceField::Close,
-                    rankerRocLength
-                },
-                true
-            );
-
-            return std::make_unique<StrategyMRShort>(
-                maxPositionsOpen,
-                quantityPercent / 100.0,
-                std::move(universeSelector),
-                std::move(ranker),
-                feeTaker,
-                feeTaker,
-                maxRankingPosition,
-                rsiLength,
-                rsiEntry,
-                btcMovingAverageLength,
-                entryAtrMultiple,
-                entryAtrLength,
-                heldBars,
-                "BTC"
-            );
-        },
-        [](const ParameterValues&) {
-            return true;
-        }
-    });
-
-
-    definitions.push_back(StrategyDefinition{
-        "PureMom",
-        {
-            {"heldBars", 7.0},
-            {"rocLength", 7.0},
-            {"btcMovingAverageLength", 50.0},
-            {"quantityPercent", 10.0},
-            {"maxPositionsOpen", 3.0},
-            {
-                "maxRankingPosition",
-                static_cast<double>(
-                    std::numeric_limits<unsigned int>::max()
-                )
-            }
-        },
-        makeSensitivityParameters({
-            {"heldBars", "Held bars", 7.0, 7.0, 1.0, false},
-            {"rocLength", "ROC length", 7.0, 7.0, 1.0, false},
-
-            {"btcMovingAverageLength",
-            "BTC moving-average length",
-            10.0,
-            200.0,
-            5.0,
-            true},
-
-            {"quantityPercent", "Quantity (%)", 10.0, 10.0, 1.0, false},
-            {"maxPositionsOpen", "Maximum open positions", 3.0, 3.0, 1.0, false}
-        }),
-        [=](const ParameterValues& parameters) {
-            const unsigned int heldBars = unsignedParameterOr(
-                parameters,
-                "heldBars",
-                7U
-            );
-
-            const unsigned int rocLength = unsignedParameterOr(
-                parameters,
-                "rocLength",
-                7U
-            );
-
-            const unsigned int btcMovingAverageLength = unsignedParameterOr(
-                parameters,
-                "btcMovingAverageLength",
-                50U
-            );
-
-            const double quantityPercent = parameterOr(
-                parameters,
-                "quantityPercent",
-                10.0
-            );
-
-            const unsigned int maxPositionsOpen = unsignedParameterOr(
-                parameters,
-                "maxPositionsOpen",
-                3U
-            );
-
-            const unsigned int maxRankingPosition = unsignedParameterOr(
-                parameters,
-                "maxRankingPosition",
-                std::numeric_limits<unsigned int>::max()
-            );
-
-            auto universeSelector = makeTopLiquidityUniverse();
-
-            auto ranker = std::make_unique<IndicatorRanker>(
-                IndicatorSpec{
-                    IndicatorKind::ROC,
-                    PriceField::Close,
-                    rocLength
-                },
-                true
-            );
-
-            return std::make_unique<StrategyPureMom>(
-                maxPositionsOpen,
-                quantityPercent / 100.0,
-                std::move(universeSelector),
-                std::move(ranker),
-                feeTaker,
-                feeTaker,
-                maxRankingPosition,
-                heldBars,
-                btcMovingAverageLength,
-                "BTC"
-            );
-        },
-        [](const ParameterValues&) {
-            return true;
-        }
-    });
-
     return definitions;
 }
+
+bool compactSensitivity = false;
 
 std::vector<double> makeSweepValues(
     const SensitivityParameterDefinition& parameter
@@ -549,6 +282,9 @@ std::vector<ActiveSensitivityParameter> activeSensitivityParameters(
             continue;
         }
 
+        if (compactSensitivity && values.size() > 2U) {
+            values = {values.front(), values.back()};
+        }
         active.push_back(ActiveSensitivityParameter{&parameter, std::move(values)});
     }
 
@@ -619,27 +355,13 @@ BacktestMetrics runSingleBacktest(
     const BacktestMetricsSettings& metricsSettings
 )
 {
-    unsigned int lastTradeId = 0U;
-    double balance = initialBalance;
-    double equity = initialBalance;
-
-    std::vector<std::unique_ptr<Strategy>> strategies;
-    strategies.push_back(definition.create(parameters));
-
+    (void)feeMaker; // This study submits taker orders only.
     BacktestContext context(
-        ohlcvData,
-        strategies,
-        balance,
-        equity,
-        lastTradeId,
-        feeMaker,
-        feeTaker,
-        false
+        ohlcvData, makeStudyPortfolio(definition, parameters), initialBalance, feeTaker
     );
 
     Backtester tester(context);
     tester.loop();
-    tester.closeTrades();
 
     return calculateBacktestMetrics(
         definition.name,
@@ -1072,27 +794,13 @@ StrategyExecutionResult runStrategyAndWriteReport(
 {
     StrategyExecutionResult result;
 
-    unsigned int lastTradeId = 0U;
-    double balance = initialBalance;
-    double equity = initialBalance;
-
-    std::vector<std::unique_ptr<Strategy>> strategies;
-    strategies.push_back(definition.create(definition.currentParameters));
-
+    (void)feeMaker; // This study submits taker orders only.
     BacktestContext context(
-        ohlcvData,
-        strategies,
-        balance,
-        equity,
-        lastTradeId,
-        feeMaker,
-        feeTaker,
-        false
+        ohlcvData, makeStudyPortfolio(definition, definition.currentParameters), initialBalance, feeTaker
     );
 
     Backtester tester(context);
     tester.loop();
-    tester.closeTrades();
 
     result.metrics = calculateBacktestMetrics(
         definition.name,
@@ -1102,6 +810,20 @@ StrategyExecutionResult runStrategyAndWriteReport(
         initialBalance,
         metricsSettings
     );
+
+    const auto reportDirectory = reportPath.parent_path();
+    tester.storeTradesCSV(reportDirectory / (definition.name + "_trades.csv"));
+    std::ofstream accountOutput(reportDirectory / (definition.name + "_account.csv"));
+    accountOutput.exceptions(std::ios::failbit | std::ios::badbit);
+    accountOutput << "timestamp,cash,balance,equity\n" << std::setprecision(17);
+    for (const auto& snapshot : context.GetAccountHistory()) {
+        accountOutput << snapshot.timestamp << ',' << snapshot.cash << ','
+                      << snapshot.balance << ',' << snapshot.equity << '\n';
+    }
+    SensitivityCsvWriter baselineWriter(
+        reportDirectory / (definition.name + "_metrics.csv"), studyId, definition
+    );
+    baselineWriter.writeRun(0, "success", {}, definition.currentParameters, &result.metrics);
 
     std::vector<ParameterSensitivityReport> parameterSensitivity;
     if (progress != nullptr) {
@@ -1127,7 +849,7 @@ StrategyExecutionResult runStrategyAndWriteReport(
             context.GetMarketData(),
             parameterSensitivity
         )) {
-        LG_ERROR("Could not write report for strategy {}", definition.name);
+        throw std::runtime_error("Could not write report for strategy " + definition.name);
     }
 
     return result;
@@ -1309,9 +1031,63 @@ void writeStudyMetadataCsv(
 } // namespace
 
 int main(int argc, char** argv)
+try
 {
-    (void)argc;
-    (void)argv;
+    namespace options = boost::program_options;
+    std::string databasePath;
+    const std::string databaseTimeframe = "1d";
+    const std::string benchmarkSymbol = "BTC";
+    std::string studyId;
+    std::string outputRoot;
+    std::string grid;
+    std::string selectedStrategy;
+    Timestamp startDate;
+    Timestamp endDate;
+    double feeTaker;
+    options::options_description arguments("BTC moving-average study options");
+    arguments.add_options()
+        ("help,h", "Show study options")
+        ("database", options::value(&databasePath)->default_value("storage/databases/1d_cmc.csv"), "Input CSV/SQLite")
+        ("start", options::value(&startDate)->default_value(20200101), "Cold start YYYYMMDD (inclusive)")
+        ("end", options::value(&endDate)->default_value(20200416), "Cutoff YYYYMMDD (inclusive)")
+        ("study-id", options::value(&studyId)->default_value(""), "New study directory name (default UTC timestamp)")
+        ("output-root", options::value(&outputRoot)->default_value("storage/backtests/sensitivity_results"), "Study parent directory")
+        ("strategy", options::value(&selectedStrategy)->default_value("all"), "Strategy name or all")
+        ("grid", options::value(&grid)->default_value("none"), "none, compact or full sensitivity grid")
+        ("fee-taker", options::value(&feeTaker)->default_value(0.0), "Market commission fraction per fill");
+    try {
+        options::variables_map values;
+        options::store(options::parse_command_line(argc, argv, arguments), values);
+        if (values.count("help")) {
+            std::cout << arguments << '\n';
+            return 0;
+        }
+        options::notify(values);
+        auto validDate = [](Timestamp date) {
+            const std::chrono::year_month_day calendarDate{
+                std::chrono::year(static_cast<int>(date / 10000)),
+                std::chrono::month((date / 100) % 100),
+                std::chrono::day(date % 100)
+            };
+            return date >= 19000101 && date <= 99991231 && calendarDate.ok();
+        };
+        if (!validDate(startDate) || !validDate(endDate) || startDate > endDate)
+            throw std::invalid_argument("Require valid start <= end dates in YYYYMMDD format");
+        if (grid != "none" && grid != "compact" && grid != "full")
+            throw std::invalid_argument("Grid must be none, compact or full");
+        if (!std::isfinite(feeTaker) || feeTaker < 0.0)
+            throw std::invalid_argument("Fee must be finite and non-negative");
+        if (studyId.empty()) {
+            studyId = utcTimestamp();
+            studyId.erase(std::remove(studyId.begin(), studyId.end(), ':'), studyId.end());
+            studyId = "current_btc_ma_" + studyId;
+        }
+        if (studyId == "." || studyId == ".." || studyId.find_first_of("/\\") != std::string::npos)
+            throw std::invalid_argument("Study ID must be a single directory name");
+    } catch (const std::exception& exception) {
+        std::cerr << "Invalid study options: " << exception.what() << '\n';
+        return 1;
+    }
 
     Logger::Instance().Setup(
         true,   // debug enabled
@@ -1321,28 +1097,23 @@ int main(int argc, char** argv)
         true    // include header
     );
 
-    const std::string databasePath =
-        "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/databases/1d_cmc.csv";
-
+    const double periodsPerYear = 365.0;
     constexpr double initialBalance = 100000.0;
-
-    // Keep identical to the validated RealTest-matching setup.
-    constexpr double feeTaker = 0.0;
     constexpr double feeMaker = 0.0;
+    // Retained metadata columns describe the former strategy-side fee factors.
+    // CURRENT commissions come from actual taker fills, never these factors.
     constexpr double commissionEntryFactor = 0.0;
     constexpr double commissionExitFactor = 0.0;
-
-    constexpr bool runParameterSensitivity = true;
-    const std::string studyId = "local_refinement_btc_moving_average";
+    const bool runParameterSensitivity = grid != "none";
 
     const BacktestMetricsSettings metricsSettings{
-        .periodsPerYear = 365.0,
-        .excludeSimulatedTrades = true
+        .periodsPerYear = periodsPerYear,
+        .excludeSimulatedTrades = true,
+        .databaseTimeframe = databaseTimeframe,
+        .annualizationBenchmarkSymbol = benchmarkSymbol
     };
 
-    const std::filesystem::path sensitivityRootDirectory =
-        "/mnt/c/Users/Juan/Documents/Python/algoTrading/"
-        "storage/backtests/sensitivity_results";
+    const std::filesystem::path sensitivityRootDirectory = outputRoot;
 
     const std::filesystem::path studyDirectory =
         sensitivityRootDirectory / studyId;
@@ -1350,22 +1121,42 @@ int main(int argc, char** argv)
     const std::filesystem::path reportsDirectory =
         studyDirectory / "reports";
 
+    if (std::filesystem::exists(studyDirectory))
+        throw std::invalid_argument("Study directory already exists; choose a new study ID");
+
     if (!ensureDirectoryExists(studyDirectory) ||
         !ensureDirectoryExists(reportsDirectory)) {
         return 1;
     }
 
     LG_INFO("Database loading started");
-    OHLCVData ohlcvData = loadDatabase(databasePath, 00000000);
+    if (!std::filesystem::is_regular_file(databasePath))
+        throw std::invalid_argument("Input database does not exist: " + databasePath);
+    OHLCVData ohlcvData = loadDatabase(databasePath, startDate, endDate);
+    if (ohlcvData.data.empty() || !ohlcvData.data.contains(benchmarkSymbol))
+        throw std::invalid_argument("Selected window must contain market data and the annualization benchmark");
     LG_INFO("Database loaded successfully");
+    LG_INFO(
+        "Annualization settings: timeframe={} benchmark_symbol={} periods_per_year={}",
+        databaseTimeframe,
+        benchmarkSymbol,
+        periodsPerYear
+    );
 
-    const std::vector<StrategyDefinition> strategyDefinitions =
-        makeStrategyDefinitions(
-            feeMaker,
-            feeTaker,
-            commissionEntryFactor,
-            commissionExitFactor
-        );
+    std::vector<StrategyDefinition> strategyDefinitions = makeStrategyDefinitions();
+    if (selectedStrategy != "all") {
+        std::erase_if(strategyDefinitions, [&](const auto& definition) {
+            return definition.name != selectedStrategy;
+        });
+    }
+    if (strategyDefinitions.empty())
+        throw std::invalid_argument("Unknown BTC study strategy: " + selectedStrategy);
+    compactSensitivity = grid == "compact";
+    std::ofstream executionSettings(studyDirectory / "execution_settings.csv");
+    executionSettings.exceptions(std::ios::failbit | std::ios::badbit);
+    executionSettings << "runtime,start,end,grid,cutoff_policy\n"
+                      << "current-lib," << startDate << ',' << endDate << ','
+                      << grid << ",mark-open-positions\n";
 
     try {
         writeParameterGridCsv(
@@ -1494,4 +1285,9 @@ int main(int argc, char** argv)
     }
 
     return 0;
+}
+catch (const std::exception& exception)
+{
+    std::cerr << "BTC moving-average study failed: " << exception.what() << '\n';
+    return 1;
 }

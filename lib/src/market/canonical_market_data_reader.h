@@ -36,6 +36,7 @@ private:
     sqlite3* db_ = nullptr;
 
     void requireSchema() const;
+    std::string quoteVolumeColumn() const;
     std::vector<Coin> rankedSymbols(Timestamp date, unsigned int activeTopN) const;
 
 public:

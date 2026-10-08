@@ -1,0 +1,18 @@
+[Unit]
+Description=Current-data paper trading with virtual funds
+Requires=docker.service
+After=docker.service algotrading-logs.service network-online.target
+# Receiver restarts must not stop trading; Docker buffers forwarded diagnostics.
+Wants=network-online.target algotrading-paper-monitor.service algotrading-logs.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/algotrading
+ExecStart=/usr/bin/docker compose --project-name algotrading-paper --env-file storage/paper_trading/.env -f deploy/paper_trading/docker-compose.yml -f deploy/paper_trading/docker-compose.vps.yml -f deploy/paper_trading/docker-compose.logging.yml up -d --no-build
+ExecStop=/usr/bin/docker compose --project-name algotrading-paper --env-file storage/paper_trading/.env -f deploy/paper_trading/docker-compose.yml -f deploy/paper_trading/docker-compose.vps.yml -f deploy/paper_trading/docker-compose.logging.yml stop
+TimeoutStartSec=180
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

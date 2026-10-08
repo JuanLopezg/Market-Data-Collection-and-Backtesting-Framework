@@ -1,5 +1,9 @@
-#include "backtest.h"
-#include "all_strategies.h"
+#include "backtester.h"
+#include "validated/pure_rsi.h"
+#include "equal_weight_sizer.h"
+#include "entry_exit_only_rebalance_policy.h"
+#include "donchian_signal_strategy.h"
+#include "xh_breakout_strategy.h"
 #include "backtest_metrics.h"
 #include "backtest_html_report.h"
 #include "database_utils.h"
@@ -28,6 +32,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <boost/program_options.hpp>
 
 namespace {
 
@@ -271,6 +276,9 @@ std::vector<StrategyDefinition> makeStrategyDefinitions(
 {
     (void)commissionEntryFactor;
     (void)commissionExitFactor;
+    (void)feeMaker;
+    (void)feeTaker;
+    (void)benchmarkSymbol;
 
     std::vector<StrategyDefinition> definitions;
 
@@ -310,7 +318,6 @@ std::vector<StrategyDefinition> makeStrategyDefinitions(
             const unsigned int rsiLength = unsignedParameterOr(parameters, "rsiLength", 7U);
             const double rsiEntry = parameterOr(parameters, "rsiEntry", 80.0);
             const double rsiExit = parameterOr(parameters, "rsiExit", 70.0);
-            const double quantityPercent = parameterOr(parameters, "quantityPercent", 10.0);
             const unsigned int maxPositionsOpen = unsignedParameterOr(
                 parameters, "maxPositionsOpen", 10U
             );
@@ -326,11 +333,8 @@ std::vector<StrategyDefinition> makeStrategyDefinitions(
 
             return std::make_unique<StrategyPureRSI>(
                 maxPositionsOpen,
-                quantityPercent / 100.0,
                 std::move(universeSelector),
                 std::move(ranker),
-                feeTaker,
-                feeTaker,
                 maxRankingPosition,
                 rsiLength,
                 rsiEntry,
@@ -386,7 +390,6 @@ std::vector<StrategyDefinition> makeStrategyDefinitions(
             const unsigned int momentumLength = unsignedParameterOr(
                 parameters, "momentumLength", 30U
             );
-            const double quantityPercent = parameterOr(parameters, "quantityPercent", 10.0);
             const unsigned int maxPositionsOpen = unsignedParameterOr(
                 parameters, "maxPositionsOpen", 10U
             );
@@ -400,13 +403,10 @@ std::vector<StrategyDefinition> makeStrategyDefinitions(
                 true
             );
 
-            return std::make_unique<StrategyDonchianBreakout>(
+            return std::make_unique<DonchianSignalStrategy>(
                 maxPositionsOpen,
-                quantityPercent / 100.0,
                 std::move(universeSelector),
                 std::move(ranker),
-                feeMaker,
-                feeTaker,
                 maxRankingPosition,
                 donchianLookback,
                 useMarketStateFilter,
@@ -462,7 +462,6 @@ std::vector<StrategyDefinition> makeStrategyDefinitions(
             const unsigned int momentumLength = unsignedParameterOr(
                 parameters, "momentumLength", 30U
             );
-            const double quantityPercent = parameterOr(parameters, "quantityPercent", 10.0);
             const unsigned int maxPositionsOpen = unsignedParameterOr(
                 parameters, "maxPositionsOpen", 10U
             );
@@ -476,13 +475,10 @@ std::vector<StrategyDefinition> makeStrategyDefinitions(
                 true
             );
 
-            return std::make_unique<StrategyXHBreakout>(
+            return std::make_unique<XHBreakoutStrategy>(
                 maxPositionsOpen,
-                quantityPercent / 100.0,
                 std::move(universeSelector),
                 std::move(ranker),
-                feeMaker,
-                feeTaker,
                 maxRankingPosition,
                 xH,
                 fastMovingAverageLength
@@ -529,7 +525,6 @@ std::vector<StrategyDefinition> makeStrategyDefinitions(
             const unsigned int momentumLength = unsignedParameterOr(
                 parameters, "momentumLength", 30U
             );
-            const double quantityPercent = parameterOr(parameters, "quantityPercent", 10.0);
             const unsigned int maxPositionsOpen = unsignedParameterOr(
                 parameters, "maxPositionsOpen", 10U
             );
@@ -543,13 +538,10 @@ std::vector<StrategyDefinition> makeStrategyDefinitions(
                 true
             );
 
-            return std::make_unique<StrategyXHBreakout_ATR>(
+            return std::make_unique<XHBreakoutStrategy>(
                 maxPositionsOpen,
-                quantityPercent / 100.0,
                 std::move(universeSelector),
                 std::move(ranker),
-                feeMaker,
-                feeTaker,
                 maxRankingPosition,
                 xH,
                 atrLength,
@@ -681,6 +673,26 @@ std::size_t countSensitivityCombinations(
     return count;
 }
 
+StrategyPortfolio makeStudyPortfolio(
+    const StrategyDefinition& definition,
+    const ParameterValues& parameters
+)
+{
+    // The study allocates all capital to one strategy. Signal strength and
+    // fixed asset weight are separate; execution quantities resolve at next open.
+    const double assetWeight = parameterOr(parameters, "quantityPercent", 10.0) / 100.0;
+    StrategyPortfolio portfolio;
+    portfolio.emplace_back(
+        1,
+        definition.create(parameters),
+        1.0,
+        std::make_unique<EqualWeightSizer>(assetWeight),
+        RiskConstraints(1.5, 1.5),
+        std::make_unique<EntryExitOnlyRebalancePolicy>()
+    );
+    return portfolio;
+}
+
 BacktestMetrics runSingleBacktest(
     const StrategyDefinition& definition,
     const ParameterValues& parameters,
@@ -691,22 +703,9 @@ BacktestMetrics runSingleBacktest(
     const BacktestMetricsSettings& metricsSettings
 )
 {
-    unsigned int lastTradeId = 0U;
-    double balance = initialBalance;
-    double equity = initialBalance;
-
-    std::vector<std::unique_ptr<Strategy>> strategies;
-    strategies.push_back(definition.create(parameters));
-
+    (void)feeMaker; // CURRENT research execution uses market orders only.
     BacktestContext context(
-        ohlcvData,
-        strategies,
-        balance,
-        equity,
-        lastTradeId,
-        feeMaker,
-        feeTaker,
-        false
+        ohlcvData, makeStudyPortfolio(definition, parameters), initialBalance, feeTaker
     );
 
     Backtester tester(context);
@@ -820,6 +819,7 @@ public:
                 "Could not write sensitivity CSV: " + outputPath.string()
             );
         }
+        output_.exceptions(std::ios::failbit | std::ios::badbit);
 
         parameterKeys_.reserve(definition.currentParameters.size());
         for (const auto& [key, value] : definition.currentParameters) {
@@ -1144,28 +1144,27 @@ StrategyExecutionResult runStrategyAndWriteReport(
 {
     StrategyExecutionResult result;
 
-    unsigned int lastTradeId = 0U;
-    double balance = initialBalance;
-    double equity = initialBalance;
-
-    std::vector<std::unique_ptr<Strategy>> strategies;
-    strategies.push_back(definition.create(definition.currentParameters));
-
     BacktestContext context(
         ohlcvData,
-        strategies,
-        balance,
-        equity,
-        lastTradeId,
-        feeMaker,
-        feeTaker,
-        false
+        makeStudyPortfolio(definition, definition.currentParameters),
+        initialBalance,
+        feeTaker
     );
 
     Backtester tester(context);
     tester.loop();
     tester.closeTrades();
 
+    tester.storeTradesCSV(reportPath.parent_path() / (definition.name + "_trades.csv"));
+    std::ofstream accountOutput(
+        reportPath.parent_path() / (definition.name + "_account.csv")
+    );
+    accountOutput.exceptions(std::ios::failbit | std::ios::badbit);
+    accountOutput << "timestamp,cash,balance,equity\n" << std::setprecision(17);
+    for (const auto& snapshot : context.GetAccountHistory()) {
+        accountOutput << snapshot.timestamp << ',' << snapshot.cash << ','
+                      << snapshot.balance << ',' << snapshot.equity << '\n';
+    }
     result.metrics = calculateBacktestMetrics(
         definition.name,
         context.GetTradesHistory(),
@@ -1174,6 +1173,10 @@ StrategyExecutionResult runStrategyAndWriteReport(
         initialBalance,
         metricsSettings
     );
+    SensitivityCsvWriter baselineMetrics(
+        reportPath.parent_path() / (definition.name + "_metrics.csv"), studyId, definition
+    );
+    baselineMetrics.writeRun(0, "success", {}, definition.currentParameters, &result.metrics);
 
     std::vector<ParameterSensitivityReport> parameterSensitivity;
     if (progress != nullptr) {
@@ -1199,7 +1202,7 @@ StrategyExecutionResult runStrategyAndWriteReport(
             context.GetMarketData(),
             parameterSensitivity
         )) {
-        LG_ERROR("Could not write report for strategy {}", definition.name);
+        throw std::runtime_error("Could not write report for strategy " + definition.name);
     }
 
     return result;
@@ -1234,6 +1237,7 @@ void writeParameterGridCsv(
             "Could not write parameter grid CSV: " + outputPath.string()
         );
     }
+    output.exceptions(std::ios::failbit | std::ios::badbit);
 
     writeCsvRow(
         output,
@@ -1303,6 +1307,7 @@ void writeStudyMetadataCsv(
             "Could not write study metadata CSV: " + outputPath.string()
         );
     }
+    output.exceptions(std::ios::failbit | std::ios::badbit);
 
     writeCsvRow(
         output,
@@ -1416,9 +1421,65 @@ double periodsPerYearFromTimeframe(const std::string& timeframe)
 } // namespace
 
 int main(int argc, char** argv)
+try
 {
-    (void)argc;
-    (void)argv;
+    namespace options = boost::program_options;
+    std::string databasePath;
+    std::string databaseTimeframe;
+    std::string benchmarkSymbol;
+    std::string studyId;
+    std::string outputRoot;
+    std::string grid;
+    std::string selectedStrategy;
+    Timestamp startDate;
+    Timestamp endDate;
+    double feeTaker;
+    options::options_description arguments("HTML research study options");
+    arguments.add_options()
+        ("help,h", "Show study options")
+        ("database", options::value(&databasePath)->default_value("storage/databases/1d_cmc.csv"), "Input CSV/SQLite")
+        ("start", options::value(&startDate)->default_value(20200101), "Cold start YYYYMMDD (inclusive)")
+        ("end", options::value(&endDate)->default_value(20200416), "Cutoff YYYYMMDD (inclusive)")
+        ("timeframe", options::value(&databaseTimeframe)->default_value("1d"), "Annualization timeframe")
+        ("benchmark", options::value(&benchmarkSymbol)->default_value("BTC"), "Annualization benchmark")
+        ("study-id", options::value(&studyId)->default_value(""), "New study directory name (default UTC timestamp)")
+        ("output-root", options::value(&outputRoot)->default_value("storage/backtests/sensitivity_results"), "Study parent directory")
+        ("strategy", options::value(&selectedStrategy)->default_value("PureRSI"), "Strategy name or all")
+        ("grid", options::value(&grid)->default_value("none"), "none, compact or full sensitivity grid")
+        ("fee-taker", options::value(&feeTaker)->default_value(0.0), "Market commission fraction per fill");
+    try {
+        options::variables_map values;
+        options::store(options::parse_command_line(argc, argv, arguments), values);
+        if (values.count("help")) {
+            std::cout << arguments << '\n';
+            return 0;
+        }
+        options::notify(values);
+        auto validDate = [](Timestamp date) {
+            const std::chrono::year_month_day calendarDate{
+                std::chrono::year(static_cast<int>(date / 10000)),
+                std::chrono::month((date / 100) % 100),
+                std::chrono::day(date % 100)
+            };
+            return date >= 19000101 && date <= 99991231 && calendarDate.ok();
+        };
+        if (!validDate(startDate) || !validDate(endDate) || startDate > endDate)
+            throw std::invalid_argument("Require valid start <= end dates in YYYYMMDD format");
+        if (grid != "none" && grid != "compact" && grid != "full")
+            throw std::invalid_argument("Grid must be none, compact or full");
+        if (!std::isfinite(feeTaker) || feeTaker < 0.0)
+            throw std::invalid_argument("Fee must be finite and non-negative");
+        if (studyId.empty()) {
+            studyId = utcTimestamp();
+            studyId.erase(std::remove(studyId.begin(), studyId.end(), ':'), studyId.end());
+            studyId = "current_html_" + studyId;
+        }
+        if (studyId == "." || studyId == ".." || studyId.find_first_of("/\\") != std::string::npos)
+            throw std::invalid_argument("Study ID must be a single directory name");
+    } catch (const std::exception& exception) {
+        std::cerr << "Invalid study options: " << exception.what() << '\n';
+        return 1;
+    }
 
     Logger::Instance().Setup(
         true,   // debug enabled
@@ -1428,23 +1489,22 @@ int main(int argc, char** argv)
         true    // include header
     );
 
-    const std::string databasePath =
-        "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/databases/1d_cmc.csv";
-
-    const std::string databaseTimeframe = "1d";
-    const std::string benchmarkSymbol = "BTC";
-    const double periodsPerYear = periodsPerYearFromTimeframe(databaseTimeframe);
+    double periodsPerYear;
+    try {
+        periodsPerYear = periodsPerYearFromTimeframe(databaseTimeframe);
+    } catch (const std::exception& exception) {
+        LG_ERROR("{}", exception.what());
+        return 1;
+    }
 
     constexpr double initialBalance = 100000.0;
 
-    // Keep identical to the validated RealTest-matching setup.
-    constexpr double feeTaker = 0.0;
+    // Zero-fee defaults follow the supported PureRSI research configuration.
     constexpr double feeMaker = 0.0;
     constexpr double commissionEntryFactor = 0.0;
     constexpr double commissionExitFactor = 0.0;
 
-    constexpr bool runParameterSensitivity = true;
-    const std::string studyId = "sensitivity_BIG_76480_20260810";
+    const bool runParameterSensitivity = grid != "none";
 
     const BacktestMetricsSettings metricsSettings{
         .periodsPerYear = periodsPerYear,
@@ -1453,9 +1513,7 @@ int main(int argc, char** argv)
         .annualizationBenchmarkSymbol = benchmarkSymbol
     };
 
-    const std::filesystem::path sensitivityRootDirectory =
-        "/mnt/c/Users/Juan/Documents/Python/algoTrading/"
-        "storage/backtests/sensitivity_results";
+    const std::filesystem::path sensitivityRootDirectory = outputRoot;
 
     const std::filesystem::path studyDirectory =
         sensitivityRootDirectory / studyId;
@@ -1463,13 +1521,30 @@ int main(int argc, char** argv)
     const std::filesystem::path reportsDirectory =
         studyDirectory / "reports";
 
+    if (std::filesystem::exists(studyDirectory)) {
+        LG_ERROR("Study directory already exists: {}. Choose a new study ID.", studyDirectory.string());
+        return 1;
+    }
+
     if (!ensureDirectoryExists(studyDirectory) ||
         !ensureDirectoryExists(reportsDirectory)) {
         return 1;
     }
 
     LG_INFO("Database loading started");
-    OHLCVData ohlcvData = loadDatabase(databasePath, 00000000, 20230101);
+    OHLCVData ohlcvData;
+    try {
+        if (!std::filesystem::is_regular_file(databasePath))
+            throw std::runtime_error("Input database does not exist: " + databasePath);
+        ohlcvData = loadDatabase(databasePath, startDate, endDate);
+        if (ohlcvData.data.empty())
+            throw std::runtime_error("No market data in the selected window");
+        if (!ohlcvData.data.contains(benchmarkSymbol))
+            throw std::runtime_error("Annualization benchmark is absent from the selected window");
+    } catch (const std::exception& exception) {
+        LG_ERROR("Study input failed: {}", exception.what());
+        return 1;
+    }
     LG_INFO("Database loaded successfully");
     LG_INFO(
         "Annualization settings: timeframe={} benchmark_symbol={} periods_per_year={}",
@@ -1478,7 +1553,7 @@ int main(int argc, char** argv)
         periodsPerYear
     );
 
-    const std::vector<StrategyDefinition> strategyDefinitions =
+    std::vector<StrategyDefinition> strategyDefinitions =
         makeStrategyDefinitions(
             feeMaker,
             feeTaker,
@@ -1486,6 +1561,55 @@ int main(int argc, char** argv)
             commissionExitFactor,
             benchmarkSymbol
         );
+
+    if (selectedStrategy != "all") {
+        std::erase_if(strategyDefinitions, [&](const auto& definition) {
+            return definition.name != selectedStrategy;
+        });
+    }
+    if (strategyDefinitions.empty()) {
+        LG_ERROR("Strategy is unavailable in this target: {}", selectedStrategy);
+        return 1;
+    }
+    if (grid == "compact") {
+        // Bounded signal study: 2 lengths x 2 entries x 2 exits = 8 runs.
+        // Include the baseline and reject entry <= exit through the normal CSV path.
+        for (auto& definition : strategyDefinitions) {
+            if (definition.name != "PureRSI") {
+                for (auto& parameter : definition.sensitivityParameters) {
+                    parameter.enabled = false;
+                    parameter.minimum = parameterOr(definition.currentParameters, parameter.key, 0.0);
+                    parameter.maximum = parameter.minimum;
+                    parameter.spacing = 1.0;
+                    if (parameter.key == "xH" || parameter.key == "fastMovingAverageLength" ||
+                        parameter.key == "atrLength" || parameter.key == "donchianLookback" ||
+                        parameter.key == "useMarketStateFilter") {
+                        parameter.enabled = true;
+                        parameter.maximum += 1.0;
+                    }
+                    if (parameter.key == "atrMultiplier") {
+                        parameter.enabled = true;
+                        parameter.spacing = 0.5;
+                        parameter.maximum += 0.5;
+                    }
+                }
+                continue;
+            }
+            definition.sensitivityParameters = makeSensitivityParameters({
+                {"rsiLength", "RSI length", 7.0, 8.0, 1.0, true},
+                {"rsiEntry", "RSI entry", 70.0, 80.0, 10.0, true},
+                {"rsiExit", "RSI exit", 60.0, 70.0, 10.0, true},
+                {"quantityPercent", "Quantity (%)", 10.0, 10.0, 1.0, false},
+                {"maxPositionsOpen", "Maximum open positions", 10.0, 10.0, 1.0, false}
+            });
+        }
+    }
+    std::ofstream executionSettings(studyDirectory / "execution_settings.csv");
+    executionSettings.exceptions(std::ios::failbit | std::ios::badbit);
+    executionSettings << "runtime,start,end,grid,cutoff_policy\n";
+    executionSettings << (selectedStrategy == "XHBreakout" || selectedStrategy == "XHBreakout_ATR" || selectedStrategy == "all"
+        ? "current-lib-stop-entry," : "current-lib-next-open,");
+    executionSettings << startDate << ',' << endDate << ',' << grid << ",mark-open-positions\n";
 
     try {
         writeParameterGridCsv(
@@ -1613,5 +1737,12 @@ int main(int argc, char** argv)
         );
     }
 
-    return 0;
+    return std::any_of(sensitivityStats.begin(), sensitivityStats.end(), [](const auto& entry) {
+        return entry.second.failedRunCount > 0;
+    }) ? 1 : 0;
+}
+catch (const std::exception& exception)
+{
+    std::cerr << "Research study failed: " << exception.what() << '\n';
+    return 1;
 }

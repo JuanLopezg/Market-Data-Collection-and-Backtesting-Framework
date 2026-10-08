@@ -1,5 +1,5 @@
 ALGOTRADING - CURRENT HANDOFF
-Updated: 2026-10-07
+Updated: 2026-10-08
 Build environment: WSL. Repository source and current test output are authoritative.
 
 READING AND DOCUMENT OWNERSHIP
@@ -86,7 +86,8 @@ Required meaningful-core/cross-cutting gate:
   bash validation/step59_canonical_replay_release_gate.sh
 Expected compact fingerprint:
   94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2
-Latest readability/documentation validation: whole-project WSL build PASS (22 targets), Step59
+Accepted whole-project WSL build PASS (20 targets); latest research target/report
+checks PASS, Step59
 PASS (25/25 matches, zero differences, 50 fills, rerun/restart/dashboard/pacing),
 LIVE structural/clock/SQLite/identity/deploy audits and historical no-lookahead
 checks PASS. Current detailed evidence/limits are in CURRENT_STATE.md.
@@ -96,37 +97,157 @@ Older full-history evidence contains four explicitly reported differences and
 must not be described as a perfect match. Slow browser acceptance and live
 broker/database integration were not rerun by the readability changes.
 
-RESEARCH MIGRATION - EXACT NEXT TASK
-====================================
-Six programs still use research/src/legacy/runtime/:
-- backtesting_metrics_main_html_reports.cpp: metrics/HTML reporting;
-- btc_moving_average.cpp: benchmark moving-average experiments;
-- initial_strategy_parameters.cpp: parameter studies;
-- multi_strategy_main.cpp: combined strategy experiments;
-- stats.cpp: statistical/reporting studies;
-- testing_xhbreakout.cpp: breakout robustness experiments.
-Verify each capability/dependency against source before migrating it.
+RESEARCH AND REPOSITORY NAVIGATION
+=================================
+All six useful research consumers now use CURRENT lib APIs. The frozen runtime,
+comparison target and old conditional HTML implementation have been removed.
+Generated .ai navigation is available. Refresh with:
+  python3 tools/generate_ai_index.py
+Check freshness with the same command plus --check. Start at .ai/README.md.
+docs/codex/AI_INDEX.md owns generation scope/exclusions; maintained guides and
+source remain authoritative. The index contains paths, normalized hashes, literal
+Meson targets and C++ include links, with ambiguous headers kept as candidates.
+Generated outputs, credentials, frozen evidence and historical diagnostic tools
+are excluded; .ai/ remains ignored by Git. Daily host logging is implemented and
+locally tested and installed on the VPS; multi-day acceptance remains pending.
 
-Start by inventorying these consumers and migrating the HTML-report executable
-onto current lib APIs and economics while retaining useful reports/metrics.
-Build it and validate its output plus Step59. Continue consumer by consumer.
-Remove the frozen runtime only when no useful consumers still depend on it.
-Do not preserve old economic logic simply to keep legacy outputs identical.
+The source inventory is maintained in research/REPLAY.md. The HTML-report source
+now builds algotrading_research_html against CURRENT lib for PureRSI and
+research-only Donchian, XH and XH-ATR experiments, retaining
+CSV/HTML contracts, seeded Monte Carlo and full/compact parameter grids.
+The reporting gate checks explicit contract columns/sections and CURRENT
+accounting without compiling the removed economic implementation.
+CURRENT exports add execution settings, fill-derived trades and account history.
+All four HTML definitions and testing_xhbreakout.cpp now have CURRENT paths.
+Initial parameter studies and statistics now use CURRENT APIs for all seven
+families through shared research configurations. BTC moving-average reporting also
+uses the shared current short/momentum configurations. The scenario consumer now
+uses CURRENT APIs for all eight families, preserving distinct parameters, benchmarks,
+18 dataset definitions, isolated accounts and chart/correlation contracts. All useful
+consumers have current paths. Validation evidence belongs in CURRENT_STATE.md.
+
+Donchian retains close-based signals/ranking/filtering but now exits at next open
+instead of the frozen same-close fill. It is not a newly validated lib strategy.
+XH stops activate for one following processed bar, fill at max(trigger, open),
+preserve monetary amount on gaps, and expire if untriggered or the asset is absent.
+Completed-bar matching feeds actual fills into CURRENT lifecycle/accounting.
+XH/ATR exits are deferred to a later available open, removing the frozen future-bar
+lookup and same-close cutoff fallback. ATR ratchets reconstruct from actual entry
+and completed history, excluding entry-bar high. ATR entry eligibility is checked
+at signal close. These are research experiments, not validated catalog additions.
+Service JSON, unsupported adapters and durable schema v1 reject stop entries;
+disk restart and LIVE/canonical conditional routing are outside this migration.
+The XH robustness executable retains its distinct full grids, parameter medians,
+CSV metadata and invalid/failed accounting. Compact grids use the original
+enabled axes and spacings; defaults are a cold 107-day baseline-only run.
+Timed research signals observe actual campaigns and count observed asset bars.
+MRShort uses one-bar short stops and fill-sized protective covers, preserving its
+explicit entry-bar OHLC assumption. Timed market covers cancel their bracket.
+Initial full ranges/medians/HTML names remain; compact mode has 82 valid runs.
+Statistics retain logs and in-memory metrics. Both default to a bounded daily study.
+The BTC study retains its original SMA 10..200 step-5 axis for each strategy,
+CSV metadata/run counters and HTML reports. Defaults are bounded baseline-only;
+full sweeps require explicit selection. No separate filter toggle exists in source.
+Scenario report embedding/correlations live in research/src/common/scenario_reports.*.
+Defaults retain the original three enabled strategies, daily CMC and a cold bounded
+window. Other strategies/datasets are explicit selections. Intraday files may use
+synthetic daily-shaped keys; preserve them and express annualization in bar counts.
+Benchmark curves use the selected trading input; current fill accounting owns money.
+Research runtime migration is complete. Earlier economic comparisons remain in
+CURRENT_STATE.md as historical evidence. No useful consumer requires frozen economics.
+Keep generated artifacts and the local preservation archive excluded from Git.
 
 REMAINING PRODUCT WORK
 ======================
-After research migration: generate the .ai repository index/context layer,
-verify VPS equivalence, then private Hyperliquid TESTNET, shadow mode and eventual
-MAINNET readiness. Public venue metadata/symbol/rule visibility does not prove
-private authentication, balances, order/fill lifecycle or reconciliation.
-Refresh the captured Hyperliquid API assumptions before implementing integration.
+Research runtime migration and generated repository navigation are complete.
+docs/ROADMAP.md owns the ordered remaining work, including the user's dashboard,
+funding/collateral, Telegram, performance profiling and exchange-selection requirements.
+The bounded resource profile is available and its five-minute study passed:
+  python3 research/replay.py resources --days 100 --seconds 300 --open
+This reuses canonical dashboard replay in its own container while the separate
+synthetic service sandbox and dashboard background services remain running.
+It excludes setup, stops its own project and produces an offline CPU/RAM HTML graph.
+Original-data replay and synthetic service state must not be conflated.
+Local disk inventory is complete: selected image rows total about 1.26 GB before
+shared-layer deduplication, LIVE bundle 88.3 MiB, configured local market DB with
+WAL/SHM 6.14 MiB; most of the 6.44 GiB research data collection is not needed by LIVE.
+deploy/live/README.md owns the 24.5 GiB planning budget for a 60 GB disk and selected
+transfer scope. Daily host logs retain today/yesterday with a 50 MiB cap per file,
+trimming older diagnostics. Actual VPS space/growth is still pending, and durable
+message/trading/audit history needs separate monitoring.
+Current-data paper preparation is in deploy/paper_trading/: separate Compose state,
+PureRSI warmup, virtual funds, simulated backend and real-source dashboard.
+manage.py prepare/build/run operates it under WSL; run stops containers on Ctrl+C,
+preserving volumes. It publishes only open(T+1) outside completed feature bars,
+retaining service close(T) sizing. Simulated fills do not prove achievable prices,
+canonical sizing parity or perpetual collateral/funding economics.
+Infrastructure shows fresh CPU/RAM/disk and project container observations from
+a host-only JSON collector. No dashboard Docker socket; stale data is unavailable,
+process health is separate from trading readiness and clock sync is unmeasured.
+The paper VPS logging overlay covers all services using the two-day/50-MiB policy.
+See deploy/paper_trading/README.md. The user's Linux 2-vCPU/2-GB Lightsail VPS is
+now deployed at /opt/algotrading with fresh credentials, durable PAPER state,
+host monitoring, two-day/50-MiB logs and persistent systemd startup. The source/input
+transfer, eight destination runtime builds and bounded Step59 match are verified.
+AppArmor remains enabled with scoped receiver/writer permissions. Startup waits
+for the log listener; receiver restart does not stop PAPER. Dashboard market mounts
+are read-only to prevent observer-owned WAL/SHM from blocking the ingestion writer.
+Actual public-data no-order cycle, reboot/recovery, receiver append/restart and an
+isolated two-fill PAPER fixture passed. Clock NTP is checked on the host but remains
+unmeasured in the dashboard. Remote viewing uses an SSH tunnel on localhost:8093;
+local PAPER remains on 8092. CURRENT_STATE.md owns evidence and limitations.
+Next observe multi-day cycles and actual UTC log rollover; remaining fault,
+nonzero live-data fills, production trimming and full-backtest capacity stay pending.
+The local algotrading-paper stack and background monitor are now running. An actual
+public-data cycle through 2026-10-07 reached execution on 2026-10-08 with no signals,
+no orders and reconciled virtual cash/positions. Dashboard API/browser resource
+inspection passed. CURRENT_STATE.md records evidence and the local stop command.
+Live-readiness/reconciliation UI badges remain unverified/pending; do not interpret
+this local paper proof as private integration or VPS acceptance.
+Remaining fault/recreation/overnight-retention acceptance is deferred to the VPS
+at the user's request; keep the roadmap checks pending.
+Read validation/LOCAL_SERVICE_CAMPAIGN.md for isolated setup, bounded acceptance,
+duplicate delivery, checkpoint/outbox barriers, crash/recreation commands, logs,
+resource samples and cleanup. Its generated Compose topology derives from the
+historical service deployment and uses a simulated backend, never a private venue.
+Full-history capacity, real overnight retention and exhaustive fault acceptance
+remain distinct from preparation/smoke checks. Continue VPS logging/fault/capacity acceptance using
+deploy/live/README.md, Local-to-VPS equivalence acceptance. The comparison requires
+the current uncommitted source, matching replay inputs, configured build/toolchain,
+non-secret deployment settings and actual VPS evidence; local checks alone cannot
+accept a VPS. Compare Kraken/Hyperliquid
+perpetual coverage for the same top 50 Binance coins by volume over the last 25
+completed days, and verify BTC collateral/account eligibility before venue selection.
+Kraken is the likely first live venue; Hyperliquid is not the initial integration
+priority. Refresh authoritative venue rules when performing the analysis/integration.
+Unavailable intended perpetual markets must be skipped without unsupported fallback.
+Proceed through private test/demo integration, shadow, readiness and an explicitly
+authorized small live test; increase capital gradually only after acceptance.
+The unfinished exchange-selection note remains open rather than being invented.
+Public metadata does not prove private authentication/order/fill/reconciliation support.
 
-VPS deployment requirement (pending): persist service logs on the host, with dated
-files per service/day and automatic rotation/housekeeping. Keep the latest five days
-and delete older diagnostic logs so errors can be investigated without unbounded disk
-usage. Verify logs survive container restart/recreation, timestamps/service identities
-are clear, retention works and secrets are excluded. Current size-based rotation does
-not implement this five-day policy. See deploy/live/README.md, VPS log retention.
+Local transport/persistence integration has a bounded real-adapter fixture:
+  python3 validation/transport_persistence_integration_test.py
+It uses isolated NATS/PostgreSQL containers for transaction rollback and crash
+after commit before ACK, followed by abrupt infrastructure restarts and durable
+redelivery/deduplication checks. The caller owns economic fill deduplication.
+This does not accept the full deployed service pipeline, outbox/crash campaign,
+container recreation, private routing or VPS. Keep those roadmap checks pending.
+
+VPS logging implementation: deploy/live/logging/ contains a loopback rsyslog host
+receiver with a bounded Python diagnostic writer and a minute systemd cleanup timer.
+Keep today and yesterday per service, at most 50 MiB per file; trim oldest lines
+before appending beyond the cap and keep roughly the newest 25 MiB. No extra rotated
+archives are created. The user's two-day policy replaces the original five-day request.
+LIVE/dashboard
+logging overlays collect stdout/stderr, retain Docker inspection caches and disable
+unbounded optional C++ file output. Host files survive receiver/container recreation;
+credential-bearing messages are defensively filtered. Services must still never emit
+secrets, including into the upstream Docker cache. Local receiver/retention/Compose
+checks pass. VPS installation, receiver restart/append, cleanup and boot recovery
+pass; actual UTC rollover/trimming and sustained outage/disk acceptance remain
+pending. The base Compose topology retains size-only logging
+until its optional overlay is selected. See deploy/live/README.md, VPS log retention.
 
 Dashboard reads through its authenticated API: real/simulation/mock providers,
 bounded PG/SQLite/retained-event projections, SSE invalidations and isolated
@@ -136,6 +257,12 @@ implemented and does not resolve an alert or change trading readiness.
 Remaining gaps include runtime-owned cost basis/realized PnL, attributed unrealized
 PnL/equity history, full risk-transform diagnostics, private venue execution/
 reconciliation, normalized service heartbeat/control and host clock telemetry.
+The roadmap includes funding payments/receipts beyond trading fees; Overview axis,
+hover/zoom and timeframe/ALL fixes; Pipeline/Risk investigations; Infrastructure
+completeness/readability; setup/testing of the existing Telegram adapter; Manual
+Control execution testing after integration; and Live vs. Expected against the
+existing simplest PureRSI fast backtest. Profile complete-backtest CPU/RAM locally
+and on VPS, then shadow/live usage. These are pending requirements, not completion claims.
 See dashboard/docs/REAL_DATA_SOURCE_MAP.md and actual provider/server code.
 
 RESEARCH BACKLOG PRESERVED FROM THE OLD PERSONAL NOTES
@@ -156,8 +283,34 @@ XH breakout: XH 50 -> 30, fast MA 5, momentum length 30.
 PureRSI note: RSI length 7, entry 80, exit 70, ranker RSI length 7.
 Use actual config files and validated strategy definitions for active values.
 
+PAPER QUOTE-VOLUME SELECTION
+============================
+PAPER now defaults to config/strategies/pure_rsi_quote_volume.json: the top 20 by
+SMA(QuoteVolume,25) inside the current Binance 24h quote-volume top-50 candidate set.
+Binance completed-kline field 7 is actual turnover in USDT. The writer adds nullable
+ohlcv_data.quote_volume and backfills the bounded warmup history. Base volume is
+preserved; older CSV/SQLite data has unavailable quote turnover, never volume*close.
+The original pure_rsi_signal.json/canonical research baseline keeps the historical source Volume field.
+Strategy requires available quote history; dashboard explicitly labels the metric,
+flags missing quote rows, and joins durable signals only after the configured
+QUOTE_VOLUME_FROM boundary. Its rolling baseline excludes prior metric cycles.
+The VPS cutover is 20261008; completed 20261007 checkpoints and the 100,000 virtual
+cash account were preserved. All 13 services and dashboard ranking were verified;
+new-metric signals await the next completed daily candle. Accepted validation and
+deployment evidence belong in CURRENT_STATE.md.
+Existing deployment migration preserves all checkpoints, fills, accounts and NATS
+consumer state; the guarded configuration identity must be migrated deliberately
+with database backups. Do not clear state or replay the previous completed cycle.
+CURRENT_STATE.md owns destination acceptance and the effective candle boundary.
+
 DOCUMENTATION AND VALIDATION HYGIENE
 ===================================
+Deferred deployment preference: after the current PAPER observation period,
+prepare versioned locally validated Docker-image tar releases instead of routine
+repository transfers and VPS compilation. Preserve VPS credentials/volumes and
+retain a compatible previous release for rollback. docs/ROADMAP.md owns details;
+do not implement this or change the running deployment merely to record the plan.
+
 Obsolete shared-clock suites, removed distributed-harness suites and one-time
 clock audit reports were deleted. Their tests do not apply to current services.
 Current validation/README.md distinguishes release, component, source and real

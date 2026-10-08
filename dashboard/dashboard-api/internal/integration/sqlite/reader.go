@@ -54,15 +54,17 @@ func (CLIRunner) QueryJSON(ctx context.Context, databasePath, query string) ([]b
 }
 
 type ReaderConfig struct {
-	DatabasePath string
-	Timeout      time.Duration
-	Runner       QueryRunner
+	DatabasePath       string
+	Timeout            time.Duration
+	Runner             QueryRunner
+	IncludeQuoteVolume bool
 }
 
 type Reader struct {
-	databasePath string
-	timeout      time.Duration
-	runner       QueryRunner
+	databasePath       string
+	timeout            time.Duration
+	runner             QueryRunner
+	includeQuoteVolume bool
 }
 
 type RankingRow struct {
@@ -72,13 +74,14 @@ type RankingRow struct {
 }
 
 type Bar struct {
-	Pair   string  `json:"pair"`
-	Date   uint64  `json:"date"`
-	Open   float64 `json:"open"`
-	High   float64 `json:"high"`
-	Low    float64 `json:"low"`
-	Close  float64 `json:"close"`
-	Volume float64 `json:"volume"`
+	Pair        string   `json:"pair"`
+	Date        uint64   `json:"date"`
+	Open        float64  `json:"open"`
+	High        float64  `json:"high"`
+	Low         float64  `json:"low"`
+	Close       float64  `json:"close"`
+	Volume      float64  `json:"volume"`
+	QuoteVolume *float64 `json:"quote_volume"`
 }
 
 type Integrity struct {
@@ -101,7 +104,7 @@ func NewReader(cfg ReaderConfig) *Reader {
 	if cfg.Runner == nil {
 		cfg.Runner = CLIRunner{}
 	}
-	return &Reader{databasePath: strings.TrimSpace(cfg.DatabasePath), timeout: cfg.Timeout, runner: cfg.Runner}
+	return &Reader{databasePath: strings.TrimSpace(cfg.DatabasePath), timeout: cfg.Timeout, runner: cfg.Runner, includeQuoteVolume: cfg.IncludeQuoteVolume}
 }
 
 // LoadStrategyWindow mirrors the bounded canonical strategy read: latest
@@ -163,7 +166,8 @@ func (r *Reader) LoadStrategyWindow(ctx context.Context, canonicalTopN, historyD
 
 	inList := quotedStringList(symbols)
 	barsSQL := fmt.Sprintf(
-		`SELECT pair, date, open, high, low, close, volume FROM ohlcv_data WHERE date BETWEEN %d AND %d AND pair IN (%s) ORDER BY pair ASC, date ASC;`,
+		`SELECT pair, date, open, high, low, close, volume%s FROM ohlcv_data WHERE date BETWEEN %d AND %d AND pair IN (%s) ORDER BY pair ASC, date ASC;`,
+		r.quoteVolumeColumn(),
 		result.StartDate, result.LatestDate, inList,
 	)
 	if err := r.queryRows(ctx, barsSQL, &result.Bars); err != nil {
@@ -213,6 +217,13 @@ func (r *Reader) queryRows(parent context.Context, query string, destination any
 		return fmt.Errorf("decode SQLite JSON result: %w", err)
 	}
 	return nil
+}
+
+func (r *Reader) quoteVolumeColumn() string {
+	if r.includeQuoteVolume {
+		return ", quote_volume"
+	}
+	return ""
 }
 
 func quotedStringList(values []string) string {
@@ -327,7 +338,8 @@ func (r *Reader) LoadBehaviourWindow(ctx context.Context, canonicalTopN, history
 	}
 
 	barsSQL := fmt.Sprintf(
-		`SELECT pair, date, open, high, low, close, volume FROM ohlcv_data WHERE date BETWEEN %d AND %d AND pair IN (%s) ORDER BY pair ASC, date ASC;`,
+		`SELECT pair, date, open, high, low, close, volume%s FROM ohlcv_data WHERE date BETWEEN %d AND %d AND pair IN (%s) ORDER BY pair ASC, date ASC;`,
+		r.quoteVolumeColumn(),
 		warmupDate, result.LatestDate, quotedStringList(symbols),
 	)
 	if err := r.queryRows(ctx, barsSQL, &result.Bars); err != nil {

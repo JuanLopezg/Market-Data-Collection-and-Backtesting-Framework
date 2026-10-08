@@ -14,22 +14,27 @@ import (
 )
 
 type realInfrastructure struct {
-	Readiness       string                    `json:"readiness"`
-	ReadinessReason string                    `json:"readinessReason"`
-	LastUpdated     string                    `json:"lastUpdated"`
-	VPS             realVPS                   `json:"vps"`
-	Containers      []realContainer           `json:"containers"`
-	Services        []realService             `json:"services"`
-	Postgres        realPostgres              `json:"postgres"`
-	NATS            realNATS                  `json:"nats"`
-	Exchange        realExchange              `json:"exchange"`
-	Outbox          realOutbox                `json:"outbox"`
-	Dependencies    []realReadinessDependency `json:"dependencies"`
-	SourceMode      string                    `json:"sourceMode,omitempty"`
-	SourceNote      string                    `json:"sourceNote,omitempty"`
+	TelemetryObservedAt string                    `json:"telemetryObservedAt,omitempty"`
+	Readiness           string                    `json:"readiness"`
+	ReadinessReason     string                    `json:"readinessReason"`
+	LastUpdated         string                    `json:"lastUpdated"`
+	VPS                 realVPS                   `json:"vps"`
+	Containers          []realContainer           `json:"containers"`
+	Services            []realService             `json:"services"`
+	Postgres            realPostgres              `json:"postgres"`
+	NATS                realNATS                  `json:"nats"`
+	Exchange            realExchange              `json:"exchange"`
+	Outbox              realOutbox                `json:"outbox"`
+	Dependencies        []realReadinessDependency `json:"dependencies"`
+	SourceMode          string                    `json:"sourceMode,omitempty"`
+	SourceNote          string                    `json:"sourceNote,omitempty"`
 }
 
 type realVPS struct {
+	RAMLabel         string  `json:"ramLabel,omitempty"`
+	DiskLabel        string  `json:"diskLabel,omitempty"`
+	DiskAvailableGiB float64 `json:"diskAvailableGiB,omitempty"`
+	ClockObserved    bool    `json:"clockObserved"`
 	CPUPct           float64 `json:"cpuPct"`
 	RAMPct           float64 `json:"ramPct"`
 	DiskPct          float64 `json:"diskPct"`
@@ -54,12 +59,13 @@ type realContainer struct {
 }
 
 type realService struct {
-	Service   string `json:"service"`
-	Ready     bool   `json:"ready"`
-	Mode      string `json:"mode"`
-	LastEvent string `json:"lastEvent"`
-	LagLabel  string `json:"lagLabel"`
-	Health    string `json:"health"`
+	ProcessRunning *bool  `json:"processRunning,omitempty"`
+	Service        string `json:"service"`
+	Ready          bool   `json:"ready"`
+	Mode           string `json:"mode"`
+	LastEvent      string `json:"lastEvent"`
+	LagLabel       string `json:"lagLabel"`
+	Health         string `json:"health"`
 }
 
 type realPostgres struct {
@@ -168,7 +174,7 @@ func (p *Real) loadInfrastructure(ctx context.Context) realInfrastructure {
 		ReadinessReason: "Partial real observability: source health is real; full trading readiness is not asserted yet.",
 		LastUpdated:     checkedAt.Format("15:04:05 UTC"),
 		SourceMode:      "REAL",
-		SourceNote:      "PostgreSQL/NATS/market-data are queried read-only. Step 34 adds a separate public Hyperliquid TESTNET metadata probe; execution-gateway/private connectivity, auth, order routing and host/container liveness remain unwired.",
+		SourceNote:      "PostgreSQL/NATS/market-data are queried read-only. Optional host telemetry is collected separately. Private exchange connectivity and live routing readiness are not asserted.",
 		VPS: realVPS{
 			NetworkRXLabel:   "Not wired",
 			NetworkTXLabel:   "Not wired",
@@ -210,6 +216,20 @@ func (p *Real) loadInfrastructure(ctx context.Context) realInfrastructure {
 		})
 	}
 
+	p.applyHostTelemetry(&result, checkedAt)
+	if p.runtimeMode() == "PAPER" {
+		result.SourceMode = "PAPER"
+		result.ReadinessReason = "Paper trading uses virtual funds and simulated fills; private exchange readiness is not asserted."
+		result.SourceNote = "Current public market data and simulated execution. " + result.SourceNote
+		result.Exchange.Venue = "SIMULATED"
+		result.Exchange.ReconnectState = "Local simulated backend; no private venue connection"
+		for _, row := range result.Containers {
+			if row.Name == "simulated-exchange" {
+				result.Exchange.Connected = row.State == "RUNNING"
+				result.Exchange.State = row.Health
+			}
+		}
+	}
 	return result
 }
 

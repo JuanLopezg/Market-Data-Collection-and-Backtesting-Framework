@@ -1,0 +1,28 @@
+[Unit]
+Description=Persistent daily algoTrading container logs
+After=network.target
+Before=docker.service
+
+[Service]
+Type=simple
+User=syslog
+Group=adm
+UMask=0027
+RuntimeDirectory=algotrading-logs
+StateDirectory=algotrading-logs
+LogsDirectory=algotrading
+LogsDirectoryMode=0750
+ExecStartPre=/usr/sbin/rsyslogd -N1 -f /etc/algotrading/logging/rsyslog.conf
+ExecStart=/usr/sbin/rsyslogd -n -i /run/algotrading-logs/rsyslog.pid -f /etc/algotrading/logging/rsyslog.conf
+# Docker's syslog driver connects during container creation; wait for the listener.
+ExecStartPost=/usr/bin/timeout 15 /bin/bash -c 'until (: > /dev/tcp/127.0.0.1/5514) 2>/dev/null; do sleep 0.1; done'
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+RestrictAddressFamilies=AF_INET AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

@@ -161,20 +161,29 @@ func configuredProvider() (provider.Provider, error) {
 		if err != nil || venuePublicTimeout <= 0 || venuePublicTimeout > 10*time.Second {
 			return nil, fmt.Errorf("invalid DASHBOARD_HYPERLIQUID_PUBLIC_TIMEOUT")
 		}
-		if executionVenue != "HYPERLIQUID" {
+		paper := strings.TrimSpace(os.Getenv("DASHBOARD_RUNTIME_MODE")) == "PAPER" &&
+			executionVenue == "SIMULATED" && venueEnvironment == "PAPER" && gatewayMode == "backend"
+		if strings.TrimSpace(os.Getenv("DASHBOARD_RUNTIME_MODE")) == "PAPER" && !paper {
+			return nil, fmt.Errorf("PAPER requires SIMULATED venue, PAPER environment and backend gateway")
+		}
+		if !paper && executionVenue != "HYPERLIQUID" {
 			return nil, fmt.Errorf("Step 36 current audited execution venue must be HYPERLIQUID, got %q", executionVenue)
 		}
-		if venueEnvironment != "TESTNET" {
+		if !paper && venueEnvironment != "TESTNET" {
 			return nil, fmt.Errorf("Step 36 target environment must be TESTNET, got %q", venueEnvironment)
 		}
-		if gatewayMode != "hyperliquid-dry-run" {
+		if !paper && gatewayMode != "hyperliquid-dry-run" {
 			return nil, fmt.Errorf("Step 36 gateway mode must remain hyperliquid-dry-run, got %q", gatewayMode)
 		}
-		if err := validateHyperliquidTestnetInfoURL(venuePublicInfoURL); err != nil {
+		if paper {
+			venuePublicInfoURL = ""
+		} else if err := validateHyperliquidTestnetInfoURL(venuePublicInfoURL); err != nil {
 			return nil, err
 		}
 
 		return provider.NewReal(provider.RealConfig{
+			HostMetricsFile:        strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_FILE")),
+			HostMetricsProject:     strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_PROJECT")),
 			PostgreSQLDSN:          strings.TrimSpace(os.Getenv("DASHBOARD_POSTGRES_DSN")),
 			NATSURL:                strings.TrimSpace(os.Getenv("DASHBOARD_NATS_URL")),
 			NATSMonitorURL:         strings.TrimSpace(os.Getenv("DASHBOARD_NATS_MONITOR_URL")),
@@ -183,6 +192,8 @@ func configuredProvider() (provider.Provider, error) {
 			RuntimeMode:            strings.TrimSpace(envOr("DASHBOARD_RUNTIME_MODE", "LIVE")),
 			MarketTopN:             marketTopN,
 			MarketHistoryDays:      marketHistoryDays,
+			QuoteVolume:            os.Getenv("DASHBOARD_QUOTE_VOLUME") == "true",
+			QuoteVolumeFrom:        strings.TrimSpace(os.Getenv("DASHBOARD_QUOTE_VOLUME_FROM")),
 			StrategyUniverseN:      strategyUniverseN,
 			ProbeTimeout:           probeTimeout,
 			ExecutionVenue:         executionVenue,

@@ -31,6 +31,12 @@ struct ExecutionOrder {
     Coin coin;
     OrderSide side = OrderSide::Buy;
     double quantity = 0.0;
+    // Long entry quantity is capped at the trigger and shrinks on an upward gap.
+    // Short entry quantity is sized at min(trigger, execution open) by the planner.
+    double entry_stop_price = 0.0;
+    // Research short-entry bracket. The child covers only the actual filled units.
+    double protective_stop_price = 0.0;
+    OrderID parent_order_id = 0;
 
     ExecutionOrder() = default;
 
@@ -60,6 +66,24 @@ struct ExecutionOrder {
     double signedQuantity() const
     {
         return side == OrderSide::Buy ? quantity : -quantity;
+    }
+
+    void validateConditional() const
+    {
+        if ((entry_stop_price != 0.0 || protective_stop_price != 0.0 || parent_order_id != 0) &&
+            (!std::isfinite(quantity) || quantity <= 0.0))
+            throw std::invalid_argument("Conditional quantity must be finite and positive");
+        if (!std::isfinite(entry_stop_price) || entry_stop_price < 0.0 ||
+            !std::isfinite(protective_stop_price) || protective_stop_price < 0.0)
+            throw std::invalid_argument("Conditional prices must be finite and non-negative");
+        if (entry_stop_price != 0.0 && active_from <= created_at)
+            throw std::invalid_argument("Stop entry must activate after its decision close");
+        if (parent_order_id != 0 && (side != OrderSide::Buy || entry_stop_price != 0.0 ||
+            protective_stop_price == 0.0 || active_from < created_at))
+            throw std::invalid_argument("Invalid protective short cover");
+        if (parent_order_id == 0 && protective_stop_price != 0.0 &&
+            (side != OrderSide::Sell || entry_stop_price == 0.0))
+            throw std::invalid_argument("Protective stop must attach to a short stop entry");
     }
 };
 
@@ -111,7 +135,7 @@ struct TrackedOrder {
 
     double pendingSignedQuantity() const
     {
-        if (isTerminalExecutionOrderStatus(status))
+        if (isTerminalExecutionOrderStatus(status) || request.parent_order_id != 0)
             return 0.0;
 
         const double remaining = remainingQuantity();
