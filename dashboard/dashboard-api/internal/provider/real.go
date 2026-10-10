@@ -29,6 +29,9 @@ type RealConfig struct {
 	MarketTopN             int
 	MarketHistoryDays      int
 	QuoteVolume            bool
+	PaperComparisonFile    string
+	RSIEntry               float64
+	RSIExit                float64
 	QuoteVolumeFrom        string
 	StrategyUniverseN      int
 	ProbeTimeout           time.Duration

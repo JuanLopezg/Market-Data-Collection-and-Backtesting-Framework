@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -21,6 +22,8 @@ const version = "0.46.3"
 const maxSecretFileBytes = 8 * 1024
 
 func main() {
+	testMessage := flag.Bool("test-message", false, "send one explicit Telegram setup test and exit")
+	flag.Parse()
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg, err := loadConfig()
 	if err != nil {
@@ -46,6 +49,27 @@ func main() {
 		logger.Error("configure notifier sink", "sink", cfg.sink, "error", err)
 		os.Exit(1)
 	}
+	if *testMessage {
+		if cfg.sink != "TELEGRAM" {
+			logger.Error("test-message requires the TELEGRAM sink")
+			os.Exit(1)
+		}
+		// This explicit command sends only a setup message, without replaying alerts.
+		ctx, cancel := context.WithTimeout(context.Background(), cfg.telegramRequestTimeout)
+		defer cancel()
+		identity := "telegram-test:" + time.Now().UTC().Format(time.RFC3339Nano)
+		_, err := sink.Deliver(ctx, notifier.Notification{
+			NotificationID: identity, SourceEventID: identity, AlertID: "telegram-setup-test",
+			Severity: "INFO", Transition: "TEST", Service: "AlertNotifier",
+			Title: "algoTrading Telegram setup test", Detail: "Manual setup test only. No trading order or alert lifecycle state was changed.",
+		})
+		if err != nil {
+			logger.Error("Telegram setup test failed", "error", err)
+			os.Exit(1)
+		}
+		logger.Info("Telegram setup test accepted; check the configured chat")
+		return
+	}
 
 	engine, err := notifier.NewEngine(store, sink, cfg.minSeverity, cfg.cooldown)
 	if err != nil {
@@ -67,12 +91,7 @@ func main() {
 
 	sweep := func() {
 		now := time.Now().UTC()
-		if _, err := alertstore.ReadHeartbeat(cfg.alertStoreDir); err != nil {
-			_ = store.RecordFailure(now, 0, sink.Name(), cfg.minSeverity, cfg.cooldown, err)
-			logger.Warn("notifier source heartbeat unavailable", "error", err)
-			return
-		}
-		events, err := alertstore.ReadLifecycleEvents(cfg.alertStoreDir, cfg.sourceMaxBytes)
+		events, err := readFreshAlertEvents(cfg.alertStoreDir, cfg.sourceMaxBytes, now)
 		if err != nil {
 			_ = store.RecordFailure(now, 0, sink.Name(), cfg.minSeverity, cfg.cooldown, err)
 			logger.Warn("notifier source replay failed", "error", err)
@@ -112,6 +131,21 @@ func main() {
 			sweep()
 		}
 	}
+}
+
+func readFreshAlertEvents(dir string, maxBytes int64, now time.Time) ([]alertstore.LifecycleEvent, error) {
+	heartbeat, err := alertstore.ReadHeartbeat(dir)
+	if err != nil {
+		return nil, err
+	}
+	lastSuccess, err := time.Parse(time.RFC3339Nano, heartbeat.LastSuccessAt)
+	if err != nil || now.Sub(lastSuccess) > 90*time.Second || lastSuccess.Sub(now) > 30*time.Second {
+		return nil, errors.New("alert watchdog heartbeat is missing, stale or ahead of the host clock")
+	}
+	if heartbeat.LastError != "" {
+		return nil, errors.New("alert watchdog last sweep failed; waiting for healthy source evidence")
+	}
+	return alertstore.ReadLifecycleEvents(dir, maxBytes)
 }
 
 type config struct {

@@ -143,6 +143,9 @@ func configuredRealProvider() (*provider.Real, error) {
 		MarketHistoryDays:      historyDays,
 		QuoteVolume:            os.Getenv("DASHBOARD_QUOTE_VOLUME") == "true",
 		QuoteVolumeFrom:        strings.TrimSpace(os.Getenv("DASHBOARD_QUOTE_VOLUME_FROM")),
+		PaperComparisonFile:    strings.TrimSpace(os.Getenv("DASHBOARD_PAPER_COMPARISON_FILE")),
+		RSIEntry:               envFloat("DASHBOARD_RSI_ENTRY", 80),
+		RSIExit:                envFloat("DASHBOARD_RSI_EXIT", 70),
 		StrategyUniverseN:      universeN,
 		ProbeTimeout:           probeTimeout,
 		ExecutionVenue:         venue,
@@ -183,4 +186,12 @@ func envOr(name, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func envFloat(name string, fallback float64) float64 {
+	value, err := strconv.ParseFloat(os.Getenv(name), 64)
+	if err != nil {
+		return fallback
+	}
+	return value
 }

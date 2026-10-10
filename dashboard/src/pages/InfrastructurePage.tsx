@@ -35,11 +35,12 @@ export function InfrastructurePage() {
   if (!data) return <div className="page-loading">Loading infrastructure…</div>
 
   const vpsObserved = data.vps.state !== 'UNKNOWN'
-  const clockObserved = vpsObserved && (data.vps.clockObserved ?? data.sourceMode !== 'REAL')
+  const clockObserved = vpsObserved && data.vps.clockObserved === true
   const metric = (value: number) => value < 0 ? '—' : value.toString()
   const serviceState = (row: InfrastructureData['services'][number]) => {
+    if (row.processState) return row.processState
     if (row.processRunning !== undefined) return row.processRunning ? 'YES' : 'NO'
-    if (data.telemetryObservedAt) return '—'
+    if (data.telemetryObservedAt || data.sourceMode === 'REAL' || data.sourceMode === 'PAPER') return 'UNKNOWN'
     return row.ready ? 'YES' : 'NO'
   }
 
@@ -49,16 +50,27 @@ export function InfrastructurePage() {
       <div className={`readiness-chip readiness-chip--${data.readiness.toLowerCase()}`}><CheckCircle2 size={14}/><span>{data.sourceMode === 'PAPER' ? 'PAPER · VIRTUAL FUNDS' : `TRADING ${data.readiness}`}</span></div>
     </div>
 
-    {data.sourceMode && <div className="real-source-banner"><strong>{data.sourceMode} DATA</strong><span>{data.sourceNote}</span></div>}
+    {data.sourceMode && <div className="infra-source-note"><strong>{data.sourceMode} DATA</strong><span>{data.sourceNote}</span></div>}
 
     {data.telemetryObservedAt && <p className="muted">Host and container observation: {new Date(data.telemetryObservedAt).toLocaleString()} · refreshes every 10 seconds</p>}
     <section className="infra-summary">
       <div className="mini-metric"><span>CPU</span><strong>{vpsObserved ? `${data.vps.cpuPct.toFixed(0)}%` : '—'}</strong>{vpsObserved ? <Meter value={data.vps.cpuPct}/> : <small>No fresh observation</small>}</div>
       <div className="mini-metric"><span>RAM</span><strong>{vpsObserved ? `${data.vps.ramPct.toFixed(0)}%` : '—'}</strong>{vpsObserved ? <><Meter value={data.vps.ramPct}/><small>{data.vps.ramLabel}</small></> : <small>No fresh observation</small>}</div>
       <div className="mini-metric"><span>Disk</span><strong>{vpsObserved ? `${data.vps.diskPct.toFixed(0)}%` : '—'}</strong>{vpsObserved ? <><Meter value={data.vps.diskPct}/><small>{data.vps.diskLabel}{data.vps.diskAvailableGiB !== undefined && ` · ${data.vps.diskAvailableGiB.toFixed(1)} GiB available`}</small></> : <small>No fresh observation</small>}</div>
-      <div className="mini-metric"><span>Clock sync</span><strong className={!clockObserved ? 'muted' : data.vps.clockSynced ? 'positive' : 'negative'}>{!clockObserved ? 'UNKNOWN' : data.vps.clockSynced ? 'SYNCED' : 'DRIFT'}</strong><small>{data.vps.clockOffsetLabel}</small></div>
-      <div className="mini-metric"><span>Uptime</span><strong>{data.vps.uptimeLabel}</strong><small>{vpsObserved ? `Load ${data.vps.load1m.toFixed(2)}` : 'Host metrics not wired'}</small></div>
+      <div className="mini-metric"><span>Host clock sync</span><strong className={!clockObserved ? 'muted' : data.vps.clockSynced ? 'positive' : 'negative'}>{!clockObserved ? 'UNKNOWN' : data.vps.clockSynced ? 'SYNCED' : 'UNSYNCED'}</strong><small>{data.vps.clockOffsetLabel}</small></div>
+      <div className="mini-metric"><span>Host uptime</span><strong>{data.vps.uptimeLabel}</strong><small>{vpsObserved ? `Host load ${data.vps.load1m.toFixed(2)}; not trading-process uptime` : 'Host metrics not wired'}</small></div>
     </section>
+
+    {data.tradingProgress && <Panel title="Daily Trading Progress" right={<HealthPill state={data.tradingProgress.state}/>}>
+      <p className="infra-progress-note">{data.tradingProgress.detail}</p>
+      <div className="infra-detail-grid">
+        <div><span>Expected completed candle (UTC)</span><strong>{data.tradingProgress.expectedCloseDate || 'Not evaluated'}</strong></div>
+        <div><span>Last persisted decision</span><strong>{data.tradingProgress.lastDecisionDate || 'Not observed'}</strong></div>
+        <div><span>Expected plan application (UTC)</span><strong>{data.tradingProgress.expectedOpenDate || 'Not evaluated'}</strong></div>
+        <div><span>Last applied plan, including no-order plans</span><strong>{data.tradingProgress.lastPlanDate || 'Not observed'}</strong></div>
+        <div className="infra-detail-grid__wide"><span>State persisted at (separate from business progress)</span><strong>{data.tradingProgress.persistedAt || 'Not observed'}</strong></div>
+      </div>
+    </Panel>}
 
     {data.sourceMode !== 'PAPER' && <>
     <Panel title="Step 32 · Pre-Testnet Safety Gate" right={<span className={safetyGate?.status === 'BLOCKED' ? 'negative' : safetyGate?.status === 'WARN' ? 'warning' : safetyGate ? 'positive' : 'muted'}>{safetyGate ? safetyGate.status : safetyGateError ? 'UNAVAILABLE' : 'CHECKING'}</span>}>
@@ -240,12 +252,12 @@ export function InfrastructurePage() {
     </section>
 
     <Panel title="Containers" right={<span className="muted">Runtime health and resource footprint</span>}>
-      <div className="table-wrap"><table className="wide-table infra-table"><thead><tr><th>Container</th><th>State</th><th>Health</th><th>Restarts</th><th>Uptime</th><th>CPU</th><th>RAM</th><th>Last heartbeat</th></tr></thead><tbody>{data.containers.length === 0 && <tr><td colSpan={8} className="muted">No fresh container observation is available.</td></tr>}{data.containers.map(row => <tr key={row.name}><td><strong>{row.name}</strong></td><td>{row.state}</td><td><HealthPill state={row.health}/></td><td className={row.restartCount > 0 ? 'warning' : ''}>{row.restartCount}</td><td>{row.uptimeLabel}</td><td>{row.cpuPct < 0 ? '—' : `${row.cpuPct.toFixed(1)}%`}</td><td>{row.ramMb < 0 ? '—' : `${row.ramMb.toFixed(1)} MiB`}</td><td>{row.lastHeartbeat}</td></tr>)}</tbody></table></div>
+      <div className="table-wrap"><table className="wide-table infra-table"><thead><tr><th>Container</th><th>State</th><th>Health</th><th>Restarts</th><th>Uptime</th><th>CPU</th><th>RAM</th><th>Container observation</th></tr></thead><tbody>{data.containers.length === 0 && <tr><td colSpan={8} className="muted">No fresh container observation is available.</td></tr>}{data.containers.map(row => <tr key={row.name}><td><strong>{row.name}</strong></td><td>{row.state}</td><td><HealthPill state={row.health}/></td><td className={row.restartCount > 0 ? 'warning' : ''}>{row.restartCount}</td><td>{row.uptimeLabel}</td><td>{row.cpuPct < 0 ? '—' : `${row.cpuPct.toFixed(1)}%`}</td><td>{row.ramMb < 0 ? '—' : `${row.ramMb.toFixed(1)} MiB`}</td><td>{row.lastHeartbeat}</td></tr>)}</tbody></table></div>
     </Panel>
 
     <section className="infra-grid infra-grid--services">
       <Panel title="Trading Services" right={<span className="muted">Observed health · current mode · pipeline progress is separate</span>}>
-        <div className="table-wrap"><table><thead><tr><th>Service</th><th>{data.telemetryObservedAt ? 'Running' : 'Ready'}</th><th>Mode</th><th>{data.telemetryObservedAt ? 'Observed at' : 'Last event'}</th><th>Lag</th><th>Health</th></tr></thead><tbody>{data.services.length === 0 && <tr><td colSpan={6} className="muted">No durable runtime snapshot observed yet; process liveness is not inferred.</td></tr>}{data.services.map(row => <tr key={row.service}><td><strong>{row.service}</strong></td><td className={(row.processRunning ?? row.ready) ? 'positive' : 'negative'}>{serviceState(row)}</td><td>{row.mode}</td><td>{row.lastEvent}</td><td>{row.lagLabel}</td><td><HealthPill state={row.health}/></td></tr>)}</tbody></table></div>
+        <div className="table-wrap"><table><thead><tr><th>Service</th><th>Process state</th><th>Mode</th><th>{data.telemetryObservedAt ? 'Observed at' : 'Last event'}</th><th>Observation detail</th><th>Health</th></tr></thead><tbody>{data.services.length === 0 && <tr><td colSpan={6} className="muted">No durable runtime snapshot observed yet; process liveness is not inferred.</td></tr>}{data.services.map(row => <tr key={row.service}><td><strong>{row.service}</strong></td><td className={row.processRunning === undefined ? 'muted' : row.processRunning ? 'positive' : 'negative'}>{serviceState(row)}</td><td>{row.mode}</td><td>{row.lastEvent}</td><td>{row.lagLabel}</td><td><HealthPill state={row.health}/></td></tr>)}</tbody></table></div>
       </Panel>
 
       <div className="infra-stack">

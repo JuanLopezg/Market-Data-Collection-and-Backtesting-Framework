@@ -65,6 +65,11 @@ type readinessShellSnapshot struct {
 }
 
 type readinessInfraSnapshot struct {
+	VPS struct {
+		ClockObserved    bool   `json:"clockObserved"`
+		ClockSynced      bool   `json:"clockSynced"`
+		ClockOffsetLabel string `json:"clockOffsetLabel"`
+	} `json:"vps"`
 	Postgres struct {
 		State            string `json:"state"`
 		PersistenceState string `json:"persistenceState"`
@@ -429,7 +434,14 @@ func buildGlobalReadiness(in globalReadinessInputs) globalReadinessResponse {
 	add("account-snapshot", "Private account / balances / open orders", "DEFERRED", false, []string{"PRIVATE_TESTNET", "LIVE"}, "Steps 38–41", "Requires the deferred private Hyperliquid account boundary.")
 	add("order-lifecycle", "Submit / cancel / fills / private reconciliation", "DEFERRED", false, []string{"PRIVATE_TESTNET", "LIVE"}, "Steps 39–41", "No private signing or order command path exists yet; routing must remain disabled.")
 	add("service-liveness", "Common trading-service liveness/control contract", "DEFERRED", false, []string{"PRIVATE_TESTNET", "LIVE", "REPLAY_MOCK"}, "future runtime contract", "Durable state is observed, but process liveness/paused state is not yet independently authoritative.")
-	add("clock-sync", "Host clock synchronization", "DEFERRED", false, []string{"LIVE"}, "future host/VPS telemetry", "Host clock sync is not inferred from inside the dashboard container.")
+	clockState, clockDetail := "DEFERRED", "Host NTP observation unavailable; clock sync is not inferred from inside the dashboard container."
+	if in.InfraErr == nil && in.Infra.VPS.ClockObserved {
+		clockState, clockDetail = "BLOCKED", in.Infra.VPS.ClockOffsetLabel
+		if in.Infra.VPS.ClockSynced {
+			clockState = "PASS"
+		}
+	}
+	add("clock-sync", "Host clock synchronization", clockState, false, []string{"LIVE"}, "/api/infrastructure", clockDetail)
 	add("mock-exchange", "Mock exchange adapter for full replay + dashboard", "DEFERRED", false, []string{"REPLAY_MOCK"}, "future Venue Adapter boundary", "After Hyperliquid private lifecycle integration, add MockExchangeAdapter behind the same canonical venue contract; do not create a dashboard-only replay shortcut.")
 
 	for i := range requirements {

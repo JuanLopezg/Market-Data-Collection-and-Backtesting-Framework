@@ -172,6 +172,7 @@ func buildRealMarketData(
 		cfg = configs[0]
 	}
 	liquidityLabel := "SMA Volume 25"
+	entry, exit := cfg.rsiThresholds()
 	if cfg.QuoteVolume {
 		liquidityLabel = "SMA Quote Volume 25 (USDT)"
 	}
@@ -284,7 +285,7 @@ func buildRealMarketData(
 		if aligned {
 			signalValue = signals[candidate.asset]
 		}
-		signal, signalState, slotState, diagnostic, tone := describeMarketSignal(candidate.rsi, signalValue, aligned, activeSignals)
+		signal, signalState, slotState, diagnostic, tone := describeMarketSignal(candidate.rsi, signalValue, aligned, activeSignals, cfg)
 		rows = append(rows, realUniverseDiagnostic{
 			Rank: i + 1, Asset: candidate.asset, SMAVolumeLabel: formatCompactVolume(candidate.smaVolume),
 			RSI: safeDisplayRSI(candidate.rsi), Signal: signal, SignalState: signalState,
@@ -338,8 +339,8 @@ func buildRealMarketData(
 		CandidateRejections: rejections,
 		StrategySnapshot: realMarketStrategySnapshot{
 			Ranking:      fmt.Sprintf("Top %d by %s inside canonical top-%d", universeN, liquidityLabel, canonicalTopN),
-			EntryRule:    "RSI(7) > 80",
-			ExitRule:     "RSI(7) < 70",
+			EntryRule:    fmt.Sprintf("RSI(7) > %g", entry),
+			ExitRule:     fmt.Sprintf("RSI(7) < %g", exit),
 			MaxPositions: "10 persistent signals",
 			Semantics:    "LEVEL",
 		},
@@ -354,12 +355,17 @@ func buildRealMarketData(
 	}
 }
 
-func describeMarketSignal(rsi, signal float64, aligned bool, activeSignals int) (string, string, string, string, string) {
+func describeMarketSignal(rsi, signal float64, aligned bool, activeSignals int, configs ...RealConfig) (string, string, string, string, string) {
+	cfg := RealConfig{}
+	if len(configs) > 0 {
+		cfg = configs[0]
+	}
+	entry, exit := cfg.rsiThresholds()
 	if !aligned {
 		return "FLAT", "NOT ALIGNED", "UNKNOWN", "Indicator is real; durable signal state is not joined because its checkpoint is not aligned to this market cycle.", "warn"
 	}
 	if signal > 1e-12 {
-		if isFinite(rsi) && rsi < pureRSIExit {
+		if isFinite(rsi) && rsi < exit {
 			return "LONG", "ACTIVE", "OCCUPIED", "Persisted long signal is active, but recomputed RSI is below the exit threshold; inspect cycle timing if this persists.", "warn"
 		}
 		return "LONG", "ACTIVE", "OCCUPIED", "Persisted PureRSI long signal is active for this exact cycle.", "normal"
@@ -370,13 +376,13 @@ func describeMarketSignal(rsi, signal float64, aligned bool, activeSignals int) 
 	if !isFinite(rsi) {
 		return "FLAT", "NO INDICATOR", "FREE", "Insufficient bounded history to compute RSI(7).", "warn"
 	}
-	if rsi > pureRSIEntry {
+	if rsi > entry {
 		if activeSignals >= pureRSIMaxSignals {
 			return "FLAT", "BLOCKED", "FREE", "Entry condition is met, but the persistent signal cap is already occupied.", "warn"
 		}
 		return "FLAT", "CHECK", "FREE", "Entry condition is met but the aligned durable signal is flat; investigate checkpoint/config parity.", "bad"
 	}
-	if rsi < pureRSIExit {
+	if rsi < exit {
 		return "FLAT", "FLAT", "FREE", "Below the exit threshold; no long exposure requested.", "normal"
 	}
 	return "FLAT", "WAIT", "FREE", "Between entry and exit thresholds with no active persistent signal.", "normal"

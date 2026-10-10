@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { DataLoadError } from '../components/DataLoadError'
 import { useDashboardResource } from '../hooks/useDashboardResource'
 import type { HealthState, OverviewData, PositionAlignmentState, ReconciliationState } from '../types/dashboard'
-import { LineChart } from '../components/LineChart'
+import { chartRanges, LineChart } from '../components/LineChart'
+import type { ChartRange } from '../components/LineChart'
 import { Panel } from '../components/Panel'
 import { StatCard } from '../components/StatCard'
 import { StatePill } from '../components/StatePill'
@@ -32,6 +34,7 @@ function pnlClass(available?: boolean, value?: number) {
 }
 
 export function OverviewPage() {
+  const [range, setRange] = useState<ChartRange>('ALL')
   const { data, error, retry } = useDashboardResource('getOverview')
   if (error) return <DataLoadError title="Overview unavailable" error={error} onRetry={retry}/>
   if (!data) return <div className="page-loading">Loading overview…</div>
@@ -53,9 +56,11 @@ export function OverviewPage() {
         <h1>Overview</h1>
         <p>{isReal ? 'Verified operational snapshot from canonical read-only sources.' : 'Portfolio performance, system health and trading activity at a glance.'}</p>
       </div>
-      {isReal
-        ? <div className="overview-cycle"><span>REAL DATA</span><strong>{data.canonicalCycle || 'Current snapshot'}</strong></div>
-        : <div className="range"><button>1D</button><button className="active">7D</button><button>30D</button><button>90D</button><button>1Y</button></div>}
+      <div className="overview-range">
+        {isReal && <div className="overview-cycle"><span>REAL DATA</span><strong>{data.canonicalCycle || 'Current snapshot'}</strong></div>}
+        <div className="range" role="group" aria-label="Chart timeframe">{chartRanges.map(value => <button key={value} className={range === value ? 'active' : ''} aria-pressed={range === value} onClick={() => setRange(value)}>{value}</button>)}</div>
+        <small className="muted">Charts only · window ends at each series' latest observation</small>
+      </div>
     </div>
 
     {isReal && <div className="real-source-banner">
@@ -82,14 +87,14 @@ export function OverviewPage() {
     </section>
 
     <section className="grid-2-1">
-      <Panel title="Equity Curve" right={<span className="muted">Canonical ledger required</span>}>
-        {equityAvailable && data.equityCurve.length > 1
-          ? <LineChart data={data.equityCurve}/>
+      <Panel title="Equity Curve" right={<span className="muted">{equityAvailable ? 'Source-provided history · USD' : 'Canonical ledger required'}</span>}>
+        {equityAvailable && data.equityCurve.length > 0
+          ? <LineChart key={range} data={data.equityCurve} range={range}/>
           : <div className="overview-unavailable"><strong>Not available yet</strong><span>No canonical ledger / marked-equity history is wired, so Step 23 does not invent an equity curve.</span></div>}
       </Panel>
       <Panel title="Live vs Expected Behaviour" right={<Link className="text-link" to="/live-vs-expected">Details →</Link>}>
-        {liveExpectedAvailable && data.liveExpected.length > 1
-          ? <LineChart data={data.liveExpected} compact/>
+        {liveExpectedAvailable && data.liveExpected.length > 0
+          ? <LineChart key={range} data={data.liveExpected} range={range} compact/>
           : <div className="overview-unavailable overview-unavailable--compact"><strong>Baseline not wired yet</strong><span>Historical baseline comparison is reserved for the Live vs Expected step.</span></div>}
       </Panel>
     </section>

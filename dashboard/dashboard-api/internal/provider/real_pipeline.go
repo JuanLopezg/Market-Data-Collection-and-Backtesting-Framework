@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -24,6 +25,8 @@ type realPipelineData struct {
 	SourceMode      string                  `json:"sourceMode"`
 	SourceUpdatedAt string                  `json:"sourceUpdatedAt"`
 	SourceNote      string                  `json:"sourceNote"`
+	EvidenceState   string                  `json:"evidenceState"`
+	EmptyReason     string                  `json:"emptyReason,omitempty"`
 }
 
 type realPipelineStage struct {
@@ -135,6 +138,9 @@ type pipelineAssetFacts struct {
 
 func (p *Real) pipeline(ctx context.Context) (realPipelineData, error) {
 	checkpoint, err := p.postgres.LatestPipelineCheckpoint(ctx)
+	if errors.Is(err, pgstore.ErrPipelineCheckpointNotPresent) {
+		return realPipelineData{CycleLabel: "Waiting for first durable decision", LatestDecision: "Pending", SourceMode: "REAL", EvidenceState: "PENDING", Rows: []realPipelineAssetRow{}, Traces: map[string]realWhyTrace{}, EmptyReason: "PortfolioRisk has not persisted a decision checkpoint yet. Check Strategy/Account input availability; an empty matrix is not a completed no-order cycle.", SourceNote: "Waiting for the first persisted Strategy/Account/Risk lineage. No cycle or asset outcome is inferred."}, nil
+	}
 	if err != nil {
 		return realPipelineData{}, fmt.Errorf("read durable pipeline checkpoint: %w", err)
 	}
@@ -189,6 +195,7 @@ func buildRealPipeline(checkpoint pgstore.PipelineCheckpoint, state pgstore.Runt
 	referenceCloses := map[string]float64{}
 	if checkpoint.PlanningRequest != nil {
 		for coin, close := range checkpoint.PlanningRequest.ReferenceCloses.Closes {
+			assets[coin] = struct{}{} // Observed assets remain visible on quiet/HOLD cycles.
 			referenceCloses[coin] = close
 		}
 		for _, strategy := range checkpoint.PlanningRequest.State.StrategyPositions {
@@ -267,10 +274,14 @@ func buildRealPipeline(checkpoint pgstore.PipelineCheckpoint, state pgstore.Runt
 		actionable = len(checkpoint.Plan.SubmitOrders) + len(checkpoint.Plan.CancelOrderIDs)
 	}
 	plannerState := "Planner checkpoint is present for the same decision timestamp."
+	evidenceState := "OBSERVED"
 	if checkpoint.Plan == nil || checkpoint.PlanningRequest == nil {
+		evidenceState = "PENDING"
 		plannerState = "Planner checkpoint is not present for this decision timestamp; planner stages are shown as PENDING, never inferred."
 	}
 	return realPipelineData{
+		EvidenceState:   evidenceState,
+		EmptyReason:     "This checkpoint contains no asset-level intents, holdings or planner reference prices. No change is different from missing processing evidence.",
 		CycleLabel:      fmt.Sprintf("REAL · decision %d", checkpoint.Timestamp),
 		LatestDecision:  formatTradingTimestamp(checkpoint.Timestamp),
 		UniverseSize:    universe,
@@ -292,6 +303,11 @@ func pipelineFactsForAsset(coin string, checkpoint pgstore.PipelineCheckpoint, s
 		facts.currentNotional = facts.currentQty * facts.referenceClose
 	}
 	if len(planned) == 0 {
+		if checkpoint.Plan == nil {
+			facts.plannedAction = "Planner pending"
+			facts.exchangeState, facts.exchangeStage, facts.exchangeDetail = "PENDING", "PENDING", "No same-cycle plan has been persisted; no-order completion cannot be inferred."
+			return facts
+		}
 		facts.plannedAction = "NO ORDER"
 		facts.exchangeState, facts.exchangeStage, facts.exchangeDetail = "NONE", "OK", "No submit order was persisted for this asset in the cycle."
 		return facts
@@ -326,16 +342,19 @@ func pipelineRow(checkpoint pgstore.PipelineCheckpoint, facts pipelineAssetFacts
 		deltaLabel = signedUSD(facts.deltaNotional)
 	}
 	approved := formatUSD(facts.targetNotional)
+	if !pipelineHasTarget(checkpoint, facts.asset) {
+		approved = "HOLD / no new target"
+	}
 	stages := []realPipelineStage{
 		{ID: "market", Label: "Market / Universe", Value: priceOrUnavailable(facts.referenceClose), Detail: marketDetail(checkpoint), State: stageState(checkpoint.StrategyUpdate != nil, "OK", "PENDING")},
 		{ID: "indicators", Label: "Indicators", Value: "Not persisted", Detail: "RSI(7) and liquidity rank are calculated upstream but are not durable fields in the daily checkpoint.", State: "PENDING"},
-		{ID: "signal", Label: "Signal", Value: facts.signal, Detail: facts.signalDetail, State: "OK"},
+		{ID: "signal", Label: "Signal", Value: facts.signal, Detail: facts.signalDetail, State: stageState(facts.signal != "UNKNOWN", "OK", "PENDING")},
 		{ID: "raw-target", Label: "Raw target", Value: "Not persisted", Detail: "Pre-risk target is not a canonical persisted checkpoint field.", State: "PENDING"},
 		{ID: "vol-target", Label: "Vol targeting", Value: "Not persisted", Detail: "Intermediate volatility scaling is not persisted; only the approved DecisionBatch is durable.", State: "PENDING"},
 		{ID: "risk", Label: "Risk / Decision", Value: approved, Detail: "Approved target notional from durable PortfolioRisk DecisionBatch.", State: "OK"},
 		{ID: "approved-target", Label: "Approved target", Value: approved, Detail: "Canonical target_notional_usd aggregated across strategies.", State: "OK"},
 		{ID: "current-position", Label: "Current position", Value: currentLabel, Detail: "Virtual strategy position at OrderPlanner request time.", State: stageState(checkpoint.PlanningRequest != nil, "OK", "PENDING")},
-		{ID: "delta", Label: "Required delta", Value: deltaLabel, Detail: "Durable planned notional delta; no quantity conversion is inferred here.", State: stageState(len(facts.plannedOrders) > 0, "CHANGED", "OK")},
+		{ID: "delta", Label: "Required delta", Value: deltaLabel, Detail: "Durable planned notional delta; no quantity conversion is inferred here.", State: stageState(plannerReady, stageState(len(facts.plannedOrders) > 0, "CHANGED", "OK"), "PENDING")},
 		{ID: "order-plan", Label: "Order plan", Value: facts.plannedAction, Detail: "OrderPlanner durable plan at the same decision timestamp.", State: stageState(plannerReady, "OK", "PENDING")},
 		{ID: "exchange", Label: "Execution state", Value: facts.exchangeState, Detail: facts.exchangeDetail, State: facts.exchangeStage},
 	}
@@ -397,6 +416,9 @@ func pipelineTrace(checkpoint pgstore.PipelineCheckpoint, state pgstore.RuntimeS
 		planningRevision = strconv.FormatUint(checkpoint.PlanningRequest.State.StateRevision, 10)
 	}
 	approved := formatUSD(facts.targetNotional)
+	if !pipelineHasTarget(checkpoint, facts.asset) {
+		approved = "HOLD / no new target"
+	}
 	return realWhyTrace{
 		CycleID: cycleID, Asset: facts.asset,
 		Market:    realWhyMarket{Price: priceOrUnavailable(facts.referenceClose), Universe: universe, LiquidityRank: "Not persisted", Freshness: freshness},
@@ -430,9 +452,18 @@ func aggregateSignal(batch tradingwire.StrategyIntentBatch, coin string) (string
 		label = "SHORT"
 	}
 	if len(parts) == 0 {
-		return label, "No explicit signal entry for this asset in the persisted StrategyIntentBatch."
+		return "UNKNOWN", "No explicit signal entry for this observed asset; absence is not proof of an emitted FLAT signal."
 	}
 	return label, strings.Join(parts, " · ")
+}
+
+func pipelineHasTarget(checkpoint pgstore.PipelineCheckpoint, asset string) bool {
+	for _, strategy := range checkpoint.Decision.Strategies {
+		if _, ok := strategy.TargetNotionalUSD[asset]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func aggregateExecutionStates(states []string) (string, string, string) {

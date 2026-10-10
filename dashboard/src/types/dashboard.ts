@@ -497,7 +497,7 @@ export interface PipelineAssetRow {
   rankLabel?: string
   rsi: number
   rsiLabel?: string
-  signal: 'LONG' | 'SHORT' | 'FLAT'
+  signal: 'LONG' | 'SHORT' | 'FLAT' | 'UNKNOWN'
   rawTargetPct: number
   rawTargetLabel?: string
   volTargetPct: number
@@ -602,6 +602,8 @@ export interface EndToEndProof {
 }
 
 export interface PipelineData {
+  evidenceState?: 'OBSERVED' | 'PARTIAL' | 'PENDING'
+  emptyReason?: string
   proof?: EndToEndProof
   cycleLabel: string
   sourceMode?: 'MOCK' | 'REAL'
@@ -754,7 +756,7 @@ export interface ExchangeAllocation {
 
 export interface RealRiskAsset {
   asset: string
-  signal: 'LONG' | 'SHORT' | 'FLAT'
+  signal: 'LONG' | 'SHORT' | 'FLAT' | 'UNKNOWN'
   approvedWeightLabel: string
   targetNotionalLabel: string
   strategyLabel: string
@@ -763,6 +765,17 @@ export interface RealRiskAsset {
 }
 
 export interface RiskData {
+  configurationFingerprint?: string
+  riskEvaluations?: {
+    strategyId: number; name: string; state: string; sizer: string; capital: string
+    grossLimit: string; assetLimit: string; grossAfterAssetCap: string; grossScale: string
+    volatilityState: string; volatilityTarget: string; rawSignalVolatility: string; volatilityScale: string
+    preConstraintVolatility: string; postConstraintVolatility: string
+    assets: { asset: string; sizedWeight: string; assetCappedWeight: string; approvedWeight: string; currentQuantity: string; action: string; reduction: string }[]
+  }[]
+  evidenceKind?: 'DURABLE_DECISION' | 'REPLAY_SNAPSHOT' | 'PENDING'
+  decisionDetail?: string
+  policies?: { strategyId: number; name: string; allocationLabel: string; sizer: string; grossLimitLabel: string; assetLimitLabel: string; rebalance: string }[]
   riskState: string
   portfolioLimits: RiskLimitMetric[]
   assetLimits: AssetRiskLimit[]
@@ -895,6 +908,7 @@ export interface ContainerHealthRow {
 }
 
 export interface TradingServiceHealthRow {
+  processState?: 'RUNNING' | 'STOPPED' | 'MISSING' | 'UNKNOWN'
   processRunning?: boolean
   service: string
   ready: boolean
@@ -951,6 +965,15 @@ export interface ReadinessDependency {
 }
 
 export interface InfrastructureData {
+  tradingProgress?: {
+    state: InfrastructureHealth
+    detail: string
+    expectedCloseDate: string
+    expectedOpenDate: string
+    lastDecisionDate: string
+    lastPlanDate: string
+    persistedAt: string
+  }
   telemetryObservedAt?: string
   readiness: HealthState
   readinessReason: string
@@ -1103,6 +1126,16 @@ export interface LiveVsExpectedAnomaly {
 }
 
 export interface LiveVsExpectedData {
+  paperComparison?: {
+    contractVersion: string
+    status: string
+    checkedAt: string
+    profile: string
+    fingerprint: string
+    note: string
+    rows: { date: string; liveEquity: number; expectedEquity: number; liveCash: number; expectedCash: number; signalDifferences: number }[]
+    positions: { asset: string; liveQuantity: number; expectedQuantity: number; liveUsd: number; expectedUsd: number }[]
+  }
   contractVersion: string
   status: string
   validated: boolean

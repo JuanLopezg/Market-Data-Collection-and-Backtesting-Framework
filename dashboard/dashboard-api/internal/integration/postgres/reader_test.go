@@ -175,3 +175,22 @@ func TestReaderLedgerFillsReturnsFullAggregatesAndBoundedRows(t *testing.T) {
 		t.Fatalf("ledger query must be aggregate + bounded detail: %v", runner.queries)
 	}
 }
+
+func TestExportedRiskPolicyIdentityStaysPairedWithCheckpoint(t *testing.T) {
+	meta := tradingwire.ContractMetadata{SchemaVersion: 1, MessageID: "m"}
+	encode := func(value any) string { raw, _ := json.Marshal(value); return string(raw) }
+	identity := `{"strategies":[]}` + "\nmarket_data_mode=canonical-sqlite-v1"
+	raw, _ := json.Marshal(map[string]any{"timestamp": 20261007, "portfolioConfig": identity,
+		"signalsPayload":  encode(tradingwire.StrategyIntentBatch{Metadata: meta, Timestamp: 20261007}),
+		"accountPayload":  encode(tradingwire.AccountSnapshot{Metadata: meta, Timestamp: 20261007}),
+		"decisionPayload": encode(tradingwire.DecisionBatch{Metadata: meta, DecisionTimestamp: 20261007})})
+	runner := &fakeRunner{responses: [][]byte{raw}}
+	reader := NewReader(Config{DSN: "host=postgres dbname=fixture", Runner: runner})
+	checkpoint, err := reader.LatestPipelineCheckpoint(context.Background())
+	if err != nil || checkpoint.PortfolioConfig != identity {
+		t.Fatalf("policy identity lost: %v %+v", err, checkpoint)
+	}
+	if !strings.Contains(runner.queries[0], "portfolio_risk_service_metadata") {
+		t.Fatal("policy was not read from persisted service identity")
+	}
+}

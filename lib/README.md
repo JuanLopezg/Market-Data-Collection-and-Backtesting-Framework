@@ -14,6 +14,13 @@ window. PAPER opts into the quote profile; the accepted historical baseline does
 
 ## Reading the code
 
+`PortfolioRiskEngine::onSignals` accepts an optional evaluation output for service
+observability: sized/capped weights, volatility diagnostics and rebalance actions.
+`RiskConstraints::apply` can capture the exact intermediate cap/scaling results.
+The default path and emitted DecisionBatch are unchanged. Diagnostic volatility
+failure stays unavailable and does not prevent otherwise valid trading. HOLD keeps
+existing quantity; a capped evaluation is not an instruction to resize it.
+
 For the simulation that is compared with RealTest, read these files in order:
 
 1. `research/replay.py` — public CLI, build, date window and RealTest comparison.

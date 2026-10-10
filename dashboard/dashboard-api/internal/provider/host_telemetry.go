@@ -19,6 +19,14 @@ type hostTelemetry struct {
 	VPS           *realVPS        `json:"vps"`
 	Containers    []realContainer `json:"containers"`
 	Errors        []string        `json:"errors"`
+	Processes     []hostProcess   `json:"processes"`
+}
+
+type hostProcess struct {
+	Service        string `json:"service"`
+	ProcessRunning *bool  `json:"processRunning"`
+	ProcessState   string `json:"processState"`
+	Detail         string `json:"detail"`
 }
 
 func readHostTelemetry(path, project string, now time.Time) (hostTelemetry, error) {
@@ -36,7 +44,7 @@ func readHostTelemetry(path, project string, now time.Time) (hostTelemetry, erro
 	if err != nil || now.Sub(observed) > 35*time.Second || observed.After(now.Add(5*time.Second)) {
 		return hostTelemetry{}, errors.New("Host telemetry is stale or misdated")
 	}
-	if result.SchemaVersion != 1 || result.VPS == nil || len(result.Containers) > 64 ||
+	if result.SchemaVersion != 1 || result.VPS == nil || len(result.Containers) > 64 || len(result.Processes) > 64 ||
 		(project != "" && result.Project != project) {
 		return hostTelemetry{}, errors.New("Host telemetry identity or schema invalid")
 	}
@@ -61,6 +69,19 @@ func readHostTelemetry(path, project string, now time.Time) (hostTelemetry, erro
 			return hostTelemetry{}, errors.New("Container telemetry invalid")
 		}
 	}
+	seen := map[string]bool{}
+	for _, row := range result.Processes {
+		if row.Service == "" || len(row.Service) > 128 || seen[row.Service] || len(row.Detail) > 512 ||
+			(row.ProcessState != "UNKNOWN" && row.ProcessState != "RUNNING" && row.ProcessState != "STOPPED" && row.ProcessState != "MISSING") ||
+			(row.ProcessState == "UNKNOWN" && row.ProcessRunning != nil) ||
+			(row.ProcessState != "UNKNOWN" && (row.ProcessRunning == nil || *row.ProcessRunning != (row.ProcessState == "RUNNING"))) {
+			return hostTelemetry{}, errors.New("Trading process telemetry invalid")
+		}
+		seen[row.Service] = true
+	}
+	if !result.VPS.ClockObserved && result.VPS.ClockSynced {
+		return hostTelemetry{}, errors.New("Clock synchronization lacks observation")
+	}
 	return result, nil
 }
 
@@ -77,11 +98,16 @@ func (p *Real) applyHostTelemetry(result *realInfrastructure, now time.Time) {
 	result.Containers = snapshot.Containers
 	result.TelemetryObservedAt = snapshot.ObservedAt
 	result.SourceNote += " " + snapshot.Scope + ". Host CPU is 0–100% of total capacity; container CPU 100% is one core. Container liveness does not prove trading readiness."
-	for _, row := range snapshot.Containers {
-		running := row.State == "RUNNING"
+	for _, row := range snapshot.Processes {
+		health := "UNKNOWN"
+		if row.ProcessState == "RUNNING" {
+			health = "HEALTHY"
+		} else if row.ProcessState == "STOPPED" || row.ProcessState == "MISSING" {
+			health = "CRITICAL"
+		}
 		result.Services = append(result.Services, realService{
-			Service: row.Name, Ready: false, ProcessRunning: &running,
-			Mode: p.runtimeMode(), LastEvent: snapshot.ObservedAt, LagLabel: "Process/container observation; pipeline progress is separate", Health: row.Health,
+			Service: row.Service, Ready: false, ProcessRunning: row.ProcessRunning, ProcessState: row.ProcessState,
+			Mode: p.runtimeMode(), LastEvent: snapshot.ObservedAt, LagLabel: row.Detail, Health: health,
 		})
 	}
 	for index := range result.Dependencies {
@@ -100,8 +126,42 @@ func (p *Real) applyHostTelemetry(result *realInfrastructure, now time.Time) {
 					state = "WARN"
 				}
 			}
+			if len(snapshot.Processes) == 0 && state != "CRITICAL" {
+				state = "UNKNOWN"
+			}
+			for _, row := range snapshot.Processes {
+				if row.ProcessState == "STOPPED" || row.ProcessState == "MISSING" {
+					state = "CRITICAL"
+					break
+				}
+				if row.ProcessState == "UNKNOWN" && state != "CRITICAL" {
+					state = "UNKNOWN"
+				}
+			}
+			for _, row := range snapshot.Containers {
+				switch row.Name {
+				case "market-data", "strategy", "portfolio-risk", "execution-state", "order-planner", "exchange-gateway", "simulated-exchange":
+					observed := false
+					for _, process := range snapshot.Processes {
+						observed = observed || process.Service == row.Name
+					}
+					if !observed && state != "CRITICAL" {
+						state = "UNKNOWN"
+					}
+				}
+			}
 			result.Dependencies[index].State = state
-			result.Dependencies[index].Reason = "Project-scoped container observation; business progress/readiness is separate"
+			result.Dependencies[index].Reason = "External trading executable observations; no in-loop heartbeat or trading readiness is inferred"
+		case "Clock sync":
+			state := "UNKNOWN"
+			if snapshot.VPS.ClockObserved {
+				state = "CRITICAL"
+				if snapshot.VPS.ClockSynced {
+					state = "HEALTHY"
+				}
+			}
+			result.Dependencies[index].State = state
+			result.Dependencies[index].Reason = snapshot.VPS.ClockOffsetLabel
 		}
 	}
 }

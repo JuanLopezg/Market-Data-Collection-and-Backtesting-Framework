@@ -177,6 +177,25 @@ func buildRealAlertsAudit(
 	}
 	appendInfraAlerts("PostgreSQL", infra.Postgres.State, infra.Postgres.PersistenceState, "Open Infrastructure")
 	appendInfraAlerts("NATS", infra.NATS.State, infra.NATS.AckHealthLabel, "Open Infrastructure")
+	if infra.TelemetryObservedAt != "" {
+		appendInfraAlerts("HostResources", infra.VPS.State,
+			fmt.Sprintf("CPU %.1f%%; RAM %.1f%%; disk %.1f%%, %.1f GiB available.", infra.VPS.CPUPct, infra.VPS.RAMPct, infra.VPS.DiskPct, infra.VPS.DiskAvailableGiB), "Open Infrastructure")
+		if infra.VPS.ClockObserved && !infra.VPS.ClockSynced {
+			alerts = append(alerts, realOperationalAlert{ID: "derived-host-clock-unsynchronized", Timestamp: infra.TelemetryObservedAt,
+				Severity: "WARN", Status: "ACTIVE", Service: "HostClock", EventType: "CLOCK_UNSYNCHRONIZED",
+				Title: "Host clock is not synchronized", Detail: "Fresh host NTP observation reports unsynchronized; clock offset is not measured.", LinkedContext: "Open Infrastructure"})
+		}
+		for _, service := range infra.Services {
+			if service.ProcessState == "STOPPED" || service.ProcessState == "MISSING" {
+				alerts = append(alerts, realOperationalAlert{ID: "derived-process-" + service.Service, Timestamp: infra.TelemetryObservedAt,
+					Severity: "CRITICAL", Status: "ACTIVE", Service: service.Service, EventType: "TRADING_PROCESS_UNAVAILABLE",
+					Title: "Expected trading process unavailable", Detail: "External host observation: " + service.ProcessState + ". Container presence does not establish application responsiveness.", LinkedContext: "Open Infrastructure"})
+			}
+		}
+	}
+	if infra.TradingProgress != nil {
+		appendInfraAlerts("DailyTradingProgress", infra.TradingProgress.State, infra.TradingProgress.Detail, "Open Infrastructure")
+	}
 
 	if reconErr != nil {
 		alerts = append(alerts, realOperationalAlert{

@@ -233,6 +233,7 @@ def build_fast_runner(force: bool = False) -> Path:
 
     current = locate()
     source_paths = [ROOT / rel for rel in FAST_RUN_SOURCES]
+    source_paths.extend([ROOT / 'research/src/common/paper_baseline.cpp', ROOT / 'research/src/common/paper_baseline.h'])
     stale = force or current is None or sources_newer(current, source_paths)
     if stale:
         meson = shutil.which("meson")

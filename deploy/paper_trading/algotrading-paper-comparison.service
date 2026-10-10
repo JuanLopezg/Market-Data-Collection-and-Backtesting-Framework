@@ -1,0 +1,18 @@
+[Unit]
+Description=Read-only PAPER forward comparison against CURRENT fast PureRSI
+After=docker.service algotrading-paper.service
+Wants=algotrading-paper.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/algotrading
+ExecStart=/usr/bin/python3 deploy/paper_trading/comparison.py --output storage/paper_trading/comparison --image algotrading-runtime:activity
+Restart=on-failure
+RestartSec=15
+Nice=10
+CPUQuota=40%
+MemoryMax=384M
+UMask=0022
+
+[Install]
+WantedBy=multi-user.target

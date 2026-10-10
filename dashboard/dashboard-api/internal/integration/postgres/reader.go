@@ -140,7 +140,9 @@ type RuntimeState struct {
 // latest PortfolioRisk decision. Optional Strategy/Planner payloads are joined
 // only at the exact same business timestamp; the reader never mixes cycles.
 type PipelineCheckpoint struct {
+	RiskDiagnostics *RiskDiagnostics
 	Timestamp       uint64
+	PortfolioConfig string
 	StrategyUpdate  *tradingwire.MarketDataUpdated
 	Signals         tradingwire.StrategyIntentBatch
 	Account         tradingwire.AccountSnapshot
@@ -276,6 +278,8 @@ func (r *Reader) LatestPipelineCheckpoint(ctx context.Context) (PipelineCheckpoi
 	}
 	var envelope struct {
 		Timestamp              uint64  `json:"timestamp"`
+		PortfolioConfig        string  `json:"portfolioConfig"`
+		RiskDiagnosticsPayload *string `json:"riskDiagnosticsPayload"`
 		StrategyUpdatePayload  *string `json:"strategyUpdatePayload"`
 		SignalsPayload         string  `json:"signalsPayload"`
 		AccountPayload         string  `json:"accountPayload"`
@@ -305,9 +309,28 @@ func (r *Reader) LatestPipelineCheckpoint(ctx context.Context) (PipelineCheckpoi
 		return result, fmt.Errorf("pipeline checkpoint payload timestamps do not match anchor %d", envelope.Timestamp)
 	}
 	result.Timestamp = envelope.Timestamp
+	result.PortfolioConfig = envelope.PortfolioConfig
 	result.Signals = signals
 	result.Account = account
 	result.Decision = decision
+	if envelope.RiskDiagnosticsPayload != nil && *envelope.RiskDiagnosticsPayload != "" {
+		result.RiskDiagnostics, err = decodeRiskDiagnostics(*envelope.RiskDiagnosticsPayload, envelope.Timestamp, envelope.PortfolioConfig)
+		if err != nil {
+			return PipelineCheckpoint{}, err
+		}
+		if len(result.RiskDiagnostics.Strategies) != len(signals.Strategies) {
+			return PipelineCheckpoint{}, fmt.Errorf("risk diagnostics strategy count does not match cycle inputs")
+		}
+		for _, evaluated := range result.RiskDiagnostics.Strategies {
+			matched := false
+			for _, input := range signals.Strategies {
+				matched = matched || (input.StrategyID == evaluated.StrategyID && input.StrategyName == evaluated.Name)
+			}
+			if !matched {
+				return PipelineCheckpoint{}, fmt.Errorf("risk diagnostics strategy does not match cycle inputs")
+			}
+		}
+	}
 
 	if envelope.StrategyUpdatePayload != nil && strings.TrimSpace(*envelope.StrategyUpdatePayload) != "" {
 		value, err := tradingwire.DecodeMarketDataUpdated([]byte(*envelope.StrategyUpdatePayload))
@@ -531,14 +554,19 @@ const fillSummarySQL = `SELECT json_build_object(
 )::text FROM trading_fills;`
 
 const pipelineCheckpointSQL = `WITH risk AS (
-  SELECT timestamp, signals_payload, account_payload, decision_payload
-  FROM portfolio_risk_live_decision_checkpoint
+  SELECT timestamp, signals_payload, account_payload, decision_payload,
+    to_jsonb(checkpoint)->>'risk_diagnostics_payload' AS risk_diagnostics_payload
+  FROM portfolio_risk_live_decision_checkpoint checkpoint
   WHERE state_key = 'portfolio-risk-live-sqlite-v1'
   ORDER BY timestamp DESC
   LIMIT 1
 )
 SELECT json_build_object(
   'timestamp', risk.timestamp,
+  'portfolioConfig', (
+    SELECT portfolio_config FROM portfolio_risk_service_metadata
+    WHERE state_key = 'portfolio-risk-live-sqlite-v1' LIMIT 1
+  ),
   'strategyUpdatePayload', (
     SELECT update_payload FROM strategy_market_update_checkpoint
     WHERE state_key = 'strategy-service-market-db-v1' AND timestamp = risk.timestamp
@@ -547,6 +575,7 @@ SELECT json_build_object(
   'signalsPayload', risk.signals_payload,
   'accountPayload', risk.account_payload,
   'decisionPayload', risk.decision_payload,
+  'riskDiagnosticsPayload', risk.risk_diagnostics_payload,
   'planningRequestPayload', (
     SELECT request_payload FROM order_planner_live_notional_checkpoint
     WHERE state_key = 'order-planner-live-notional-v1' AND timestamp = risk.timestamp

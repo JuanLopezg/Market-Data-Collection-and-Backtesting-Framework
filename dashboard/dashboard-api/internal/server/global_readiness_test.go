@@ -9,6 +9,29 @@ import (
 	"control-dashboard-api/internal/provider"
 )
 
+func TestHostClockRequirementUsesObservedEvidenceWithoutEnablingTrading(t *testing.T) {
+	for _, tc := range []struct {
+		observed, synced bool
+		state            string
+	}{{false, false, "DEFERRED"}, {true, false, "BLOCKED"}, {true, true, "PASS"}} {
+		in := baselineReadinessInputs(time.Now())
+		in.Infra.VPS.ClockObserved, in.Infra.VPS.ClockSynced = tc.observed, tc.synced
+		got := buildGlobalReadiness(in)
+		found := false
+		for _, row := range got.Requirements {
+			if row.ID == "clock-sync" {
+				found = true
+				if row.State != tc.state {
+					t.Fatalf("clock state = %s, want %s", row.State, tc.state)
+				}
+			}
+		}
+		if !found || got.TradingReady || got.LiveReady || got.OrderRouting != "DISABLED" {
+			t.Fatal("Clock evidence granted trading authority or was omitted")
+		}
+	}
+}
+
 func baselineReadinessInputs(now time.Time) globalReadinessInputs {
 	in := globalReadinessInputs{
 		ProviderHealth: provider.Health{Mode: "real", Name: "real-data-provider-step44"},

@@ -1,8 +1,823 @@
 # Current state
 
-Last synchronized: 2026-10-08. Current source and test output take precedence.
+Last synchronized: 2026-10-10. Current source and test output take precedence.
+
+## Pending reporting requirements recorded (2026-10-10)
+
+The user requested separate Commission and Funding columns in dashboard Trades,
+with USD values and PnL including those costs/receipts; gross trade PnL is optional.
+Actual event accounting, attribution and consistent net totals remain prerequisites;
+missing costs must stay unavailable and commissions/funding must not be counted
+twice. Future user-specified dashboard adjustments are a separate roadmap task.
+The roadmap is consolidated to remaining work, preserving accepted local/VPS study
+preparation and pending multi-day/private/recovery acceptance. This is a documentation
+update only: no reporting/accounting implementation, deployment, restart or study
+configuration change. Prior validation evidence below remains unchanged.
 
 ## Latest validated baseline
+
+### VPS PAPER activity study and fast comparison deployed (2026-10-10)
+
+The user authorized a VPS forward PAPER study with strict RSI(7) entry > 50 and
+exit < 40, plus simulated-live versus fast-backtest results in its dashboard.
+The separate activity profile preserves original 80/70 configuration and uses
+separate NATS/PostgreSQL volumes; original account/message state is retained.
+The comparison collector freezes fully applied/reconciled daily market/account
+observations and invokes CURRENT TradingEngine through the existing fast research
+binary. It warms indicators only, preserves daily candidate lists and persistent
+signals, and observes execution-open prices without unfinished-close leakage.
+PAPER close-based quantity versus fast next-open quantity differences remain visible;
+cash/equity use common observed open marks. Funding/slippage are not modeled.
+GET-only Kraken plan observations remain separate from simulated fills/private funds.
+
+Two bounded WSL baseline tests pass: poisoned future close exclusion, next-open
+quantity, commissions, deterministic rerun, date joins and signed exposure. Full
+Go tests and frontend image/type build pass. Fresh Step59 PASS: 107 days, 50 fills,
+RealTest 25/25, zero differences; all restart/dashboard/pacing paths retain fingerprint
+94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2.
+Evidence: storage/paper_activity_step59.log, paper_comparison_go.log and image logs.
+The complete WSL build passes for eight service targets plus the fast research
+binary. Three images were exported via docker save, transferred and loaded on the
+VPS; no destination C++/frontend build was needed. The bounded PAPER fixture passes
+completed-bar isolation, execution-open prices, actual fills/accounting, dashboard
+telemetry, stale collector and restart. Initial local attempts found an older API
+image and exhausted Docker subnets; selecting matching images and removing only
+this turn's stopped fixture networks resolved them. Original local image tags and
+all fixture volumes/evidence were preserved. Accepted fixture:
+storage/paper_validation/algotrading-paper-7ec7043c76b3/.
+
+VPS acceptance passes with thirteen running services and enabled/active trading,
+telemetry and comparison units. Its first observed execution day is 2026-10-10:
+two simulated positions (NEARUSDT/QNTUSDT), zero signal differences, PAPER equity
+99980.00204792136 USD versus fast equity 99980 USD, and cash 79982.04996928117
+versus 79980 USD. The NEAR close/open gap explains the retained quantity difference.
+Collector restart preserves the single observed row and economic values, without
+resubmitting simulated orders. Kraken public plan observation is retained; no
+private Kraken credentials/account/submission was introduced on the VPS.
+Authenticated API and one-page browser acceptance verify the 50/40 rules, chart
+and comparison tables. The original PAPER account/message volumes remain selected
+only by the old profile, with a stopped-state backup under
+/opt/algotrading/storage/vps_deployment/activity-before-1791646615/.
+Evidence: storage/vps_deployment/activity_acceptance.json and
+dashboard_activity_comparison.png/.txt; the VPS retains frozen study input/fast
+results under storage/paper_trading/comparison/ and public Kraken reports under
+storage/kraken_shadow/algotrading-paper-activity-forward/.
+Loopback dashboard remains port 8092; the local SSH tunnel exposes localhost:8093.
+Credentials were consumed only internally and never displayed. Multi-day forward
+acceptance, funding/collateral/private integration and broader VPS recovery remain
+pending. No full-history or broad slow-browser campaign ran.
+
+### Daily portfolio equity percentages; further order-limit work cancelled (2026-10-10)
+
+The user cancelled additional order-limit/admission work and its pending clarification.
+Preserve existing order planning, sizing and constraints. Warning-only account
+monitoring remains implemented; actual local forward shadow is the next task.
+
+Daily Telegram position lines now include marked absolute USD notional as a percentage
+of that snapshot's net venue marginEquity. Yesterday retains yesterday's denominator;
+existing historical snapshots are preserved. Missing marks and nonpositive equity
+remain unavailable rather than producing invented percentages. Exposure may exceed
+100%; this display is not funded margin or a new sizing constraint.
+
+Five WSL portfolio tests and twelve offline monitor tests passed; the optional Docker
+contract case was skipped in this targeted run. The local observer was restarted and
+its healthy source/notifier retained two events and two receipts without duplicate
+delivery. Daily decline remains unavailable until a preceding-day snapshot exists.
+Evidence: storage/kraken_shadow/account-alerts/delivery-acceptance.json.
+No credentials were displayed, no summary was forcibly resent and the VPS is unchanged.
+This presentation-only change did not require another Step59 run; the accepted
+fingerprint and previous bounded gate evidence below remain the baseline.
+
+### User-selected warning-only account thresholds implemented locally (2026-10-10)
+
+The user rejected automatic account stops/closures. USD 50 minimum net equity and
+10% available USD remain warnings only. The local monitor now also warns when current
+net equity is at least 10% below the preceding UTC day's last observed equity, or
+gross confirmed open-position USD exposure exceeds 5x current net equity. Exactly
+5x does not trigger the exposure warning. There is no independent daily-loss stop
+or peak drawdown threshold. Equity comparisons include BTC valuation and transfers;
+they are not a trading-only PnL calculation. Pending orders are not filled exposure.
+
+The gross calculation reuses fresh verified public linear USD marks and sums
+absolute LONG/SHORT notionals. Daily comparison reuses preserved UTC holdings/equity
+snapshots. Missing prior-day history, missing/stale prices or nonpositive denominators
+remain unavailable and cannot manufacture a resolution. status.json lists those
+unavailableChecks independently of authenticated source freshness. Warning events
+share the existing transaction/deduplication and Telegram lifecycle; no new sender,
+orders, BTC sale, core Account mutation or stop command was introduced.
+
+Thirteen WSL monitor tests passed including the bounded network-disabled Go contract
+case. Five portfolio, 26 account, 13 public Kraken and five shadow tests passed.
+New cases verify exact 10% daily boundaries without submission/admission mutation,
+daily rather than peak comparison, missing-day retention, exact 5x versus >5x,
+and missing-price retention plus diagnostics. The real local observer was restarted
+with the finalized code. Its source/notifier are healthy and retain two events and
+two receipts (previous reserve warning and today's daily summary), without duplicates.
+Daily decline is currently unavailable because no preceding-day snapshot exists.
+Evidence: storage/kraken_shadow/account-alerts/ and delivery-acceptance.json.
+
+The user also requests an initial 10% new-order cap. Its total-notional-versus-funded-
+margin basis is an essential pending clarification; no new admission cap was invented.
+Source verification found existing equal-weight sizing of 10% per full signal and
+a 1.5x hard gross strategy scaling constraint. These are preserved and are distinct
+from the warning-only 5x actual account exposure. VPS/credentials/history remain
+unchanged. Finish the order-basis clarification/guard before actual forward shadow.
+
+Fresh bounded Step59 PASS: 107 days, 50 fills, RealTest 25/25, zero differences;
+determinism, resumed/system/dashboard and paced paths converge to fingerprint
+94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2.
+Evidence: storage/pipeline_risk_step59.log. No full-history or browser campaign ran.
+
+### Compact Telegram messages and daily USD portfolio accepted locally (2026-10-10)
+
+All shared Telegram formatting now shows importance, account/system, reason and
+concise figures. CRITICAL is displayed as URGENT and recovery as INFO. Optional
+account labels pass through the source/notification contracts; Kraken defaults to
+Kraken. Hash IDs, notification IDs, technical event/correlation metadata and raw
+source timestamps stay in durable evidence rather than the chat message. Existing
+delivery receipt deduplication is unchanged; normal details are bounded at 600
+characters and portfolios use the existing overall Telegram limit.
+
+The read-only account monitor emits one INFO daily summary after the configured UTC
+hour (default 09:00), transactionally persisted with its event. Gross USD wallet
+balance and net venue margin equity are separate, explicit fields. Linear Multi-M
+positions use fresh public mark prices for absolute USD exposure with LONG/SHORT
+direction; missing/unsupported/stale prices remain unavailable. Yesterday uses the
+last observed snapshot in the preceding UTC calendar day and reports its timestamp;
+absent days are unavailable, never invented zero holdings. This is a holdings
+comparison, not a complete intraday trading history. No account/strategy/execution
+economics, order writes, BTC sales or stops were changed.
+
+Five new portfolio tests, nine monitor tests including network-disabled Go contract
+acceptance, 26 account tests, 13 Kraken public tests and five shadow tests passed.
+Go go test ./... passed with CGO_ENABLED=0, matching the Docker build. The initial
+default-CGO attempt lacked libpq in the test image; this was an environment failure.
+The updated local image was built and both local Telegram notifier containers were
+replaced while preserving their notification volumes. Three user-authorized,
+clearly TEST-labelled format previews were accepted by Telegram; fixtures/receipts:
+storage/telegram_previews/telegram-preview-1791641194340836467/.
+The real account daily portfolio was also accepted: account-alerts deliveryCount=2
+including the previously retained warning, with INFO admission and two durable
+receipts. Source heartbeat was healthy; there was no replay of the old warning.
+Actual account currently has no open positions; yesterday is unavailable because
+daily holdings capture started today. Local monitor remains active; VPS unchanged.
+All credential-file consumption was internal to programs/Docker, never displayed.
+
+Fresh bounded Step59 passed: 107 days, 50 fills, RealTest 25/25, zero differences,
+all deterministic/resume/dashboard/paced paths converge to fingerprint
+94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2.
+Evidence: storage/pipeline_risk_step59.log. Permanent observer installation/history
+retention and remaining stop-control agreement/actual forward shadow remain pending.
+
+### Local Kraken margin/reserve Telegram monitoring accepted (2026-10-10)
+
+The read-only account monitor publishes durable step43-v1 warning/recovery events
+for the existing Go notifier in an isolated local container. It polls every 30
+seconds using the existing user-selected USD 50 net equity floor and 10% available
+USD policy. Current/stressed USD shortages share one warning; equity-floor and
+initial/maintenance margin warnings remain distinct. No order, automatic conversion,
+BTC sale, entry stop or core Account update is performed. Failed/stale/invalid reads
+cannot manufacture a recovery. An exclusive process lock and policy/account-bound
+journal protect producer restart and source identity.
+
+Nine WSL monitor tests passed, including network-disabled TEST_FILE Go warning,
+resolution and notifier restart acceptance. Existing 26 account, 13 public Kraken
+and five shadow tests also passed. A real authenticated local read produced one
+USD_RESERVE warning, accepted by Telegram with one durable delivery receipt.
+Repeated reads and observer restart retained one event/receipt.
+One subsequent poll failed safely: the notifier paused on the failed heartbeat,
+retained the active warning and resumed after a fresh successful observation without
+another delivery. The sanitized failure does not establish its upstream cause.
+Evidence is under ignored storage/kraken_shadow/account-alerts/: events.jsonl, status.json,
+account-observations.sqlite, notifier.json and delivery-acceptance.json. No .env
+contents were opened by assistant tools; credential consumption remained internal.
+
+The local observer remains running in WSL with a separate Go notifier. It requires
+the PC/WSL/Docker and network; there is no observer reboot installation or VPS change.
+Permanent observation-history retention is pending. Remaining loss/connectivity/
+reconciliation and entry-stop versus closing behavior precede actual forward shadow.
+
+Fresh bounded Step59 passed on verified current library/canonical source: 107 days,
+50 fills, RealTest 25/25, zero differences; all deterministic, resumed, dashboard
+and paced paths converge to fingerprint
+94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2.
+Evidence: storage/pipeline_risk_step59.log. Generated .ai navigation was refreshed
+and checked; credential and monitoring artifact paths remain ignored by Git.
+
+### User account floor and relative USD reserve validated (2026-10-10)
+
+The user chose a USD 50 minimum account value and at least 10% available USD.
+The explicit implementation basis is reported marginEquity in USD (net usable
+collateral/equity), never leveraged position notional. The ignored policy file
+storage/kraken_shadow/account-policy.json specifies minimum_account_equity_usd=50,
+minimum_usd_reserve_fraction=0.10 and zero additional assumed future cash debit.
+Zero assumed debit is not zero trading fees/funding; future cost forecasts remain
+pending. Fixed-USD illustrative policies remain supported.
+
+The equity floor and current USD reserve are independent checks. Available USD is
+the lesser of reported USD quantity and availability; the requirement is 10% of
+positive reported equity. At USD 50 this is USD 5. Equity below the floor flags
+ACCOUNT_EQUITY_BELOW_MINIMUM; insufficient current USD flags USD_RESERVE_LOW.
+Loss/charge stress is separately labelled USD_RESERVE_LOW_AFTER_LOSS_STRESS,
+without subtracting PnL twice from account equity. No allocation, conversion, BTC
+sale, order admission or closing behavior is connected to these observations.
+
+Twenty-six WSL account tests plus thirteen Kraken public and five shadow tests
+passed. New checks cover boundaries, equity versus leveraged notional, missing USD,
+zero/negative equity, invalid policies, separate stress warnings, policy-bound
+journal isolation and CLI report export. Real read-only policy evaluation passed
+in a separate preserved journal: storage/kraken_shadow/account-live-policy-50-10/
+contains report.html, report.json, account-observations.sqlite and last_attempt.json.
+The account passes the USD 50 net floor but reports both low-current-USD and
+low-stressed-USD warnings, with zero positions/orders. An earlier snapshot attempt
+failed safely before observation; the successful fresh read did not relax clocks.
+Credentials were consumed internally only, without assistant-visible contents.
+
+Fresh bounded Step59 PASS on verified current canonical source: 107 days, 50 fills,
+RealTest 25/25, zero differences and deterministic/restart/dashboard/pacing convergence.
+Fingerprint: 94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2.
+Evidence: storage/pipeline_risk_step59.log. VPS/Telegram/core trading remain unchanged.
+Remaining loss/connectivity/reconciliation and entry-stop versus close behavior must
+be agreed and tested before private orders. These are read-only warnings only.
+
+### Kraken authenticated read-only account inspection accepted (2026-10-10)
+
+The user saved the Futures keys and authorized the account check while requiring
+that credential files never be opened/displayed by the assistant. The program
+alone consumes storage/kraken_shadow/.env internally; no shell sourcing, environment
+dump, credential output or assistant-visible file contents were used. The dedicated
+loader accepts the two named variables, optional quotes, UTF-8 BOM/CRLF and comments;
+duplicate/missing/invalid entries give constant corrective errors without values.
+
+`python3 live_trading/kraken_account.py --account` now passes a real authenticated
+inspection after the initial HTTP 403 was resolved by an explicit application
+User-Agent. The permission gate accepted General READ_ONLY/transfer NO_ACCESS.
+All five fixed GETs completed and the authoritative multiCollateralMarginAccount
+wallet reports BTC/USD currencies, zero positions and zero open orders. This does
+not prove a funded BTC allocation, future order acceptance or liquidation readiness.
+The check remains REVIEW_REQUIRED solely for USD_RESERVE_POLICY_NOT_CONFIGURED;
+no actual reserve/allocation was assumed and no illustrative policy was applied.
+No private order, cancel, transfer, settlement change, BTC sale or core Account
+update occurred. VPS/Telegram remain unchanged; unrelated working-tree work is preserved.
+
+Safe evidence is retained under ignored storage/kraken_shadow/account-live/:
+report.html, report.json, account-observations.sqlite and last_attempt.json.
+Only normalized account observations and our status wording persist, never raw
+permission replies, keys, signatures or raw account UID. Failed attempts cannot
+produce accepted reports. HTTP 401/403 have distinct sanitized diagnostics; 403
+alone does not establish invalid credentials. Fixture and actual journals remain separate.
+
+Twenty WSL account tests plus thirteen public Kraken and five existing shadow tests
+passed. Fresh bounded Step59 also passed on source-verified current canonical code:
+107 days, 50 fills, RealTest 25/25, zero differences and restart/dashboard/pacing
+convergence. Fingerprint:
+94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2.
+Gate evidence: storage/pipeline_risk_step59.log.
+New coverage includes internal loader formats, CLI/source separation,
+User-Agent, HTTP diagnostics and durable failed-attempt status. Actual account
+inspection is read-only acceptance, not forward strategy or live-capital acceptance.
+Next: agree on BTC/USD reserve and stop policy, then actual forward venue shadow;
+funding/conversion/interest economics and supported private lifecycle testing remain pending.
+
+### Kraken read-only account preparation accepted locally (2026-10-10)
+
+The user deferred saving the Kraken key. `live_trading/kraken_account.py` prepares
+a separate reader with five fixed GET routes: permissions, wallets, open positions,
+open orders and PnL preferences. READ_ONLY/no-transfer permissions are checked
+before account reads. Authentication was tested with synthetic in-memory credentials;
+no actual keys were read, saved or used. Redirects, proxy inheritance, oversized
+responses and stale/non-UTC clocks are rejected. GET authentication omits Kraken's
+optional nonce, with no body/query. Errors/reports exclude keys and the raw account UID.
+
+Only the reported Multi-M flex wallet is supported. Venue collateral, marginEquity
+and initialMarginWithOrders are authoritative: no fixed haircut is reapplied and
+PnL/funding are not added twice. A USD-reserve stress check includes assumed future
+cash debits and unrealized losses. Missing USD/policy, margin shortfalls, other
+collateral or non-USD settlement require review. Short quantities and partial orders
+remain observations, never new fills. Separate SQLite state binds account/source/
+environment/policy, rejects conflicting/out-of-order captures and deduplicates after
+restart. It never updates lib/Account, submits orders, sells BTC or approves trading.
+
+Fourteen offline WSL account tests, thirteen existing Kraken public tests and five
+existing shadow tests passed. Synthetic evidence: storage/kraken_shadow/account-local-20261010/
+contains fixture.json, policy.json, report.json, report.html and account-observations.sqlite.
+Artifacts are ignored; balances/reserve thresholds are illustrative, not user inputs.
+Fresh Step59 PASS on byte-verified canonical source: 107 days, 50 fills, RealTest
+25/25, zero differences and restart/dashboard/pacing convergence; fingerprint
+94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2.
+Gate evidence: storage/pipeline_risk_step59.log. VPS and Telegram remain unchanged.
+
+Actual credential loading, account/product acceptance, a supported private test
+environment, agreed reserve/stop policy, forward shadow and derivatives funding/
+conversion/interest accounting remain pending. The CLI is explicitly fixture-only;
+the account reader is separate from the runtime. Usage: live_trading/README.md.
+
+### Kraken public shadow and mixed BTC/USD preparation accepted (2026-10-10)
+
+The user selected Kraken Multi-M as the initial integration target, with BTC held
+as collateral and USD for charges/losses. No account allocation or reserve threshold
+was chosen. `live_trading/kraken_shadow.py` now reads fixed public GET instruments/
+tickers only, normalizes PF_ linear USD contracts and observes immutable CURRENT
+USD notional plans against current marks. Negative precision/scaled source assets,
+inactive/inverse exclusion, unavailable books, incomplete metadata and fresh server
+clocks are explicit. An empty book is retryable unavailability, not evidence of
+an unsupported market. No credentials, submit/cancel routes, wallet transfers,
+strategy recalculation, private execution or core-account economics were added.
+
+ShadowJournal accepts a venue assessor with durable source/environment/schema
+identity while preserving fixture defaults, source risk hashes, payload conflict
+checks and retry/restart ordering. Fixture journals cannot be relabelled as Kraken.
+Raw public bytes/GET receipts/hashes, normalized snapshots and source plans persist
+per capture so retained observations remain linked to their original evidence.
+
+The live public study passed: 201 PF_ catalogue entries, one exported PAPER fixture
+plan, BTC/ETH observations on PF_XBTUSD/PF_ETHUSD, and a restart with exactly one
+completed durable plan and two retained raw captures. These are observations of
+historical fixture intents, not actual forward strategy or private order acceptance.
+The illustrative cross-margin scenario (0.1 BTC, USD 2000, assumed USD 50 cash
+charges, unrealized PnL -100 and funding -1, initial/maintenance margin 500/250,
+USD reserve 500) passed scenario checks. These numbers are synthetic inputs, not
+user balances, recommended allocations or verified venue margin requirements.
+The diagnostic uses the BTC index and reviewed 1% haircut, distinguishes USD
+reserve from collateral equity, flags uncovered losses/margin shortfalls and
+never sells BTC or returns account trading approval. Actual margin schedules,
+isolated/unified wallets, other assets and authoritative balances remain pending.
+
+Thirteen focused Kraken WSL tests plus five existing shadow unit tests passed.
+The full saved-response audit passed: raw hashes, GET routes, catalogue identity,
+original plan/snapshot hashes, quantities/read-only state and scenario arithmetic.
+Evidence: storage/kraken_shadow/local-20261010-btc-usd/{report.html,report.json,
+observations.sqlite,raw/}; hypothetical input: storage/kraken_shadow/example-collateral.json.
+All artifacts are ignored; no VPS or Telegram changes. Existing unrelated work was
+preserved. Fresh WSL Step59 PASS on byte-verified current native canonical source:
+107 days, 50 fills, RealTest 25/25, zero differences, deterministic/restart/dashboard/
+pacing convergence; fingerprint
+94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2.
+Evidence: storage/pipeline_risk_step59.log.
+
+The legacy demo public instruments probe failed on a forbidden redirect; no live
+fallback occurred. Kraken's current [testing guide](https://support.kraken.com/articles/360024809011-api-testing-environment-derivatives)
+also announces decommissioning of that environment; confirm an available supported
+test environment before private lifecycle tests. The user confirmed their account
+country is Spain and Futures is enabled (2026-10-10). This resolves the requested
+country/activation clarification; wallet type, BTC eligibility on that wallet,
+USD profit settlement and API access still require actual account evidence.
+Next: validate the prepared read-only wallet/margin inputs with a Derivatives key
+(General API Read Only; Withdrawal API No Access) and agree on reserve/stop policy
+before private test integration. No private credentials or API checks are available
+yet; user-reported activation is not an authenticated account acceptance.
+BTC/USD can reduce conversions while USD covers charges/losses; trading fees,
+funding and uncovered-loss interest remain economic requirements. Official EEA
+collateral/charges/eligibility sources and usage are linked in live_trading/README.md.
+
+### Public exchange coverage accepted (2026-10-10)
+
+`tools/exchange_coverage.py` captured public market metadata and daily candles at
+11:07-11:08 UTC. Binance server time bounded 25 completed UTC days: September 15
+through October 9 inclusive. The reference is currently TRADING crypto USDT
+perpetuals, not Binance spot or all quote currencies; 523 candidates were inspected.
+Ranking sums actual candle quote turnover (field 7), never base units or close
+price estimates. All top-50 assets had 25 observed candles. Current-listing
+survivorship bias is explicit; this is current coverage, not a historical universe.
+
+Kraken covers 38/50 (76%), Hyperliquid main covers 36/50 (72%), and Hyperliquid with
+inspected HIP-3 markets covers 37/50 (74%). These assets represent respectively
+95.6911%, 94.0169% and 95.2846% of Binance top-50 turnover, not venue liquidity.
+Kraken covers all top 20 with Multi-M PF_ contracts; Hyperliquid main covers 19,
+and HIP-3 xyz:QNT supplies the twentieth. MOVR/MUBARAK are Kraken-only and LIT is
+Hyperliquid-only among the compared top 50. Active/nonexpired/nonsuspended metadata
+and positive mark prices are required. Explicit scaled-contract aliases retain
+1INCH and distinct NEIRO/NEIROETH; identity matches do not prove sizing equivalence.
+
+Evidence: storage/exchange_coverage/20261010T110714Z/{comparison.json,coverage.csv,
+report.html,raw/}. Raw responses retain retrieval time, endpoint/request and body
+hash. Five focused WSL tests passed; the offline snapshot audit independently
+recomputed every candidate's candles, complete ranking, live filters, aliases,
+per-asset venue matches and all three counts. Generated evidence is ignored.
+No trading source, credentials, private API, VPS deployment or Telegram sends changed;
+the existing Step59 baseline below is retained without rerunning an economic gate
+for this independent public-data study.
+
+Public collateral rules were checked against current official documentation:
+[Kraken Multi-M](https://support.kraken.com/articles/4843323030164-derivatives-collateral-currencies)
+accepts BTC with 1% haircut and 0.20% conversion fee; uncovered USD losses can have
+additional interest/conversion effects.
+[Hyperliquid portfolio margin](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/portfolio-margin)
+lists BTC at 0.5 LTV, requiring master-account weighted volume above USD 5 million
+or account value above USD 10000, with account value below USD 25 million and
+supply/borrow caps. This is distinct from ordinary USDC margin and borrowing has
+costs. Public rules do not establish this user's jurisdiction/account eligibility.
+Kraken remains the technical preference from coverage and the user's BTC/account
+requirements; confirm product/account eligibility and collateral economics before
+venue selection, real read-only integration and forward shadow acceptance.
+
+### Local shadow-trading preparation accepted (2026-10-09)
+
+The one-command WSL `python3 validation/shadow_trading_test.py` study passed with
+current packaged runtime/API/web images and isolated PAPER state. The existing
+service chain produced 200 completed BTC/ETH bars, exactly two BUY intents of USD
+10000 at close(T)=199 and two simulated next-open fills at 200. Worker restart
+retained fills, cash/positions and the persisted risk evaluation. The shadow hook
+read the actual planner checkpoint and retained its request/plan without changing
+the original durable plan. No new strategy, planner or fill simulator was introduced.
+
+`live_trading/shadow_observer.py` owns only read-only observation and its separate
+SQLite journal. It binds the source risk-configuration fingerprint and immutable
+message/payload hashes, rejects conflicts/out-of-order input and reuses already
+completed observations after duplicate delivery/restart. Failed fixture reads remain
+retryable without becoming successful empty data or unsupported-market skips.
+The reader allows only numeric loopback HTTP GET /snapshot, disables proxies and
+rejects redirects; it has no private submission/cancellation interface or credentials.
+
+The integrated fixture passed nine grouped checks: real producer quantities use
+close(T), duplicate/observer restart, unsupported perpetual skip, HTTP/disconnect/
+redirect recovery, stale/future/incomplete/missing metadata, minimum quantity,
+quiet/cancel intents, identity/configuration conflict and the HTTP spy. It retained
+12 scenario plans and seven unavailable attempts; 19 HTTP calls were all GET
+/snapshot, with zero private writes. Synthetic error-case rows are explicitly
+labelled and are not additional strategy decisions. Five focused WSL regression
+tests also passed, including malformed top-level metadata, failed-attempt identity
+conflict, future decision/side mismatch and out-of-order rejection before HTTP.
+The final observer was rechecked with the actual saved producer export in fresh
+fixture state after the final error-guard/report changes.
+
+Evidence: storage/paper_validation/algotrading-paper-958436ce42ee/accepted.json and
+shadow/{producer-input.json,accepted.json,report.json,report.html,venue-calls.json,
+observations.sqlite}; shadow/current-source-recheck/ retains the final component run.
+Reports and disposable credentials are ignored. Owned containers/networks were
+removed; volumes/evidence were preserved and the normal Telegram notifier remained
+running. No VPS changes, private venue calls, real Telegram sends or full-history/
+browser campaign. Source trading behavior is unchanged.
+
+Fresh required WSL Step59 PASS: 107 days, 50 fills, RealTest 25/25, zero differences,
+continuous/resumed/system/dashboard/pacing convergence and fingerprint
+94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2.
+Evidence: storage/pipeline_risk_step59.log, using byte-verified current native source.
+
+This accepts local fixture preparation, not actual selected-venue shadow trading.
+The risk fingerprint is not a complete strategy/market/venue configuration manifest.
+Full aligned backtest comparison, real venue mapping/rules/price freshness, fees,
+funding, FX/BTC collateral/account eligibility and private order/fill/reconciliation
+acceptance remain pending. Reports leave costs, fills and PnL unavailable rather
+than inventing them. Next prerequisite: reproducible venue coverage/collateral
+analysis and selection before actual selected-venue forward observation.
+
+### Mobile-access cancellation and next local task (2026-10-09)
+
+The user cancelled mobile dashboard access and removed it from the roadmap.
+No phone login acceptance, domain, VPN or public web deployment is pending.
+The unused local bridge/tests and their past validation evidence are preserved;
+they are not active operations or prerequisites for trading work. No VPS change
+or network exposure was made for this cancellation.
+
+Next is preparing bounded local shadow-trading tests. The roadmap now defines
+the no-private-submit/cancel boundary, isolated virtual state, selected-venue
+read-only evidence, unsupported-market skips, aligned baseline comparison and
+disconnect/duplicate/restart criteria. This is an acceptance plan, not a completed
+harness or venue run. Source inspection confirms the existing gateway has backend
+and Hyperliquid dry-run modes; the latter logs raw quantities with
+venue_rules_applied=false and submitted=false. PAPER still uses a simulated backend.
+Coverage, BTC-collateral/account checks and venue selection remain prerequisites
+for actual selected-venue acceptance. Existing economic/replay evidence is unchanged.
+
+### Historical mobile-access preparation, subsequently cancelled (2026-10-09)
+
+`deploy/paper_trading/mobile_access.py` provides an opt-in TLS 1.2+ bridge from one
+exact phone IPv4 address to an already-running loopback dashboard or VPS SSH tunnel.
+It refuses public/wildcard listener addresses, checks certificate validity/IP,
+streams bytes without whole-response buffering and does not log requests/secrets.
+Generated certificates/keys are excluded under `storage/mobile_access/`.
+The source API still owns authentication, role checks, CSRF and session revocation.
+
+WSL validation passed six bounded transport checks plus actual Go API authentication
+through TLS: unauthenticated 401, viewer login, Overview/Pipeline/Risk/Infrastructure
+HTTP 200, viewer manual-preview rejection, missing-CSRF logout rejection, successful
+logout and revoked-session 401. The isolated packaged API used embedded mock data
+and disposable fixture credentials; no trading workers or Telegram sends were used.
+Its container was removed. Evidence: storage/mobile_access/api-validation/test.log
+and accepted.json. This tests real API authentication, not real market-data readiness.
+All six transport tests also passed on Windows with the installed Git OpenSSL;
+the optional Go-fixture test was skipped there. Python CLI help and whitespace checks
+passed. No full-history or browser campaign was rerun.
+
+Mobile setup/runbook was prepared; actual handset acceptance was not performed
+and the user subsequently cancelled this requirement. The observed PC Wi-Fi
+IPv4 is 192.168.1.33. No mobile listener/firewall rule or SSH tunnel was left running;
+normal services and the VPS were preserved. Remote/mobile-data access is separate.
+
+Fresh WSL Step59 PASS using the byte-verified current native trading source: 107
+days, 50 fills, RealTest 25/25, zero differences, continuous/resumed/dashboard/paced
+equivalence and fingerprint
+94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2.
+Evidence: storage/pipeline_risk_step59.log. Trading source/economics unchanged.
+
+### Local PAPER backup, restoration and connectivity acceptance (2026-10-08)
+
+The opt-in PAPER_RECOVERY_TEST study passed using the current packaged runtime/API/
+web images and isolated BTC/ETH public-data fixture. HTTP source loss failed ingestion
+without committing bars/fills. NATS loss retained 200 already committed completed
+bars but generated no fills until publication recovered, matching commit-before-
+notification source ordering. Two actual simulated fills completed with all four
+dashboard services stopped; cash/positions agreed with the simulated backend.
+
+PostgreSQL outage produced explicit HTTP 503 from Risk rather than successful empty
+data. After controlled worker restart and database recovery, retained fills, cash,
+positions, processed fill IDs, next order/fill IDs and economic dates were unchanged.
+This is explicit restart recovery, not unattended reconnect acceptance.
+
+With all writers/broker stopped and the exchange outbox drained, a PostgreSQL custom
+logical dump plus six stopped-volume archives were created. Checksums were verified
+before restore; a deliberately wrong checksum was rejected. A separate fresh-volume
+project restored identical contents for all 15 public SQL tables and every archived
+file before workers ran. Market SQLite includes the stopped database and WAL/SHM;
+NATS and watchdog/notifier/audit/acknowledgement stores are included. Manual-audit and
+acknowledgement stores were empty in this fixture; their operator event lifecycles
+are not accepted by copying empty volumes. Credentials remained separate/ignored.
+
+Restored ingestion completed successfully, all trading workers stayed running and
+same-day replay retained exactly two fills, cash 79879.39698492462, BTC/ETH quantities
+50.25125628140704 each, next order/fill IDs 3 and zero unpublished exchange outbox
+rows. Authenticated restored Risk preserved its configuration fingerprint/evaluations.
+No duplicate orders/fills or accounting drift were observed in the bounded study.
+
+Evidence: storage/paper_validation/algotrading-paper-5c503da259d6/recovery-accepted.json,
+backup/manifest.json, baseline accepted.json and storage/paper_recovery.log.
+Original/restored test containers/networks were removed; their data volumes and
+backup evidence remain ignored. The existing normal local Telegram notifier was
+preserved. VPS unchanged; no Telegram sends, private orders, full-history replay or
+browser campaign. The backup is a quiesced maintenance snapshot with matching
+images/settings, not online cross-store backup or off-host/retention/VPS acceptance.
+The then-next mobile-access task was cancelled on 2026-10-09; see the latest priority above.
+
+Fresh WSL Step59 PASS: 107 days, 50 fills, RealTest 25/25, zero differences and
+fingerprint 94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2,
+including rerun/restart/dashboard/pacing checks. Evidence: storage/pipeline_risk_step59.log.
+Python syntax and Git whitespace checks PASS. Trading source/economics unchanged.
+
+### Authenticated local dashboard browser acceptance (2026-10-08)
+
+A bounded isolated PAPER study passed with 200 completed BTC/ETH bars, two
+simulated fills, consistent account cash/positions and restart without duplicate
+fills. Current packaged runtime/API and a newly built API-mode frontend were used.
+The fixture forces TEST_FILE notifications and clears Telegram credentials; its
+temporary viewer credentials and all generated evidence are ignored by Git.
+
+Windows Edge acceptance passed for all eleven authenticated pages, invalid/valid
+login, sidebar navigation, full document navigation, all six Overview filters with
+explicitly unavailable real equity history, Pipeline expansion/Why/search,
+persisted Risk rows/configuration provenance, stale Infrastructure telemetry,
+viewer-disabled manual upload and HTTP 403 mutation rejection. Browser-only
+blocking of the Risk resource showed an error/Retry boundary; unblocking and Retry
+restored the report. Logout protected subsequent page access. No page produced a
+captured browser runtime error during normal acceptance. This does not accept
+operator routing, actual backend connectivity faults, phone access or VPS behavior.
+
+The browser test exposed accumulated SSE connections during repeated full document
+navigation: later REST requests timed out without reaching the API. The stream hook
+now closes EventSource on pagehide and reconnects on pageshow, as well as closing
+on React unmount. The same eleven-page navigation sequence passed after this change.
+No trading economics, API data contracts or private routing changed.
+
+Evidence: storage/paper_validation/algotrading-paper-a5d64a25c8dd/accepted.json,
+browser/accepted.json and page screenshots; build output is
+storage/dashboard_browser_build.log. Only this task's fixture containers/networks
+were removed; their data volumes/evidence remain. The normal local Telegram notifier
+is still running/waiting for a fresh watchdog; trading services remain stopped.
+VPS unchanged. Next: isolated backup/restore/connectivity acceptance, including
+continued trading while the dashboard is stopped, then mobile browser access.
+
+Fresh Step59 under WSL PASS: 107 days, 50 fills, RealTest 25/25, zero differences,
+deterministic rerun, system/dashboard restart and paced-speed invariance, fingerprint
+94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2.
+Evidence: storage/pipeline_risk_step59.log. Frontend TypeScript/Vite build, Python
+syntax checks, Git whitespace check and dashboard source audit (33 markers) PASS.
+The generated AI index was refreshed. No full-history replay, VPS change or commit.
+
+### Historical comparison review accepted by the user (2026-10-08)
+
+The user considers the four full-history differences explained and closes their
+review: final-position closing conventions and intermediate RealTest RSI rounding.
+This is user acceptance of the recorded differences, not a new exact-parity proof.
+The original comparison CSVs, four DIFFERENT rows and full-history fingerprint are
+unchanged. No whitelist or trading/economic adjustment was introduced, and no
+full-history replay was rerun. Dashboard acceptance is recorded above.
+
+### Continuous local Telegram delivery and recovery (2026-10-08)
+
+The packaged notifier passed a real, explicitly authorized two-message controlled
+test: a synthetic WARN OPENED alert and its RESOLVED transition, clearly labelled
+TEST ONLY. Its source was an isolated watchdog-format journal, not a trading failure.
+Disconnecting its Docker network left the event unprocessed with no delivery;
+reconnection delivered it. Two restarts retained delivery decisions/receipts without
+resending. An expired source heartbeat blocked consumption; fresh source recovery
+resumed polling. Exactly two receipts remained. The test container and its own state
+volume were removed; source/evidence remain ignored under
+storage/telegram_validation/algotrading-telegram-6a374aeb866e/.
+
+The notifier now requires a successful watchdog heartbeat within 90 seconds,
+rejects timestamps over 30 seconds ahead and waits after a failed watchdog sweep.
+This avoids replaying obsolete alerts while the local stack is stopped. PAPER
+healthchecks reject a recorded lastError rather than treating an old success as
+current health. Full Go suite and current API/notifier image build PASS; focused
+tests cover healthy/stale/future/missing/error source states.
+
+The normal local dashboard-alert-notifier is running with restart=unless-stopped
+and the validated algotrading-telegram-api image, selected by ignored
+storage/paper_trading/telegram.override.yml. All trading services remain stopped;
+the notifier therefore waits for a fresh watchdog, not trading signals. Its state
+and Telegram receipts use the normal durable PAPER volume, separate from TEST_FILE.
+Evidence includes storage/telegram_continuous_go.log,
+storage/telegram_continuous_build.log and
+storage/telegram_validation/continuous_running.json. VPS unchanged; no real orders.
+The current notifier healthcheck correctly reports unhealthy while its watchdog
+source is absent; process running is separate from delivery readiness. Dashboard
+contract audit PASS (33 markers), source clock audit PASS and Step59 PASS with
+94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2,
+107 days, 50 fills and RealTest 25/25 with zero differences. Gate evidence is
+storage/pipeline_risk_step59.log. No full-history or browser campaign was rerun.
+
+### Real Telegram setup acceptance (2026-10-08)
+
+The user configured the local bot and sent a fresh private message. Its private chat
+was resolved through the bot API and saved only in ignored storage/paper_trading/.env;
+the configured chat was verified before the explicit packaged --test-message command.
+Telegram accepted the setup message and the notifier persisted its durable receipt.
+An initial sanitized transport failure was followed by a successful retry after
+checking public HTTPS access and the runtime CA bundle. No credentials or private
+message contents were printed. API acceptance is observed and the user confirmed
+that the setup message appeared on their phone. Continuous watchdog-event delivery
+is separate from this confirmed setup test.
+
+Evidence: ignored storage/telegram_validation/real_send/accepted.json and send.log.
+Continuous alert delivery was not started, no trading stack was started, and the VPS
+was not modified. Actual watchdog-event delivery/recovery remains separate acceptance;
+the four historical replay differences remain pending. No code/economic change or
+release-gate rerun was needed for this credential/configuration setup.
+
+### Local Telegram preparation and operational alerts (2026-10-08)
+
+PAPER no longer hardcodes TEST_FILE: Telegram is an explicit sink setting, with
+token/chat ID forwarded only to the notifier and TEST_FILE preserved as default.
+The notifier supports --test-message for one manually invoked setup message, without
+replaying watchdog alerts or changing trading state. The existing sink now respects
+Telegram retry_after across all alerts while running; rejected events remain
+unprocessed and retry after the deadline. Confirmed delivery receipts persist and
+prevent replay after a missing notifier decision checkpoint. The in-memory throttle
+resets on restart; a crash after remote acceptance but before local receipt write
+can still duplicate delivery. No exactly-once remote-delivery claim is made.
+
+Fresh host resource pressure, observed missing/stopped trading executables,
+unsynchronized NTP and degraded daily PAPER progress now enter the existing alert
+projection/watchdog lifecycle. UNKNOWN/stale telemetry is not a measured process or
+clock failure; no-order daily success is not an outage. Existing notification
+severity/cooldown/escalation/resolution policies are preserved.
+
+WSL full Go suite PASS, including simulated rate limiting, later retry, cross-alert
+deferral, durable receipt recovery, operational alert derivation and recovery;
+current API/notifier Docker image build PASS. Isolated Compose rendering PASS for
+default TEST_FILE and opt-in Telegram credential forwarding using fixture values.
+Packaged --test-message rejects TEST_FILE with networking disabled. Evidence is
+ignored storage/telegram_go.log, storage/telegram_api_build.log and
+storage/telegram_compose.log. No real Telegram message was sent: user bot/chat
+settings and real delivery remain pending. No VPS change, full-history run or commit.
+The four historical replay differences remain a separate pending review.
+Dashboard contract audit PASS (33 markers), no-legacy-clock source audit PASS;
+Step59 PASS with the expected fingerprint
+94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2,
+107 days, 50 fills, RealTest 25/25 and zero differences across restart/dashboard/
+pacing paths. Fresh gate evidence is storage/pipeline_risk_step59.log.
+
+### Local runtime-owned Risk evaluations (2026-10-08)
+
+PortfolioRisk optionally captures actual sized weights, asset/gross cap reductions,
+gross scaling, annualized volatility diagnostics and rebalance actions. The service
+stores a schema-versioned report with cycle/configuration identity atomically in
+the existing decision checkpoint. Control messages and publish/checkpoint/ACK order
+are unchanged. Runtime retries reject changed configuration identities. Risk shows
+the persisted intermediates, reduction reasons, held quantity and configuration
+SHA-256. HOLD preserves quantity and does not emit a newly evaluated target.
+
+Missing sizing or volatility is explicitly unavailable; EqualWeight volatility is
+not applicable. Optional volatility diagnostic failure does not fail valid trading.
+Old schemas/rows and canonical replay snapshots retain unavailable evaluations.
+Whole-account/venue margin breaches, marked real PnL and control readiness remain
+pending; per-strategy target caps do not prove held exposure satisfies those limits.
+
+WSL current-source native build PASS; focused C++ signed/capped/volatility/HOLD tests
+PASS; full Go suite and API/frontend TypeScript/Vite Docker builds PASS. Authenticated
+PostgreSQL/HTTP fixture PASS for old schema, same-cycle reports, rejected mismatched
+reports and unchanged cash. Actual bounded eight-service PAPER fixture PASS: two
+simulated fills, correct Risk evaluation, identical reports/fills/accounting after
+restart. Test project algotrading-paper-c3470b99bc3b retained ignored evidence.
+Step59 PASS: fingerprint
+94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2,
+107 days, 50 fills, RealTest 25/25, zero differences. Evidence is ignored
+storage/risk_evaluations_*.log and storage/pipeline_risk_step59.log.
+The first fixture startup hit exhausted local Docker network pools; only two
+verified empty networks belonging to a stopped earlier fixture were removed before
+retry. Its data volumes and other local projects were preserved. No full-history
+replay, slow browser campaign, VPS change or commit was performed.
+
+### Local Infrastructure observations (2026-10-08)
+
+Infrastructure now separates container state from externally observed trading
+executables. The host collector uses bounded Docker top queries with PID/name/state,
+never process arguments, and distinguishes running, stopped/defunct, missing and
+unavailable executable observations. Services retain Ready=false; presence does not
+establish application responsiveness, an in-loop heartbeat or private readiness.
+Stale snapshots discard process and clock observations with host/container metrics.
+
+Daily PAPER progress observes persisted last_bar_close_timestamp and
+last_execution_timestamp: yesterday's completed-day decision and today's applied
+plan, including empty/no-order plans. UTC rollover has an explicit 30-minute grace.
+Recent updated_at/fills cannot conceal stalled dates; other business-clock modes
+are not compared against today's date. Plan application is not fill/reconciliation
+acceptance. The UI labels host uptime, process state and container observations
+explicitly, with more readable operational text.
+
+Host NTP synchronization is read from systemd NTPSynchronized, independently of the
+dashboard container. SYNCED/UNSYNCED require observed evidence; unsupported/unavailable
+queries remain UNKNOWN and offset is unmeasured. Actual local WSL query returned
+unavailable, so synchronized-host/VPS acceptance is still pending. Shell warnings
+and global clock requirements reflect observed evidence without enabling routing.
+
+Validation: WSL collector unit tests and an isolated real Docker process fixture
+PASS (running, stopped inside a running container, absent, stopped container);
+full Go suite PASS; final API/frontend Docker builds and TypeScript/Vite PASS.
+Packaged authenticated PostgreSQL/HTTP fixture PASS for current no-order progress,
+missing process, unsynchronized clock, stalled business dates and stale telemetry;
+account cash remained unchanged. Step59 PASS: expected compact fingerprint
+94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2,
+107 days, 50 fills, RealTest 25/25, zero differences. Source audit and AI index PASS.
+Evidence includes ignored storage/infrastructure_go.log,
+storage/infrastructure_sql_http.log and storage/pipeline_risk_step59.log.
+No full-history replay/browser campaign, VPS deployment, commit or trading-engine
+change was performed. Test containers were removed; production PAPER remains unchanged.
+
+### Local Pipeline/Risk read-model repair (2026-10-08)
+
+Source tracing identified two empty-screen causes: service HOLD/no-new-target
+instructions omit assets from DecisionBatch, and the simulation provider returned
+empty Pipeline rows and risk-limit lists by construction. The real pipeline now
+includes observed planner reference assets, explains truly empty asset lineage,
+and distinguishes missing planner/first-decision checkpoints from no-order success.
+Absent signals are UNKNOWN; absent targets remain HOLD rather than displayed zero
+liquidation instructions. Database failures and mismatched timestamps remain errors.
+
+Real Risk now reads allocation, sizer settings, gross/asset caps and rebalance policy
+from the persisted service configuration identity. These are settings, not evaluated
+breach/clipping evidence. Empty emitted decisions retain account cash and an explicit
+no-new-target explanation. Combined approved asset weights use aggregated notionals
+and emitted capital, fixing the addition of differently allocated strategy percentages.
+Replay Pipeline now shows market/position/retained-order observations with expandable
+stages and Why traces; cumulative earlier fills do not become current-cycle proof.
+Replay Risk shows actual marked account positions without an invented armed kill
+switch, policy limit, strategy signal or breach-free verdict.
+
+The WSL Go suite passed, including quiet/HOLD, explicit FLAT versus absent signal,
+missing planner, missing decision versus database failure, policy parsing,
+multi-strategy capital weighting and replay observation cases. The packaged real API
+passed an isolated local PostgreSQL/HTTP fixture: persisted policy identity, quiet
+cycle, missing planner pending, mismatched account timestamp rejected, first-decision
+pending and unchanged account cash. Its own containers/anonymous volumes were cleaned.
+A bounded authenticated Edge check against a copied existing canonical replay
+snapshot passed Pipeline rows, expanded stages/Why and Risk account/position rendering.
+This reused retained replay evidence; no full-history study was rerun.
+
+Step59 passed in WSL against a byte-verified native copy of current supported trading
+source, with the unchanged compact fingerprint
+`94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2`.
+TypeScript/Vite builds passed. Evidence is under ignored `storage/pipeline_risk_*`;
+the authenticated replay preview was subsequently stopped and removed at the user's
+request. The VPS was not contacted or modified.
+
+The later local Risk evaluation work above supersedes the intermediate sizing,
+volatility and configuration-persistence gaps recorded at this repair. Whole-account/
+venue breaches and current REAL marked exposure/PnL remain unavailable. This repair
+alone does not establish full risk telemetry or private/live readiness.
+
+### Local Overview charts and date filters (2026-10-08)
+
+Implemented numeric USD equity/reference charts with dated axes, hover values,
+independent X/Y zoom, two-axis pointer drag and reset. Working 1D/7D/30D/90D/1Y/ALL
+filters select source observations by UTC dates, anchored at each series' latest
+date. ALL shows all received history; 1Y is 365 days. A single daily observation
+renders as a point. Filters affect the charts only, not current account snapshots.
+Real/PAPER missing marked-equity history remains unavailable.
+
+The WSL Docker TypeScript/Vite build and focused date-window tests passed:
+all six ranges, sparse dates, compact canonical date labels, invalid/nonfinite
+rows, and empty/single-point histories. A bounded local Edge browser check passed
+all six buttons, hover USD readings, independent axis zoom, real pointer drag,
+reset and navigation reset after switching timeframes. It used frontend-local
+mock fixtures, not production trading evidence. Evidence is in ignored
+`storage/overview_build.log`, `storage/overview_windows_test.log` and
+`storage/overview_browser/overview.png`. A loopback-only demo preview runs at
+`http://localhost:8094`; it is separate from PAPER and the VPS tunnel on 8093.
+
+The VPS was not contacted or changed. No trading/API/accounting behavior changed;
+Step59 was not rerun for this frontend-only work. The existing accepted economic
+fingerprint remains the baseline. Pipeline/Risk is the next local roadmap task.
 
 ### PAPER quote-turnover migration accepted (2026-10-08)
 
@@ -773,8 +1588,10 @@ trades, 628 fully matched, four comparison differences, 1261 fills.
 ```
 
 The differences are the BNB exit date, missing candidate FET trade, final ZEC
-end-state/time, and extra candidate FET trade. They remain visible for human
-review; there is no mismatch whitelist. Earlier full-history dashboard/system
+end-state/time, and extra candidate FET trade. Their review was closed by the user
+on 2026-10-08 based on closing conventions and RealTest RSI rounding. They remain
+visible; this acceptance does not establish exact parity or add a mismatch whitelist.
+Earlier full-history dashboard/system
 fills were byte-identical.
 
 A warmed later-date pacing proof recorded:

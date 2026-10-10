@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,6 +30,40 @@ func lifecycle(id, at, transition, alertID, severity, detail string) alertstore.
 			Title:     "test alert",
 			Detail:    detail,
 		},
+	}
+}
+
+func TestDailyPortfolioKeepsAccountAndIgnoresWarningCooldown(t *testing.T) {
+	directory := t.TempDir()
+	store, err := OpenStore(filepath.Join(directory, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink, _ := NewTestFileSink(filepath.Join(directory, "events.jsonl"))
+	engine, _ := NewEngine(store, sink, "INFO", 5*time.Minute)
+	first := lifecycle("day-1", "2026-10-10T23:59:50Z", "OPENED", "portfolio", "INFO", "Balance: $100.00")
+	first.Alert.EventType, first.Alert.Account = "DAILY_PORTFOLIO", "Kraken"
+	second := lifecycle("day-2", "2026-10-11T00:00:10Z", "UPDATED", "portfolio", "INFO", "Balance: $101.00")
+	second.Alert.EventType, second.Alert.Account = "DAILY_PORTFOLIO", "Kraken"
+	if _, err := engine.Process(context.Background(), []alertstore.LifecycleEvent{first}); err != nil {
+		t.Fatal(err)
+	}
+	stats, err := engine.Process(context.Background(), []alertstore.LifecycleEvent{first, second})
+	if err != nil || stats.Delivered != 1 {
+		t.Fatalf("calendar summary lost to cooldown: %+v %v", stats, err)
+	}
+	stats, err = engine.Process(context.Background(), []alertstore.LifecycleEvent{first, second})
+	if err != nil || stats.Delivered != 0 {
+		t.Fatal("daily summary redelivered")
+	}
+	body, _ := os.ReadFile(filepath.Join(directory, "events.jsonl"))
+	lines := strings.Split(strings.TrimSpace(string(body)), "\n")
+	var n Notification
+	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &n); err != nil {
+		t.Fatal(err)
+	}
+	if n.Account != "Kraken" {
+		t.Fatal("account label did not reach sink")
 	}
 }
 

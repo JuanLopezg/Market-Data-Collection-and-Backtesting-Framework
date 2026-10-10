@@ -302,12 +302,12 @@ func (p *Simulation) shell(s simulationSnapshot) map[string]any {
 	return map[string]any{
 		"mode": "REPLAY", "exchange": "MOCK", "exchangeConnected": s.Phase != "ERROR",
 		"exchangeState": s.Phase, "exchangeDetail": "Step58 canonical MOCK simulation provider",
-		"dataHealthy": s.Phase != "ERROR", "dataState": "VALID", "dataDetail": fmt.Sprintf("historical %s · generation %d", s.HistoricalDate, s.Generation),
+		"dataHealthy": s.Phase != "ERROR", "dataState": "VALID", "dataDetail": fmt.Sprintf("historical %s Â· generation %d", s.HistoricalDate, s.Generation),
 		"tradingEnabled": s.RouteSafe, "tradingState": map[bool]string{true: "REPLAY ROUTE SAFE", false: "REPLAY PAUSED"}[s.RouteSafe],
 		"tradingDetail":  "New exposure is gated by Step54/55 reconciliation; this is MOCK only.",
 		"reconciliation": recon, "readiness": readiness, "alertCount": alerts,
 		"criticalAlertCount": critical, "warningAlertCount": warnings,
-		"utcLabel": fmt.Sprintf("BUSINESS %d · %s", s.BusinessTimestamp, s.HistoricalDate),
+		"utcLabel": fmt.Sprintf("BUSINESS %d Â· %s", s.BusinessTimestamp, s.HistoricalDate),
 		"blockers": reconciliationMessages(s), "warnings": []string{}, "sourceMode": "MOCK",
 	}
 }
@@ -325,9 +325,9 @@ func (p *Simulation) overview(s simulationSnapshot) map[string]any {
 	for _, point := range s.EquityHistory {
 		curve = append(curve, map[string]any{"label": point.Label, "equity": point.Equity, "benchmark": point.Equity})
 	}
-	events := []map[string]any{{"time": fmt.Sprintf("%d", s.BusinessTimestamp), "event": fmt.Sprintf("%s · day %d/%d", s.Phase, s.DayIndex, s.DayCount), "source": "Step58 replay", "severity": "INFO"}}
+	events := []map[string]any{{"time": fmt.Sprintf("%d", s.BusinessTimestamp), "event": fmt.Sprintf("%s Â· day %d/%d", s.Phase, s.DayIndex, s.DayCount), "source": "Step58 replay", "severity": "INFO"}}
 	if s.Manual.LastCorrelationID != "" {
-		events = append(events, map[string]any{"time": fmt.Sprintf("%d", s.BusinessTimestamp), "event": s.Manual.LastStatus + " · " + s.Manual.LastDetail, "source": "Manual Control", "severity": "INFO"})
+		events = append(events, map[string]any{"time": fmt.Sprintf("%d", s.BusinessTimestamp), "event": s.Manual.LastStatus + " Â· " + s.Manual.LastDetail, "source": "Manual Control", "severity": "INFO"})
 	}
 	return map[string]any{
 		"stats": stats, "equityCurve": curve, "liveExpected": []any{}, "positions": positions, "recentEvents": events,
@@ -367,7 +367,7 @@ func (p *Simulation) reconciliation(s simulationSnapshot) map[string]any {
 	rows := make([]map[string]any, 0, len(s.Account.Positions))
 	for _, pos := range s.Account.Positions {
 		rows = append(rows, map[string]any{
-			"asset": pos.Asset, "targetQty": 0.0, "targetQtyLabel": "—", "targetAvailable": false,
+			"asset": pos.Asset, "targetQty": 0.0, "targetQtyLabel": "â€”", "targetAvailable": false,
 			"effectiveQty": pos.Quantity, "effectiveQtyLabel": formatQty(pos.Quantity),
 			"localQty": pos.Quantity, "localQtyLabel": formatQty(pos.Quantity),
 			"exchangeQty": pos.Quantity, "exchangeQtyLabel": formatQty(pos.Quantity), "exchangeAvailable": true,
@@ -389,38 +389,12 @@ func (p *Simulation) reconciliation(s simulationSnapshot) map[string]any {
 	}
 	return map[string]any{
 		"status": normalizedReconState(s.Reconciliation.State), "lastChecked": fmt.Sprintf("%d", s.BusinessTimestamp), "tolerance": "EXACT FIXED-POINT / explicit identity",
-		"targetPortfolioValue": "—", "localPortfolioValue": formatUSD2(s.Account.Equity), "exchangePortfolioValue": formatUSD2(s.Account.Equity),
+		"targetPortfolioValue": "â€”", "localPortfolioValue": formatUSD2(s.Account.Equity), "exchangePortfolioValue": formatUSD2(s.Account.Equity),
 		"rows": rows, "openOrders": open, "sourceMode": "MOCK", "sourceUpdatedAt": fmt.Sprintf("%d", s.BusinessTimestamp),
 		"sourceNote": "Step54 reconciliation. PENDING never becomes CLEAN without same-sequence complete evidence.", "comparisonAvailable": true,
 		"exchangeEvidenceTime": fmt.Sprintf("%d", s.BusinessTimestamp), "exchangeEvidenceSequence": s.Reconciliation.VenueSequence, "exchangeSnapshotTimestamp": s.BusinessTimestamp,
 		"evidenceFresh": s.Reconciliation.State == "CLEAN", "issues": issues,
 	}
-}
-
-func (p *Simulation) pipeline(s simulationSnapshot) map[string]any {
-	completion := "NO_ACTION"
-	status := "ALIGNED"
-	if len(s.Fills) > 0 {
-		completion = "FULL_CHAIN"
-	}
-	if s.Reconciliation.State == "PENDING" {
-		completion = "INCOMPLETE_OR_IN_FLIGHT"
-		status = "PENDING"
-	}
-	if s.Reconciliation.State == "BLOCKED" {
-		completion = "CONTRADICTION_OR_TERMINAL_FAILURE"
-		status = "BLOCKED"
-	}
-	orderIDs := make([]string, 0, len(s.Orders))
-	for _, o := range s.Orders {
-		orderIDs = append(orderIDs, o.OrderID)
-	}
-	fillIDs := make([]string, 0, len(s.Fills))
-	for _, f := range s.Fills {
-		fillIDs = append(fillIDs, f.FillID)
-	}
-	proof := map[string]any{"status": status, "completion": completion, "cycleTimestamp": fmt.Sprintf("%d", s.BusinessTimestamp), "correlationId": fmt.Sprintf("step58-generation-%d", s.Generation), "submitOrders": len(s.Orders), "cancelOrders": 0, "matchedOrders": len(s.Fills), "matchedFills": len(s.Fills), "orderIds": orderIDs, "fillIds": fillIDs, "steps": []any{}, "sourceNote": "Canonical MOCK evidence through Steps50-55."}
-	return map[string]any{"proof": proof, "cycleLabel": fmt.Sprintf("%s · %s", s.HistoricalDate, s.Phase), "sourceMode": "MOCK", "sourceUpdatedAt": fmt.Sprintf("%d", s.BusinessTimestamp), "sourceNote": "Detailed RSI/rank trace is not reconstructed by the dashboard; only canonical runtime evidence is shown.", "latestDecision": s.Phase, "universeSize": len(s.Market), "activeSignals": len(s.Account.Positions), "actionablePlans": countOpenOrders(s), "rows": []any{}, "traces": map[string]any{}}
 }
 
 func (p *Simulation) execution(s simulationSnapshot) map[string]any {
@@ -451,7 +425,7 @@ func (p *Simulation) execution(s simulationSnapshot) map[string]any {
 		case "REJECTED":
 			rejects++
 		}
-		avg := "—"
+		avg := "â€”"
 		if p, ok := fillPriceByOrder[o.OrderID]; ok {
 			avg = formatPrice(p)
 		}
@@ -463,7 +437,7 @@ func (p *Simulation) execution(s simulationSnapshot) map[string]any {
 		orders = append(orders, map[string]any{
 			"orderId": o.OrderID, "strategyId": o.StrategyID, "exchangeOrderId": o.NativeOrderID, "cycleId": fmt.Sprintf("step58-%s", o.OrderID), "correlationId": fmt.Sprintf("mock-order-%s", o.OrderID),
 			"asset": o.Asset, "side": o.Side, "quantity": o.Quantity, "filledQty": o.FilledQuantity, "remainingQty": o.RemainingQuantity, "state": state, "age": "business-event",
-			"expectedPriceLabel": formatPrice(o.LimitPrice), "avgFillPriceLabel": avg, "feesLabel": formatUSD2(fee), "slippageBps": 0.0, "slippageBpsLabel": "—", "submitLatencyMs": 0, "fillLatencyMs": nil,
+			"expectedPriceLabel": formatPrice(o.LimitPrice), "avgFillPriceLabel": avg, "feesLabel": formatUSD2(fee), "slippageBps": 0.0, "slippageBpsLabel": "â€”", "submitLatencyMs": 0, "fillLatencyMs": nil,
 			"submittedAt": fmt.Sprintf("%d", o.ActiveFrom), "lastUpdateAt": fmt.Sprintf("%d", s.BusinessTimestamp), "lifecycle": []any{},
 		})
 	}
@@ -476,23 +450,9 @@ func (p *Simulation) execution(s simulationSnapshot) map[string]any {
 	}
 	return map[string]any{
 		"lastUpdated": fmt.Sprintf("%d", s.BusinessTimestamp), "openOrders": open, "partialOrders": partial, "pendingCancels": pendingCancel, "filledOrders": filled, "fillCount": len(s.Fills), "rejectCount": rejects,
-		"avgSubmitLatencyMs": 0, "avgFillLatencyMs": 0, "avgSlippageBpsLabel": "—", "submitLatencyP95Ms": 0, "fillLatencyP95Ms": 0, "bestSlippageBpsLabel": "—", "worstSlippageBpsLabel": "—",
+		"avgSubmitLatencyMs": 0, "avgFillLatencyMs": 0, "avgSlippageBpsLabel": "â€”", "submitLatencyP95Ms": 0, "fillLatencyP95Ms": 0, "bestSlippageBpsLabel": "â€”", "worstSlippageBpsLabel": "â€”",
 		"totalFeesLabel": formatUSD2(totalFees), "rejectRateLabel": percent(rejects, len(s.Orders)), "orders": orders, "partialFills": fills, "rejects": []any{}, "replacements": []any{},
 		"sourceMode": "MOCK", "sourceUpdatedAt": fmt.Sprintf("%d", s.BusinessTimestamp), "sourceNote": "Latency/slippage are unavailable in Step58 synthetic OHLCV replay and are not fabricated.", "latencyAvailable": false, "slippageAvailable": false, "orderWindowTruncated": false, "fillWindowTruncated": false,
-	}
-}
-
-func (p *Simulation) risk(s simulationSnapshot) map[string]any {
-	free := s.Account.Equity - s.Account.MarginUsed
-	if free < 0 {
-		free = 0
-	}
-	return map[string]any{
-		"riskState": map[bool]string{true: "REPLAY SAFE", false: "PAUSED"}[s.RouteSafe], "portfolioLimits": []any{}, "assetLimits": []any{}, "breaches": []any{},
-		"safety":             map[string]any{"tradingState": map[bool]string{true: "TRADING READY", false: "TRADING PAUSED"}[s.RouteSafe], "reason": "Step54/55 reconciliation gate", "killSwitch": "ARMED", "lastRiskCheck": fmt.Sprintf("%d", s.BusinessTimestamp), "riskRevision": fmt.Sprintf("step58-%d", s.Generation)},
-		"exchangeAllocation": map[string]any{"assignedLabel": formatUSD2(s.Account.Equity), "usedLabel": formatUSD2(s.Account.MarginUsed), "freeLabel": formatUSD2(free), "lockedLabel": formatUSD2(s.Account.MarginUsed), "lockedPct": safePct(s.Account.MarginUsed, s.Account.Equity)},
-		"sourceMode":         "MOCK", "sourceUpdatedAt": fmt.Sprintf("%d", s.BusinessTimestamp), "sourceNote": "Active portfolio-risk limit internals are not exposed by Step56 runtime snapshots; no limit/breach values are fabricated.",
-		"accountCashLabel": formatUSD2(s.Account.CashTotal), "referenceCapitalLabel": formatUSD2(s.Account.Equity), "activeTargetCount": len(s.Account.Positions), "activeLimitsAvailable": false, "breachesAvailable": false, "currentValuationAvailable": true, "realAssets": []any{}, "missingDiagnostics": []string{"DETAILED_RISK_DECISION_FIELDS_NOT_EXPOSED_BY_STEP56_RUNTIME"},
 	}
 }
 
@@ -739,7 +699,7 @@ func (p *Simulation) manualBase(s simulationSnapshot, actor string) (ManualContr
 	if !s.RouteSafe {
 		blockers = append(blockers, "ROUTE_SAFETY_FALSE")
 	}
-	return ManualControlData{ContractVersion: simulationManualContractVersion, RoutingContractReady: s.Manual.Ready, RoutingContractMode: "MOCK_SIMULATION_NORMAL_PIPELINE", ExecutionBoundary: "OPERATOR -> dashboard-api -> durable simulation request -> Step57 ManualPortfolioRisk -> production Planner -> CanonicalVenueAdapter -> MOCK", ExchangeConstraintsValidated: s.Manual.Ready, TradingControlSink: "STEP58_DURABLE_FILE_TRANSPORT", PrivateAuth: "DISABLED", OrderLifecycle: "STEP50_TO_STEP55_CANONICAL_MOCK", ConfirmationRequired: true, ConfirmationPhrase: ManualControlConfirmationPhrase, HumanAuditAvailable: true, RouteBlockers: uniqueStrings(blockers), RecentRouteAudits: []ManualRouteAuditRow{}, Mode: "REPLAY", Exchange: "MOCK / NORMAL PIPELINE", SchemaLabel: "asset,weight_pct", MaxUploadSizeLabel: "256 KB", ExampleCSV: example, RequestHash: "", PreviewRows: []ManualPreviewRow{}, ValidationIssues: []ManualValidationIssue{{Severity: "INFO", Field: "backend", Message: "Simulation preview is server-side; confirmed routes are queued to the Step57 normal pipeline only when the replay has reached MANUAL_READY and reconciliation is CLEAN."}}, OrderPreview: []ManualOrderPreviewRow{}, EstimatedFeesLabel: "Step52 canonical fee on fill", EstimatedTurnoverLabel: "—", AuditActorLabel: actor, BackendAuthoritative: true, ValidationPassed: false, RiskCheckAvailable: s.Manual.Ready, RouteEnabled: s.Manual.Ready && s.Reconciliation.State == "CLEAN" && s.RouteSafe, SourceMode: "MOCK", CurrentTargetTimestamp: strconv.FormatUint(s.BusinessTimestamp, 10), PreviewKind: "MOCK_TARGET_DELTA", SafetyNote: "Step58 enables manual routing only inside the MOCK simulation sink after the historical replay has handed off a flat, CLEAN account. REAL/private routing remains disabled."}, nil
+	return ManualControlData{ContractVersion: simulationManualContractVersion, RoutingContractReady: s.Manual.Ready, RoutingContractMode: "MOCK_SIMULATION_NORMAL_PIPELINE", ExecutionBoundary: "OPERATOR -> dashboard-api -> durable simulation request -> Step57 ManualPortfolioRisk -> production Planner -> CanonicalVenueAdapter -> MOCK", ExchangeConstraintsValidated: s.Manual.Ready, TradingControlSink: "STEP58_DURABLE_FILE_TRANSPORT", PrivateAuth: "DISABLED", OrderLifecycle: "STEP50_TO_STEP55_CANONICAL_MOCK", ConfirmationRequired: true, ConfirmationPhrase: ManualControlConfirmationPhrase, HumanAuditAvailable: true, RouteBlockers: uniqueStrings(blockers), RecentRouteAudits: []ManualRouteAuditRow{}, Mode: "REPLAY", Exchange: "MOCK / NORMAL PIPELINE", SchemaLabel: "asset,weight_pct", MaxUploadSizeLabel: "256 KB", ExampleCSV: example, RequestHash: "", PreviewRows: []ManualPreviewRow{}, ValidationIssues: []ManualValidationIssue{{Severity: "INFO", Field: "backend", Message: "Simulation preview is server-side; confirmed routes are queued to the Step57 normal pipeline only when the replay has reached MANUAL_READY and reconciliation is CLEAN."}}, OrderPreview: []ManualOrderPreviewRow{}, EstimatedFeesLabel: "Step52 canonical fee on fill", EstimatedTurnoverLabel: "â€”", AuditActorLabel: actor, BackendAuthoritative: true, ValidationPassed: false, RiskCheckAvailable: s.Manual.Ready, RouteEnabled: s.Manual.Ready && s.Reconciliation.State == "CLEAN" && s.RouteSafe, SourceMode: "MOCK", CurrentTargetTimestamp: strconv.FormatUint(s.BusinessTimestamp, 10), PreviewKind: "MOCK_TARGET_DELTA", SafetyNote: "Step58 enables manual routing only inside the MOCK simulation sink after the historical replay has handed off a flat, CLEAN account. REAL/private routing remains disabled."}, nil
 }
 
 func (p *Simulation) manualPreview(s simulationSnapshot, req ManualControlPreviewRequest) (ManualControlData, error) {
@@ -898,7 +858,7 @@ func formatSignedUSD(v float64) string {
 func formatQty(v float64) string { return strconv.FormatFloat(v, 'f', 8, 64) }
 func formatPrice(v float64) string {
 	if v <= 0 {
-		return "—"
+		return "â€”"
 	}
 	return fmt.Sprintf("$%.8f", v)
 }

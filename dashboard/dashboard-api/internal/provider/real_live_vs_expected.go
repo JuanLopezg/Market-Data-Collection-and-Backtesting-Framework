@@ -38,6 +38,7 @@ type realLiveVsExpected struct {
 	SourceMode               string                       `json:"sourceMode"`
 	SourceNote               string                       `json:"sourceNote"`
 	ReadOnly                 bool                         `json:"readOnly"`
+	PaperComparison          *paperComparison             `json:"paperComparison,omitempty"`
 	PrivateAuth              string                       `json:"privateAuth"`
 	OrderRouting             string                       `json:"orderRouting"`
 	CheckedAt                string                       `json:"checkedAt"`
@@ -137,7 +138,11 @@ func (p *Real) liveVsExpected(ctx context.Context) (realLiveVsExpected, error) {
 	if err != nil {
 		return realLiveVsExpected{}, fmt.Errorf("read canonical behaviour baseline window: %w", err)
 	}
-	return buildRealLiveVsExpected(window, canonicalTopN, universeN, p.cfg), nil
+	value := buildRealLiveVsExpected(window, canonicalTopN, universeN, p.cfg)
+	if p.cfg.PaperComparisonFile != "" {
+		value.PaperComparison = readPaperComparison(p.cfg.PaperComparisonFile)
+	}
+	return value, nil
 }
 
 func step45Coverage(marketState, marketDetail string) []realLiveVsExpectedCoverage {
@@ -163,7 +168,8 @@ func buildRealLiveVsExpected(window sqlitemarket.BehaviourWindow, canonicalTopN,
 		}
 		window.Ranking = ranking
 	}
-	observations := computeDailyBehaviour(window, universeN, cfg.QuoteVolume)
+	entry, exit := cfg.rsiThresholds()
+	observations := computeDailyBehaviour(window, universeN, cfg)
 	checkedAt := timeNowUTC()
 	if len(observations) < 6 {
 		return realLiveVsExpected{
@@ -181,7 +187,7 @@ func buildRealLiveVsExpected(window sqlitemarket.BehaviourWindow, canonicalTopN,
 	series := []behaviourSeries{
 		{
 			ID: "entry-qualified", Family: "ACTIVITY", Label: "Entry-qualified assets",
-			Description: "Count of the reconstructed top-20 universe with RSI(7) > 80 on each completed canonical market day. This is an input-condition baseline, not a count of persisted strategy transitions.",
+			Description: fmt.Sprintf("Count of the reconstructed universe with RSI(7) > %g on each completed canonical day; input conditions, not persisted transitions.", entry),
 			Values:      obsValues(observations, func(o dailyBehaviourObservation) float64 { return o.EntryQualified }),
 			Format:      func(v float64) string { return fmt.Sprintf("%.0f assets", v) },
 		},
@@ -198,8 +204,8 @@ func buildRealLiveVsExpected(window sqlitemarket.BehaviourWindow, canonicalTopN,
 			Format:      func(v float64) string { return fmt.Sprintf("%.1f", v) },
 		},
 		{
-			ID: "high-rsi-share", Family: "STRATEGY INPUTS", Label: "RSI ≥ 70 Share",
-			Description: "Share of the reconstructed top-20 universe at or above RSI 70, providing a bounded view of broad strategy-input pressure.",
+			ID: "high-rsi-share", Family: "STRATEGY INPUTS", Label: fmt.Sprintf("RSI ≥ %g Share", exit),
+			Description: "Share of the reconstructed universe at or above the configured exit threshold.",
 			Values:      obsValues(observations, func(o dailyBehaviourObservation) float64 { return o.HighRSISharePct }),
 			Format:      func(v float64) string { return fmt.Sprintf("%.1f%%", v) },
 		},
@@ -286,7 +292,8 @@ func maxIntStep45(a, b int) int {
 // allowing wall clock to enter any economic calculation.
 func timeNowUTC() string { return time.Now().UTC().Format(time.RFC3339) }
 
-func computeDailyBehaviour(window sqlitemarket.BehaviourWindow, universeN int, quoteVolume ...bool) []dailyBehaviourObservation {
+func computeDailyBehaviour(window sqlitemarket.BehaviourWindow, universeN int, cfg RealConfig) []dailyBehaviourObservation {
+	entry, exit := cfg.rsiThresholds()
 	rankingByDate := make(map[uint64][]sqlitemarket.DailyRankingRow)
 	dates := make([]uint64, 0)
 	seenDates := make(map[uint64]struct{})
@@ -316,7 +323,7 @@ func computeDailyBehaviour(window sqlitemarket.BehaviourWindow, universeN int, q
 			if !hasBarOnDate(bars, date) {
 				continue
 			}
-			sma := latestSMAOnRows(bars, pureRSILiquidityLength, func(bar sqlitemarket.Bar) float64 { return liquidityValue(bar, len(quoteVolume) > 0 && quoteVolume[0]) })
+			sma := latestSMAOnRows(bars, pureRSILiquidityLength, func(bar sqlitemarket.Bar) float64 { return liquidityValue(bar, cfg.QuoteVolume) })
 			rsi := latestRSIOnRows(bars, pureRSILength)
 			if !isFinite(sma) || !isFinite(rsi) {
 				continue
@@ -346,10 +353,10 @@ func computeDailyBehaviour(window sqlitemarket.BehaviourWindow, universeN int, q
 		for i, candidate := range universe {
 			assets = append(assets, candidate.asset)
 			rsis = append(rsis, candidate.rsi)
-			if candidate.rsi > pureRSIEntry {
+			if candidate.rsi > entry {
 				entryQualified++
 			}
-			if candidate.rsi >= pureRSIExit {
+			if candidate.rsi >= exit {
 				highRSI++
 			}
 			totalLiquidity += candidate.smaVolume

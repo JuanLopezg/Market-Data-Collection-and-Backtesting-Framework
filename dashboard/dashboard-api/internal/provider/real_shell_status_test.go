@@ -7,6 +7,20 @@ import (
 	"time"
 )
 
+func TestShellClockWarningMatchesObservationAndKeepsTradingDisabled(t *testing.T) {
+	infra, recon, market, alerts := healthyShellFixtures()
+	infra.VPS.ClockObserved, infra.VPS.ClockSynced = true, true
+	got := buildRealShellStatus("LIVE", infra, recon, nil, market, nil, alerts, time.Now())
+	if strings.Contains(strings.Join(got.Warnings, " "), "Host clock") || got.TradingEnabled || got.Readiness == "READY" {
+		t.Fatal("Clock evidence falsely warned or granted trading readiness")
+	}
+	infra.VPS.ClockSynced = false
+	got = buildRealShellStatus("LIVE", infra, recon, nil, market, nil, alerts, time.Now())
+	if !strings.Contains(strings.Join(got.Warnings, " "), "Host clock is not synchronized") {
+		t.Fatal("Unsynchronized clock not reported")
+	}
+}
+
 func healthyShellFixtures() (realInfrastructure, realReconciliationData, realMarketData, realAlertsAuditData) {
 	infra := realInfrastructure{
 		Postgres: realPostgres{State: "HEALTHY", Connected: true},

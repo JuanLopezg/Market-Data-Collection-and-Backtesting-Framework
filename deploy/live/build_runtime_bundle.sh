@@ -27,6 +27,7 @@ if [[ "$KIND" == PAPER ]]; then
     BINARIES+=(
         "$BUILD/live_trading/simulated_exchange_service/src/algotrading_simulated_exchange_service"
         "$BUILD/live_trading/historical_market_data_service/src/algotrading_historical_market_data_service"
+        "$BUILD/research/src/legacy/algotrading_research"
     )
 fi
 

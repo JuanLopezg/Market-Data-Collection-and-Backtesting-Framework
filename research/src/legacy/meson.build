@@ -6,7 +6,7 @@ legacy_inc = include_directories('.')
 # ------------------------------------------------------------------
 executable(
     'algotrading_research',
-    ['backtesting_main.cpp'] + backtest_core_sources,
+    ['backtesting_main.cpp', '../common/paper_baseline.cpp'] + backtest_core_sources,
     include_directories: [
         legacy_inc,
         research_src_inc,

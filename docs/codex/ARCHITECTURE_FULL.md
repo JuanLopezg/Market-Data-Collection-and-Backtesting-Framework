@@ -6,6 +6,16 @@ This is the current architecture map, checked against source on 2026-10-08.
 [The roadmap](../ROADMAP.md) owns ordered pending requirements and venue-selection priorities.
 Source and current build/test output take precedence over these descriptions.
 
+PortfolioRiskEngine optionally captures sized weights, asset/gross cap evaluations,
+volatility diagnostics and actual rebalance actions without changing DecisionBatch.
+PortfolioRisk service persists that observation as nullable `risk_diagnostics_payload`
+in the same decision-checkpoint INSERT, carrying the cycle timestamp/configuration
+identity. The dashboard validates that lineage and displays its identity SHA-256;
+it does not recompute strategy economics. HOLD preserves quantity rather than
+emitting the evaluated target. Old rows and canonical replay snapshots retain
+unavailable intermediates. Whole-account/venue margin and control readiness remain
+separate pending work.
+
 PAPER liquidity uses a separate `pure_rsi_quote_volume.json` profile and actual
 Binance completed-kline quote turnover. `OHLCV.quote_volume` is optional for older
 base-only data; the live SQLite writer migrates/backfills it, the canonical reader
@@ -122,6 +132,81 @@ The release gate compares resumed, uninterrupted, dashboard and paced fingerprin
 
 ## Service trading
 
+`live_trading/kraken_shadow.py` owns Kraken public Multi-M normalization and a
+hypothetical BTC/USD cross-margin diagnostic. It reuses `ShadowJournal` with an
+explicit assessor and durable venue/environment identity; fixture and real-public
+journals cannot be mixed. Fixed GET-only hosts/routes, server freshness and raw
+capture hashes bound the observations. A source USD plan is observed against the
+current mark without changing close(T), contract units or trading state. Missing
+books/metadata are unavailable, not unsupported-market skips. Hypothetical collateral
+uses the BTC index and haircut and distinguishes USD reserve from margin value.
+Private account margin, settlement and live derivatives accounting remain separate;
+`lib/Account` is still a cash/filled-position account. Legacy-demo redirects are
+rejected without live fallback. See the [Kraken preparation guide](../../live_trading/README.md#kraken-multi-m-preparation).
+
+`live_trading/kraken_account.py` owns separate read-only private account inspection:
+fixed authenticated GETs with permission gating, fresh UTC clocks, Multi-M wallet
+normalization, signed positions/open orders and an account/source/policy-bound SQLite
+journal. Margin equity and order-inclusive requirements come from the venue, rather
+than the public hypothetical haircut calculation. USD reserve/loss stress checks
+do not approve trading. The dedicated loader consumes the ignored .env internally;
+diagnostics never expose its values. Mutually exclusive CLI account/fixture modes
+use separate journals. Safe attempt status distinguishes HTTP access failures from
+completed reads. Real read-only Multi-M BTC/USD inspection passed; no forward venue,
+private order/capital acceptance, submissions or core Account writes are claimed.
+The user-selected policy observes USD 50 minimum net venue marginEquity and 10%
+available USD. Equity/current-cash checks and projected-loss stress have separate
+diagnostics. No leveraged-notional denominator, rebalance, order admission or closing
+behavior is added. Changing policy requires a separate account observation journal.
+
+`live_trading/kraken_account_monitor.py` owns continuous local read-only polling and
+durable account-warning transitions in the account journal. It publishes the existing
+step43-v1 heartbeat/events contract to an isolated Go dashboard-alert-notifier
+container, reusing its Telegram sink and durable receipts. It does not implement a
+second sender or trading engine. Unchanged warnings are not repeated; only validated
+fresh account recovery resolves them. Source failures block notification processing
+rather than fabricate recovery. Private account credentials stay in the internal
+reader; Docker internally consumes the local Telegram env file. A process lock
+prevents concurrent writers. No VPS installation, order admission or closing rule is
+implied; local observer uptime and permanent history retention remain operational concerns.
+
+`live_trading/kraken_portfolio_summary.py` owns daily USD valuations and calendar
+snapshot/summary persistence in that same account journal transaction. The monitor
+uses verified public linear USD marks only for exposure, preserves each UTC day's
+latest observed holdings and emits one INFO event per day after the configured UTC
+hour. Missing prior-day or price evidence remains explicit. Account labels pass
+through the optional account field in alertstore.Alert and notifier.Notification.
+The shared Telegram formatter presents severity/account-or-system/reason/detail,
+while full technical identities remain in durable journals. Daily events retain
+source deduplication but bypass the operational update cooldown after INFO admission.
+
+Account-warning projection additionally compares current net equity with the last
+observed snapshot in the preceding UTC day and computes gross absolute marked USD
+open-position exposure/net equity. Defaults are a 10% decline and exposure above
+5x; both are warning-only. Missing history/prices or nonpositive denominators remain
+unavailable and retain prior active warnings. The monitor does not implement an
+account kill switch or change the library's strategy sizing/gross constraint.
+The user cancelled additional opening-order limit/admission changes; existing sizing
+and order behavior remain intact. Daily position text includes absolute marked USD
+notional as a percentage of the same snapshot's positive net equity; prior-day
+percentages remain tied to the prior observation, and unavailable inputs are explicit.
+
+`live_trading/shadow_observer.py` reads exported CURRENT notional planner payloads
+without recomputing signals/sizing or publishing order/fill messages. Its separate
+SQLite observation journal binds the persisted risk-configuration fingerprint and
+producer message/payload hashes. Completed observations survive duplicate delivery/
+restart; unavailable fixture reads remain retryable. This fingerprint is not a full
+strategy/market/venue manifest. The preparation reader accepts loopback GET /snapshot
+only, disables proxies/redirects and has no private credentials or order methods.
+It observes fixture quantity rules/marks without changing the source plan; fees,
+funding, collateral, FX, fills and PnL remain unavailable.
+
+`validation/shadow_trading_test.py` reuses the bounded PAPER fixture through an
+opt-in handoff after real producer and simulated-fill/restart checks. It tests
+unsupported markets, metadata freshness, HTTP cuts, identity conflicts and observer
+recovery, then writes labelled fixture HTML/JSON reports in ignored isolated state.
+Actual venue reads and aligned backtest/shadow acceptance remain separate.
+
 The service responsibilities and intended execution chain are documented in [live_trading/README.md](../../live_trading/README.md).
 
 ```mermaid
@@ -181,6 +266,14 @@ duplicate/fault injection, test-database checkpoint/outbox barriers, append-only
 daily captures and Docker resource samples. Its simulated exchange is isolated
 from LIVE/private routing; [the runbook](../../validation/LOCAL_SERVICE_CAMPAIGN.md)
 defines the acceptance limits and cleanup commands.
+
+The opt-in PAPER recovery study in validation/paper_recovery_test.py uses actual
+packaged services: trading without dashboard workers, HTTP/NATS/PostgreSQL cuts,
+then a maintenance-stop backup of logical PostgreSQL and stopped market/NATS/
+observer volumes. Restore targets a fresh isolated project and checks all public
+SQL tables/files before restart and retained economics afterward. This boundary
+requires quiesced writers and a drained exchange outbox; it is not an online
+cross-store snapshot or an unattended reconnect/production backup contract.
 
 `research/replay.py resources` adds bounded resource orchestration, not another
 replay engine. `resource_profile.py` owns the isolated service/dashboard lifecycle,
@@ -264,7 +357,13 @@ Dashboard market mounts are read-only; observer-created writable SQLite WAL/SHM
 must not prevent ingestion. VPS systemd startup waits for the loopback receiver,
 with scoped AppArmor permissions, and receiver restart does not stop PAPER.
 No dashboard Docker socket; process health does not establish trading readiness.
-Clock sync remains unmeasured. Local capture reuses the two-day/50-MiB daily writer;
+Current local source probes trading executables through host-owned Docker top and
+reads systemd NTP synchronization status; unavailable probes remain UNKNOWN and
+clock offset is unmeasured. Daily PAPER decision/plan freshness uses durable business
+dates, not database-write recency, with an explicit 30-minute UTC rollover grace.
+Empty plans count as progress. External process sampling is not an application
+heartbeat or response/control contract. The deployed VPS retains its earlier source
+until an authorized update. Local capture reuses the two-day/50-MiB daily writer;
 the optional VPS overlay covers all services. See [paper operations](../../deploy/paper_trading/README.md).
 The [VPS equivalence procedure](../../deploy/live/README.md#local-to-vps-equivalence-acceptance)
 compares source/input identity, configured builds, packaging, non-secret settings
@@ -277,14 +376,53 @@ are in [CONTEXT_FULL.txt](CONTEXT_FULL.txt).
 
 ## Dashboard boundary
 
+Pending reporting requirement (not implemented): Trades must expose separate
+Commission and Funding columns in USD and net PnL after both; gross trade PnL is
+optional. Runtime/venue accounting must own actual fee/funding events and their
+attribution, timestamps, signs and currencies; the API/UI reads that evidence and
+must not invent missing funding or double-count costs. Keep trade and Perpetuals/
+Costs totals consistent with durable account history. The ordered roadmap also
+reserves a task for future dashboard adjustments once the user specifies them.
+
+The optional PAPER activity study adds `deploy/paper_trading/comparison.py`, a host
+read-only collector with a separate immutable daily market/account observation
+journal. It invokes `research/src/common/paper_baseline.cpp` through the existing
+fast research binary in a network-disabled container. CURRENT TradingEngine,
+PureRSI, sizing and fill accounting own baseline decisions; no Python trading engine
+is introduced. The activity overlay keeps original account/message volumes and
+selects a distinct 50/40 experiment. The API reads bounded atomic comparison JSON;
+Live vs. Expected presents simulated and fast equity/cash/positions with visible
+close-versus-open quantity differences. No private Kraken account is merged or traded.
+
 React talks to the Go API over authenticated HTTP and SSE. Browsers do not connect to
 PostgreSQL, SQLite, NATS or an exchange. The API's `mock`, `real` and
 `simulation` providers are different read-model sources.
 
+Mobile access was cancelled by the user on 2026-10-09 and is not a pending requirement.
+The retained optional same-Wi-Fi helper is `deploy/paper_trading/mobile_access.py`
+on the PC: a TLS byte-stream bridge with one exact source-IP allowlist targets an
+existing loopback dashboard or VPS SSH tunnel. It neither bypasses API auth nor
+starts trading/changes the VPS. Generated certificates stay ignored; host firewall
+setup is documented in the inactive optional PAPER runbook. The upstream
+remains loopback HTTP with its existing cookie settings; the phone listener is TLS-only.
+
 Real reads use bounded PostgreSQL queries, canonical SQLite and retained NATS snapshots.
 SSE asks the browser to refresh resources; it does not expose raw trading messages.
+The frontend closes EventSource on pagehide and React unmount, reconnecting on
+pageshow so cached/old documents do not retain connections that block REST reads.
 Watchdog alerts, notification receipts, manual-intent audits and acknowledgements have
 their own stores; they are not canonical fills or PnL.
+
+PAPER defaults to TEST_FILE notifications and can opt into Telegram through ignored
+environment settings. The fixed-endpoint Telegram adapter persists delivery receipts
+and defers all sends during its in-memory retry_after window; failed events remain
+unprocessed. --test-message explicitly sends one setup message without replaying
+watchdog lifecycle. Fresh host pressure, observed process loss/clock unsynchronization
+and degraded daily progress now feed the existing operational alert projection.
+The notifier requires a successful watchdog heartbeat within 90 seconds, rejects
+timestamps over 30 seconds ahead and waits after a failed source sweep. Stale source
+state is not replayed as current alerts. Real local setup and isolated two-message
+delivery/recovery passed; actual trading-fault coverage and VPS rollout remain separate.
 
 Manual preview/route enforce operator authentication and CSRF. Route evaluates admission
 and durably audits an intent with `submitted=false`; no private exchange order is

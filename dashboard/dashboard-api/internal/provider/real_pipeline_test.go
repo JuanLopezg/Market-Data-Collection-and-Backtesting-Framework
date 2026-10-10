@@ -1,11 +1,38 @@
 package provider
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	pgstore "control-dashboard-api/internal/integration/postgres"
 	"control-dashboard-api/internal/tradingwire"
 )
+
+type absentCheckpointRunner struct{ failure error }
+
+func (runner absentCheckpointRunner) QueryJSON(context.Context, string, string) ([]byte, error) {
+	return nil, runner.failure
+}
+
+func TestMissingDecisionIsPendingButDatabaseFailureRemainsAnError(t *testing.T) {
+	p := &Real{postgres: pgstore.NewReader(pgstore.Config{DSN: "host=fixture dbname=fixture", Runner: absentCheckpointRunner{}})}
+	pipeline, err := p.pipeline(context.Background())
+	if err != nil || pipeline.EvidenceState != "PENDING" || pipeline.EmptyReason == "" || pipeline.Rows == nil {
+		t.Fatalf("missing decision was not explained: %v %+v", err, pipeline)
+	}
+	risk, err := p.risk(context.Background())
+	if err != nil || risk.EvidenceKind != "PENDING" || risk.AccountCashLabel != "Unavailable" {
+		t.Fatalf("missing risk was interpreted as zero: %v %+v", err, risk)
+	}
+	p.postgres = pgstore.NewReader(pgstore.Config{DSN: "host=fixture dbname=fixture", Runner: absentCheckpointRunner{failure: errors.New("fixture database unreachable")}})
+	if _, err = p.pipeline(context.Background()); err == nil {
+		t.Fatal("database failure concealed as quiet cycle")
+	}
+	if _, err = p.risk(context.Background()); err == nil {
+		t.Fatal("database failure concealed as unavailable decision")
+	}
+}
 
 func TestBuildRealPipelineUsesDurableApprovedNotionalAndDoesNotInventRSI(t *testing.T) {
 	checkpoint := pgstore.PipelineCheckpoint{
@@ -32,5 +59,29 @@ func TestBuildRealPipelineUsesDurableApprovedNotionalAndDoesNotInventRSI(t *test
 	trace := data.Traces[row.CycleID]
 	if trace.Strategy.RSI != "Not persisted" || trace.Portfolio.ApprovedTarget != "$10000.00" || trace.Planning.StateRevision != "7" {
 		t.Fatalf("unexpected trace: %+v", trace)
+	}
+}
+
+func TestPipelineQuietCycleShowsReferenceAssetsWithoutInventingTargets(t *testing.T) {
+	checkpoint := pgstore.PipelineCheckpoint{Timestamp: 20261007,
+		Account: tradingwire.AccountSnapshot{Positions: map[string]float64{"ETH": -2}},
+		Signals: tradingwire.StrategyIntentBatch{Strategies: []tradingwire.StrategySignalIntent{{StrategyID: 1, Signals: map[string]float64{}}}}}
+	request := tradingwire.NotionalOrderPlanningRequest{DecisionTimestamp: 20261007, ReferenceCloses: tradingwire.DailyCloseSnapshot{Date: 20261007, Closes: map[string]float64{"BTC": 60000, "ETH": 2000}}}
+	checkpoint.PlanningRequest = &request
+	plan := tradingwire.NotionalOrderPlanBatch{DecisionTimestamp: 20261007}
+	checkpoint.Plan = &plan
+	data := buildRealPipeline(checkpoint, pgstore.RuntimeState{}, realReconciliationData{}, nil, "PAPER")
+	if len(data.Rows) != 2 || data.EvidenceState != "OBSERVED" {
+		t.Fatalf("quiet cycle disappeared: %+v", data)
+	}
+	for _, row := range data.Rows {
+		if row.Signal != "UNKNOWN" || row.ApprovedTargetLabel != "HOLD / no new target" || row.PlannedAction != "NO ORDER" {
+			t.Fatalf("invented quiet-cycle evidence: %+v", row)
+		}
+	}
+	checkpoint.Plan = nil
+	data = buildRealPipeline(checkpoint, pgstore.RuntimeState{}, realReconciliationData{}, nil, "PAPER")
+	if data.EvidenceState != "PENDING" || data.Rows[0].ExchangeState != "PENDING" || data.Rows[0].PlannedAction != "Planner pending" {
+		t.Fatalf("missing planner became no-action success: %+v", data)
 	}
 }

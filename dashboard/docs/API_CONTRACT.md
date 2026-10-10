@@ -1,7 +1,7 @@
 # Dashboard API contract
 
 Checked against `dashboard-api/internal/server/server.go` and current provider
-handlers on 2026-10-07. Browser requests are same-origin under `/api`.
+handlers on 2026-10-08. Browser requests are same-origin under `/api`.
 The frontend contract is independent of runtime SQL schemas and NATS subjects.
 
 Market Data adds optional `liquidityLabel` without changing `smaVolumeLabel`.
@@ -13,6 +13,28 @@ is false). `DASHBOARD_QUOTE_VOLUME` selects the metric and
 rolling input baseline excludes pre-cutover cycles and requires six observations.
 
 ## Operational and authentication endpoints
+
+Pipeline adds optional `evidenceState` (`OBSERVED`, `PARTIAL`, `PENDING`) and
+`emptyReason`. A missing first decision returns a structured pending response;
+database/decoding/timestamp failures remain errors. Signals can be `UNKNOWN` when
+no explicit entry exists. Missing target entries mean HOLD, not zero/FLAT. Replay
+rows describe retained observations and omit service end-to-end proof.
+
+Risk adds optional `evidenceKind` (`DURABLE_DECISION`, `REPLAY_SNAPSHOT`, `PENDING`),
+`decisionDetail` and `policies`. Policy fields expose persisted strategy allocation,
+sizer, gross/asset caps and rebalance settings, separately from evaluated breaches.
+Replay uses the observational risk view; missing policy/decision fields stay
+unavailable and do not imply zero risk or an armed kill switch.
+
+New service cycles add optional `configurationFingerprint` (SHA-256 of the persisted
+cycle configuration identity) and `riskEvaluations`. Each strategy includes sizing
+availability, capital, asset/gross caps, gross scaling, annualized volatility
+observations when available, and asset weights before/after each constraint. Asset
+rows carry current quantity, rebalance action and ASSET_CAP/GROSS_CAP reduction
+reasons. HOLD does not emit the evaluated weight as a new target. Missing sizing or
+volatility stays unavailable; EqualWeight volatility is not applicable. Old schemas,
+old rows and canonical replay snapshots omit these fields. Malformed or mismatched
+cycle/configuration reports are errors. Whole-account/venue breaches remain separate.
 
 | Method | Endpoint | Access and meaning |
 | --- | --- | --- |
@@ -118,6 +140,19 @@ Public venue requests use fixed public TESTNET metadata/mid-price operations.
 They use no private signing/order endpoint. No browser-to-exchange route exists.
 
 ## Implementation references
+
+Infrastructure optionally includes `tradingProgress` for persisted decision/plan
+dates, expected daily PAPER dates, persistence time, state and explanation. Daily
+freshness uses completed close yesterday and plan application today, with a
+30-minute UTC rollover grace. A no-order plan is valid progress; application is
+not fill/reconciliation proof. Other modes remain UNKNOWN rather than comparing
+historical business time to today's wall clock.
+Host telemetry optionally includes external `processes` observations. Service
+`processRunning` is omitted when unavailable; `processState` distinguishes RUNNING,
+STOPPED, MISSING and UNKNOWN. Container running does not imply executable presence
+or an application heartbeat. `clockObserved` gates host NTP SYNCED/UNSYNCED versus
+UNKNOWN; `clockOffsetLabel` does not claim a measured offset. Stale telemetry
+discards process and clock evidence with the host resource readings.
 
 - [server.go](../dashboard-api/internal/server/server.go): registered routes, authorization and action responses.
 - [provider/real.go](../dashboard-api/internal/provider/real.go): enabled real reads and provider readiness.

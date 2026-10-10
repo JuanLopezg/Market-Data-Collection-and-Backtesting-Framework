@@ -14,6 +14,7 @@ import (
 )
 
 type realInfrastructure struct {
+	TradingProgress     *realTradingProgress      `json:"tradingProgress,omitempty"`
 	TelemetryObservedAt string                    `json:"telemetryObservedAt,omitempty"`
 	Readiness           string                    `json:"readiness"`
 	ReadinessReason     string                    `json:"readinessReason"`
@@ -59,6 +60,7 @@ type realContainer struct {
 }
 
 type realService struct {
+	ProcessState   string `json:"processState,omitempty"`
 	ProcessRunning *bool  `json:"processRunning,omitempty"`
 	Service        string `json:"service"`
 	Ready          bool   `json:"ready"`
@@ -217,6 +219,11 @@ func (p *Real) loadInfrastructure(ctx context.Context) realInfrastructure {
 	}
 
 	p.applyHostTelemetry(&result, checkedAt)
+	result.TradingProgress = buildTradingProgress(pg.Runtime, pgErr, sources.PostgreSQL.Reachable, p.runtimeMode(), checkedAt)
+	result.Dependencies = append(result.Dependencies, realReadinessDependency{
+		Component: "Daily trading progress", State: result.TradingProgress.State,
+		Reason: result.TradingProgress.Detail, LastCheck: checkedAt.Format("15:04:05 UTC"),
+	})
 	if p.runtimeMode() == "PAPER" {
 		result.SourceMode = "PAPER"
 		result.ReadinessReason = "Paper trading uses virtual funds and simulated fills; private exchange readiness is not asserted."

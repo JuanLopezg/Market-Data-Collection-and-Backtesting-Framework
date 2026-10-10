@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { BaselineTrendChart, DistributionBars } from '../components/BaselineTrendChart'
 import { Panel } from '../components/Panel'
 import { DataLoadError } from '../components/DataLoadError'
+import { LineChart } from '../components/LineChart'
 import { useDashboardResource } from '../hooks/useDashboardResource'
 import type { BehaviourClassification, BehaviourMetric, LiveVsExpectedData } from '../types/dashboard'
 
@@ -52,11 +53,27 @@ export function LiveVsExpectedPage() {
   if (error) return <DataLoadError title="Live behaviour data unavailable" error={error} onRetry={retry}/>
   if (!data) return <div className="page-loading">Loading live behaviour baseline…</div>
 
+  const comparison = data.paperComparison
+  const usd = (value: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value)
+
   return <>
     <div className="page-heading">
       <div><h1>Live vs Expected</h1><p>Behaviour monitoring against historical distributions — anomaly detection, not an expected-PnL promise.</p></div>
       <div className="baseline-meta"><span>Baseline</span><strong>{data.baselineLabel}</strong><small>{data.baselineWindow}</small></div>
     </div>
+
+    {comparison && <Panel title="Simulated Live vs Fast PureRSI Backtest" right={<span>{comparison.status}</span>}>
+      <p>{comparison.profile} · Updated {comparison.checkedAt || 'unavailable'}</p>
+      <p className="muted">{comparison.note}</p>
+      {comparison.rows.length > 0 && <>
+        <p>Equity in USD: blue = simulated live; grey = fast backtest. Both use the same observed execution-open marks.</p>
+        <LineChart data={comparison.rows.map(row => ({ label: row.date, equity: row.liveEquity, benchmark: row.expectedEquity }))} />
+        <div className="table-scroll"><table><thead><tr><th>Date</th><th>Simulated equity</th><th>Fast equity</th><th>Difference</th><th>Simulated cash</th><th>Fast cash</th><th>Signal differences</th></tr></thead>
+          <tbody>{comparison.rows.map(row => <tr key={row.date}><td>{row.date}</td><td>{usd(row.liveEquity)}</td><td>{usd(row.expectedEquity)}</td><td>{usd(row.liveEquity - row.expectedEquity)}</td><td>{usd(row.liveCash)}</td><td>{usd(row.expectedCash)}</td><td>{row.signalDifferences}</td></tr>)}</tbody></table></div>
+        <div className="table-scroll"><table><thead><tr><th>Asset</th><th>Simulated quantity</th><th>Fast quantity</th><th>Simulated exposure</th><th>Fast exposure</th></tr></thead>
+          <tbody>{comparison.positions.map(row => <tr key={row.asset}><td>{row.asset}</td><td>{row.liveQuantity.toPrecision(8)}</td><td>{row.expectedQuantity.toPrecision(8)}</td><td>{usd(row.liveUsd)}</td><td>{usd(row.expectedUsd)}</td></tr>)}</tbody></table></div>
+      </>}
+    </Panel>}
 
     <div className="behaviour-note"><Info size={15}/><div><strong>{data.sourceMode === 'REAL' ? 'Real baseline interpretation' : 'Interpretation'}</strong><span>{data.sourceNote ?? 'A deviation means live operating behaviour differs from the historical baseline. It does not by itself mean the strategy is profitable, unprofitable, broken or unsafe.'}</span></div></div>
 

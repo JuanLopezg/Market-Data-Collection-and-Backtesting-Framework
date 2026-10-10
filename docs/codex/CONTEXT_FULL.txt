@@ -1,5 +1,5 @@
 ALGOTRADING - CURRENT HANDOFF
-Updated: 2026-10-08
+Updated: 2026-10-10
 Build environment: WSL. Repository source and current test output are authoritative.
 
 READING AND DOCUMENT OWNERSHIP
@@ -11,6 +11,16 @@ fingerprints and validation evidence. This file is current context, not a diary.
 
 USER PREFERENCES
 ================
+Latest authorized scope: deploy a separate VPS PAPER forward study with PureRSI(7)
+entry > 50 / exit < 40 and show simulated-live versus CURRENT fast baseline in the
+VPS dashboard. This supersedes the earlier VPS-freeze instruction for this study
+only. Preserve original profiles/account/message volumes; no private order routing.
+The activity Compose overlay and comparison collector are documented in
+deploy/paper_trading/README.md. The VPS first day, API/browser and collector restart
+pass: two simulated positions and zero signal differences. CURRENT_STATE.md owns
+values/evidence; next accumulate several UTC daily observations before accepting
+multi-day comparison. Private orders/collateral integration remain pending.
+
 Act directly within the requested scope. Optimize for readability, clear English
 names/comments/logs, and a moderate number of files. Avoid clever abstractions,
 giant unrelated files and wrapper-only application files. A main() may contain
@@ -162,6 +172,157 @@ REMAINING PRODUCT WORK
 Research runtime migration and generated repository navigation are complete.
 docs/ROADMAP.md owns the ordered remaining work, including the user's dashboard,
 funding/collateral, Telegram, performance profiling and exchange-selection requirements.
+Current next task: observe/accept several UTC daily VPS PAPER 50/40 study cycles
+against the aligned fast baseline; initial deployment/first-day checks are complete.
+The roadmap now lists remaining work only. Further dashboard adjustments are a
+separate pending task awaiting the user's specifications. New reporting requirement:
+Trades must show separate Commission and Funding columns in USD and net PnL after
+both; gross trade PnL is optional. Include actual funding costs and receipts, use
+explicit attribution/sign/currency/timestamps, do not double-count costs, and keep
+missing evidence unavailable rather than inventing zero. Accounting and source/API
+contracts must support this before UI acceptance. This requirement is recorded,
+not implemented. Agree replacement logs with the user, then simplify runtime root/
+paths; current daily logging remains two files (today/yesterday), 50 MiB each.
+This planning update does not authorize another VPS rollout or private orders.
+Overview charts/timeframes (steps 1-2) are implemented and validated locally.
+Pipeline/Risk available read models (step 3) are repaired and locally validated;
+Infrastructure external process observations, daily PAPER progress and host systemd
+NTP status are implemented and validated locally. Step 5 and bounded browser
+acceptance are complete locally. Bounded step 6 backup/restore/connectivity also
+passed. Mobile access was cancelled by the user on 2026-10-09. Local
+shadow-trading preparation is implemented and validated, with real orders
+blocked. Actual venue acceptance awaits account/collateral eligibility, selection and
+read-only integration. The authorized PAPER study is deployed; further rollouts remain deferred. New local
+PortfolioRisk cycles persist sizing, volatility transforms, asset/gross cap reductions
+and configuration identity atomically with the decision checkpoint. Risk shows the
+SHA-256 of that cycle identity, evaluated weights and actual HOLD/FLAT/TARGET_WEIGHT
+actions. Old rows and canonical replay snapshots retain unavailable intermediates;
+whole-account/venue margin breaches and kill-switch readiness remain pending. Quiet/HOLD
+cycles are explained; missing decision/planner evidence stays pending. Replay
+shows observed assets/account positions, without inventing signals or cycle proof.
+Persisted service risk policy settings are available separately from evaluation.
+Telegram preparation is local: PAPER sink/credentials are configurable, the notifier
+has an explicit --test-message command, rate-limit delays defer sends in-process,
+and fresh host/process/clock/daily-progress conditions feed watchdog alerts. Real
+Telegram setup delivery has real API acceptance with local ignored bot/chat settings;
+the user confirmed phone receipt. Real controlled OPENED/RESOLVED delivery, network/
+stale-source recovery and two restarts passed with two durable receipts. The normal
+local notifier is running using storage/paper_trading/telegram.override.yml and
+waits for a fresh watchdog while trading services remain stopped. Source success
+must be within 90 seconds, at most 30 seconds ahead, with no failed last sweep.
+Actual trading-fault coverage and VPS rollout remain separate acceptance work.
+Simulated transport tests are not remote acceptance. The user closed review of the
+four historical replay differences: final-position closing conventions and RealTest
+RSI rounding. Raw differences remain visible; this is acceptance, not exact parity.
+Bounded authenticated PAPER browser acceptance passed for all eleven pages,
+login/logout, Pipeline interactions, persisted Risk evidence, stale telemetry,
+viewer restrictions and browser-only resource error/retry. Repeated document
+navigation exposed accumulated SSE connections; pagehide now closes the stream
+and pageshow reconnects it. Isolated PAPER backup/restore/connectivity acceptance
+passed: HTTP/NATS/PostgreSQL cuts, two fills without dashboard services, quiesced
+logical PostgreSQL plus stopped-volume archives, fresh-volume content/economic
+comparison and restored authenticated Risk. PostgreSQL recovery used explicit
+worker restart; online snapshots, unattended reconnect and off-host/VPS acceptance
+remain separate. Mobile dashboard access was cancelled by the user on 2026-10-09
+and removed from pending requirements. The unused local bridge/tests remain optional
+retained work; do not activate them or request phone IPs/domains/VPN setup.
+Local shadow preparation is now accepted: python3 validation/shadow_trading_test.py
+reuses actual PAPER producer plans and a separate shadow_observer.py SQLite journal.
+The reader allows loopback GET /snapshot only, with no private order methods,
+credentials or trading-state writes. Actual producer/restart acceptance and local
+fixture skips, metadata/HTTP recovery, duplicate/conflict/out-of-order protections
+passed. Offline HTML/JSON evidence is retained under ignored paper_validation state.
+Synthetic cases are labelled; costs, funding, FX, collateral, fills and PnL remain
+unavailable. The persisted fingerprint binds risk configuration, not the full
+strategy/market/venue manifest. Real venue reads and aligned backtest comparison
+remain pending. docs/ROADMAP.md defines the remaining acceptance.
+Public coverage is now validated: tools/exchange_coverage.py ranked actual Binance
+crypto USDT perpetual quote turnover for September 15-October 9, 2026. Kraken
+covers 38/50, Hyperliquid main 36/50 and with HIP-3 37/50; Kraken covers all top 20.
+Five WSL tests and full saved-response audit passed. Evidence and official BTC
+collateral rules are recorded in CURRENT_STATE.md. Refresh before integration;
+private account/product eligibility, collateral economics and selection remain open.
+The user selected Kraken Multi-M with mixed BTC/USD collateral: BTC backing plus
+USD for charges/losses. The user chose USD 50 net account minimum and 10% available
+USD, explicitly using venue marginEquity as the value basis. New
+live_trading/kraken_shadow.py provides fixed GET-only public instruments/tickers,
+PF_ normalization, immutable exported-plan observations through ShadowJournal and
+an explicitly hypothetical cross-margin diagnostic. BTC uses the current index and
+reviewed 1% haircut; USD reserves and uncovered losses are distinct from collateral
+value. No automatic BTC sale, private credentials, orders or core Account changes.
+Public live BTC/ETH observations and focused WSL tests passed. The user confirmed
+Spain and Futures activation. Funded BTC collateral behavior, remaining venue/accounting/recovery acceptance,
+private order eligibility and forward strategy acceptance remain pending.
+The user saved the Futures keys and authorized read-only inspection. Never open,
+print or source credential files through assistant tools; only the program consumes
+storage/kraken_shadow/.env internally. live_trading/kraken_account.py now supports
+separate --account / --fixture modes, five fixed signed GETs, permission gating,
+fresh UTC clocks, authoritative Multi-M collateral/margin including orders, signed
+positions and USD reserve stress checks. Real read-only inspection passed with
+READ_ONLY/no-transfer permission, Multi-M BTC/USD currencies, zero positions/orders.
+An explicit application User-Agent resolved initial HTTP 403; do not infer invalid
+keys solely from 403. The user's policy is storage/kraken_shadow/account-policy.json:
+minimum_account_equity_usd=50, minimum_usd_reserve_fraction=0.10, zero additional
+assumed future cash debit (not fee/funding-free). Run --account --policy
+storage/kraken_shadow/account-policy.json --output storage/kraken_shadow/account-live-policy-50-10.
+Policy remains explicit; default --account without it still has no reserve policy.
+Preserve the original journal. Current-cash and projected-loss stress warnings are
+separate; net equity is not leveraged notional. Real evaluation passes the USD 50
+floor but reports insufficient current/stressed USD. No auto rebalance or stops.
+Separate durable observations reject account/source/policy drift and conflicting/
+out-of-order captures; restart deduplicates. Twenty-six offline WSL account tests passed.
+Normalized actual evidence and safe attempt status: storage/kraken_shadow/account-live/.
+Synthetic example: storage/kraken_shadow/account-local-20261010/report.html.
+No secret values/raw permission replies, orders or core Account writes are retained.
+Read-only acceptance is not actual forward shadow or private order/capital acceptance.
+The user rejects automatic account stops/closures: USD 50 equity floor and 10% USD
+reserve are warnings only. Add warning for equity down at least 10% versus preceding
+UTC day's last observed equity; no independent daily loss/peak drawdown stop. Warn
+for gross confirmed open-position USD notional above 5x net equity (sum absolute
+LONG/SHORT exposures at fresh public marks; pending orders not included). These are
+implemented in the local monitor, configurable via --daily-equity-drop-fraction and
+--gross-exposure-warning. Missing history/prices or nonpositive denominators remain
+unavailable and cannot fabricate resolution. Raw equity changes include collateral
+prices/transfers, not only trading PnL. Source status lists unavailableChecks.
+The user cancelled additional opening-order limit/admission work; no separate 10%
+guard or further order-basis clarification is requested. Preserve existing orders,
+equal-weight target 10% and strategy gross scaling 1.5x. Summary positions now show
+USD marked notional / that snapshot's positive net equity as a percentage, including
+SHORT exposure as positive and allowing values above 100%. Missing prices/nonpositive
+equity remain unavailable; yesterday uses yesterday's recorded percentage/equity.
+Next accept multiple daily PAPER/selected-venue observations; do not resume the cancelled order-limit task.
+Local Kraken account alerts are connected via live_trading/kraken_account_monitor.py
+--telegram (WSL, existing algotrading-telegram-api image). Polling every 30 seconds
+publishes durable warning/recovery transitions for the existing Go notifier; current
+and stressed USD shortages share one warning, while initial/maintenance margin remain
+distinct critical events. State: storage/kraken_shadow/account-alerts/. Real Telegram
+delivery of one low-USD warning passed; restart and repeated reads kept one receipt.
+No credential file was displayed. Freshness failures never imply recovery. Local
+observer must remain running; it is not auto-installed after reboot or deployed to
+the VPS. Alerts do not enforce stops or convert collateral. Nine monitor tests,
+including network-disabled TEST_FILE Go delivery/recovery/restart acceptance, passed.
+Telegram messages now omit internal IDs and use importance/account-or-system/reason
+plus concise details. CRITICAL displays URGENT; resolutions display INFO. The account
+label defaults to Kraken and is configurable. Daily INFO USD portfolio summaries
+are emitted once per UTC day at/after hour 9 (configurable), with gross venue wallet
+value, authoritative margin equity, current marked USD exposure and the preceding
+UTC day's last observed holdings/timestamp. Missing historical/price evidence is
+unavailable. kraken_portfolio_summary.py owns that calendar/valuation state; public
+prices are fetched only when positions exist. Three labelled TEST Telegram previews
+and one actual daily summary were accepted locally. Receipt history was preserved
+while replacing both local notifier containers with the new image; VPS unchanged.
+Legacy demo requests redirected; official docs
+announce decommissioning. Confirm a supported test environment before private tests;
+never fall back to real orders. See live_trading/README.md and CURRENT_STATE.md.
+BTC-collateral/account eligibility precedes actual venue acceptance.
+Operator routing and broader fault coverage remain separate.
+VPS remains unchanged.
+Charts have USD equity axes,
+hover values, independent X/Y zoom, two-axis pan/reset and UTC date filters with
+ALL. They only display available history; real PAPER equity history is not invented.
+Keep the running VPS PAPER deployment unchanged until a later explicit deployment
+request. Ask the user how they want the new logs before redesigning them; agree on
+a single configurable root and readable paths before migrating existing state.
 The bounded resource profile is available and its five-minute study passed:
   python3 research/replay.py resources --days 100 --seconds 300 --open
 This reuses canonical dashboard replay in its own container while the separate
@@ -183,7 +344,13 @@ retaining service close(T) sizing. Simulated fills do not prove achievable price
 canonical sizing parity or perpetual collateral/funding economics.
 Infrastructure shows fresh CPU/RAM/disk and project container observations from
 a host-only JSON collector. No dashboard Docker socket; stale data is unavailable,
-process health is separate from trading readiness and clock sync is unmeasured.
+process health is separate from trading readiness. Local source now probes trading
+executables separately from container liveness and reads host systemd NTP status;
+missing NTP support stays UNKNOWN (as observed in this WSL setup), offset unmeasured.
+Daily PAPER progress uses persisted decision/plan dates with a 30-minute UTC grace;
+empty plans count, recent writes/fills do not replace current business dates.
+External observations do not provide in-loop heartbeats/control responsiveness.
+The running VPS keeps its earlier collector until a later authorized deployment.
 The paper VPS logging overlay covers all services using the two-day/50-MiB policy.
 See deploy/paper_trading/README.md. The user's Linux 2-vCPU/2-GB Lightsail VPS is
 now deployed at /opt/algotrading with fresh credentials, durable PAPER state,
@@ -196,7 +363,7 @@ Actual public-data no-order cycle, reboot/recovery, receiver append/restart and 
 isolated two-fill PAPER fixture passed. Clock NTP is checked on the host but remains
 unmeasured in the dashboard. Remote viewing uses an SSH tunnel on localhost:8093;
 local PAPER remains on 8092. CURRENT_STATE.md owns evidence and limitations.
-Next observe multi-day cycles and actual UTC log rollover; remaining fault,
+VPS observation remains pending while local roadmap work takes priority; remaining fault,
 nonzero live-data fills, production trimming and full-backtest capacity stay pending.
 The local algotrading-paper stack and background monitor are now running. An actual
 public-data cycle through 2026-10-07 reached execution on 2026-10-08 with no signals,
@@ -211,13 +378,12 @@ duplicate delivery, checkpoint/outbox barriers, crash/recreation commands, logs,
 resource samples and cleanup. Its generated Compose topology derives from the
 historical service deployment and uses a simulated backend, never a private venue.
 Full-history capacity, real overnight retention and exhaustive fault acceptance
-remain distinct from preparation/smoke checks. Continue VPS logging/fault/capacity acceptance using
+remain distinct from preparation/smoke checks. When VPS work resumes, continue logging/fault/capacity acceptance using
 deploy/live/README.md, Local-to-VPS equivalence acceptance. The comparison requires
 the current uncommitted source, matching replay inputs, configured build/toolchain,
 non-secret deployment settings and actual VPS evidence; local checks alone cannot
-accept a VPS. Compare Kraken/Hyperliquid
-perpetual coverage for the same top 50 Binance coins by volume over the last 25
-completed days, and verify BTC collateral/account eligibility before venue selection.
+accept a VPS. The public Kraken/Hyperliquid coverage study is complete; refresh
+it before integration and verify BTC collateral/account eligibility before selection.
 Kraken is the likely first live venue; Hyperliquid is not the initial integration
 priority. Refresh authoritative venue rules when performing the analysis/integration.
 Unavailable intended perpetual markets must be skipped without unsupported fallback.
@@ -255,14 +421,14 @@ observability-owned alert/manual audit stores. Manual route admission remains
 blocked; it does not submit a trading command. Durable alert acknowledgement is
 implemented and does not resolve an alert or change trading readiness.
 Remaining gaps include runtime-owned cost basis/realized PnL, attributed unrealized
-PnL/equity history, full risk-transform diagnostics, private venue execution/
-reconciliation, normalized service heartbeat/control and host clock telemetry.
-The roadmap includes funding payments/receipts beyond trading fees; Overview axis,
-hover/zoom and timeframe/ALL fixes; Pipeline/Risk investigations; Infrastructure
-completeness/readability; setup/testing of the existing Telegram adapter; Manual
-Control execution testing after integration; and Live vs. Expected against the
-existing simplest PureRSI fast backtest. Profile complete-backtest CPU/RAM locally
-and on VPS, then shadow/live usage. These are pending requirements, not completion claims.
+PnL/equity history, whole-account/venue margin breaches, private venue execution/
+reconciliation and normalized service heartbeat/control. Optional host clock telemetry
+is implemented locally; actual synchronized-host/VPS acceptance remains pending.
+docs/ROADMAP.md owns remaining requirements and separates completed local work
+from pending multi-day, private-venue, cost/accounting and VPS acceptance. Trades
+Commission/Funding columns and net PnL, plus future user-specified dashboard tweaks,
+are newly recorded requirements, not completed features. Manual Control execution
+awaits private integration; full-backtest/shadow/live CPU/RAM profiling remains pending.
 See dashboard/docs/REAL_DATA_SOURCE_MAP.md and actual provider/server code.
 
 RESEARCH BACKLOG PRESERVED FROM THE OLD PERSONAL NOTES

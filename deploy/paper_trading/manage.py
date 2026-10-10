@@ -62,6 +62,7 @@ def main():
         targets = ['algotrading_' + name for name in ('market_data_service', 'strategy_service',
                    'portfolio_risk_service', 'order_planner_service', 'execution_state_service',
                    'exchange_gateway', 'simulated_exchange_service', 'historical_market_data_service')]
+        targets.append('algotrading_research')
         subprocess.run(['meson', 'compile', '-C', str(ROOT / 'build'), '-j', '2', *targets], check=True)
         subprocess.run(['bash', str(ROOT / 'deploy/live/build_runtime_bundle.sh'), '--paper'], check=True)
         compose('build')

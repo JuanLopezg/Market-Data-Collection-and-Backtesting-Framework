@@ -28,6 +28,7 @@ type Alert struct {
 	Severity      string `json:"severity"`
 	Status        string `json:"status"`
 	Service       string `json:"service"`
+	Account       string `json:"account,omitempty"`
 	Asset         string `json:"asset,omitempty"`
 	EventType     string `json:"eventType"`
 	Title         string `json:"title"`

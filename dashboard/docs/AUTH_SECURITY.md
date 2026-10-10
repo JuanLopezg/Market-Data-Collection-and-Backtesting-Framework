@@ -46,3 +46,17 @@ go through the authenticated API rather than directly from the browser.
 Before future capital-moving LIVE controls, revisit per-endpoint authorization and
 appropriate strong identity/MFA. Private signing/control delivery remains separate
 unfinished work; production dashboard deployment does not enable it.
+
+## Optional phone access (cancelled task)
+
+The user cancelled mobile dashboard access on 2026-10-09; activation and handset
+acceptance are removed from pending requirements. The retained optional
+[PAPER mobile runbook](../../deploy/paper_trading/README.md#optional-temporary-mobile-access-cancelled-task)
+provides a PC-side, single-phone HTTPS bridge to an existing loopback dashboard or
+VPS SSH tunnel. It preserves API authentication, roles, CSRF and SSE; it is not a
+new authorization layer. Its IP allowlist is an additional connection restriction,
+not user identity. Verify the self-signed certificate fingerprint before trusting
+it. No credentials/requests are logged and generated keys remain ignored.
+The upstream remains loopback HTTP with its existing cookie settings; the phone
+listener accepts TLS only. Its transport tests do not establish handset acceptance;
+no public web/VPN deployment is scheduled for this cancelled task.

@@ -89,7 +89,8 @@ double PortfolioRiskEngine::accountEquity(
 DecisionBatch PortfolioRiskEngine::onSignals(
     const StrategyIntentBatch& signals,
     const MarketData& marketData,
-    const AccountSnapshot& account
+    const AccountSnapshot& account,
+    std::vector<PortfolioRiskEvaluation>* evaluations
 )
 {
     const Timestamp timestamp = signals.timestamp;
@@ -116,6 +117,8 @@ DecisionBatch PortfolioRiskEngine::onSignals(
     DecisionBatch output;
     output.decision_timestamp = timestamp;
     output.strategies.reserve(strategies_.size());
+    if (evaluations)
+        evaluations->clear();
 
     for (const auto& strategy : strategies_) {
         const auto signalIt = signalByStrategy.find(strategy.strategy_id);
@@ -132,6 +135,19 @@ DecisionBatch PortfolioRiskEngine::onSignals(
         }
 
         const double strategyCapital = equity * strategy.allocation_weight;
+        PortfolioRiskEvaluation* evaluation = nullptr;
+        if (evaluations) {
+            evaluations->emplace_back();
+            evaluation = &evaluations->back();
+            evaluation->strategy_id = strategy.strategy_id;
+            evaluation->strategy_name = strategy.strategy_name;
+            evaluation->sizer_kind = strategy.portfolio_sizer->kind();
+            evaluation->reference_capital = strategyCapital;
+            evaluation->max_gross_leverage = strategy.risk_constraints.maxGrossLeverage();
+            evaluation->max_asset_weight = strategy.risk_constraints.maxAssetWeight();
+            if (evaluation->sizer_kind == PortfolioSizerKind::VolatilityTarget)
+                evaluation->volatility_state = "UNAVAILABLE";
+        }
         const auto sizedWeights = strategy.portfolio_sizer->size(
             signalState,
             marketData,
@@ -140,7 +156,28 @@ DecisionBatch PortfolioRiskEngine::onSignals(
         if (!sizedWeights)
             continue; // Insufficient sizing history means no new intent, so existing holdings are preserved.
 
-        const TargetWeights desiredWeights = strategy.risk_constraints.apply(*sizedWeights);
+        const TargetWeights desiredWeights = strategy.risk_constraints.apply(
+            *sizedWeights, evaluation ? &evaluation->constraints : nullptr);
+        if (evaluation) {
+            evaluation->sizing_available = true;
+            evaluation->sized_weights = *sizedWeights;
+            evaluation->approved_weights = desiredWeights;
+            if (evaluation->sizer_kind == PortfolioSizerKind::VolatilityTarget) {
+                if (signalState.activeCount() == 0) {
+                    evaluation->volatility_state = "NO_ACTIVE_SIGNALS";
+                } else {
+                    // Optional analytics must not change target weights or fail trading.
+                    try {
+                        evaluation->volatility = strategy.portfolio_sizer->diagnostics(
+                            signalState, *sizedWeights, desiredWeights, marketData, timestamp);
+                        if (evaluation->volatility)
+                            evaluation->volatility_state = "OBSERVED";
+                    } catch (const std::exception&) {
+                        evaluation->volatility_state = "DIAGNOSTIC_FAILED";
+                    }
+                }
+            }
+        }
 
         VirtualPositionState currentPositions;
         const auto positionsIt = account.strategy_positions.find(strategy.strategy_id);
@@ -193,6 +230,10 @@ DecisionBatch PortfolioRiskEngine::onSignals(
                 currentPrice,
                 strategyCapital
             );
+            if (evaluation) {
+                evaluation->rebalance_decisions.emplace(coin, decision);
+                evaluation->current_quantities.emplace(coin, currentQuantity);
+            }
 
             // RebalancePlan semantics define a missing coin as HOLD. Keep the distributed
             // DecisionBatch boundary identical: explicit HOLD entries must not be emitted.

@@ -1,5 +1,13 @@
 # Canonical Replay Suite
 
+The existing `algotrading_research` fast binary also supports an explicit frozen PAPER
+baseline selected by `ALGOTRADING_PAPER_BASELINE_MANIFEST`. Its orchestration lives in
+`src/common/paper_baseline.cpp` and uses CURRENT TradingEngine/sizing/accounting in
+process, with per-day canonical 100-day indicator windows and observed next-open
+prices. It does not change the default historical fast profile or RealTest reference.
+The [PAPER study runbook](../deploy/paper_trading/README.md#forward-activity-study-and-fast-baseline)
+owns forward capture, the experimental 50/40 profile and dashboard comparison.
+
 Replay/backtest work has **one public entry point**:
 
 ```bash

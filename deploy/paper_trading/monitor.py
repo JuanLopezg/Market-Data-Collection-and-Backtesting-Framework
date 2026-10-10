@@ -17,6 +17,51 @@ SERVICES = ('nats', 'postgres', 'market-data', 'strategy', 'portfolio-risk',
 SECRET = re.compile(r'(?i)(password|passwd|secret|token|api[_-]?key|authorization)[" \x27]*[:=]|[a-z]+://[^ /]+:[^ /]+@|bot\d+:[a-z0-9_-]+|-----BEGIN')
 
 
+TRADING_PROCESSES = {
+    'market-data': 'algotrading_market_data_service',
+    'strategy': 'algotrading_strategy_service',
+    'portfolio-risk': 'algotrading_portfolio_risk_service',
+    'execution-state': 'algotrading_execution_state_service',
+    'order-planner': 'algotrading_order_planner_service',
+    'exchange-gateway': 'algotrading_exchange_gateway',
+    'simulated-exchange': 'algotrading_simulated_exchange_service',
+}
+
+
+def clock_status():
+    """Read the collector host's NTP status; never change the clock or invent an offset."""
+    try:
+        result = subprocess.run(['timedatectl', 'show', '--property=NTPSynchronized', '--value'],
+                                capture_output=True, text=True, timeout=3)
+        value = result.stdout.strip()
+        if result.returncode == 0 and value in ('yes', 'no'):
+            return {'clockObserved': True, 'clockSynced': value == 'yes',
+                    'clockOffsetLabel': 'Host systemd NTP: ' + ('synchronized' if value == 'yes' else 'not synchronized') + '; offset not measured'}
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return {'clockObserved': False, 'clockSynced': False,
+            'clockOffsetLabel': 'Host NTP status unavailable; offset not measured'}
+
+
+def trading_process(service, container_id, running):
+    """External process observation, distinct from an application heartbeat or readiness."""
+    row = {'service': service, 'processState': 'UNKNOWN', 'detail': 'Process probe unavailable'}
+    if not running:
+        return dict(row, processState='STOPPED', processRunning=False, detail='Container is not running')
+    try:
+        # comm excludes arguments, including database credentials. Linux comm is limited to 15 characters.
+        output = command(['docker', 'top', container_id, '-eo', 'pid,comm,stat'])
+        states = [line.split()[2] for line in output.splitlines()[1:]
+                  if len(line.split()) == 3 and line.split()[1] == TRADING_PROCESSES[service][:15]]
+        if not states:
+            return dict(row, processState='MISSING', processRunning=False, detail='Trading executable absent; container alone is not sufficient')
+        if any(state[0] not in 'ZXTt' for state in states):
+            return dict(row, processState='RUNNING', processRunning=True, detail='Executable observed by Docker top; responsiveness not measured')
+        return dict(row, processState='STOPPED', processRunning=False, detail='Executable stopped or defunct')
+    except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired):
+        return row
+
+
 def capture_logs(project, root):
     """Local fallback; VPS uses the persistent rsyslog receiver instead."""
     source = Path(__file__).resolve().parents[1] / 'live/logging/clean_daily_logs.py'
@@ -117,7 +162,9 @@ def containers(project, expected):
                           'health': health, 'restartCount': item['RestartCount'],
                           'uptimeLabel': 'Started ' + state['StartedAt'][:19] + ' UTC' if running else 'Stopped',
                           'cpuPct': -1, 'ramMb': -1,
-                          'lastHeartbeat': 'Container running' if running else 'Container not running'}
+                          'lastHeartbeat': 'Container observed; no application heartbeat' if running else 'Container not running'}
+            if name in TRADING_PROCESSES:
+                rows[name]['process'] = trading_process(name, item['Id'], running)
         # A terminated container can return no stats; absence remains unknown.
         output = command(['docker', 'stats', '--no-stream', '--format', '{{json .}}', *running_ids]) if running_ids else ''
         for line in output.splitlines():
@@ -135,6 +182,8 @@ def containers(project, expected):
 
 
 def sample(project, disk_path, expected, previous):
+    # Slow later probes must not make early measurements appear newly collected.
+    observed_at = datetime.now(timezone.utc).isoformat()
     ticks = cpu_ticks()
     total = ticks[0] - previous[0]
     cpu = 100 * (1 - (ticks[1] - previous[1]) / total) if total > 0 else 0
@@ -153,6 +202,7 @@ def sample(project, disk_path, expected, previous):
             'uptimeLabel': f'{uptime / 86400:.1f} days', 'clockOffsetLabel': 'Not measured',
             'clockObserved': False, 'clockSynced': False, 'networkRxLabel': 'Not measured',
             'networkTxLabel': 'Not measured', 'state': 'HEALTHY'}
+    host.update(clock_status())
     if max(host['ramPct'], host['diskPct']) >= 95:
         host['state'] = 'CRITICAL'
     elif max(cpu, host['ramPct'], host['diskPct']) >= 85 or host['diskAvailableGiB'] < 15:
@@ -164,8 +214,11 @@ def sample(project, disk_path, expected, previous):
         rows = []
         errors.append('Container telemetry unavailable')
     scope = 'WSL Linux host; Docker Desktop containers are a separate scope' if 'microsoft' in os.uname().release.lower() else 'Linux host'
-    return {'schemaVersion': 1, 'project': project, 'observedAt': datetime.now(timezone.utc).isoformat(),
-            'scope': scope, 'vps': host, 'containers': rows, 'errors': errors}, ticks
+    processes = [row.pop('process', {'service': row['name'], 'processState': 'STOPPED',
+                                    'processRunning': False, 'detail': 'Expected service missing'})
+                 for row in rows if row['name'] in TRADING_PROCESSES]
+    return {'schemaVersion': 1, 'project': project, 'observedAt': observed_at,
+            'scope': scope, 'vps': host, 'containers': rows, 'processes': processes, 'errors': errors}, ticks
 
 
 def main():

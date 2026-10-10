@@ -1,12 +1,42 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"control-dashboard-api/internal/alertstore"
 )
+
+func TestNotifierReadsOnlyHealthyFreshWatchdogEvidence(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2026, 10, 8, 18, 0, 0, 0, time.UTC)
+	event := alertstore.LifecycleEvent{EventID: "fixture-event", Transition: "OPENED", Alert: alertstore.Alert{ID: "fixture-alert"}}
+	body, _ := json.Marshal(event)
+	os.WriteFile(filepath.Join(dir, "events.jsonl"), append(body, '\n'), 0600)
+	for _, test := range []struct {
+		name, lastSuccess, lastError string
+		valid                        bool
+	}{
+		{"fresh", now.Format(time.RFC3339), "", true},
+		{"stale", now.Add(-91 * time.Second).Format(time.RFC3339), "", false},
+		{"future", now.Add(31 * time.Second).Format(time.RFC3339), "", false},
+		{"missing success", "", "", false},
+		{"failed sweep", now.Format(time.RFC3339), "fixture error", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			body, _ := json.Marshal(alertstore.Heartbeat{Version: "step43-v1", LastSuccessAt: test.lastSuccess, LastError: test.lastError})
+			os.WriteFile(filepath.Join(dir, "status.json"), body, 0600)
+			events, err := readFreshAlertEvents(dir, 1024*1024, now)
+			if (err == nil) != test.valid || (test.valid && len(events) != 1) {
+				t.Fatalf("Unexpected source freshness result: events=%d err=%v", len(events), err)
+			}
+		})
+	}
+}
 
 func clearNotifierEnv(t *testing.T) {
 	t.Helper()

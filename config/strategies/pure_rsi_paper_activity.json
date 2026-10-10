@@ -1,0 +1,17 @@
+{
+  "strategies": [{
+    "id": 1,
+    "type": "PureRSI",
+    "max_active_signals": 10,
+    "max_ranking_position": 1000000,
+    "universe": {
+      "type": "top_n_liquidity", "count": 20, "descending": true,
+      "indicator": { "kind": "SMA", "source": "QuoteVolume", "length": 25, "offset": 0 }
+    },
+    "ranker": {
+      "type": "indicator", "descending": true,
+      "indicator": { "kind": "RSI", "source": "Close", "length": 7, "offset": 0 }
+    },
+    "parameters": { "rsi_length": 7, "rsi_entry": 50.0, "rsi_exit": 40.0 }
+  }]
+}

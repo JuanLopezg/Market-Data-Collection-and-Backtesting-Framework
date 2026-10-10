@@ -1,12 +1,58 @@
 # Current-data paper trading
 
+## Forward activity study and fast baseline
+
+The user authorized a VPS PAPER study with strict PureRSI(7) entry > 50 and exit < 40.
+`config/strategies/pure_rsi_paper_activity.json` is a separate experiment; the original
+80/70 historical and ordinary PAPER profiles remain intact. Apply
+`docker-compose.activity.yml` after the base/VPS/logging files. It selects activity
+images and separate NATS/PostgreSQL volumes, while reusing canonical public market
+history. Preserve original volumes and back up the stopped original stack before
+switching. Keep credentials and the loopback 8092 dashboard binding. The PAPER
+systemd unit must include this overlay for start and stop. Removing it selects the
+preserved original account/message state again; accounts are not merged.
+
+`comparison.py` captures fully applied, reconciled simulated cycles and frozen SQLite
+snapshots in `storage/paper_trading/comparison`. It invokes the existing research fast
+binary's explicit PAPER mode in a network-disabled container (384 MiB, 0.4 CPU), using
+CURRENT TradingEngine, PureRSI, sizing, constraints and simulated accounting. Only
+100-day indicator warmup is read; it never trades warmup days or unfinished closes.
+Daily candidate lists and persistent signals are preserved across the captured study.
+Missing daily observations, changed profiles or changed captured account state make
+comparison unavailable; they do not affect trading or invent historical rows.
+
+Live vs. Expected displays PAPER versus fast equity, cash, signal differences and
+positions, marked at the same observed execution open. PAPER resolves quantity from
+close(T), whereas fast resolves at open(T+1); gap-driven differences remain visible.
+Funding/slippage are not modeled. This is a virtual USD account, not private Kraken
+BTC/USD. No real order methods or private keys are used. Each current producer plan
+also receives a GET-only Kraken public observation, with evidence/skips separately
+under `storage/kraken_shadow/`. Public failures retry without changing simulated orders.
+
+`algotrading-paper-comparison.service` provides automatic capture after startup.
+Atomic `comparison.json` is read-only to the API and becomes STALE after three minutes
+without refresh. Frozen input, manifest and fast results support restart/review.
+The PAPER bundle includes eight service executables plus the research fast binary;
+ordinary LIVE packaging is unchanged. Credentials/generated artifacts stay ignored.
+
 This separate stack downloads completed Binance USDT perpetual daily candles,
 warms the existing PureRSI signal strategy with 100 days and routes orders through
 the existing simulated exchange. It uses virtual funds only, its own PostgreSQL,
 SQLite and NATS volumes, and the real-source dashboard. It needs no VPS details or
 private exchange credentials. Normal `deploy/live` remains pre-exchange.
 
+New locally built PortfolioRisk service cycles persist sizing, asset/gross cap
+reductions, volatility availability and rebalance actions together with each decision.
+Risk displays those observations and the cycle configuration fingerprint. HOLD
+preserves actual quantity. Older cycles retain unavailable intermediate reports;
+this local change does not update the running VPS deployment.
+
 ## Local use in WSL
+
+Telegram is optional and remains disabled by default (TEST_FILE notifier). The
+[dashboard setup instructions](../../dashboard/README.md#local-telegram-setup)
+describe ignored local credentials, an explicit one-message test and starting only
+the notifier. Do not update the running VPS while accepting this local work.
 
 From the repository root, prepare and build once:
 
@@ -29,8 +75,22 @@ Snapshots older than 35 seconds are unavailable; missing measurements are not ze
 Host CPU is a percentage of total capacity; container CPU 100% means one CPU core.
 On Docker Desktop, WSL host measurements and container measurements describe
 different Linux environments; neither is a measurement of total Windows resources.
-Container running/health checks do not establish trading readiness. Clock sync and
-network throughput remain explicitly unmeasured.
+Trading Services now reports external executable observations from Docker top,
+including stopped or missing processes inside otherwise running containers. These
+are sampled observations, not in-loop application heartbeats or proof of responsiveness.
+Host uptime is labelled separately from trading-process activity.
+Clock sync comes from the collector host's systemd NTPSynchronized property: SYNCED,
+UNSYNCED or UNKNOWN when unavailable (including this local WSL setup). Clock offset
+and network throughput remain unmeasured. The API never receives the Docker socket.
+
+Daily Trading Progress compares persisted decision and plan-application dates with
+the current PAPER schedule: completed close yesterday, next-open application today.
+It allows 30 minutes after UTC midnight for the new cycle and explicitly reports
+missing/behind dates after that grace. Empty/no-order plans count as progress;
+recent database writes or fills cannot hide an old business date. Plan application
+does not prove fills or reconciliation. This wall-clock policy is not applied to
+historical replay or other runtime modes. Older collectors retain UNKNOWN process
+evidence. Install the local changes on the VPS only after explicit authorization.
 
 Keep the terminal open. Ctrl+C stops the monitor and stack, preserving durable
 volumes. `start`/`stop` operate containers separately; `monitor` runs observation
@@ -147,6 +207,74 @@ the VPS `storage/paper_trading/.env`, not the local deployment's password. The S
 key stays outside the repository. Real reboot, overnight retention and fault
 acceptance must be recorded separately from installing/enabling these units.
 
+## Optional temporary mobile access (cancelled task)
+
+The user cancelled mobile access on 2026-10-09. This retained runbook and unused
+helper are optional reference only, not pending acceptance or instructions to
+activate access. Keep the current VPS localhost access unchanged.
+
+Keep the dashboard on localhost. `mobile_access.py` runs on the Windows PC and
+provides an HTTPS bridge for exactly one phone IP. It forwards the existing login,
+role checks, CSRF and event stream unchanged; it does not start trading, change the
+VPS or log requests. This is temporary LAN access, not access from outside home.
+
+For the current VPS, first keep this SSH tunnel open in PowerShell:
+
+```powershell
+ssh -i "$env:USERPROFILE\.ssh\algotrading-spain.pem" -N -o ExitOnForwardFailure=yes -L 127.0.0.1:8093:127.0.0.1:8092 ubuntu@15.237.145.179
+```
+
+The PC can then open `http://localhost:8093`. Use `viewer` and the VPS dashboard
+password; the local saved deployment copy is in ignored `storage/vps_deployment/.env`.
+Do not send passwords or the SSH key through chat.
+
+Connect the phone to the same trusted Wi-Fi as the PC. Find its IPv4 address in
+Wi-Fi settings; use that exact address below. Confirm the PC's Wi-Fi IPv4 address
+with `ipconfig` (currently `192.168.1.33`; addresses can change). In a second
+PowerShell terminal:
+
+```powershell
+$pcIp = '192.168.1.33'
+$phoneIp = 'REPLACE_WITH_PHONE_WIFI_IPV4'
+python deploy/paper_trading/mobile_access.py --bind-ip $pcIp --phone-ip $phoneIp --target-port 8093
+```
+
+For a running local PAPER dashboard, use `--target-port 8092` instead; use the local
+viewer credentials from `storage/paper_trading/.env`. The bridge fails before
+listening if its upstream is unavailable. Python 3 and OpenSSL are required; it
+finds OpenSSL on PATH or uses the installed Git for Windows copy.
+
+If Windows Firewall blocks the phone, add a temporary rule in **administrator
+PowerShell**, with the same verified addresses, on this trusted Wi-Fi only:
+
+```powershell
+New-NetFirewallRule -Name 'AlgoTradingMobileTemporary' -DisplayName 'AlgoTrading temporary phone access' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8094 -LocalAddress $pcIp -RemoteAddress $phoneIp -Profile Any
+```
+
+This rule uses both exact IP addresses because the current Wi-Fi profile is Public;
+it does not change the network profile or allow every LAN peer. Do not forward any
+router ports or change Lightsail firewall rules. The bridge itself also rejects
+other source IPs before TLS. A phone using mobile data cannot reach this LAN URL.
+
+Open `https://192.168.1.33:8094` on the phone, using the current PC IP. The generated
+certificate is self-signed, so the browser may require a certificate exception or
+explicit installation/trust. Verify its SHA-256 fingerprint against the bridge's
+terminal output before trusting it; never copy `private-key.pem` to the phone.
+Certificates/keys stay in ignored `storage/mobile_access/<PC-IP>/` and expire after
+30 days. Renew using a fresh certificate directory while the bridge is stopped.
+Do not fall back to unencrypted HTTP for phone login. This bridge does not rewrite
+the upstream cookie flags; its mobile listener accepts TLS only.
+
+Acceptance requires actual phone login, opening Overview/Pipeline/Risk/Infrastructure,
+receiving fresh stream updates, logging out and confirming private pages require
+login again. Transport fixture tests do not replace this handset check.
+Ctrl+C stops the bridge; close the SSH terminal to stop the tunnel. Remove the
+temporary firewall rule in administrator PowerShell:
+
+```powershell
+Remove-NetFirewallRule -Name 'AlgoTradingMobileTemporary'
+```
+
 ## Bounded validation
 
 ```bash
@@ -160,3 +288,32 @@ execution-only opening prices, fills/cash/positions, aligned checkpoints, dashbo
 telemetry, stale collector handling and restart without duplicate fills. It stops
 only its random test project and retains ignored evidence/volumes. It never calls
 a private venue, alters host time, runs full history or waits overnight.
+
+## Local backup and recovery rehearsal
+
+With current locally built packaged images, run under WSL:
+
+```bash
+PAPER_RECOVERY_TEST=1 python3 validation/paper_trading_test.py
+```
+
+Optional `PAPER_RUNTIME_IMAGE`, `PAPER_API_IMAGE` and `PAPER_WEB_IMAGE` select current
+tags without changing normal PAPER images. The random fixture uses its own state
+and forces TEST_FILE notifications. It verifies trading with all dashboard services
+stopped, HTTP/NATS/PostgreSQL outages, controlled recovery and a fresh-volume restore.
+Its evidence and backup manifest are under ignored `storage/paper_validation/`.
+
+The tested backup boundary is a maintenance stop: quiesce every trading and observer
+writer, confirm a drained exchange outbox, stop NATS, then take a PostgreSQL custom
+logical dump and archive the stopped market/NATS/observer volumes. A stopped market
+volume includes its SQLite database and any WAL/SHM files; never copy only a live
+SQLite `.db`. Never copy a running PostgreSQL data directory. Verify archive/dump
+checksums before mutation, restore into fresh volumes, compare restored contents,
+then start with matching images/settings and verify retained fills/account state.
+
+Credentials are stored separately; the fixture does not include `.env` in its backup.
+This rehearsal reuses its existing controlled configuration and images. A production
+recovery plan must additionally preserve their versions, compatible schemas, secure
+credentials and off-host backups, define retention and verify restoration on the VPS.
+It does not authorize changing or stopping the running VPS, overwriting existing
+volumes, or assuming every service reconnects automatically after a database fault.

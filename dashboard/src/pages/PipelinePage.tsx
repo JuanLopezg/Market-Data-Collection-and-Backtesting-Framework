@@ -1,4 +1,4 @@
-import { ChevronRight, CircleDot, Filter, Search, Waypoints } from 'lucide-react'
+import { ChevronRight, CircleDot, Search, Waypoints } from 'lucide-react'
 import { Fragment, useMemo, useState } from 'react'
 import { Panel } from '../components/Panel'
 import { StatePill } from '../components/StatePill'
@@ -45,7 +45,7 @@ export function PipelinePage() {
       <div className="cycle-label"><CircleDot size={14}/><span>{data.cycleLabel}</span></div>
     </div>
 
-    {data.sourceMode === 'REAL' && <div className="real-source-banner"><strong>REAL DATA · cycle-aligned durable lineage</strong><span>{data.sourceNote}</span></div>}
+    {data.sourceNote && <div className="real-source-banner pipeline-source-note"><strong>{data.sourceMode} · {data.evidenceState ?? 'cycle-aligned durable lineage'}</strong><span>{data.sourceNote}</span></div>}
 
     {data.proof && <Panel title="Step 31 · End-to-End Proof" right={<StatePill state={data.proof.status}/>}>
       <div className="e2e-proof-head">
@@ -67,14 +67,14 @@ export function PipelinePage() {
 
     <div className="pipeline-summary">
       <div className="mini-metric"><span>Latest decision</span><strong>{data.latestDecision}</strong><small>Authoritative business time</small></div>
-      <div className="mini-metric"><span>Universe</span><strong>{data.universeSize}</strong><small>Top liquidity assets</small></div>
-      <div className="mini-metric"><span>Active signals</span><strong>{data.activeSignals}</strong><small>Persistent strategy state</small></div>
-      <div className="mini-metric"><span>Actionable plans</span><strong>{data.actionablePlans}</strong><small>Orders or closes required</small></div>
+      <div className="mini-metric"><span>Observed assets / candidates</span><strong>{data.universeSize}</strong><small>Not necessarily the selected strategy universe</small></div>
+      <div className="mini-metric"><span>Active signals</span><strong>{data.evidenceState === 'PARTIAL' || data.latestDecision === 'Pending' ? 'Not exposed' : data.activeSignals}</strong><small>Persisted strategy intent</small></div>
+      <div className="mini-metric"><span>Actionable plans</span><strong>{data.evidenceState === 'PARTIAL' || data.evidenceState === 'PENDING' ? 'Pending / unavailable' : data.actionablePlans}</strong><small>Same-cycle planner instructions</small></div>
     </div>
 
-    <Panel title="Decision Matrix" right={<div className="table-actions"><div className="search-box"><Search size={13}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Asset…"/></div><button className="ghost-button"><Filter size={13}/> Filters</button></div>}>
+    <Panel title="Decision Matrix" right={<div className="table-actions"><div className="search-box"><Search size={13}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Asset…"/></div></div>}>
       <div className="table-wrap"><table className="wide-table pipeline-table"><thead><tr><th>Asset</th><th>Rank</th><th>RSI(7)</th><th>Signal</th><th>Raw target</th><th>Vol target</th><th>Approved</th><th>Current</th><th>Delta</th><th>Plan</th><th>Exchange</th><th></th></tr></thead>
-      <tbody>{rows.map(row => <Fragment key={row.cycleId}>
+      <tbody>{rows.length === 0 && <tr><td colSpan={12} className="empty-cell">{query ? 'No assets match your search.' : data.emptyReason ?? 'No asset-level evidence is available for this cycle.'}</td></tr>}{rows.map(row => <Fragment key={row.cycleId}>
         <tr key={row.cycleId} className="clickable-row" onClick={()=>setExpandedCycle(expandedCycle === row.cycleId ? null : row.cycleId)}>
           <td><strong>{row.asset}</strong><small className="cell-sub">{row.decisionTime}</small></td><td>{row.rankLabel ?? `#${row.rank}`}</td><td className={!row.rsiLabel && row.rsi > 80 ? 'warning' : ''}>{row.rsiLabel ?? row.rsi.toFixed(1)}</td><td><span className={`signal signal--${row.signal.toLowerCase()}`}>{row.signal}</span></td><td>{row.rawTargetLabel ?? `${row.rawTargetPct.toFixed(1)}%`}</td><td>{row.volTargetLabel ?? `${row.volTargetPct.toFixed(1)}%`}</td><td><strong>{row.approvedTargetLabel ?? `${row.approvedTargetPct.toFixed(1)}%`}</strong></td><td>{row.currentWeightLabel ?? `${row.currentWeightPct.toFixed(1)}%`}</td><td className={row.requiredDeltaLabel ? '' : row.requiredDeltaPct === 0 ? '' : row.requiredDeltaPct > 0 ? 'positive' : 'warning'}>{row.requiredDeltaLabel ?? `${row.requiredDeltaPct > 0 ? '+' : ''}${row.requiredDeltaPct.toFixed(1)}%`}</td><td>{row.plannedAction}</td><td><span className={`exchange-state exchange-state--${row.exchangeState.toLowerCase()}`}>{row.exchangeState}</span></td><td><button className="why-button" onClick={(e)=>{e.stopPropagation();setSelectedCycle(row.cycleId)}}><Waypoints size={13}/> Why?</button></td>
         </tr>
@@ -84,7 +84,7 @@ export function PipelinePage() {
 
     <div className="pipeline-help">
       <div><strong>Interaction model</strong><span>Click a row to expand the stage-by-stage transformation. Use “Why?” for the complete trading-cycle inspector.</span></div>
-      <StatePill state="ALIGNED"/>
+      <StatePill state={data.proof?.status ?? 'PENDING'}/>
     </div>
 
     {selectedTrace && <><div className="inspector-backdrop" onClick={()=>setSelectedCycle(null)}/><WhyInspector trace={selectedTrace} onClose={()=>setSelectedCycle(null)}/></>}

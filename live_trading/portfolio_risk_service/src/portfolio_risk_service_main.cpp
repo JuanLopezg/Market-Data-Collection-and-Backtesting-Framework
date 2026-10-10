@@ -316,6 +316,9 @@ private:
             "decision_payload TEXT NOT NULL, PRIMARY KEY(state_key, timestamp))",
             PGRES_COMMAND_OK);
 
+        exec("ALTER TABLE portfolio_risk_live_decision_checkpoint "
+             "ADD COLUMN IF NOT EXISTS risk_diagnostics_payload TEXT", PGRES_COMMAND_OK);
+
         execParams(
             "INSERT INTO portfolio_risk_service_metadata(state_key, portfolio_config) "
             "VALUES($1,$2) ON CONFLICT(state_key) DO NOTHING",
@@ -342,6 +345,7 @@ public:
         std::string signals_payload;
         std::string account_payload;
         std::string decision_payload;
+        std::string risk_diagnostics_payload;
     };
 
     PortfolioRiskCheckpointStore(const std::string& connectionString, const std::string& identity)
@@ -402,7 +406,7 @@ public:
     std::optional<DecisionRow> decisionFor(Timestamp timestamp) const
     {
         const PgResult result = execParams(
-            "SELECT signals_payload,account_payload,decision_payload "
+            "SELECT signals_payload,account_payload,decision_payload,risk_diagnostics_payload "
             "FROM portfolio_risk_live_decision_checkpoint WHERE state_key=$1 AND timestamp=$2",
             {STATE_KEY, std::to_string(timestamp)}, PGRES_TUPLES_OK);
         if (PQntuples(result.get()) == 0)
@@ -414,6 +418,8 @@ public:
         row.signals_payload = PQgetvalue(result.get(), 0, 0);
         row.account_payload = PQgetvalue(result.get(), 0, 1);
         row.decision_payload = PQgetvalue(result.get(), 0, 2);
+        if (!PQgetisnull(result.get(), 0, 3))
+            row.risk_diagnostics_payload = PQgetvalue(result.get(), 0, 3);
         return row;
     }
 
@@ -431,18 +437,20 @@ public:
         Timestamp timestamp,
         const std::string& signalsPayload,
         const std::string& accountPayload,
-        const std::string& decisionPayload)
+        const std::string& decisionPayload,
+        const std::string& diagnosticsPayload)
     {
         execParams(
             "INSERT INTO portfolio_risk_live_decision_checkpoint("
-            "state_key,timestamp,signals_payload,account_payload,decision_payload) "
-            "VALUES($1,$2,$3,$4,$5) ON CONFLICT(state_key,timestamp) DO NOTHING",
-            {STATE_KEY, std::to_string(timestamp), signalsPayload, accountPayload, decisionPayload},
+            "state_key,timestamp,signals_payload,account_payload,decision_payload,risk_diagnostics_payload) "
+            "VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(state_key,timestamp) DO NOTHING",
+            {STATE_KEY, std::to_string(timestamp), signalsPayload, accountPayload, decisionPayload, diagnosticsPayload},
             PGRES_COMMAND_OK);
 
         const auto persisted = decisionFor(timestamp);
         if (!persisted.has_value() || persisted->signals_payload != signalsPayload ||
-            persisted->account_payload != accountPayload || persisted->decision_payload != decisionPayload)
+            persisted->account_payload != accountPayload || persisted->decision_payload != decisionPayload ||
+            persisted->risk_diagnostics_payload != diagnosticsPayload)
             throw std::logic_error("Conflicting persisted portfolio-risk LIVE decision checkpoint");
     }
 };
@@ -552,10 +560,50 @@ std::size_t marketRowCount(const MarketData& marketData)
 
 // Service runtime and message-processing loop.
 
+std::string encodeRiskEvaluations(
+    Timestamp timestamp,
+    const std::string& configurationIdentity,
+    const std::vector<PortfolioRiskEvaluation>& evaluations)
+{
+    json report = {{"schema_version", 1}, {"timestamp", timestamp},
+                   {"configuration_identity", configurationIdentity}, {"strategies", json::array()}};
+    for (const auto& evaluation : evaluations) {
+        json strategy = {{"strategy_id", evaluation.strategy_id}, {"name", evaluation.strategy_name},
+            {"sizer", portfolioSizerKindName(evaluation.sizer_kind)},
+            {"reference_capital", evaluation.reference_capital}, {"sizing_available", evaluation.sizing_available},
+            {"max_gross_leverage", evaluation.max_gross_leverage}, {"max_asset_weight", evaluation.max_asset_weight},
+            {"gross_after_asset_cap", evaluation.constraints.gross_after_asset_cap},
+            {"gross_scale", evaluation.constraints.gross_scale}, {"volatility_state", evaluation.volatility_state},
+            {"volatility", nullptr}, {"assets", json::object()}};
+        if (evaluation.volatility) {
+            const auto& volatility = *evaluation.volatility;
+            strategy["volatility"] = {{"target", volatility.target_volatility},
+                {"raw_signal", volatility.raw_signal_volatility}, {"scale", volatility.scaling_factor},
+                {"before_constraints", volatility.pre_constraint_volatility},
+                {"after_constraints", volatility.post_constraint_volatility}};
+        }
+        // Ordered JSON keys keep reports deterministic across duplicate/restart retries.
+        for (const auto& [coin, decision] : evaluation.rebalance_decisions) {
+            const double raw = evaluation.sized_weights.get(coin);
+            const double capped = evaluation.constraints.asset_capped_weights.get(coin);
+            json reasons = json::array();
+            if (raw != capped) reasons.push_back("ASSET_CAP");
+            if (capped != 0.0 && evaluation.constraints.gross_scale < 1.0) reasons.push_back("GROSS_CAP");
+            strategy["assets"][coin] = {{"sized_weight", raw}, {"asset_capped_weight", capped},
+                {"approved_weight", evaluation.approved_weights.get(coin)}, {"reductions", reasons},
+                {"current_quantity", evaluation.current_quantities.at(coin)},
+                {"action", decision.action == RebalanceAction::Hold ? "HOLD" : decision.action == RebalanceAction::Flat ? "FLAT" : "TARGET_WEIGHT"}};
+        }
+        report["strategies"].push_back(std::move(strategy));
+    }
+    return report.dump();
+}
+
 class PortfolioRiskServiceRuntime {
 private:
     const Options options_;
     const unsigned int required_history_days_;
+    const std::string configuration_identity_;
     const TimeHandlerConfig time_config_;
     const TimeHandler time_handler_;
     const std::optional<Timestamp> replay_bootstrap_completed_date_;
@@ -570,6 +618,8 @@ private:
 
     void resetEngine()
     {
+        if (checkpointIdentity(options_, required_history_days_) != configuration_identity_)
+            throw std::logic_error("Portfolio-risk configuration changed while running; restart with a validated configuration identity");
         engine_ = std::make_unique<PortfolioRiskEngine>(loadPortfolioConfig(options_.portfolio_config));
     }
 
@@ -773,7 +823,8 @@ private:
                 marketRowCount(marketData),
                 options_.market_data_db.string());
 
-            DecisionBatch output = engine_->onSignals(signals, marketData, account);
+            std::vector<PortfolioRiskEvaluation> evaluations;
+            DecisionBatch output = engine_->onSignals(signals, marketData, account, &evaluations);
             output.metadata.schema_version = 1;
             output.metadata.message_id = decisionMessageId(target);
             output.metadata.correlation_id = !signals.metadata.correlation_id.empty()
@@ -782,6 +833,7 @@ private:
             output.metadata.produced_at = target;
 
             const std::string encodedDecision = MessageJson::encode(output);
+            const std::string encodedDiagnostics = encodeRiskEvaluations(target, configuration_identity_, evaluations);
 
             // Preserve the established crash contract: deterministic publish first,
             // durable daily checkpoint second, ACK third. If we crash between publish and
@@ -795,7 +847,8 @@ private:
                 target,
                 message.payload,
                 accountRow->payload,
-                encodedDecision);
+                encodedDecision,
+                encodedDiagnostics);
             durable_checkpoint_timestamp_ = target;
 
             std::size_t decisions = 0;
@@ -845,6 +898,7 @@ public:
           required_history_days_(requiredMarketHistoryDays(
               options_.portfolio_config,
               options_.market_history_buffer_days)),
+          configuration_identity_(checkpointIdentity(options_, required_history_days_)),
           time_config_(TimeHandlerFactory::loadConfigFromEnvironment()),
           time_handler_(TimeHandlerFactory::create(time_config_)),
           replay_bootstrap_completed_date_(configuredReplayBootstrapCompletedUtcDate(time_config_)),
@@ -855,7 +909,7 @@ public:
 
         checkpoint_store_ = std::make_unique<PortfolioRiskCheckpointStore>(
             options_.postgres,
-            checkpointIdentity(options_, required_history_days_));
+            configuration_identity_);
         recoverFromCheckpoint();
 
         account_subscription_ = bus_.subscribe(

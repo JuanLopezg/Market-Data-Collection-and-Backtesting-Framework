@@ -11,6 +11,44 @@ import (
 	"control-dashboard-api/internal/manualaudit"
 )
 
+func TestOperationalAlertsUseFreshProcessClockAndDailyProgressEvidence(t *testing.T) {
+	infra := realInfrastructure{LastUpdated: "12:00:00 UTC", TelemetryObservedAt: "2026-10-08T12:00:00Z",
+		VPS:             realVPS{State: "CRITICAL", ClockObserved: true, ClockSynced: false, DiskPct: 96},
+		Services:        []realService{{Service: "PortfolioRisk", ProcessState: "MISSING"}},
+		TradingProgress: &realTradingProgress{State: "CRITICAL", Detail: "Daily decision is stale"}}
+	read := func() realAlertsAuditData {
+		return buildRealAlertsAudit(infra, realReconciliationData{}, nil, realExecutionData{}, nil, realMarketData{}, nil, realRiskData{}, nil)
+	}
+	got := read()
+	for _, id := range []string{"derived-hostresources-critical", "derived-host-clock-unsynchronized", "derived-process-PortfolioRisk", "derived-dailytradingprogress-critical"} {
+		found := false
+		for _, alert := range got.Alerts {
+			found = found || alert.ID == id
+		}
+		if !found {
+			t.Fatalf("Missing operational alert %s", id)
+		}
+	}
+	// Unsupported or stale observations must not invent an outage/clock failure.
+	infra.TelemetryObservedAt = ""
+	infra.TradingProgress.State = "UNKNOWN"
+	for _, alert := range read().Alerts {
+		if strings.HasPrefix(alert.ID, "derived-host") || strings.HasPrefix(alert.ID, "derived-process-") || strings.HasPrefix(alert.ID, "derived-dailytradingprogress-") {
+			t.Fatalf("Unavailable observation became an active alert: %+v", alert)
+		}
+	}
+	// No-order daily success and observed process/NTP recovery clear these conditions.
+	infra.TelemetryObservedAt = "2026-10-08T12:01:00Z"
+	infra.VPS.State, infra.VPS.ClockSynced = "HEALTHY", true
+	infra.Services[0].ProcessState = "RUNNING"
+	infra.TradingProgress.State = "HEALTHY"
+	for _, alert := range read().Alerts {
+		if strings.HasPrefix(alert.ID, "derived-host") || strings.HasPrefix(alert.ID, "derived-process-") || strings.HasPrefix(alert.ID, "derived-dailytradingprogress-") {
+			t.Fatalf("Recovered condition remained active: %+v", alert)
+		}
+	}
+}
+
 func TestBuildRealAlertsAuditDerivesCurrentConditionsWithoutInventingPersistence(t *testing.T) {
 	infra := realInfrastructure{
 		LastUpdated: "08:00:00 UTC",

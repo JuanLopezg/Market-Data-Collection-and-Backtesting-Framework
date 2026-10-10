@@ -17,6 +17,12 @@
 //
 // Both limits are dimensionless and therefore apply before strategy capital is introduced.
 // A value of 0 disables all exposure through that limit.
+struct RiskConstraintEvaluation {
+    TargetWeights asset_capped_weights;
+    double gross_after_asset_cap = 0.0;
+    double gross_scale = 1.0;
+};
+
 class RiskConstraints {
 private:
     double maxGrossLeverage_ = 0.0;
@@ -33,7 +39,7 @@ public:
             throw std::invalid_argument("Maximum asset weight must be finite and non-negative");
     }
 
-    TargetWeights apply(const TargetWeights& desiredWeights) const
+    TargetWeights apply(const TargetWeights& desiredWeights, RiskConstraintEvaluation* evaluation = nullptr) const
     {
         TargetWeights constrained;
 
@@ -48,10 +54,17 @@ public:
             (void)coin;
             gross += std::abs(weight);
         }
+        if (evaluation) {
+            evaluation->asset_capped_weights = constrained;
+            evaluation->gross_after_asset_cap = gross;
+            evaluation->gross_scale = 1.0;
+        }
 
         // If gross leverage is still too high, preserve relative proportions and scale down.
         if (gross > maxGrossLeverage_ && gross > 0.0) {
             const double scale = maxGrossLeverage_ / gross;
+            if (evaluation)
+                evaluation->gross_scale = scale;
             TargetWeights scaled;
 
             for (const auto& [coin, weight] : constrained.values())

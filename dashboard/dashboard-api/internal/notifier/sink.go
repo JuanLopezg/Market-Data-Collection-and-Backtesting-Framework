@@ -29,6 +29,7 @@ type Notification struct {
 	AlertID          string `json:"alertId"`
 	Severity         string `json:"severity"`
 	Service          string `json:"service"`
+	Account          string `json:"account,omitempty"`
 	EventType        string `json:"eventType"`
 	Title            string `json:"title"`
 	Detail           string `json:"detail,omitempty"`

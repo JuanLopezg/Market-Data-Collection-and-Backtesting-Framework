@@ -150,3 +150,24 @@ func TestSimulationManualCSVRejectsDuplicateCash(t *testing.T) {
 		t.Fatal("duplicate CASH must fail")
 	}
 }
+
+func TestReplayDiagnosticsExposeObservationsWithoutFalseCycleProof(t *testing.T) {
+	s := simulationSnapshot{Generation: 7, HistoricalDate: "2026-10-07", BusinessTimestamp: 202610079,
+		Market:         []simulationMarketBar{{Asset: "BTC", Close: 50000}},
+		Account:        simulationAccount{Equity: 100000, CashTotal: 100000, Positions: []simulationPosition{{Asset: "ETH", Quantity: -2, MarkPrice: 2000}}},
+		Orders:         []simulationOrder{{OrderID: "old-order", Asset: "BTC", Status: "FILLED"}},
+		Fills:          []simulationFill{{OrderID: "old-order", Asset: "BTC", Timestamp: 202609010}},
+		Reconciliation: simulationReconciliation{State: "CLEAN"}}
+	p := NewSimulation(SimulationConfig{})
+	pipeline := p.pipeline(s)
+	if len(pipeline.Rows) != 2 || pipeline.EvidenceState != "PARTIAL" || pipeline.Proof != nil || pipeline.Rows[0].Signal != "UNKNOWN" {
+		t.Fatalf("false replay lineage: %+v", pipeline)
+	}
+	if len(pipeline.Traces) != 2 {
+		t.Fatal("observed assets lack trace explanations")
+	}
+	risk := p.risk(s)
+	if risk.EvidenceKind != "REPLAY_SNAPSHOT" || !risk.CurrentValuationAvailable || risk.ActiveLimitsAvailable || risk.BreachesAvailable || risk.Assets[0].CurrentWeightLabel != "-4.0%" || risk.Assets[0].ApprovedWeightLabel != "Not exposed" {
+		t.Fatalf("false replay risk verdict: %+v", risk)
+	}
+}

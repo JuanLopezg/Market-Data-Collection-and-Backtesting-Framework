@@ -95,6 +95,7 @@ func (e *Engine) Process(ctx context.Context, events []alertstore.LifecycleEvent
 				AlertID:          event.Alert.ID,
 				Severity:         strings.ToUpper(strings.TrimSpace(event.Alert.Severity)),
 				Service:          event.Alert.Service,
+				Account:          event.Alert.Account,
 				EventType:        event.Alert.EventType,
 				Title:            event.Alert.Title,
 				Detail:           event.Alert.Detail,
@@ -146,6 +147,11 @@ func (e *Engine) decide(event alertstore.LifecycleEvent, bootstrap bool, activeL
 	}
 	if severityRank(severity) < severityRank(e.minSeverity) {
 		return "SUPPRESSED", "BELOW_MIN_SEVERITY"
+	}
+	// The producer emits one persisted event per UTC day. Calendar rollover must
+	// not lose a summary to the operational warning update cooldown.
+	if event.Alert.EventType == "DAILY_PORTFOLIO" && severity == "INFO" {
+		return "DELIVERED", "DAILY_SUMMARY"
 	}
 	last, exists := e.store.LastDelivery(event.Alert.ID)
 	if !exists || event.Transition == "OPENED" {

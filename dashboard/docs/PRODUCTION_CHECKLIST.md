@@ -38,6 +38,11 @@ Before making the dashboard reachable from the Internet:
 - [ ] Browser bundle contains no passwords, PostgreSQL credentials, NATS credentials or exchange secrets.
 - [ ] PostgreSQL and market-data backups are defined and restoration has been tested separately.
 - [ ] Trading continues if dashboard-web and dashboard-api are stopped.
+
+The isolated local `PAPER_RECOVERY_TEST=1` rehearsal is documented in
+[paper operations](../../deploy/paper_trading/README.md#local-backup-and-recovery-rehearsal).
+It does not mark the deployed backup/restore or dashboard-independence items above
+complete: accept those again on the destination host with its own state/configuration.
 - [ ] `./scripts/production-smoke.sh .env.production` passes after deployment.
 
 Before any future state-changing LIVE controls:
@@ -54,3 +59,12 @@ Pipeline/Risk/Infrastructure completeness, funding/BTC collateral, real Telegram
 delivery, Manual Control after venue integration, the simplest fast-backtest
 performance baseline, and CPU/RAM profiles during complete backtests and live trading.
 Unchecked roadmap requirements are not completed by passing deployment preflight.
+
+Pending Trades/cost reporting acceptance (see the ordered roadmap):
+
+- [ ] Show separate Commission and Funding columns in Trades with USD values, explicit costs/receipts and unavailable evidence.
+- [ ] Show net PnL after commissions/funding; gross trade PnL is optional. Reconcile attribution and totals with account history and Perpetuals/Costs without double-counting.
+- [ ] Accept actual funding-event timestamps/currencies, duplicate/restart handling and costs versus receipts before treating the display as real accounting.
+- [ ] Gather the user's next dashboard adjustments before defining or implementing them.
+
+These requirements are recorded on 2026-10-10; this update implements no UI or accounting changes.

@@ -3,11 +3,52 @@ package provider
 import (
 	"errors"
 	"testing"
+	"time"
 
 	natsdiag "control-dashboard-api/internal/integration/nats"
 	pgstore "control-dashboard-api/internal/integration/postgres"
 	sourceprobe "control-dashboard-api/internal/integration/probe"
 )
+
+func TestDailyTradingProgressUsesBusinessDatesNotRecentWritesOrFills(t *testing.T) {
+	now := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	runtime := pgstore.RuntimeSummary{Present: true, LastBarCloseTimestamp: 20261007, LastExecutionTimestamp: 20261008, UpdatedAt: now.Format(time.RFC3339)}
+	for _, tc := range []struct {
+		name           string
+		decision, plan uint64
+		state          string
+	}{
+		{"empty daily plan is valid", 20261007, 20261008, "HEALTHY"},
+		{"recent write cannot hide stalled decisions", 20261006, 20261007, "CRITICAL"},
+		{"plan has not been applied", 20261007, 20261007, "CRITICAL"},
+		{"future unfinished decision", 20261008, 20261008, "CRITICAL"},
+		{"future plan", 20261007, 20261009, "CRITICAL"},
+		{"absent dates", 0, 0, "CRITICAL"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runtime.LastBarCloseTimestamp, runtime.LastExecutionTimestamp = tc.decision, tc.plan
+			if got := buildTradingProgress(runtime, nil, true, "PAPER", now); got.State != tc.state {
+				t.Fatalf("unexpected progress: %+v", got)
+			}
+		})
+	}
+	runtime.LastBarCloseTimestamp, runtime.LastExecutionTimestamp = 20261006, 20261007
+	if got := buildTradingProgress(runtime, nil, true, "PAPER", now.Truncate(24*time.Hour).Add(10*time.Minute)); got.State != "WARN" {
+		t.Fatalf("UTC grace not respected: %+v", got)
+	}
+	if got := buildTradingProgress(runtime, nil, true, "PAPER", now.Truncate(24*time.Hour).Add(30*time.Minute)); got.State != "CRITICAL" {
+		t.Fatalf("UTC grace did not expire: %+v", got)
+	}
+	if got := buildTradingProgress(runtime, errors.New("read failed"), true, "PAPER", now); got.State != "CRITICAL" {
+		t.Fatal("Database failure hidden")
+	}
+	if got := buildTradingProgress(runtime, nil, true, "LIVE", now); got.State != "UNKNOWN" {
+		t.Fatal("Non-PAPER business clock compared to wall clock")
+	}
+	if got := buildTradingProgress(pgstore.RuntimeSummary{}, nil, true, "PAPER", now); got.State != "UNKNOWN" {
+		t.Fatal("Missing first snapshot fabricated progress")
+	}
+}
 
 func TestBuildPostgresHealthWithRuntime(t *testing.T) {
 	source := sourceprobe.Result{Configured: true, Reachable: true, Detail: "ok"}

@@ -146,10 +146,10 @@ func buildRealShellStatus(
 	}
 
 	// READY is intentionally fail-closed. The master dashboard contract requires
-	// exchange connectivity, service readiness and host clock sync, none of which
-	// are yet independently verified by the dashboard backend.
+	// private exchange readiness and application control/response evidence.
+	// External process and host NTP observations do not grant trading authority.
 	readiness := "DEGRADED"
-	readinessDetail := "Verified read models are available, but READY is not asserted until exchange connectivity, common service liveness/trading state and host clock sync are independently observable."
+	readinessDetail := "Verified read models are available, but READY is not asserted until private exchange readiness and application control/response are independently verified."
 	if len(blockers) > 0 {
 		readiness = "PAUSED"
 		readinessDetail = "Hard blocker: " + blockers[0]
@@ -158,10 +158,12 @@ func buildRealShellStatus(
 	if !infra.Exchange.Connected {
 		warnings = append(warnings, "Exchange public connectivity is not checked yet")
 	}
-	warnings = append(warnings,
-		"Common trading-service liveness/control state is unverified",
-		"Host clock synchronization is unverified",
-	)
+	warnings = append(warnings, "Application responsiveness/control state is unverified; external process presence alone is insufficient")
+	if !infra.VPS.ClockObserved {
+		warnings = append(warnings, "Host clock synchronization is unverified")
+	} else if !infra.VPS.ClockSynced {
+		warnings = append(warnings, "Host clock is not synchronized")
+	}
 
 	return realShellStatus{
 		Mode:               mode,

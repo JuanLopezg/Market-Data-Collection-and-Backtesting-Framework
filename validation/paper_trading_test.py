@@ -66,6 +66,15 @@ def run(args, directory, timeout=180):
 
 
 def main():
+    hold = int(os.environ.get('PAPER_BROWSER_HOLD_SECONDS', '0'))
+    if not 0 <= hold <= 300:
+        raise ValueError('Browser hold must be between 0 and 300 seconds')
+    recovery_enabled = os.environ.get('PAPER_RECOVERY_TEST', '0') == '1'
+    shadow_enabled = os.environ.get('PAPER_SHADOW_TEST', '0') == '1'
+    if recovery_enabled and hold:
+        raise ValueError('Recovery and browser hold are separate fixture runs')
+    if shadow_enabled and (recovery_enabled or hold):
+        raise ValueError('Shadow rehearsal uses its own bounded fixture run')
     # Reject remote Docker contexts before creating or touching any containers.
     context = os.environ.get('DOCKER_CONTEXT')
     endpoint = None if context else os.environ.get('DOCKER_HOST')
@@ -94,13 +103,25 @@ def main():
     document['networks']['paper'] = {'internal': True}
     document['networks']['web'] = {}
     for name, service in document['services'].items():
+        # Optional fresh tags allow packaged-binary acceptance without changing the local PAPER stack.
+        if service.get('image') == 'algotrading-runtime:paper' and os.environ.get('PAPER_RUNTIME_IMAGE'):
+            service['image'] = os.environ['PAPER_RUNTIME_IMAGE']
+        if name in ('dashboard-api', 'dashboard-watchdog', 'dashboard-alert-notifier') and os.environ.get('PAPER_API_IMAGE'):
+            service['image'] = os.environ['PAPER_API_IMAGE']
         if 'build' in service:
             service['build']['context'] = str((ROOT / 'deploy/paper_trading' / service['build']['context']).resolve())
         if name == 'dashboard-web':
+            if os.environ.get('PAPER_WEB_IMAGE'):
+                service['image'] = os.environ['PAPER_WEB_IMAGE']
             service['networks'] = ['paper','web']
             service['ports'] = ['127.0.0.1::80']
     document['services']['fixture'] = {'image':'alpine:3.20','entrypoint':['/fixture/server'],
                                       'volumes':[str(directory)+':/fixture:ro'],'networks':['paper']}
+    # This fixture never sends Telegram, even if the caller exported real settings.
+    notifier_environment = document['services']['dashboard-alert-notifier']['environment']
+    notifier_environment['DASHBOARD_NOTIFIER_SINK'] = 'TEST_FILE'
+    notifier_environment['DASHBOARD_TELEGRAM_BOT_TOKEN'] = ''
+    notifier_environment['DASHBOARD_TELEGRAM_CHAT_ID'] = ''
     document['services']['market-data']['command'].append('--run-once')
     document['services']['market-data']['restart'] = 'no'
     strategy_command = document['services']['strategy']['command']
@@ -133,6 +154,10 @@ def main():
                 'backend':json.loads(sql('SELECT row_to_json(r) FROM simulated_exchange_state r')),
                 'positions':json.loads(sql("SELECT coalesce(json_object_agg(coin,quantity),'{}'::json) FROM simulated_exchange_positions")),
                 'pending':int(sql('SELECT count(*) FROM simulated_exchange_outbox WHERE NOT published'))}
+    recovery = None
+    if recovery_enabled:
+        from paper_recovery_test import PaperRecoveryStudy
+        recovery = PaperRecoveryStudy(directory, project, document, dc, compose, sql, evidence)
     try:
         compose('up','-d',*[name for name in document['services'] if name != 'market-data'])
         (directory/'missing-price').touch()
@@ -147,6 +172,8 @@ def main():
         else:raise RuntimeError('Missing price did not fail the bounded ingestion cycle')
         assert compose('exec','-T','dashboard-api','sqlite3','-readonly','/data/market/database.db','SELECT count(*) FROM ohlcv_data;')=='0'
         (directory/'missing-price').unlink()
+        if recovery:
+            recovery.before_ingestion()
         compose('up','-d','market-data')
         deadline = time.monotonic()+120
         before = None
@@ -157,6 +184,8 @@ def main():
             except (RuntimeError,ValueError,json.JSONDecodeError):pass
             time.sleep(1)
         else:raise RuntimeError('Expected two simulated fills were not observed')
+        if recovery:
+            recovery.confirm_trading_without_dashboard(before)
         today = datetime.now(timezone.utc).date()
         execution_day = int(today.strftime('%Y%m%d'))
         decision_day = int((today-timedelta(days=1)).strftime('%Y%m%d'))
@@ -187,8 +216,16 @@ def main():
         infrastructure=json.load(client.open(base+'/api/infrastructure',timeout=15))
         assert infrastructure['sourceMode']=='PAPER' and infrastructure['vps']['state']!='UNKNOWN'
         assert len(infrastructure['containers'])==13 and infrastructure['telemetryObservedAt']==telemetry['observedAt']
-        assert not infrastructure['vps']['clockObserved'] and infrastructure['exchange']['venue']=='SIMULATED'
+        assert infrastructure['vps']['clockObserved']==telemetry['vps']['clockObserved'] and infrastructure['exchange']['venue']=='SIMULATED'
+        assert infrastructure['vps']['clockSynced']==telemetry['vps']['clockSynced']
+        assert infrastructure['tradingProgress']['state']=='HEALTHY'
         assert not any(row['ready'] for row in infrastructure['services'])
+        risk=json.load(client.open(base+'/api/risk',timeout=15))
+        assert len(risk['configurationFingerprint'])==64 and len(risk['riskEvaluations'])==1
+        evaluation=risk['riskEvaluations'][0]
+        assert evaluation['state']=='EVALUATED' and evaluation['volatilityState']=='NOT_APPLICABLE'
+        assert len(evaluation['assets'])==2 and all(row['sizedWeight']=='+10.0%' for row in evaluation['assets'])
+        assert all(row['action']=='TARGET_WEIGHT' and row['reduction']=='No cap reduction' for row in evaluation['assets'])
         # Stale or stopped collection must not leave apparently current CPU/RAM.
         telemetry['observedAt']=(datetime.now(timezone.utc)-timedelta(seconds=40)).isoformat()
         (directory/'telemetry/host.json').write_text(json.dumps(telemetry));time.sleep(2.2)
@@ -201,6 +238,9 @@ def main():
         assert before['fills']==after['fills'] and before['account']['account_cash']==after['account']['account_cash']
         assert before['positions']==after['positions'] and before['backend']['next_fill_id']==after['backend']['next_fill_id']
         assert after['pending']==0
+        # Restart must retain the same persisted evaluation, not append new economic fills.
+        restarted_risk=json.load(client.open(base+'/api/risk',timeout=15))
+        assert risk['riskEvaluations']==restarted_risk['riskEvaluations'] and risk['configurationFingerprint']==restarted_risk['configurationFingerprint']
         (directory/'accepted.json').write_text(json.dumps({'project':project,'decision_day':decision_day,
             'execution_day':execution_day,'completed_rows':200,'fills':before['fills'],
             'account_cash':before['account']['account_cash'],'positions':before['positions'],
@@ -208,9 +248,28 @@ def main():
             'restart_no_duplicate_fills':True,'stale_telemetry_unavailable':True,'missing_price_no_commit':True},indent=2)+'\n')
         print('PAPER-TRADING: PASS: completed bars, isolated open prices, fills/accounting, dashboard telemetry, stale collector and restart')
         print('Evidence:',directory)
+        if recovery:
+            recovery.run(client, base)
+        if shadow_enabled:
+            from shadow_trading_test import run_shadow_study
+            run_shadow_study(directory, sql, risk, before, after)
+        # Optional bounded handoff to an authenticated browser test. Removing the
+        # marker releases this fixture; the deadline always stops its services.
+        if hold:
+            ready = directory / 'browser-ready.json'
+            ready.write_text(json.dumps({'url':base, 'project':project}))
+            print('Browser fixture ready:',directory,flush=True)
+            deadline = time.monotonic() + hold
+            while ready.exists() and time.monotonic() < deadline:
+                time.sleep(.5)
+            ready.unlink(missing_ok=True)
     finally:
         # Stop only this random owned fixture project. Retain volumes and evidence.
         compose('stop')
+        if shadow_enabled:
+            # Remove only this random owned fixture's containers/networks. Retain
+            # volumes and reports; do not touch the normal PAPER notifier or VPS.
+            compose('down', '--remove-orphans')
 
 
 if __name__=='__main__':main()

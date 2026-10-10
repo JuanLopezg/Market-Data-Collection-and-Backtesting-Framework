@@ -23,7 +23,7 @@ export function useDashboardStream() {
 
     let closed = false
     const endpoint = `${runtimeConfig.apiBaseUrl}/stream`
-    const source = new EventSource(endpoint, { withCredentials: true })
+    let source: EventSource | null = null
 
     const connected = () => {
       if (!closed) setState('LIVE')
@@ -40,20 +40,38 @@ export function useDashboardStream() {
     }
     const authExpired = () => {
       window.dispatchEvent(new Event('dashboard-auth-expired'))
-      source.close()
+      source?.close()
+      source = null
     }
     const failed = () => {
       if (!closed) setState('RECONNECTING')
     }
 
-    source.addEventListener('connected', connected)
-    source.addEventListener('invalidate', invalidated)
-    source.addEventListener('auth-expired', authExpired)
-    source.onerror = failed
+    const disconnect = () => {
+      source?.close()
+      source = null
+    }
+    const connect = () => {
+      if (closed || source) return
+      setState('CONNECTING')
+      source = new EventSource(endpoint, { withCredentials: true })
+      source.addEventListener('connected', connected)
+      source.addEventListener('invalidate', invalidated)
+      source.addEventListener('auth-expired', authExpired)
+      source.onerror = failed
+    }
+
+    // Full navigation does not unmount React. Close the old document's stream
+    // before it enters browser history, and reopen it when that document returns.
+    window.addEventListener('pagehide', disconnect)
+    window.addEventListener('pageshow', connect)
+    connect()
 
     return () => {
       closed = true
-      source.close()
+      window.removeEventListener('pagehide', disconnect)
+      window.removeEventListener('pageshow', connect)
+      disconnect()
     }
   }, [])
 

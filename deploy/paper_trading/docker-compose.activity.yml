@@ -1,0 +1,47 @@
+# Explicit PAPER study: fresh messaging/account state, retained canonical market volume.
+# Existing PAPER volumes remain preserved and can be selected again without this overlay.
+services:
+  market-data-volume-init:
+    image: alpine:3.20
+  market-data-db-init:
+    image: algotrading-runtime:activity
+  market-data:
+    image: algotrading-runtime:activity
+  strategy:
+    image: algotrading-runtime:activity
+    volumes:
+      - ../../config/strategies/pure_rsi_paper_activity.json:/opt/algotrading/config/strategies/pure_rsi_quote_volume.json:ro
+  portfolio-risk:
+    image: algotrading-runtime:activity
+  execution-state:
+    image: algotrading-runtime:activity
+  order-planner:
+    image: algotrading-runtime:activity
+  exchange-gateway:
+    image: algotrading-runtime:activity
+  simulated-exchange:
+    image: algotrading-runtime:activity
+  dashboard-api:
+    image: algotrading-paper-dashboard-api:activity
+    environment:
+      DASHBOARD_RSI_ENTRY: '50'
+      DASHBOARD_RSI_EXIT: '40'
+      DASHBOARD_PAPER_COMPARISON_FILE: /data/comparison/comparison.json
+      DASHBOARD_QUOTE_VOLUME_FROM: ''
+    volumes:
+      - ${PAPER_RUN_DIR:?}/comparison:/data/comparison:ro
+  dashboard-watchdog:
+    image: algotrading-paper-dashboard-api:activity
+    environment:
+      DASHBOARD_RSI_ENTRY: '50'
+      DASHBOARD_RSI_EXIT: '40'
+      DASHBOARD_QUOTE_VOLUME_FROM: ''
+  dashboard-alert-notifier:
+    image: algotrading-paper-dashboard-api:activity
+  dashboard-web:
+    image: algotrading-paper-dashboard-web:activity
+volumes:
+  nats-data:
+    name: algotrading-paper-activity-nats
+  postgres-data:
+    name: algotrading-paper-activity-postgres

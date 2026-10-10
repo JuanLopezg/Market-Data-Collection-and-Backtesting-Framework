@@ -35,12 +35,14 @@ type TelegramReceipt struct {
 }
 
 type TelegramSink struct {
-	mu          sync.Mutex
-	botToken    string
-	chatID      string
-	receiptPath string
-	baseURL     string
-	client      *http.Client
+	mu             sync.Mutex
+	botToken       string
+	chatID         string
+	receiptPath    string
+	baseURL        string
+	client         *http.Client
+	now            func() time.Time
+	retryNotBefore time.Time
 }
 
 type telegramSendMessageRequest struct {
@@ -104,6 +106,7 @@ func newTelegramSink(botToken, chatID, receiptPath, baseURL string, client *http
 		receiptPath: receiptPath,
 		baseURL:     baseURL,
 		client:      client,
+		now:         time.Now,
 	}, nil
 }
 
@@ -134,6 +137,11 @@ func (s *TelegramSink) Deliver(ctx context.Context, n Notification) (DeliveryRes
 	}
 	if exists {
 		return DeliveryResult{AlreadyDelivered: true}, nil
+	}
+	// Telegram's flood-control delay applies to this sink, including other alerts.
+	// Leave the event unprocessed so the engine can retry after the deadline.
+	if s.now().Before(s.retryNotBefore) {
+		return DeliveryResult{}, fmt.Errorf("Telegram delivery deferred until %s after rate limiting", s.retryNotBefore.UTC().Format(time.RFC3339))
 	}
 
 	payload := telegramSendMessageRequest{
@@ -191,6 +199,12 @@ func (s *TelegramSink) Deliver(ctx context.Context, n Notification) (DeliveryRes
 		suffix := ""
 		if api.Parameters.RetryAfter > 0 {
 			suffix = fmt.Sprintf(" retry_after=%ds", api.Parameters.RetryAfter)
+			// Guard duration conversion against an invalid overflowing remote value.
+			seconds := int64(api.Parameters.RetryAfter)
+			if seconds > int64((1<<63-1)/int64(time.Second)) {
+				return DeliveryResult{}, errors.New("Telegram retry delay exceeds supported duration")
+			}
+			s.retryNotBefore = s.now().Add(time.Duration(seconds) * time.Second)
 		}
 		if desc != "" {
 			suffix += ": " + desc
@@ -217,38 +231,41 @@ func (s *TelegramSink) Deliver(ctx context.Context, n Notification) (DeliveryRes
 func telegramMessage(n Notification) string {
 	severity := strings.ToUpper(strings.TrimSpace(n.Severity))
 	transition := strings.ToUpper(strings.TrimSpace(n.Transition))
+	if severity == "CRITICAL" {
+		severity = "URGENT"
+	}
+	if transition == "RESOLVED" {
+		severity = "INFO"
+	}
 	if severity == "" {
 		severity = "UNKNOWN"
-	}
-	if transition == "" {
-		transition = "EVENT"
 	}
 	title := cleanTelegramField(n.Title)
 	if title == "" {
 		title = "Alert notification"
 	}
 
-	lines := []string{
-		fmt.Sprintf("[%s] %s — %s", severity, transition, title),
-		"notification=" + cleanTelegramField(n.NotificationID),
-		"alert=" + cleanTelegramField(n.AlertID),
+	if transition == "RESOLVED" {
+		title = "Resolved: " + strings.TrimSuffix(title, " resolved")
+	} else if transition == "TEST" {
+		title = "TEST: " + title
 	}
-	if v := cleanTelegramField(n.Service); v != "" {
-		lines = append(lines, "service="+v)
+	account := cleanTelegramField(n.Account)
+	if account == "" && n.Service == "KrakenAccountReadOnly" {
+		account = "Kraken"
 	}
-	if v := cleanTelegramField(n.EventType); v != "" {
-		lines = append(lines, "event="+v)
+	owner := "System: " + cleanTelegramField(n.Service)
+	if account != "" {
+		owner = "Account: " + account
+	} else if strings.TrimSpace(n.Service) == "" {
+		owner = "System: algoTrading"
 	}
-	if v := cleanTelegramField(n.SourceRecordedAt); v != "" {
-		lines = append(lines, "source_time="+v)
-	}
-	if v := cleanTelegramField(n.CorrelationID); v != "" {
-		lines = append(lines, "correlation="+v)
-	}
-	if v := cleanTelegramField(n.LinkedContext); v != "" {
-		lines = append(lines, "context="+v)
-	}
+	lines := []string{fmt.Sprintf("[%s] %s", severity, owner), truncateRunes(title, 160)}
 	if v := cleanTelegramField(n.Detail); v != "" {
+		// Daily portfolios need room for positions; operational alerts stay short.
+		if n.EventType != "DAILY_PORTFOLIO" {
+			v = truncateRunes(v, 600)
+		}
 		lines = append(lines, "", v)
 	}
 	return truncateRunes(strings.Join(lines, "\n"), maxTelegramTextRunes)

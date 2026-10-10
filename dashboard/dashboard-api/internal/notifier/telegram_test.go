@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -11,6 +12,8 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"control-dashboard-api/internal/alertstore"
 )
 
 const testTelegramToken = "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdef"
@@ -67,8 +70,8 @@ func TestTelegramSinkSendMessageAndDurableReceiptDedup(t *testing.T) {
 	if got.ChatID != testTelegramChatID || got.Text == "" || !got.LinkPreviewOptions.IsDisabled {
 		t.Fatalf("unexpected Telegram payload: %+v", got)
 	}
-	if strings.Contains(got.Text, testTelegramChatID) || !strings.Contains(got.Text, n.NotificationID) {
-		t.Fatalf("message leaked chat id or omitted notification id: %q", got.Text)
+	if strings.Contains(got.Text, testTelegramChatID) || strings.Contains(got.Text, n.NotificationID) {
+		t.Fatalf("message exposed credentials or technical identity: %q", got.Text)
 	}
 
 	second, err := sink.Deliver(context.Background(), n)
@@ -84,7 +87,7 @@ func TestTelegramSinkSendMessageAndDurableReceiptDedup(t *testing.T) {
 	}
 }
 
-func TestTelegramMessageIsPlainBoundedAndKeepsNotificationIdentity(t *testing.T) {
+func TestTelegramMessageIsPlainBoundedAndOmitsTechnicalIdentity(t *testing.T) {
 	n := testNotification()
 	n.Title = "unsafe *markdown* <html>"
 	n.Detail = strings.Repeat("x", 10000)
@@ -92,8 +95,31 @@ func TestTelegramMessageIsPlainBoundedAndKeepsNotificationIdentity(t *testing.T)
 	if utf8.RuneCountInString(text) > maxTelegramTextRunes {
 		t.Fatalf("Telegram message too long: %d", utf8.RuneCountInString(text))
 	}
-	if !strings.Contains(text, n.NotificationID) || !strings.Contains(text, "unsafe *markdown* <html>") {
-		t.Fatalf("message formatting lost identity/plain text: %q", text[:minInt(len(text), 500)])
+	if strings.Contains(text, n.NotificationID) || !strings.Contains(text, "unsafe *markdown* <html>") {
+		t.Fatalf("message formatting exposed identity or lost plain text: %q", text[:minInt(len(text), 500)])
+	}
+}
+
+func TestTelegramReadableAccountsSeverityAndResolution(t *testing.T) {
+	n := testNotification()
+	n.Account = "Kraken"
+	text := telegramMessage(n)
+	if !strings.HasPrefix(text, "[URGENT] Account: Kraken\nPosition divergence") {
+		t.Fatalf("unexpected compact message: %q", text)
+	}
+	for _, technical := range []string{n.AlertID, n.NotificationID, "event=", "source_time=", "correlation="} {
+		if strings.Contains(text, technical) {
+			t.Fatalf("technical field escaped into message: %s", technical)
+		}
+	}
+	n.Transition = "RESOLVED"
+	if !strings.HasPrefix(telegramMessage(n), "[INFO] Account: Kraken\nResolved: ") {
+		t.Fatal("resolution remains labelled urgent")
+	}
+	n.Account = ""
+	n.Transition = "OPENED"
+	if !strings.HasPrefix(telegramMessage(n), "[URGENT] System: Reconciliation") {
+		t.Fatal("system alert is mislabelled as a trading account")
 	}
 }
 
@@ -170,6 +196,49 @@ func TestTelegramCredentialsValidation(t *testing.T) {
 	}
 	if _, err := NewTelegramSink(testTelegramToken, "bad\nchat", filepath.Join(t.TempDir(), "r"), 5*time.Second); err == nil {
 		t.Fatal("unsafe chat id accepted")
+	}
+}
+
+func TestTelegramRateLimitDefersAllAlertsWithoutConsumingEvents(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		if requests == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			fmt.Fprint(w, `{"ok":false,"error_code":429,"parameters":{"retry_after":9}}`)
+			return
+		}
+		fmt.Fprint(w, `{"ok":true,"result":{"message_id":77}}`)
+	}))
+	defer server.Close()
+	dir := t.TempDir()
+	sink, _ := newTelegramSink(testTelegramToken, testTelegramChatID, filepath.Join(dir, "receipts.jsonl"), server.URL, server.Client())
+	now := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	sink.now = func() time.Time { return now }
+	store, _ := OpenStore(filepath.Join(dir, "state"))
+	store.MarkBootstrapComplete(now)
+	engine, _ := NewEngine(store, sink, "WARN", time.Minute)
+	event := lifecycle("rate-limited", now.Format(time.RFC3339), "OPENED", "alert", "WARN", "fixture")
+	if _, err := engine.Process(context.Background(), []alertstore.LifecycleEvent{event}); err == nil || store.IsProcessed(event.EventID) {
+		t.Fatal("Failed delivery consumed the source event")
+	}
+	now = now.Add(8 * time.Second)
+	other := testNotification()
+	if _, err := sink.Deliver(context.Background(), other); err == nil || requests != 1 {
+		t.Fatal("Rate limit did not defer other alerts")
+	}
+	now = now.Add(time.Second)
+	if _, err := engine.Process(context.Background(), []alertstore.LifecycleEvent{event}); err != nil || !store.IsProcessed(event.EventID) || requests != 2 {
+		t.Fatalf("Retry did not recover: %v requests=%d", err, requests)
+	}
+	// Recreate both sink and engine: durable receipts cover a lost decision checkpoint.
+	restarted, _ := newTelegramSink(testTelegramToken, testTelegramChatID, filepath.Join(dir, "receipts.jsonl"), server.URL, server.Client())
+	freshStore, _ := OpenStore(filepath.Join(dir, "recovered-state"))
+	freshStore.MarkBootstrapComplete(now)
+	recovered, _ := NewEngine(freshStore, restarted, "WARN", time.Minute)
+	if _, err := recovered.Process(context.Background(), []alertstore.LifecycleEvent{event}); err != nil || requests != 2 || !freshStore.IsProcessed(event.EventID) {
+		t.Fatal("Durable Telegram receipt did not prevent crash-window resend", err)
 	}
 }
 

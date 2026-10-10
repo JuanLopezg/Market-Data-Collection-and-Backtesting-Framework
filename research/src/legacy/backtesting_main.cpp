@@ -16,9 +16,11 @@
 #include "market_filter.h"
 #include "realtest.h"
 #include "universe_selector.h"
+#include "paper_baseline.h"
 
 #include <cstdlib>
 #include <filesystem>
+#include <iostream>
 #include <limits>
 #include <memory>
 #include <string>
@@ -41,8 +43,15 @@ std::string benchmark = "BTC";
 
 int main(int argc, char** argv)
 {
-    (void)argc;
-    (void)argv;
+    if (argc == 2 && std::string(argv[1]) == "--help") {
+        std::cout << "CURRENT research fast backtest.\n"
+                     "Use research/replay.py fast for the historical profile.\n"
+                     "ALGOTRADING_PAPER_BASELINE_MANIFEST selects the frozen PAPER study.\n";
+        return 0;
+    }
+
+    if (const char* manifest = std::getenv("ALGOTRADING_PAPER_BASELINE_MANIFEST"))
+        return runPaperBaseline(manifest);
 
     Logger::Instance().Setup(
         true,   // debug enabled

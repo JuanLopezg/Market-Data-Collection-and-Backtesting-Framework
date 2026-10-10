@@ -454,7 +454,10 @@ services:
       DASHBOARD_ALERT_STORE_DIR: /data/watchdog
       DASHBOARD_NOTIFIER_STORE_DIR: ${DASHBOARD_NOTIFIER_STORE_DIR:-}
       DASHBOARD_NOTIFIER_TEST_SINK_FILE: /data/notifier/test-sink.jsonl
-      DASHBOARD_NOTIFIER_SINK: TEST_FILE
+      DASHBOARD_NOTIFIER_SINK: ${DASHBOARD_NOTIFIER_SINK:-TEST_FILE}
+      DASHBOARD_TELEGRAM_BOT_TOKEN: ${DASHBOARD_TELEGRAM_BOT_TOKEN:-}
+      DASHBOARD_TELEGRAM_CHAT_ID: ${DASHBOARD_TELEGRAM_CHAT_ID:-}
+      DASHBOARD_TELEGRAM_REQUEST_TIMEOUT: ${DASHBOARD_TELEGRAM_REQUEST_TIMEOUT:-8s}
       DASHBOARD_NOTIFIER_MIN_SEVERITY: ${DASHBOARD_NOTIFIER_MIN_SEVERITY:-WARN}
       DASHBOARD_NOTIFIER_INTERVAL: ${DASHBOARD_NOTIFIER_INTERVAL:-5s}
       DASHBOARD_NOTIFIER_COOLDOWN: ${DASHBOARD_NOTIFIER_COOLDOWN:-5m}
@@ -478,7 +481,7 @@ services:
       - CMD-SHELL
       - store=$${DASHBOARD_NOTIFIER_STORE_DIR:-}; if [ -z "$$store" ]; then if [ "$${DASHBOARD_NOTIFIER_SINK:-TEST_FILE}"
         = TELEGRAM ]; then store=/data/notifier/telegram; else store=/data/notifier;
-        fi; fi; test -s "$$store/status.json" && grep -q '"lastSuccessAt"' "$$store/status.json"
+        fi; fi; test -s "$$store/status.json" && grep -q '"lastSuccessAt"' "$$store/status.json" && ! grep -q '"lastError"' "$$store/status.json"
       interval: 30s
       timeout: 3s
       start_period: 15s

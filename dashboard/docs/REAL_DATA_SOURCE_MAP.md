@@ -104,8 +104,8 @@ cannot be declared a current reconciliation result.
 | Positions | Runtime quantities/orders, strategy positions, approved targets and timestamped canonical prices. Missing valuation stays unavailable. |
 | Execution | Runtime order snapshot, bounded fills and planner evidence. Unpersisted latency/slippage/replacement lineage is not inferred. |
 | Reconciliation | Local snapshot plus retained exchange snapshot through the verified reconciler; missing/stale evidence stays pending. |
-| Pipeline / Why | Timestamp-aligned daily checkpoint chain and order/fill proof. Unpersisted intermediate strategy/risk transformations remain unavailable. |
-| Risk | Exact approved DecisionBatch and persisted signals/account inputs. Raw sizing, binding constraints, active-limit provenance and breach diagnostics need runtime-owned payloads. |
+| Pipeline / Why | Timestamp-aligned daily checkpoint chain and order/fill proof. Quiet/HOLD cycles retain observed assets and explain empty lineage; absent first decision/planner remains pending. Replay uses market/account/retained-order observations without claiming cycle-aligned proof. Unpersisted intermediate transformations remain unavailable. |
+| Risk | Exact approved DecisionBatch and persisted signals/account inputs; policy from `portfolio_risk_service_metadata.portfolio_config`. New cycles store optional `risk_diagnostics_payload` atomically in the risk decision checkpoint: sized/capped weights, annualized volatility, cap reductions, HOLD/FLAT/TARGET_WEIGHT actions and cycle configuration identity. Its SHA-256 is the displayed fingerprint. Old schemas/rows and canonical replay snapshots retain unavailable evaluations. Combined approved weights use combined notionals/reference capital. Whole-account/venue breaches and marked real PnL remain unavailable. |
 | Market Data | Canonical daily ranking/OHLCV, formula-checked indicators and date-aligned signals. Candidate rejection explanations are not first-class persisted evidence. |
 | Infrastructure | PostgreSQL/NATS diagnostics and canonical file probes. Optional `DASHBOARD_HOST_METRICS_FILE` supplies fresh CPU/RAM/disk and project container observations; unavailable/stale telemetry stays unknown. The paper stack configures this read-only snapshot without a Docker socket mount. Container health does not prove pipeline readiness or clock sync. |
 | Ledger | Immutable fill-derived cash/asset deltas, aggregate diagnostics and deterministic recent-window fingerprint. Not durable cost basis, realized/unrealized PnL or historical equity. |
@@ -146,9 +146,15 @@ See [API_CONTRACT.md](API_CONTRACT.md) for routes and
 ## Remaining runtime-owned work
 
 Complete accounting needs a durable runtime-owned cost-basis/realized/unrealized-PnL
-ledger and historical equity projection. Risk/pipeline explanation needs persisted
-transform/binding-rule provenance. Business heartbeats and verified clock synchronization
-remain pending; host/container resource telemetry has an optional fresh snapshot contract.
+ledger and historical equity projection. New service Risk evaluations persist sizing
+and strategy constraint provenance; whole-account/venue breaches and broader Pipeline
+transforms remain pending. In-loop application heartbeats/control responsiveness
+remain pending. The host collector's optional fresh snapshot includes external trading
+executable presence/state and systemd NTP synchronization status, with unavailable
+probes kept UNKNOWN. Infrastructure observes daily PAPER progress from persisted
+last_bar_close_timestamp/last_execution_timestamp, with an explicit 30-minute UTC
+rollover grace; neither updated_at nor fills substitute for business dates. These
+observations do not establish private trading readiness. Clock offset remains unmeasured.
 Private venue execution and trading-control
 delivery must use the normal strategy/risk/planning/execution lifecycle.
 
