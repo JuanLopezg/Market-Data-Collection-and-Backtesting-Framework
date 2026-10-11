@@ -1,5 +1,5 @@
 ALGOTRADING - CURRENT HANDOFF
-Updated: 2026-10-10
+Updated: 2026-10-11
 Build environment: WSL. Repository source and current test output are authoritative.
 
 READING AND DOCUMENT OWNERSHIP
@@ -20,6 +20,11 @@ deploy/paper_trading/README.md. The VPS first day, API/browser and collector res
 pass: two simulated positions and zero signal differences. CURRENT_STATE.md owns
 values/evidence; next accumulate several UTC daily observations before accepting
 multi-day comparison. Private orders/collateral integration remain pending.
+
+The user wants the maintained context documents (this handoff, architecture,
+roadmap, CURRENT_STATE and component READMEs) updated as work progresses, so every
+session ends handoff-ready. Communication with the user is in Spanish; code,
+comments and log messages stay in English.
 
 Act directly within the requested scope. Optimize for readability, clear English
 names/comments/logs, and a moderate number of files. Avoid clever abstractions,
@@ -172,7 +177,10 @@ REMAINING PRODUCT WORK
 Research runtime migration and generated repository navigation are complete.
 docs/ROADMAP.md owns the ordered remaining work, including the user's dashboard,
 funding/collateral, Telegram, performance profiling and exchange-selection requirements.
-Current next task: observe/accept several UTC daily VPS PAPER 50/40 study cycles
+Readable-logging change (uncommitted) passed WSL acceptance on 2026-10-11: build, Step59
+fingerprint, fast/system samples and tests; evidence in CURRENT_STATE.md top entry and
+storage/logging_validation/. Review and commit remain with the user.
+Ongoing: observe/accept several UTC daily VPS PAPER 50/40 study cycles
 against the aligned fast baseline; initial deployment/first-day checks are complete.
 The roadmap now lists remaining work only. Further dashboard adjustments are a
 separate pending task awaiting the user's specifications. New reporting requirement:
@@ -181,8 +189,14 @@ both; gross trade PnL is optional. Include actual funding costs and receipts, us
 explicit attribution/sign/currency/timestamps, do not double-count costs, and keep
 missing evidence unavailable rather than inventing zero. Accounting and source/API
 contracts must support this before UI acceptance. This requirement is recorded,
-not implemented. Agree replacement logs with the user, then simplify runtime root/
-paths; current daily logging remains two files (today/yesterday), 50 MiB each.
+not implemented. Readable code logs were agreed and implemented locally on 2026-10-10:
+lib/, live_trading/ and research/ log "YYYY-MM-DD HH:MM:SS.mmm [LEVEL] Class::function :
+message" in UTC; long IDs/hashes/unrounded values only in DEBUG (see live_trading/README.md
+Logs). WSL build/Step59 acceptance of that change is recorded in CURRENT_STATE.md. The local
+host-receiver source (deploy/live/logging) now stores each service line unchanged; the VPS
+still runs the previous receiver until a new authorization installs it.
+Dashboards are out of scope. Next roadmap item: one configurable runtime root/readable
+paths. Daily host retention remains two files (today/yesterday), 50 MiB each.
 This planning update does not authorize another VPS rollout or private orders.
 Overview charts/timeframes (steps 1-2) are implemented and validated locally.
 Pipeline/Risk available read models (step 3) are repaired and locally validated;
@@ -311,9 +325,10 @@ unavailable. kraken_portfolio_summary.py owns that calendar/valuation state; pub
 prices are fetched only when positions exist. Three labelled TEST Telegram previews
 and one actual daily summary were accepted locally. Receipt history was preserved
 while replacing both local notifier containers with the new image; VPS unchanged.
-Legacy demo requests redirected; official docs
-announce decommissioning. Confirm a supported test environment before private tests;
-never fall back to real orders. See live_trading/README.md and CURRENT_STATE.md.
+Legacy demo requests redirected; official sources
+conflict and name no replacement. The user decided (2026-10-10) to test private Kraken
+integration with small real-money orders instead of a demo; each real order test needs
+explicit authorization and nothing may silently switch from a test endpoint to live. See live_trading/README.md and CURRENT_STATE.md.
 BTC-collateral/account eligibility precedes actual venue acceptance.
 Operator routing and broader fault coverage remain separate.
 VPS remains unchanged.
@@ -321,8 +336,8 @@ Charts have USD equity axes,
 hover values, independent X/Y zoom, two-axis pan/reset and UTC date filters with
 ALL. They only display available history; real PAPER equity history is not invented.
 Keep the running VPS PAPER deployment unchanged until a later explicit deployment
-request. Ask the user how they want the new logs before redesigning them; agree on
-a single configurable root and readable paths before migrating existing state.
+request. Agree a single configurable root and readable paths with the user before
+migrating existing state.
 The bounded resource profile is available and its five-minute study passed:
   python3 research/replay.py resources --days 100 --seconds 300 --open
 This reuses canonical dashboard replay in its own container while the separate
@@ -387,7 +402,7 @@ it before integration and verify BTC collateral/account eligibility before selec
 Kraken is the likely first live venue; Hyperliquid is not the initial integration
 priority. Refresh authoritative venue rules when performing the analysis/integration.
 Unavailable intended perpetual markets must be skipped without unsupported fallback.
-Proceed through private test/demo integration, shadow, readiness and an explicitly
+Proceed through private integration (small authorized real-money tests), shadow, readiness and an explicitly
 authorized small live test; increase capital gradually only after acceptance.
 The unfinished exchange-selection note remains open rather than being invented.
 Public metadata does not prove private authentication/order/fill/reconciliation support.

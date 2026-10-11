@@ -6,6 +6,7 @@
 
 #include "binance_http_server.h"
 #include "historical_market_data.h"
+#include "service_logging.h"
 
 #include <boost/asio/ip/address.hpp>
 #include <boost/program_options.hpp>
@@ -56,6 +57,8 @@ int main(int argc, char** argv)
     std::string host = "127.0.0.1";
     int port = 8080;
 
+    ServiceLogging::setup("binance-simulator");
+
     try {
         po::options_description desc("Options");
         desc.add_options()
@@ -88,14 +91,13 @@ int main(int argc, char** argv)
             boost::asio::ip::make_address(host),
             static_cast<std::uint16_t>(port));
 
-        std::cout << "Historical CSV: " << csvPath << '\n';
-        std::cout << "Simulated clock: " << clockDate << " 00:00 UTC\n";
-        std::cout << "Active instruments: " << marketData.activeInstruments().size() << '\n';
+        LG_INFO("Loaded historical CSV {} ({} active instruments, simulated clock {} 00:00 UTC)",
+                csvPath, marketData.activeInstruments().size(), clockDate);
 
         server.run();
     }
     catch (const std::exception& e) {
-        std::cerr << "Binance simulator error: " << e.what() << '\n';
+        LG_ALERT("Binance simulator stopped by a fatal error: {}", e.what());
         return 1;
     }
 

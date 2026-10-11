@@ -267,14 +267,12 @@ private:
     void persist(const std::optional<Fill>& fill = std::nullopt)
     {
         store_->save(snapshot(), fill);
-        LG_DEBUG(
-            "service=execution-state event=state_persisted fill_id={} last_decision_timestamp={} last_execution_timestamp={} cash={} tracked_orders={}",
-            fill ? std::to_string(fill->fill_id) : std::string{"none"},
-            last_decision_timestamp_,
-            engine_.lastExecutionTimestamp(),
-            engine_.account().cash(),
-            engine_.orderManager().orders().size()
-        );
+        LG_DEBUG("State saved: cash {}, {} tracked orders, last decision {}, last execution {}, fill {}",
+                 FormatUsd(engine_.account().cash()),
+                 engine_.orderManager().orders().size(),
+                 FormatDayKey(last_decision_timestamp_),
+                 FormatDayKey(engine_.lastExecutionTimestamp()),
+                 fill ? std::to_string(fill->fill_id) : std::string{"none"});
     }
 
     void publishAccountSnapshot(
@@ -304,14 +302,12 @@ private:
             MessageJson::encode(value),
             value.metadata.message_id
         );
-        LG_INFO(
-            "service=execution-state event=account_snapshot_published timestamp={} cash={} positions={} strategy_position_sets={} message_id={}",
-            value.timestamp,
-            value.cash,
-            value.positions.size(),
-            value.strategy_positions.size(),
-            value.metadata.message_id
-        );
+        LG_INFO("Published account snapshot for {}: cash {}, {} positions, {} strategy position sets",
+                FormatDayKey(value.timestamp),
+                FormatUsd(value.cash),
+                value.positions.size(),
+                value.strategy_positions.size());
+        LG_DEBUG("Account snapshot message id {}", value.metadata.message_id);
     }
 
     void maybePublishExecutionCycleComplete()
@@ -349,13 +345,9 @@ private:
             MessageJson::encode(value),
             value.metadata.message_id
         );
-        LG_INFO(
-            "service=execution-state event=execution_cycle_complete decision_timestamp={} execution_timestamp={} state_revision={} message_id={}",
-            value.decision_timestamp,
-            value.execution_timestamp,
-            value.state_revision,
-            value.metadata.message_id
-        );
+        LG_INFO("Execution cycle complete: decision {} executed on {}",
+                FormatDayKey(value.decision_timestamp), FormatDayKey(value.execution_timestamp));
+        LG_DEBUG("Execution cycle state revision {}, message id {}", value.state_revision, value.metadata.message_id);
         active_execution_cycle_.reset();
     }
 
@@ -524,15 +516,12 @@ private:
         );
         bus_.flush();
 
-        LG_INFO(
-            "service=execution-state event=notional_planning_request_published decision_timestamp={} state_revision={} symbols={} tracked_orders={} next_order_id={} message_id={}",
-            request.decision_timestamp,
-            request.state.state_revision,
-            request.reference_closes.closes.size(),
-            request.state.orders.size(),
-            request.state.next_order_id,
-            request.metadata.message_id
-        );
+        LG_INFO("Requested order plan for {} ({} reference prices, {} tracked orders)",
+                FormatDayKey(request.decision_timestamp),
+                request.reference_closes.closes.size(),
+                request.state.orders.size());
+        LG_DEBUG("Planning request state revision {}, next order id {}, message id {}",
+                 request.state.state_revision, request.state.next_order_id, request.metadata.message_id);
     }
 
     void handoffPendingDecisionIfReady()
@@ -566,12 +555,8 @@ private:
 
             const Timestamp newestCompleted = newestCompletedUtcDate(time_handler_);
             if (plan.decision_timestamp > newestCompleted) {
-                LG_DEBUG(
-                    "service=execution-state event=notional_plan_waiting_for_business_time "
-                    "decision_timestamp={} newest_completed_utc={} disposition=retry",
-                    plan.decision_timestamp,
-                    newestCompleted
-                );
+                LG_DEBUG("Order plan for {} waits for business time (newest completed day {}); will retry",
+                         FormatDayKey(plan.decision_timestamp), FormatDayKey(newestCompleted));
                 return DurableMessageDisposition::Retry;
             }
 
@@ -582,26 +567,17 @@ private:
             // commands leave this process.  A redelivery after that boundary must ACK,
             // never allocate/submit the same economics a second time.
             if (engine_.lastExecutionTimestamp() >= executionTimestamp) {
-                LG_INFO(
-                    "service=execution-state event=notional_plan_duplicate_or_stale "
-                    "decision_timestamp={} execution_timestamp={} last_execution_timestamp={} "
-                    "disposition=ack",
-                    plan.decision_timestamp,
-                    executionTimestamp,
-                    engine_.lastExecutionTimestamp()
-                );
+                LG_INFO("Order plan for {} is already applied or stale (execution {}, last execution {}); ignoring it",
+                        FormatDayKey(plan.decision_timestamp),
+                        FormatDayKey(executionTimestamp),
+                        FormatDayKey(engine_.lastExecutionTimestamp()));
                 return DurableMessageDisposition::Ack;
             }
 
             const ExecutionPlanningStateSnapshot current = planningState();
             if (current.state_revision != plan.state_revision) {
-                LG_WARN(
-                    "service=execution-state event=notional_plan_state_mismatch "
-                    "decision_timestamp={} plan_revision={} current_revision={} disposition=retry",
-                    plan.decision_timestamp,
-                    plan.state_revision,
-                    current.state_revision
-                );
+                LG_WARN("Order plan for {} was built for state revision {}, but the current revision is {}; will retry",
+                        FormatDayKey(plan.decision_timestamp), plan.state_revision, current.state_revision);
                 return DurableMessageDisposition::Retry;
             }
 
@@ -685,34 +661,23 @@ private:
                 plan.metadata.message_id
             };
 
-            LG_INFO(
-                "service=execution-state event=notional_plan_applied "
-                "decision_timestamp={} execution_timestamp={} state_revision={} "
-                "cancels={} submits={} next_order_id={} message_id={}",
-                plan.decision_timestamp,
-                executionTimestamp,
-                plan.state_revision,
-                plan.cancel_order_ids.size(),
-                executable.submit_orders.size(),
-                plan.next_order_id,
-                plan.metadata.message_id
-            );
+            LG_INFO("Applied order plan for {} on {}: {} new orders, {} cancels",
+                    FormatDayKey(plan.decision_timestamp),
+                    FormatDayKey(executionTimestamp),
+                    executable.submit_orders.size(),
+                    plan.cancel_order_ids.size());
+            LG_DEBUG("Applied plan state revision {}, next order id {}, message id {}",
+                     plan.state_revision, plan.next_order_id, plan.metadata.message_id);
 
             maybePublishExecutionCycleComplete();
             return DurableMessageDisposition::Ack;
         }
         catch (const std::invalid_argument& error) {
-            LG_WARN(
-                "service=execution-state event=notional_plan_invalid disposition=terminate error={}",
-                error.what()
-            );
+            LG_WARN("Rejected invalid order plan: {}", error.what());
             return DurableMessageDisposition::Terminate;
         }
         catch (const std::exception& error) {
-            LG_ERROR(
-                "service=execution-state event=notional_plan_failed disposition=retry error={}",
-                error.what()
-            );
+            LG_ERROR("Applying the order plan failed; will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -733,11 +698,8 @@ private:
             MessageJson::encode(request),
             request.metadata.message_id
         );
-        LG_INFO(
-            "service=execution-state event=exchange_snapshot_requested last_execution_timestamp={} message_id={}",
-            engine_.lastExecutionTimestamp(),
-            request.metadata.message_id
-        );
+        LG_INFO("Requested exchange snapshot (last execution {})", FormatDayKey(engine_.lastExecutionTimestamp()));
+        LG_DEBUG("Exchange snapshot request message id {}", request.metadata.message_id);
     }
 
     void recoverOutboundIntents()
@@ -780,33 +742,25 @@ private:
             const ReconciliationReport report = reconciler_.compare(snapshot(), value.snapshot);
             if (!report.clean()) {
                 reconciled_ = false;
-                LG_ALERT(
-                    "service=execution-state event=reconciliation_blocked exchange_timestamp={} issues={} trading_state=paused",
-                    value.snapshot.timestamp,
-                    report.issues.size()
-                );
+                LG_ALERT("Reconciliation with the exchange snapshot of {} found {} issues; trading is paused",
+                         FormatDayKey(value.snapshot.timestamp), report.issues.size());
                 for (const ReconciliationIssue& issue : report.issues) {
-                    LG_WARN(
-                        "service=execution-state event=reconciliation_issue kind={} coin={} order_id={} local_value={} exchange_value={} message={}",
-                        static_cast<int>(issue.kind),
-                        issue.coin,
-                        issue.order_id,
-                        issue.local_value,
-                        issue.exchange_value,
-                        issue.message
-                    );
+                    LG_WARN("Reconciliation issue on {} (order {}): {} - local {}, exchange {}",
+                            issue.coin.empty() ? std::string{"account"} : issue.coin,
+                            issue.order_id,
+                            issue.message,
+                            FormatQuantity(issue.local_value),
+                            FormatQuantity(issue.exchange_value));
                 }
                 return DurableMessageDisposition::Ack;
             }
 
             reconciled_ = true;
-            LG_INFO(
-                "service=execution-state event=reconciliation_clean exchange_timestamp={} cash={} positions={} open_orders={}",
-                value.snapshot.timestamp,
-                value.snapshot.cash,
-                value.snapshot.positions.size(),
-                value.snapshot.open_orders.size()
-            );
+            LG_INFO("Reconciliation clean for {}: cash {}, {} positions, {} open orders",
+                    FormatDayKey(value.snapshot.timestamp),
+                    FormatUsd(value.snapshot.cash),
+                    value.snapshot.positions.size(),
+                    value.snapshot.open_orders.size());
             recoverOutboundIntents();
             publishAccountSnapshot(
                 value.snapshot.timestamp,
@@ -818,7 +772,7 @@ private:
             return DurableMessageDisposition::Ack;
         }
         catch (const std::exception& error) {
-            LG_ERROR("service=execution-state event=exchange_snapshot_failed disposition=retry error={}", error.what());
+            LG_ERROR("Exchange snapshot handling failed; will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -838,20 +792,14 @@ private:
                 return DurableMessageDisposition::Terminate;
             if (replay_bootstrap_completed_date_.has_value() &&
                 update.completed_through < *replay_bootstrap_completed_date_) {
-                LG_INFO(
-                    "service=execution-state event=pre_bootstrap_market_data_account_snapshot_skipped timestamp={} bootstrap_completed_date={} disposition=ack",
-                    update.completed_through,
-                    *replay_bootstrap_completed_date_
-                );
+                LG_INFO("Skipped market update for {}: it is before the bootstrap day {}",
+                        FormatDayKey(update.completed_through), FormatDayKey(*replay_bootstrap_completed_date_));
                 return DurableMessageDisposition::Ack;
             }
             if (!replay_bootstrap_completed_date_.has_value() &&
                 update.completed_through < newestCompleted) {
-                LG_INFO(
-                    "service=execution-state event=stale_market_data_account_snapshot_skipped timestamp={} newest_completed_utc={} disposition=ack",
-                    update.completed_through,
-                    newestCompleted
-                );
+                LG_INFO("Skipped stale market update for {} (newest completed day {})",
+                        FormatDayKey(update.completed_through), FormatDayKey(newestCompleted));
                 return DurableMessageDisposition::Ack;
             }
 
@@ -864,21 +812,15 @@ private:
             if (replay_bootstrap_completed_date_.has_value() &&
                 update.completed_through > *replay_bootstrap_completed_date_) {
                 if (engine_.lastExecutionTimestamp() < update.completed_through) {
-                    LG_DEBUG(
-                        "service=execution-state event=replay_account_snapshot_waiting_for_execution_plan timestamp={} last_execution_timestamp={} disposition=retry",
-                        update.completed_through,
-                        engine_.lastExecutionTimestamp()
-                    );
+                    LG_DEBUG("Account snapshot for {} waits for the order plan (last execution {}); will retry",
+                             FormatDayKey(update.completed_through), FormatDayKey(engine_.lastExecutionTimestamp()));
                     return DurableMessageDisposition::Retry;
                 }
 
                 if (active_execution_cycle_.has_value() &&
                     active_execution_cycle_->execution_timestamp <= update.completed_through) {
-                    LG_DEBUG(
-                        "service=execution-state event=replay_account_snapshot_waiting_for_execution_cycle timestamp={} active_execution_timestamp={} disposition=retry",
-                        update.completed_through,
-                        active_execution_cycle_->execution_timestamp
-                    );
+                    LG_DEBUG("Account snapshot for {} waits for the execution cycle of {} to finish; will retry",
+                             FormatDayKey(update.completed_through), FormatDayKey(active_execution_cycle_->execution_timestamp));
                     return DurableMessageDisposition::Retry;
                 }
             }
@@ -892,20 +834,13 @@ private:
                 update.metadata.message_id
             );
 
-            LG_INFO(
-                "service=execution-state event=market_data_account_snapshot_published timestamp={} source={} timeframe={} correlation_id={}",
-                update.completed_through,
-                update.source,
-                update.timeframe,
-                update.metadata.message_id
-            );
+            LG_INFO("Published account snapshot after the {} {} market update for {}",
+                    update.source, update.timeframe, FormatDayKey(update.completed_through));
+            LG_DEBUG("Account snapshot correlation id {}", update.metadata.message_id);
             return DurableMessageDisposition::Ack;
         }
         catch (const std::exception& error) {
-            LG_ERROR(
-                "service=execution-state event=market_data_account_snapshot_failed disposition=retry error={}",
-                error.what()
-            );
+            LG_ERROR("Account snapshot after the market update failed; will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -919,29 +854,20 @@ private:
 
             const Timestamp newestCompleted = newestCompletedUtcDate(time_handler_);
             if (batch.decision_timestamp > newestCompleted) {
-                LG_WARN(
-                    "service=execution-state event=future_decision_rejected timestamp={} newest_completed_utc={}",
-                    batch.decision_timestamp,
-                    newestCompleted
-                );
+                LG_WARN("Rejected decision for {}: that day is not complete yet (newest completed day {})",
+                        FormatDayKey(batch.decision_timestamp), FormatDayKey(newestCompleted));
                 return DurableMessageDisposition::Terminate;
             }
             if (replay_bootstrap_completed_date_.has_value() &&
                 batch.decision_timestamp < *replay_bootstrap_completed_date_) {
-                LG_INFO(
-                    "service=execution-state event=pre_bootstrap_decision_skipped timestamp={} bootstrap_completed_date={} disposition=ack",
-                    batch.decision_timestamp,
-                    *replay_bootstrap_completed_date_
-                );
+                LG_INFO("Skipped decision for {}: it is before the bootstrap day {}",
+                        FormatDayKey(batch.decision_timestamp), FormatDayKey(*replay_bootstrap_completed_date_));
                 return DurableMessageDisposition::Ack;
             }
             if (!replay_bootstrap_completed_date_.has_value() &&
                 batch.decision_timestamp < newestCompleted) {
-                LG_INFO(
-                    "service=execution-state event=stale_decision_skipped timestamp={} newest_completed_utc={} disposition=ack",
-                    batch.decision_timestamp,
-                    newestCompleted
-                );
+                LG_INFO("Skipped stale decision for {} (newest completed day {})",
+                        FormatDayKey(batch.decision_timestamp), FormatDayKey(newestCompleted));
                 return DurableMessageDisposition::Ack;
             }
 
@@ -965,26 +891,19 @@ private:
             pending_decision_ = batch;
             persist();
 
-            LG_INFO(
-                "service=execution-state event=decision_persisted timestamp={} strategies={} reconciled={} message_id={}",
-                batch.decision_timestamp,
-                batch.strategies.size(),
-                reconciled_,
-                batch.metadata.message_id
-            );
+            LG_INFO("Saved decision for {} ({} strategies, reconciled: {})",
+                    FormatDayKey(batch.decision_timestamp), batch.strategies.size(), YesNo(reconciled_));
+            LG_DEBUG("Decision message id {}", batch.metadata.message_id);
 
             handoffPendingDecisionIfReady();
             return DurableMessageDisposition::Ack;
         }
         catch (const std::logic_error& error) {
-            LG_WARN(
-                "service=execution-state event=decision_waiting_for_market_reference disposition=retry error={}",
-                error.what()
-            );
+            LG_WARN("Decision waits for market reference prices; will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
         catch (const std::exception& error) {
-            LG_ERROR("service=execution-state event=decision_failed disposition=retry error={}", error.what());
+            LG_ERROR("Decision handling failed; will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -993,14 +912,12 @@ private:
     {
         try {
             const OrderUpdateEvent value = MessageJson::decodeOrderUpdateEvent(message.payload);
-            LG_INFO(
-                "service=execution-state event=order_update_received order_id={} timestamp={} status={} exchange_order_id={} message={}",
-                value.update.order_id,
-                value.update.timestamp,
-                static_cast<int>(value.update.status),
-                value.update.exchange_order_id,
-                value.update.message
-            );
+            LG_INFO("Order {} is now {} ({}){}",
+                    value.update.order_id,
+                    executionOrderStatusName(value.update.status),
+                    FormatDayKey(value.update.timestamp),
+                    value.update.message.empty() ? std::string{} : " - " + value.update.message);
+            LG_DEBUG("Order {} exchange order id {}", value.update.order_id, value.update.exchange_order_id);
             engine_.processExchangeEvent(
                 ExchangeEvent{value.update},
                 [this](const std::optional<Fill>& fill) { persist(fill); }
@@ -1009,7 +926,7 @@ private:
             return DurableMessageDisposition::Ack;
         }
         catch (const std::exception& error) {
-            LG_ERROR("service=execution-state event=order_update_failed disposition=retry error={}", error.what());
+            LG_ERROR("Order update handling failed; will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -1018,18 +935,16 @@ private:
     {
         try {
             const FillEvent value = MessageJson::decodeFillEvent(message.payload);
-            LG_INFO(
-                "service=execution-state event=fill_received fill_id={} order_id={} strategy_id={} timestamp={} coin={} side={} quantity={} price={} commission={}",
-                value.fill.fill_id,
-                value.fill.order_id,
-                value.fill.strategy_id,
-                value.fill.timestamp,
-                value.fill.coin,
-                value.fill.side == OrderSide::Buy ? "buy" : "sell",
-                value.fill.quantity,
-                value.fill.price,
-                value.fill.commission
-            );
+            LG_INFO("Fill received: {} {} {} at {} for {} on {} (order {}, commission {})",
+                    value.fill.side == OrderSide::Buy ? "BUY" : "SELL",
+                    FormatQuantity(value.fill.quantity),
+                    value.fill.coin,
+                    FormatQuantity(value.fill.price),
+                    value.fill.strategy_id,
+                    FormatDayKey(value.fill.timestamp),
+                    value.fill.order_id,
+                    FormatQuantity(value.fill.commission));
+            LG_DEBUG("Fill id {} for order {}", value.fill.fill_id, value.fill.order_id);
             const std::size_t processedBefore =
                 engine_.orderManager().processedFillIds().size();
             engine_.processExchangeEvent(
@@ -1046,21 +961,16 @@ private:
             );
 
             if (processedAfter == processedBefore) {
-                LG_WARN(
-                    "service=execution-state event=fill_duplicate_ignored fill_id={} order_id={} transport_message_id={}",
-                    value.fill.fill_id,
-                    value.fill.order_id,
-                    value.metadata.message_id
-                );
+                LG_WARN("Fill {} for order {} was already applied; ignoring the duplicate",
+                        value.fill.fill_id, value.fill.order_id);
+                LG_DEBUG("Duplicate fill transport message id {}", value.metadata.message_id);
             }
             else {
-                LG_INFO(
-                    "service=execution-state event=fill_applied fill_id={} cash={} positions={} processed_fill_ids={}",
-                    value.fill.fill_id,
-                    engine_.account().cash(),
-                    engine_.account().positions().values().size(),
-                    processedAfter
-                );
+                LG_INFO("Applied fill {}: cash is now {}, {} open positions",
+                        value.fill.fill_id,
+                        FormatUsd(engine_.account().cash()),
+                        engine_.account().positions().values().size());
+                LG_DEBUG("Processed fill count is now {}", processedAfter);
             }
 
             maybePublishExecutionCycleComplete();
@@ -1068,18 +978,15 @@ private:
             if (chaos_nak_fill_after_persist_once_ &&
                 !chaos_nak_fill_after_persist_done_) {
                 chaos_nak_fill_after_persist_done_ = true;
-                LG_WARN(
-                    "service=execution-state event=chaos_fill_nak_after_persist fill_id={} order_id={} disposition=retry",
-                    value.fill.fill_id,
-                    value.fill.order_id
-                );
+                LG_WARN("Fault test: refusing fill {} (order {}) after saving it, to check redelivery",
+                        value.fill.fill_id, value.fill.order_id);
                 return DurableMessageDisposition::Retry;
             }
 
             return DurableMessageDisposition::Ack;
         }
         catch (const std::exception& error) {
-            LG_ERROR("service=execution-state event=fill_failed disposition=retry error={}", error.what());
+            LG_ERROR("Fill handling failed; will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -1131,19 +1038,17 @@ public:
         store_ = std::make_unique<PostgresStateStore>(options_.postgres_connection);
 
         if (const auto stored = store_->load()) {
-            LG_INFO("service=execution-state event=persisted_state_found action=restore");
+            LG_INFO("Found saved state; restoring it");
             restore(*stored);
-            LG_INFO(
-                "service=execution-state event=state_restored last_decision_timestamp={} last_execution_timestamp={} cash={} positions={} tracked_orders={}",
-                last_decision_timestamp_,
-                engine_.lastExecutionTimestamp(),
-                engine_.account().cash(),
-                engine_.account().positions().values().size(),
-                engine_.orderManager().orders().size()
-            );
+            LG_INFO("Restored state: cash {}, {} positions, {} tracked orders, last decision {}, last execution {}",
+                    FormatUsd(engine_.account().cash()),
+                    engine_.account().positions().values().size(),
+                    engine_.orderManager().orders().size(),
+                    FormatDayKey(last_decision_timestamp_),
+                    FormatDayKey(engine_.lastExecutionTimestamp()));
         }
         else {
-            LG_INFO("service=execution-state event=persisted_state_missing action=initialize cash={}", options_.initial_cash);
+            LG_INFO("No saved state found; starting with {} cash", FormatUsd(options_.initial_cash));
             persist();
         }
 
@@ -1188,14 +1093,9 @@ public:
 
     void run()
     {
-        LG_INFO(
-            "service=execution-state event=service_ready time_source=time_handler stream={} reconciliation=required strategies={} initial_cash={} market_data_db={} market_data_source={} poll_interval_ms=1000",
-            options_.stream,
-            options_.strategies.size(),
-            options_.initial_cash,
-            options_.market_data_db,
-            options_.market_data_source
-        );
+        LG_INFO("Execution state service ready (stream {}, {} strategies, initial cash {}, reconciliation required)",
+                options_.stream, options_.strategies.size(), FormatUsd(options_.initial_cash));
+        LG_DEBUG("Market data database {} (source {})", options_.market_data_db, options_.market_data_source);
         std::cout.flush();
 
         while (running.load()) {
@@ -1215,9 +1115,9 @@ public:
                 std::this_thread::sleep_for(interval - elapsed);
         }
 
-        LG_INFO("service=execution-state event=shutdown_requested");
+        LG_INFO("Shutdown requested");
         bus_.flush();
-        LG_INFO("service=execution-state event=shutdown_complete");
+        LG_INFO("Shutdown complete");
     }
 
 };
@@ -1239,7 +1139,7 @@ int main(int argc, char** argv)
         return 0;
     }
     catch (const std::exception& error) {
-        LG_ALERT("service=execution-state event=fatal error={}", error.what());
+        LG_ALERT("Execution state service stopped by a fatal error: {}", error.what());
         return 1;
     }
 }

@@ -807,12 +807,8 @@ private:
         if (timestamp <= businessNow)
             return true;
 
-        LG_DEBUG(
-            "service=simulated-exchange event=business_time_waiting business_event={} required_time={} current_business_date={} disposition=retry",
-            eventName,
-            timestamp,
-            businessNow
-        );
+        LG_DEBUG("{} for {} waits for business time (today is {}); will retry",
+                 eventName, FormatDayKey(timestamp), FormatDayKey(businessNow));
         return false;
     }
 
@@ -840,12 +836,8 @@ private:
             if (const auto* fill = std::get_if<Fill>(&event)) {
                 account_.applyFill(*fill);
                 if (previousWasFill && previousFillOrderId == fill->order_id) {
-                    LG_WARN(
-                        "service=simulated-exchange event=chaos_partial_fill_split_observed order_id={} second_fill_id={} second_quantity={}",
-                        fill->order_id,
-                        fill->fill_id,
-                        fill->quantity
-                    );
+                    LG_WARN("Fault test: order {} was split into a partial fill; second fill {} has quantity {}",
+                            fill->order_id, fill->fill_id, FormatQuantity(fill->quantity));
                 }
                 previousFillOrderId = fill->order_id;
                 previousWasFill = true;
@@ -856,11 +848,8 @@ private:
                     update != nullptr &&
                     update->status == ExecutionOrderStatus::Rejected &&
                     update->message == "CHAOS_REJECT_ONCE") {
-                    LG_WARN(
-                        "service=simulated-exchange event=chaos_reject_injected order_id={} timestamp={}",
-                        update->order_id,
-                        update->timestamp
-                    );
+                    LG_WARN("Fault test: injected a rejection for order {} on {}",
+                            update->order_id, FormatDayKey(update->timestamp));
                 }
             }
             pending_events_.push_back(std::move(event));
@@ -922,12 +911,8 @@ private:
         for (const DurableOutboxRecord& row : rows) {
             bus_.publish(row.subject, row.payload, row.message_id);
             checkpoint_store_->markPublished(row.sequence);
-            LG_INFO(
-                "service=simulated-exchange event=durable_outbox_published sequence={} subject={} message_id={}",
-                row.sequence,
-                row.subject,
-                row.message_id
-            );
+            LG_DEBUG("Published saved outbox event {} to {} (message id {})",
+                     row.sequence, row.subject, row.message_id);
         }
     }
 
@@ -960,14 +945,12 @@ private:
                     MessageJson::encode(output),
                     output.metadata.message_id
                 );
-                LG_INFO(
-                    "service=simulated-exchange event=order_update_published order_id={} timestamp={} status={} message_id={} correlation_id={}",
-                    output.update.order_id,
-                    output.update.timestamp,
-                    static_cast<int>(output.update.status),
-                    output.metadata.message_id,
-                    output.metadata.correlation_id
-                );
+                LG_INFO("Order {} is now {} ({})",
+                        output.update.order_id,
+                        executionOrderStatusName(output.update.status),
+                        FormatDayKey(output.update.timestamp));
+                LG_DEBUG("Order update message id {}, correlation id {}",
+                         output.metadata.message_id, output.metadata.correlation_id);
             }
             else if (const auto* fill = std::get_if<Fill>(&event)) {
                 FillEvent output;
@@ -982,18 +965,15 @@ private:
                     MessageJson::encode(output),
                     output.metadata.message_id
                 );
-                LG_INFO(
-                    "service=simulated-exchange event=fill_published fill_id={} order_id={} coin={} side={} quantity={} price={} commission={} message_id={} correlation_id={}",
-                    output.fill.fill_id,
-                    output.fill.order_id,
-                    output.fill.coin,
-                    output.fill.side == OrderSide::Buy ? "buy" : "sell",
-                    output.fill.quantity,
-                    output.fill.price,
-                    output.fill.commission,
-                    output.metadata.message_id,
-                    output.metadata.correlation_id
-                );
+                LG_INFO("Filled order {}: {} {} {} at {} (commission {})",
+                        output.fill.order_id,
+                        output.fill.side == OrderSide::Buy ? "BUY" : "SELL",
+                        FormatQuantity(output.fill.quantity),
+                        output.fill.coin,
+                        FormatQuantity(output.fill.price),
+                        FormatQuantity(output.fill.commission));
+                LG_DEBUG("Fill id {}, message id {}, correlation id {}",
+                         output.fill.fill_id, output.metadata.message_id, output.metadata.correlation_id);
             }
 
             ++published;
@@ -1049,22 +1029,17 @@ private:
         const std::size_t eventCount = pending_events_.size();
         pending_events_.clear();
 
-        LG_DEBUG(
-            "service=simulated-exchange event=state_checkpointed latest_timestamp={} cash={} positions={} active_orders={} known_orders={} next_fill_id={} outbox_events={}",
-            latest_timestamp_,
-            account_.cash(),
-            account_.positions().values().size(),
-            exchange_.activeOrders().size(),
-            known_orders_.size(),
-            exchange_.nextFillId(),
-            eventCount
-        );
+        LG_DEBUG("State saved for {}: cash {}, {} positions, {} active orders, {} known orders, next fill id {}, {} outbox events",
+                 FormatDayKey(latest_timestamp_),
+                 FormatUsd(account_.cash()),
+                 account_.positions().values().size(),
+                 exchange_.activeOrders().size(),
+                 known_orders_.size(),
+                 exchange_.nextFillId(),
+                 eventCount);
 
         if (eventCount != 0 && shouldCrashAfterCheckpoint()) {
-            LG_ALERT(
-                "service=simulated-exchange event=chaos_crash_after_checkpoint outbox_events={} action=exit_86",
-                eventCount
-            );
+            LG_ALERT("Fault test: exiting with code 86 right after saving state ({} outbox events pending)", eventCount);
             std::_Exit(86);
         }
 
@@ -1084,9 +1059,7 @@ private:
     void recoverDurableState()
     {
         if (options_.postgres.empty()) {
-            LG_WARN(
-                "service=simulated-exchange event=restart_checkpoint_disabled reason=postgres_not_configured"
-            );
+            LG_WARN("Restart recovery is disabled because PostgreSQL is not configured");
             return;
         }
 
@@ -1109,18 +1082,15 @@ private:
         known_orders_ = std::move(recovered.known_orders);
         latest_timestamp_ = recovered.latest_timestamp;
 
-        LG_INFO(
-            "service=simulated-exchange event=simulated_exchange_recovery_completed recovered={} latest_timestamp={} cash={} positions={} execution_price_snapshots={} known_orders={} active_orders={} next_fill_id={} unpublished_outbox={}",
-            recoveredNonEmpty ? "true" : "false",
-            latest_timestamp_,
-            account_.cash(),
-            account_.positions().values().size(),
-            execution_prices_.size(),
-            known_orders_.size(),
-            exchange_.activeOrders().size(),
-            exchange_.nextFillId(),
-            recovered.unpublished_outbox
-        );
+        LG_INFO("Recovery {}: last day {}, cash {}, {} positions, {} active orders, {} unpublished outbox events",
+                recoveredNonEmpty ? "restored saved state" : "found no saved state",
+                FormatDayKey(latest_timestamp_),
+                FormatUsd(account_.cash()),
+                account_.positions().values().size(),
+                exchange_.activeOrders().size(),
+                recovered.unpublished_outbox);
+        LG_DEBUG("Recovered {} execution price snapshots, {} known orders, next fill id {}",
+                 execution_prices_.size(), known_orders_.size(), exchange_.nextFillId());
 
         // If the previous process committed exchange truth but died before publishing
         // its resulting backend events, finish that durable outbox before accepting
@@ -1171,13 +1141,9 @@ private:
                 return DurableMessageDisposition::Retry;
             }
 
-            LG_INFO(
-                "service=simulated-exchange event=execution_prices_received decision_timestamp={} execution_timestamp={} prices={} message_id={}",
-                prices.decision_timestamp,
-                prices.timestamp,
-                prices.prices.size(),
-                prices.metadata.message_id
-            );
+            LG_INFO("Received {} execution prices for {} (decision {})",
+                    prices.prices.size(), FormatDayKey(prices.timestamp), FormatDayKey(prices.decision_timestamp));
+            LG_DEBUG("Execution prices message id {}", prices.metadata.message_id);
 
             const auto existing = execution_prices_.find(prices.timestamp);
             if (existing != execution_prices_.end()) {
@@ -1200,22 +1166,20 @@ private:
                 prices.metadata.message_id,
                 std::make_optional(std::make_pair(prices.timestamp, prices.prices))
             );
-            LG_INFO(
-                "service=simulated-exchange event=execution_open_processed execution_timestamp={} cash={} positions={} active_orders={} known_orders={}",
-                prices.timestamp,
-                account_.cash(),
-                account_.positions().values().size(),
-                exchange_.activeOrders().size(),
-                known_orders_.size()
-            );
+            LG_INFO("Processed the open of {}: cash {}, {} positions, {} active orders",
+                    FormatDayKey(prices.timestamp),
+                    FormatUsd(account_.cash()),
+                    account_.positions().values().size(),
+                    exchange_.activeOrders().size());
+            LG_DEBUG("Known orders after the open: {}", known_orders_.size());
             return DurableMessageDisposition::Ack;
         }
         catch (const std::invalid_argument& error) {
-            LG_WARN("service=simulated-exchange event=execution_prices_invalid disposition=terminate error={}", error.what());
+            LG_WARN("Rejected invalid execution prices: {}", error.what());
             return DurableMessageDisposition::Terminate;
         }
         catch (const std::exception& error) {
-            LG_ERROR("service=simulated-exchange event=execution_prices_failed disposition=retry error={}", error.what());
+            LG_ERROR("Execution price handling failed; will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -1233,30 +1197,22 @@ private:
                 return DurableMessageDisposition::Retry;
             }
 
-            LG_INFO(
-                "service=simulated-exchange event=submit_received order_id={} strategy_id={} coin={} side={} quantity={} active_from={} message_id={}",
-                command.order.order_id,
-                command.order.strategy_id,
-                command.order.coin,
-                command.order.side == OrderSide::Buy ? "buy" : "sell",
-                command.order.quantity,
-                command.order.active_from,
-                command.metadata.message_id
-            );
+            LG_INFO("Received order {}: {} {} {} for {}, active from {}",
+                    command.order.order_id,
+                    command.order.side == OrderSide::Buy ? "BUY" : "SELL",
+                    FormatQuantity(command.order.quantity),
+                    command.order.coin,
+                    command.order.strategy_id,
+                    FormatDayKey(command.order.active_from));
+            LG_DEBUG("Order {} submit message id {}", command.order.order_id, command.metadata.message_id);
 
             const auto known = known_orders_.find(command.order.order_id);
             if (known != known_orders_.end()) {
                 if (!sameOrder(known->second, command.order)) {
-                    LG_ALERT(
-                        "service=simulated-exchange event=submit_conflict order_id={} action=terminate",
-                        command.order.order_id
-                    );
+                    LG_ALERT("Order {} was submitted again with different content; rejecting it", command.order.order_id);
                     return DurableMessageDisposition::Terminate;
                 }
-                LG_INFO(
-                    "service=simulated-exchange event=submit_duplicate order_id={} disposition=ack",
-                    command.order.order_id
-                );
+                LG_INFO("Order {} was already received; ignoring the duplicate", command.order.order_id);
                 flushPendingEvents(command.metadata.message_id);
                 return DurableMessageDisposition::Ack;
             }
@@ -1274,22 +1230,20 @@ private:
                 std::nullopt,
                 std::make_optional(command.order)
             );
-            LG_INFO(
-                "service=simulated-exchange event=submit_processed order_id={} cash={} positions={} active_orders={} known_orders={}",
-                command.order.order_id,
-                account_.cash(),
-                account_.positions().values().size(),
-                exchange_.activeOrders().size(),
-                known_orders_.size()
-            );
+            LG_INFO("Accepted order {}: cash {}, {} positions, {} active orders",
+                    command.order.order_id,
+                    FormatUsd(account_.cash()),
+                    account_.positions().values().size(),
+                    exchange_.activeOrders().size());
+            LG_DEBUG("Known orders: {}", known_orders_.size());
             return DurableMessageDisposition::Ack;
         }
         catch (const std::invalid_argument& error) {
-            LG_WARN("service=simulated-exchange event=submit_invalid disposition=terminate error={}", error.what());
+            LG_WARN("Rejected invalid order: {}", error.what());
             return DurableMessageDisposition::Terminate;
         }
         catch (const std::exception& error) {
-            LG_ERROR("service=simulated-exchange event=submit_failed disposition=retry error={}", error.what());
+            LG_ERROR("Order handling failed; will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -1307,23 +1261,19 @@ private:
                 return DurableMessageDisposition::Retry;
             }
 
-            LG_INFO(
-                "service=simulated-exchange event=cancel_received order_id={} requested_at={} message_id={}",
-                command.order_id,
-                command.requested_at,
-                command.metadata.message_id
-            );
+            LG_INFO("Received cancel for order {} ({})", command.order_id, FormatDayKey(command.requested_at));
+            LG_DEBUG("Cancel message id {}", command.metadata.message_id);
             exchange_.cancelOrderAt(command.order_id, command.requested_at);
             captureExchangeEvents();
             checkpointTransition(command.metadata.message_id);
             return DurableMessageDisposition::Ack;
         }
         catch (const std::invalid_argument& error) {
-            LG_WARN("service=simulated-exchange event=cancel_invalid disposition=terminate error={}", error.what());
+            LG_WARN("Rejected invalid cancel: {}", error.what());
             return DurableMessageDisposition::Terminate;
         }
         catch (const std::exception& error) {
-            LG_ERROR("service=simulated-exchange event=cancel_failed disposition=retry error={}", error.what());
+            LG_ERROR("Cancel handling failed; will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -1351,23 +1301,21 @@ private:
                 MessageJson::encode(output),
                 output.metadata.message_id
             );
-            LG_INFO(
-                "service=simulated-exchange event=snapshot_published timestamp={} cash={} positions={} open_orders={} message_id={} correlation_id={}",
-                output.snapshot.timestamp,
-                output.snapshot.cash,
-                output.snapshot.positions.size(),
-                output.snapshot.open_orders.size(),
-                output.metadata.message_id,
-                output.metadata.correlation_id
-            );
+            LG_INFO("Published exchange snapshot for {}: cash {}, {} positions, {} open orders",
+                    FormatDayKey(output.snapshot.timestamp),
+                    FormatUsd(output.snapshot.cash),
+                    output.snapshot.positions.size(),
+                    output.snapshot.open_orders.size());
+            LG_DEBUG("Exchange snapshot message id {}, correlation id {}",
+                     output.metadata.message_id, output.metadata.correlation_id);
             return DurableMessageDisposition::Ack;
         }
         catch (const std::invalid_argument& error) {
-            LG_WARN("service=simulated-exchange event=snapshot_invalid disposition=terminate error={}", error.what());
+            LG_WARN("Rejected invalid snapshot request: {}", error.what());
             return DurableMessageDisposition::Terminate;
         }
         catch (const std::exception& error) {
-            LG_ERROR("service=simulated-exchange event=snapshot_failed disposition=retry error={}", error.what());
+            LG_ERROR("Snapshot request failed; will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -1387,17 +1335,14 @@ public:
 
         if (envFlag("ALGOTRADING_CHAOS_REJECT_ONCE")) {
             exchange_.configureRejectNextOrder("CHAOS_REJECT_ONCE");
-            LG_WARN("service=simulated-exchange event=chaos_reject_once_enabled");
+            LG_WARN("Fault test enabled: the next order will be rejected once");
         }
 
         if (envFlag("ALGOTRADING_CHAOS_PARTIAL_FILL_ONCE")) {
             const double fraction =
                 envDouble("ALGOTRADING_CHAOS_PARTIAL_FILL_FRACTION", 0.40);
             exchange_.configureSplitNextFill(fraction);
-            LG_WARN(
-                "service=simulated-exchange event=chaos_partial_fill_once_enabled fraction={}",
-                fraction
-            );
+            LG_WARN("Fault test enabled: the next fill will be split once (first part {})", fraction);
         }
 
         prices_subscription_ = bus_.subscribe(
@@ -1444,16 +1389,13 @@ public:
 
     void run()
     {
-        LG_INFO(
-            "service=simulated-exchange event=service_ready runtime_stream={} backend_stream={} initial_cash={} commission_rate={} persistence={} business_date={} time_model=local_time_handler poll_timeout_ms={}",
-            options_.runtime_stream,
-            options_.backend_stream,
-            options_.initial_cash,
-            options_.commission_rate,
-            checkpoint_store_ ? "postgres" : "disabled",
-            currentBusinessUtcDate(time_handler_),
-            options_.poll_timeout_ms
-        );
+        LG_INFO("Simulated exchange ready (initial cash {}, commission rate {}, persistence {}, today {})",
+                FormatUsd(options_.initial_cash),
+                options_.commission_rate,
+                checkpoint_store_ ? "PostgreSQL" : "disabled",
+                FormatDayKey(currentBusinessUtcDate(time_handler_)));
+        LG_DEBUG("Runtime stream {}, backend stream {}, poll timeout {} ms",
+                 options_.runtime_stream, options_.backend_stream, options_.poll_timeout_ms);
         std::cout.flush();
 
         while (running.load()) {
@@ -1465,10 +1407,10 @@ public:
             bus_.poll(submit_subscription_, 32, options_.poll_timeout_ms);
         }
 
-        LG_INFO("service=simulated-exchange event=shutdown_requested pending_events={}", pending_events_.size());
+        LG_INFO("Shutdown requested ({} events still pending)", pending_events_.size());
         flushPendingEvents("simulated-exchange-shutdown");
         bus_.flush();
-        LG_INFO("service=simulated-exchange event=shutdown_complete");
+        LG_INFO("Shutdown complete");
     }
 };
 
@@ -1489,7 +1431,7 @@ int main(int argc, char** argv)
         return 0;
     }
     catch (const std::exception& error) {
-        LG_ALERT("service=simulated-exchange event=fatal error={}", error.what());
+        LG_ALERT("Simulated exchange stopped by a fatal error: {}", error.what());
         return 1;
     }
 }

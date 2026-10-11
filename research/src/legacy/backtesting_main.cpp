@@ -53,13 +53,7 @@ int main(int argc, char** argv)
     if (const char* manifest = std::getenv("ALGOTRADING_PAPER_BASELINE_MANIFEST"))
         return runPaperBaseline(manifest);
 
-    Logger::Instance().Setup(
-        true,   // debug enabled
-        false,  // quiet
-        "",     // file appender
-        "",     // rolling appender
-        true    // include header
-    );
+    Logger::Instance().Setup(true, false); // DEBUG on, stdout only
 
     auto envText = [](const char* name, const std::string& fallback) {
         const char* value = std::getenv(name);

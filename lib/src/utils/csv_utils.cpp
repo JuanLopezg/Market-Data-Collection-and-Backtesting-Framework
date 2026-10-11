@@ -26,7 +26,7 @@ void saveCurveToCSV(const std::vector<std::pair<Balance, Equity>>& curve, const 
 
     if (!file.is_open())
     {
-        LG_ERROR(" Failed to open file: {}", path);
+        LG_ERROR("Failed to open file: {}", path);
         return;
     }
 

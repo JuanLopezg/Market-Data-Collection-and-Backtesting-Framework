@@ -86,7 +86,11 @@ def trim(root: Path, limit_bytes: int = MAX_FILE_BYTES) -> int:
 
 
 def append_record(root: Path, record: bytes, limit_bytes: int = MAX_FILE_BYTES) -> None:
-    """Write rsyslog's already-redacted line, enforcing the daily file size first."""
+    """Write rsyslog's already-redacted line, enforcing the daily file size first.
+
+    The record starts with a routing header (UTC date and service). It selects the
+    daily file and is not written, so the file keeps the service's own log format.
+    """
     if limit_bytes < 1024:
         raise ValueError("Diagnostic file limit must be at least 1024 bytes")
     fields = record.split(b" ", 2)
@@ -103,20 +107,21 @@ def append_record(root: Path, record: bytes, limit_bytes: int = MAX_FILE_BYTES) 
     directory.mkdir(exist_ok=True, mode=0o750)
     if directory.is_symlink():
         raise ValueError("Diagnostic service directory must not be a symlink")
+    line = fields[2]
     path = directory / f"{day}.log"
     descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o640)
     with os.fdopen(descriptor, "r+b", buffering=0) as handle:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
             raise ValueError("Diagnostic output must be a regular file")
-        if len(record) > limit_bytes // 2:
-            # A single huge diagnostic must not defeat the cap; keep its header
-            # and mark truncation rather than placing partial UTF-8 on disk.
-            record = fields[0] + b" " + fields[1] + b" [LOG-TRIM: oversized diagnostic record omitted]\n"
-        if os.fstat(handle.fileno()).st_size + len(record) > limit_bytes:
+        if len(line) > limit_bytes // 2:
+            # A single huge diagnostic must not defeat the cap; mark truncation
+            # rather than placing partial UTF-8 on disk.
+            line = b"[LOG-TRIM: oversized diagnostic record omitted]\n"
+        if os.fstat(handle.fileno()).st_size + len(line) > limit_bytes:
             trim_handle(handle, limit_bytes)
         handle.seek(0, os.SEEK_END)
-        handle.write(record)
+        handle.write(line)
 
 
 def receive(root: Path, limit_bytes: int) -> int:

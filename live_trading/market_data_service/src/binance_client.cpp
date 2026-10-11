@@ -85,10 +85,8 @@ bool BinanceMarketDataClient::httpGet(
         if (rc == CURLE_OK && httpCode >= 200 && httpCode < 300)
             return true;
 
-        LG_WARN(
-            "service=market-data event=binance_http_retry request={} attempt={} max_attempts={} curl_code={} http_code={}",
-            name, attempt, HTTP_MAX_ATTEMPTS, static_cast<int>(rc), httpCode
-        );
+        LG_WARN("Binance request {} failed (attempt {} of {}, curl code {}, HTTP {}); retrying",
+                name, attempt, HTTP_MAX_ATTEMPTS, static_cast<int>(rc), httpCode);
 
         const bool retryable = rc != CURLE_OK || httpCode == 408 || httpCode == 429 || httpCode >= 500;
         if (!retryable || attempt == HTTP_MAX_ATTEMPTS)
@@ -98,7 +96,7 @@ bool BinanceMarketDataClient::httpGet(
         std::this_thread::sleep_for(std::chrono::milliseconds(backoff));
     }
 
-    LG_ERROR("service=market-data event=binance_http_failed request={}", name);
+    LG_ERROR("Binance request {} failed after all retries", name);
     return false;
 }
 
@@ -114,14 +112,14 @@ BinanceMarketDataClient::universeByQuoteVolume(std::size_t limit) const
         exchangeInfo = json::parse(response);
     }
     catch (const std::exception& error) {
-        LG_ERROR("service=market-data event=exchange_info_parse_failed error={}", error.what());
+        LG_ERROR("Could not parse Binance exchange info: {}", error.what());
         return {};
     }
 
     BinanceUniverseSnapshot snapshot;
     if (!exchangeInfo.is_object() || !exchangeInfo.contains("symbols") ||
         !exchangeInfo.at("symbols").is_array()) {
-        LG_ERROR("service=market-data event=exchange_info_shape_invalid");
+        LG_ERROR("Binance exchange info has an unexpected shape");
         return {};
     }
 
@@ -147,12 +145,12 @@ BinanceMarketDataClient::universeByQuoteVolume(std::size_t limit) const
         tickers = json::parse(response);
     }
     catch (const std::exception& error) {
-        LG_ERROR("service=market-data event=ticker_parse_failed error={}", error.what());
+        LG_ERROR("Could not parse Binance 24h tickers: {}", error.what());
         return {};
     }
 
     if (!tickers.is_array()) {
-        LG_ERROR("service=market-data event=ticker_shape_invalid");
+        LG_ERROR("Binance 24h tickers have an unexpected shape");
         return {};
     }
 
@@ -232,10 +230,7 @@ BinanceFetchResult BinanceMarketDataClient::fetchDailyBars(
                         rows = json::parse(response);
                     }
                     catch (const std::exception& error) {
-                        LG_ERROR(
-                            "service=market-data event=kline_parse_failed symbol={} error={}",
-                            request.symbol, error.what()
-                        );
+                        LG_ERROR("Could not parse Binance candles for {}: {}", request.symbol, error.what());
                         failed = true;
                         break;
                     }
@@ -270,10 +265,7 @@ BinanceFetchResult BinanceMarketDataClient::fetchDailyBars(
                             local.data[request.symbol][static_cast<Timestamp>(toYYYYMMDD(date))] = bar;
                         }
                         catch (const std::exception& error) {
-                            LG_WARN(
-                                "service=market-data event=kline_row_invalid symbol={} error={}",
-                                request.symbol, error.what()
-                            );
+                            LG_WARN("Skipped invalid Binance candle for {}: {}", request.symbol, error.what());
                             failed = true;
                             break;
                         }
@@ -340,7 +332,7 @@ std::unordered_map<Coin, double> BinanceMarketDataClient::fetchOpeningPrices(
                 } catch (const std::exception&) {
                     std::lock_guard<std::mutex> lock(mutex);
                     failed = true;
-                    LG_WARN("service=market-data event=paper_open_unavailable symbol={} action=retry_cycle", symbol);
+                    LG_WARN("Opening price for {} is not available yet; will retry this cycle", symbol);
                 }
             });
         }

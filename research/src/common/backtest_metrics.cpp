@@ -67,12 +67,8 @@ std::size_t countAnnualizationReferenceBars(
     }
 
     if (count == 0U) {
-        LG_WARN(
-            "Annualization benchmark symbol '{}' was not found in market data. "
-            "Falling back to full market timeline length: {} bars.",
-            referenceSymbol,
-            marketData.size()
-        );
+        LG_WARN("Annualization benchmark {} is not in the market data; using the full timeline length ({} bars)",
+                referenceSymbol, marketData.size());
         return marketData.size();
     }
 
@@ -851,83 +847,37 @@ BacktestMetrics calculateBacktestMetrics(
 
 void logBacktestMetrics(const BacktestMetrics& metrics)
 {
-    LG_INFO("============================================================");
-    LG_INFO("Metrics for strategy: {}", metrics.strategyName);
-    LG_INFO(
-        "Equity: initial={:.2f} final={:.2f} net_profit={:.2f} net_return={:.2f}% annualized_return={:.2f}%",
-        metrics.initialEquity,
-        metrics.finalEquity,
-        metrics.netProfit,
-        metrics.netReturnPercent,
-        metrics.annualizedReturnPercent
-    );
-    LG_INFO(
-        "Risk: max_drawdown={:.2f} ({:.2f}%) max_dd_duration={} bars ({:.0f} days) underwater={:.2f}% var95={:.2f}% cvar95={:.2f}% sharpe={:.3f} sortino={:.3f} calmar={:.3f}",
-        metrics.maxDrawdownAmount,
-        metrics.maxDrawdownPercent,
-        metrics.maxDrawdownDurationBars,
-        metrics.maxDrawdownDurationDays,
-        metrics.timeUnderwaterPercent,
-        metrics.historicalVaR95Percent,
-        metrics.historicalCvar95Percent,
-        metrics.sharpeRatio,
-        metrics.sortinoRatio,
-        metrics.calmarRatio
-    );
-    LG_INFO(
-        "Trades: total={} wins={} losses={} breakeven={} win_rate={:.2f}% profit_factor={:.3f} expectancy={:.2f}",
-        metrics.tradeCount,
-        metrics.winningTradeCount,
-        metrics.losingTradeCount,
-        metrics.breakevenTradeCount,
-        metrics.winRatePercent,
-        metrics.profitFactor,
-        metrics.expectancyPerTrade
-    );
-    LG_INFO(
-        "Trade PnL: gross_profit={:.2f} gross_loss={:.2f} average_win={:.2f} average_loss={:.2f} largest_loss={:.2f}",
-        metrics.grossProfit,
-        metrics.grossLoss,
-        metrics.averageWin,
-        metrics.averageLoss,
-        metrics.largestLoss
-    );
-    LG_INFO(
-        "Historical trade return (% entry notional): mean={:.2f}% p05={:.2f}% median={:.2f}% p95={:.2f}% samples={}",
-        metrics.historicalMeanTradeReturnPercent,
-        metrics.historicalP05TradeReturnPercent,
-        metrics.historicalMedianTradeReturnPercent,
-        metrics.historicalP95TradeReturnPercent,
-        metrics.historicalTradeReturnPercentSamples.size()
-    );
-    LG_INFO(
-        "Portfolio activity: max_consecutive_losses={} worst_loss_streak={:.2f} avg_holding_bars={:.2f} exposure={:.2f}% gross_turnover={:.2f} turnover_multiple={:.2f}x",
-        metrics.maximumConsecutiveLosses,
-        metrics.worstConsecutiveLossPnl,
-        metrics.averageHoldingBars,
-        metrics.exposurePercent,
-        metrics.grossTurnover,
-        metrics.turnoverMultiple
-    );
+    LG_INFO("Metrics for {}", metrics.strategyName);
+    LG_INFO("Equity: {} -> {}, net profit {} ({:.2f}%), annualized {:.2f}%",
+            FormatUsd(metrics.initialEquity), FormatUsd(metrics.finalEquity), FormatUsd(metrics.netProfit),
+            metrics.netReturnPercent, metrics.annualizedReturnPercent);
+    LG_INFO("Risk: max drawdown {} ({:.2f}%) lasting {} bars ({:.0f} days), underwater {:.2f}% of the time, VaR95 {:.2f}%, CVaR95 {:.2f}%, Sharpe {:.3f}, Sortino {:.3f}, Calmar {:.3f}",
+            FormatUsd(metrics.maxDrawdownAmount), metrics.maxDrawdownPercent,
+            metrics.maxDrawdownDurationBars, metrics.maxDrawdownDurationDays,
+            metrics.timeUnderwaterPercent, metrics.historicalVaR95Percent, metrics.historicalCvar95Percent,
+            metrics.sharpeRatio, metrics.sortinoRatio, metrics.calmarRatio);
+    LG_INFO("Trades: {} total, {} wins, {} losses, {} breakeven, win rate {:.2f}%, profit factor {:.3f}, expectancy {}",
+            metrics.tradeCount, metrics.winningTradeCount, metrics.losingTradeCount, metrics.breakevenTradeCount,
+            metrics.winRatePercent, metrics.profitFactor, FormatUsd(metrics.expectancyPerTrade));
+    LG_INFO("Trade PnL: gross profit {}, gross loss {}, average win {}, average loss {}, largest loss {}",
+            FormatUsd(metrics.grossProfit), FormatUsd(metrics.grossLoss), FormatUsd(metrics.averageWin),
+            FormatUsd(metrics.averageLoss), FormatUsd(metrics.largestLoss));
+    LG_INFO("Trade return (% of entry notional): mean {:.2f}%, p05 {:.2f}%, median {:.2f}%, p95 {:.2f}% over {} trades",
+            metrics.historicalMeanTradeReturnPercent, metrics.historicalP05TradeReturnPercent,
+            metrics.historicalMedianTradeReturnPercent, metrics.historicalP95TradeReturnPercent,
+            metrics.historicalTradeReturnPercentSamples.size());
+    LG_INFO("Activity: max {} losses in a row (worst streak {}), average holding {:.2f} bars, exposure {:.2f}%, turnover {} ({:.2f}x)",
+            metrics.maximumConsecutiveLosses, FormatUsd(metrics.worstConsecutiveLossPnl), metrics.averageHoldingBars,
+            metrics.exposurePercent, FormatUsd(metrics.grossTurnover), metrics.turnoverMultiple);
 
     if (metrics.monteCarloSimulationCount > 0U) {
-        LG_INFO(
-            "Monte Carlo: simulations={} trades_per_path={} p_dd20={:.2f}% p_dd30={:.2f}% p_dd50={:.2f}% risk_of_ruin={:.2f}%",
-            metrics.monteCarloSimulationCount,
-            metrics.monteCarloTradesPerSimulation,
-            metrics.monteCarloProbabilityDrawdown20Percent,
-            metrics.monteCarloProbabilityDrawdown30Percent,
-            metrics.monteCarloProbabilityDrawdown50Percent,
-            metrics.monteCarloRiskOfRuinPercent
-        );
-        LG_INFO(
-            "Monte Carlo tails: median_dd={:.2f}% p95_dd={:.2f}% p99_dd={:.2f}% median_loss_streak={:.1f} p95_loss_streak={:.1f} p99_loss_streak={:.1f}",
-            metrics.monteCarloMedianMaxDrawdownPercent,
-            metrics.monteCarloP95MaxDrawdownPercent,
-            metrics.monteCarloP99MaxDrawdownPercent,
-            metrics.monteCarloMedianMaxConsecutiveLosses,
-            metrics.monteCarloP95MaxConsecutiveLosses,
-            metrics.monteCarloP99MaxConsecutiveLosses
-        );
+        LG_INFO("Monte Carlo ({} paths x {} trades): drawdown above 20% {:.2f}%, above 30% {:.2f}%, above 50% {:.2f}%, risk of ruin {:.2f}%",
+                metrics.monteCarloSimulationCount, metrics.monteCarloTradesPerSimulation,
+                metrics.monteCarloProbabilityDrawdown20Percent, metrics.monteCarloProbabilityDrawdown30Percent,
+                metrics.monteCarloProbabilityDrawdown50Percent, metrics.monteCarloRiskOfRuinPercent);
+        LG_INFO("Monte Carlo tails: drawdown median {:.2f}%, p95 {:.2f}%, p99 {:.2f}%; losing streak median {:.1f}, p95 {:.1f}, p99 {:.1f}",
+                metrics.monteCarloMedianMaxDrawdownPercent, metrics.monteCarloP95MaxDrawdownPercent,
+                metrics.monteCarloP99MaxDrawdownPercent, metrics.monteCarloMedianMaxConsecutiveLosses,
+                metrics.monteCarloP95MaxConsecutiveLosses, metrics.monteCarloP99MaxConsecutiveLosses);
     }
 }

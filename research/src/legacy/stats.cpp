@@ -50,7 +50,7 @@ try
     }
     if (!std::filesystem::is_regular_file(databasePath))
         throw std::invalid_argument("Input database does not exist: " + databasePath);
-    Logger::Instance().Setup(false, false, "", "", true);
+    Logger::Instance().Setup(false, false); // stdout only
     const OHLCVData data = loadDatabase(databasePath, startDate, endDate);
     if (data.data.empty())
         throw std::runtime_error("No market data in the selected window");
@@ -73,10 +73,9 @@ try
     }
     LG_INFO("Completed {} isolated strategy backtests. Metrics remain in memory only.", metricsCache.size());
     for (const auto& [name, metrics] : metricsCache) {
-        LG_INFO("Summary {}: return={:.2f}% annualized={:.2f}% max_dd={:.2f}% sharpe={:.3f} "
-                "sortino={:.3f} calmar={:.3f} profit_factor={:.3f} trades={}",
-            name, metrics.netReturnPercent, metrics.annualizedReturnPercent, metrics.maxDrawdownPercent,
-            metrics.sharpeRatio, metrics.sortinoRatio, metrics.calmarRatio, metrics.profitFactor, metrics.tradeCount);
+        LG_INFO("Summary {}: return {:.2f}%, annualized {:.2f}%, max drawdown {:.2f}%, Sharpe {:.3f}, Sortino {:.3f}, Calmar {:.3f}, profit factor {:.3f}, {} trades",
+                name, metrics.netReturnPercent, metrics.annualizedReturnPercent, metrics.maxDrawdownPercent,
+                metrics.sharpeRatio, metrics.sortinoRatio, metrics.calmarRatio, metrics.profitFactor, metrics.tradeCount);
     }
     return 0;
 }

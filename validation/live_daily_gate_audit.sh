@@ -24,32 +24,32 @@ forbid_marker() {
 
 # MarketData: previous completed business UTC day, commit then publish, scheduled daily run.
 require_marker "live_trading/market_data_service/src/market_data_service_main.cpp" "getPreviousDayDate(getCurrentUtcDate(timeHandler.getTime()))"
-require_marker "live_trading/market_data_service/src/market_data_service_main.cpp" "event=next_daily_run_scheduled"
+require_marker "live_trading/market_data_service/src/market_data_service_main.cpp" "Next daily run is scheduled"
 require_marker "live_trading/market_data_service/src/market_data_service_main.cpp" "publisher.publish(summary)"
 # Host time is still valid for technical retries, never for economic day selection.
 forbid_marker "live_trading/market_data_service/src/market_data_service_main.cpp" "getCurrentUtcDate(std::chrono::system_clock::now())"
 forbid_marker "live_trading/market_data_service/src/market_data_service_main.cpp" "computeNextMidnightUTC(std::chrono::system_clock::now())"
 
 # Strategy: future rejected, stale notifications drained, checkpointed day sleeps to next midnight.
-require_marker "live_trading/strategy_service/src/strategy_service_main.cpp" "event=stale_market_update_skipped"
-require_marker "live_trading/strategy_service/src/strategy_service_main.cpp" "event=daily_checkpoint_complete"
+require_marker "live_trading/strategy_service/src/strategy_service_main.cpp" "Skipped stale market update for"
+require_marker "live_trading/strategy_service/src/strategy_service_main.cpp" "is processed; waiting for the next UTC day"
 require_marker "live_trading/strategy_service/src/strategy_service_main.cpp" "computeNextMidnightUTC"
 
 # PortfolioRisk: only current day economic intent; deterministic close-boundary account snapshot.
-require_marker "live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp" "event=stale_strategy_intents"
-require_marker "live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp" "event=stale_account_snapshot_skipped"
+require_marker "live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp" "Ignoring stale strategy intents for"
+require_marker "live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp" "Skipped stale account snapshot for"
 require_marker "live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp" "account-snapshot:market-data:"
 require_marker "live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp" "ON CONFLICT(state_key,timestamp) DO NOTHING"
-require_marker "live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp" "event=daily_checkpoint_complete"
+require_marker "live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp" "is decided; waiting for the next UTC day"
 
 # OrderPlanner: exact current completed day only, checkpoint then true wait until next UTC day.
-require_marker "live_trading/order_planner_service/src/order_planner_service_main.cpp" "event=stale_notional_request_skipped"
-require_marker "live_trading/order_planner_service/src/order_planner_service_main.cpp" "event=daily_checkpoint_complete"
+require_marker "live_trading/order_planner_service/src/order_planner_service_main.cpp" "Skipped stale planning request for"
+require_marker "live_trading/order_planner_service/src/order_planner_service_main.cpp" "is planned; waiting for the next UTC day"
 require_marker "live_trading/order_planner_service/src/order_planner_service_main.cpp" "computeNextMidnightUTC"
 
 # ExecutionState: economic inputs gated to current T, execution truth remains continuously polled.
-require_marker "live_trading/execution_state_service/src/execution_state_service_main.cpp" "event=stale_market_data_account_snapshot_skipped"
-require_marker "live_trading/execution_state_service/src/execution_state_service_main.cpp" "event=stale_decision_skipped"
+require_marker "live_trading/execution_state_service/src/execution_state_service_main.cpp" "Skipped stale market update for"
+require_marker "live_trading/execution_state_service/src/execution_state_service_main.cpp" "Skipped stale decision for"
 require_marker "live_trading/execution_state_service/src/execution_state_service_main.cpp" "Execution truth is always serviced"
 require_marker "live_trading/execution_state_service/src/execution_state_service_main.cpp" "bus_.poll(exchange_event_subscription_"
 

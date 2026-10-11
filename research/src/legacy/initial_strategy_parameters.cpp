@@ -561,7 +561,7 @@ try
     }
     if (!std::filesystem::is_regular_file(databasePath))
         throw std::invalid_argument("Input database does not exist: " + databasePath);
-    Logger::Instance().Setup(false, false, "", "", true);
+    Logger::Instance().Setup(false, false); // stdout only
     const OHLCVData data = loadDatabase(databasePath, startDate, endDate);
     if (data.data.empty())
         throw std::runtime_error("No market data in the selected window");
@@ -603,11 +603,11 @@ try
     }
     if (progress)
         progress->finish();
-    std::cout << "CURRENT initial parameter study: " << directory << '\n';
+    LG_INFO("Initial parameter study written to {}", directory.string());
     return 0;
 }
 catch (const std::exception& error)
 {
-    std::cerr << "Initial parameter study failed: " << error.what() << '\n';
+    LG_ALERT("Initial parameter study failed: {}", error.what());
     return 1;
 }

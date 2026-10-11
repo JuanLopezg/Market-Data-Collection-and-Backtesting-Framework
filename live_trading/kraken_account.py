@@ -5,6 +5,7 @@ Credentials are consumed internally without logging their contents. This compone
 submits orders, changes settlement preferences or writes trading account state.
 """
 import argparse
+import logging
 import base64
 from datetime import datetime
 from decimal import Decimal
@@ -21,6 +22,7 @@ import urllib.error
 
 from kraken_shadow import HOSTS, ROOT, fresh, write_json
 from shadow_observer import NoRedirect, canonical, digest, number
+from readable_log import setup_logging
 
 
 FIXTURE_SCOPE = 'LOCAL_KRAKEN_ACCOUNT_FIXTURE'
@@ -474,19 +476,22 @@ def main():
     except (CredentialError, AccountReadError) as error:
         if args.account:
             record_attempt(directory, args.environment, 'FAILED', str(error))
-        raise SystemExit('KRAKEN-ACCOUNT: ' + str(error)) from None
+        logging.error('Kraken account inspection failed: %s', error)
+        raise SystemExit(1) from None
     except (OSError, ValueError, KeyError, TypeError, ArithmeticError, AttributeError):
         if args.account:
             record_attempt(directory, args.environment, 'FAILED', 'Unavailable or invalid input while ' + phase)
-        raise SystemExit('KRAKEN-ACCOUNT: unavailable or invalid input while ' + phase + '; no trading account update') from None
+        logging.error('Unavailable or invalid input while %s; no trading account update', phase)
+        raise SystemExit(1) from None
     if args.account:
         record_attempt(directory, args.environment, 'READ_ONLY_COMPLETED', 'Authenticated observations retained; trading not approved')
-    print('KRAKEN-ACCOUNT:', 'authenticated read-only inspection complete' if args.account else 'synthetic fixture inspection complete')
-    print('Wallet:', result['wallet_type'], '| Currencies:', ', '.join(sorted(result['currencies'])))
-    print('Positions:', len(result['positions']), '| Open orders:', len(result['orders']))
-    print('Checks:', result['state'], '| Reasons:', ', '.join(result['reasons']) or 'none')
-    print('Report:', directory / 'report.html')
+    logging.info('Kraken %s complete', 'authenticated read-only inspection' if args.account else 'synthetic fixture inspection')
+    logging.info('Wallet %s, currencies %s', result['wallet_type'], ', '.join(sorted(result['currencies'])))
+    logging.info('%d positions, %d open orders', len(result['positions']), len(result['orders']))
+    logging.info('Checks %s, reasons: %s', result['state'], ', '.join(result['reasons']) or 'none')
+    logging.info('Report written to %s', directory / 'report.html')
 
 
 if __name__ == '__main__':
+    setup_logging()
     main()

@@ -23,10 +23,10 @@ grep -q '!replay_bootstrap_completed_date_.has_value() && target < newestComplet
 grep -q 'request.decision_timestamp < newestCompleted' "$planner"
 grep -q 'pending_decision_->decision_timestamp > newestCompleted' "$execs"
 grep -q 'pending_decision_->decision_timestamp != newestCompleted' "$execs"
-grep -q 'pre_bootstrap_market_data_account_snapshot_skipped' "$execs"
-grep -q 'pre_bootstrap_decision_skipped' "$execs"
+grep -q 'Skipped market update for' "$execs"
+grep -q 'Skipped decision for' "$execs"
 
-grep -q 'immutable_bootstrap_business_anchor' "$strategy"
+grep -q 'Replay bootstrap day is' "$strategy"
 grep -q 'latestRankingDateAtOrBefore(newestCompleted)' "$strategy"
 grep -q 'processOpenIfAvailable(command.order)' "$sim"
 grep -q "order's exact active_from price" "$sim"

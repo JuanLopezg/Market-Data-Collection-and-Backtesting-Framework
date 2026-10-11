@@ -1,113 +1,222 @@
 #include "logger.h"
 
-#include <log4cpp/OstreamAppender.hh>
-#include <log4cpp/FileAppender.hh>
-#include <log4cpp/RollingFileAppender.hh>
-#include <log4cpp/PatternLayout.hh>
-
-#include <iostream>
 #include <chrono>
-#include <sstream>
+#include <cmath>
+#include <ctime>
+#include <iostream>
 
-// --------------------------------------------------------------
-// Singleton
-// --------------------------------------------------------------
-Logger& Logger::Instance() {
+namespace {
+
+const char* SeverityLabel(LogSeverityLevel severity)
+{
+    // Fixed width keeps the message column aligned.
+    switch (severity) {
+        case LogSeverityLevel::DEBUG: return "DEBUG";
+        case LogSeverityLevel::INFO:  return "INFO ";
+        case LogSeverityLevel::WARN:  return "WARN ";
+        case LogSeverityLevel::ERROR: return "ERROR";
+        case LogSeverityLevel::ALERT: return "ALERT";
+    }
+    return "INFO ";
+}
+
+std::tm UtcCalendar(std::time_t seconds)
+{
+    std::tm calendar{};
+    gmtime_r(&seconds, &calendar);
+    return calendar;
+}
+
+std::string RemoveAll(std::string text, std::string_view token)
+{
+    for (auto position = text.find(token); position != std::string::npos; position = text.find(token))
+        text.erase(position, token.size());
+    return text;
+}
+
+std::string RemoveTemplateArguments(const std::string& text)
+{
+    std::string result;
+    int depth = 0;
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        const char c = text[i];
+        // Keep comparison operators such as "operator<" readable.
+        const bool afterOperator = i >= 8 && text.compare(i - 8, 8, "operator") == 0;
+        if (c == '<' && !afterOperator) {
+            ++depth;
+            continue;
+        }
+        if (c == '>' && depth > 0) {
+            --depth;
+            continue;
+        }
+        if (depth == 0)
+            result.push_back(c);
+    }
+    return result;
+}
+
+} // namespace
+
+Logger& Logger::Instance()
+{
     static Logger instance;
     return instance;
 }
 
-// --------------------------------------------------------------
-// Setup logger configuration
-// --------------------------------------------------------------
-void Logger::Setup(bool debugEnabled,
-                   bool quiet,
-                   const std::string& fileAppenderPath,
-                   const std::string& rollingAppenderPath,
-                   bool includeHeader)
+void Logger::Setup(bool debugEnabled, bool quiet, const std::string& filePath)
 {
-    includeHeader_ = includeHeader;
+    std::lock_guard<std::mutex> lock(mutex_);
+    debugEnabled_ = debugEnabled;
+    quiet_ = quiet;
 
-    log4cpp::Category& root = log4cpp::Category::getRoot();
-    root.removeAllAppenders();
+    if (file_.is_open())
+        file_.close();
+    if (!filePath.empty())
+        file_.open(filePath, std::ios::out | std::ios::app);
+}
 
-    // Logging level
-    root.setPriority(debugEnabled ? log4cpp::Priority::DEBUG
-                                  : log4cpp::Priority::INFO);
+bool Logger::IsEnabled(LogSeverityLevel severity) const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    return severity != LogSeverityLevel::DEBUG || debugEnabled_;
+}
 
-    // Use the same timestamp/severity layout for every configured appender.
-    auto* layoutConsole = new log4cpp::PatternLayout();
-    layoutConsole->setConversionPattern("%d{%Y-%m-%d %H:%M:%S.%l} [%p] %m%n");
+void Logger::Write(LogSeverityLevel severity,
+                   std::string_view functionName,
+                   std::string_view message)
+{
+    std::string line = CurrentUtcLogTimestamp();
+    line += " [";
+    line += SeverityLabel(severity);
+    line += "] ";
+    line += functionName;
+    line += " : ";
+    // One record per line keeps host log files grep-able and safely trimmable.
+    for (const char c : message)
+        line.push_back(c == '\n' || c == '\r' ? ' ' : c);
+    line += '\n';
 
-    auto* layoutFile = new log4cpp::PatternLayout();
-    layoutFile->setConversionPattern("%d{%Y-%m-%d %H:%M:%S.%l} [%p] %m%n");
-
-    auto* layoutRolling = new log4cpp::PatternLayout();
-    layoutRolling->setConversionPattern("%d{%Y-%m-%d %H:%M:%S.%l} [%p] %m%n");
-
-    // Console
-    if (!quiet) {
-        auto* console = new log4cpp::OstreamAppender("console", &std::cout);
-        console->setLayout(layoutConsole);
-        root.addAppender(console);
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!quiet_) {
+        std::cout << line;
+        std::cout.flush();
     }
-
-    // File appender
-    if (!fileAppenderPath.empty()) {
-        auto* fa = new log4cpp::FileAppender("file", fileAppenderPath);
-        fa->setLayout(layoutFile);
-        root.addAppender(fa);
-    }
-
-    // Rolling appender
-    if (!rollingAppenderPath.empty()) {
-        auto* rfa = new log4cpp::RollingFileAppender(
-            "rolling",
-            rollingAppenderPath,
-            20 * 1024 * 1024, // 20MB * 5 files = 100MB max of logs
-            5
-        );
-        rfa->setLayout(layoutRolling);
-        root.addAppender(rfa);
+    if (file_.is_open()) {
+        file_ << line;
+        file_.flush();
     }
 }
 
-// --------------------------------------------------------------
-// Get root category
-// --------------------------------------------------------------
-log4cpp::Category& Logger::GetRootCategory() {
-    return log4cpp::Category::getRoot();
+std::string ShortFunctionName(std::string_view prettyFunction)
+{
+    std::string text{prettyFunction};
+
+    // GCC template details: "... [with T = int]".
+    if (const auto with = text.find(" [with "); with != std::string::npos)
+        text.erase(with);
+
+    // Lambdas report the function that contains them.
+    for (const char* lambdaMarker : {"::<lambda", "::(anonymous class)", "::<unnamed"}) {
+        if (const auto lambda = text.find(lambdaMarker); lambda != std::string::npos)
+            text.erase(lambda);
+    }
+
+    // Drop the parameter list and qualifiers after it, matching the last ')'.
+    if (const auto close = text.rfind(')'); close != std::string::npos) {
+        int depth = 0;
+        for (std::size_t i = close + 1; i-- > 0;) {
+            if (text[i] == ')') {
+                ++depth;
+            } else if (text[i] == '(') {
+                if (--depth == 0) {
+                    text.erase(i);
+                    break;
+                }
+            }
+        }
+    }
+
+    text = RemoveAll(std::move(text), "{anonymous}::");
+    text = RemoveAll(std::move(text), "(anonymous namespace)::");
+    text = RemoveTemplateArguments(text);
+
+    // The name is the last space-separated token; earlier tokens are the
+    // return type and specifiers ("static", "virtual", "void", ...).
+    if (const auto space = text.rfind(' '); space != std::string::npos)
+        text.erase(0, space + 1);
+    while (!text.empty() && (text.front() == '*' || text.front() == '&'))
+        text.erase(0, 1);
+
+    // Keep at most "Owner::function".
+    const auto last = text.rfind("::");
+    if (last != std::string::npos && last > 0) {
+        const auto previous = text.rfind("::", last - 1);
+        if (previous != std::string::npos)
+            text.erase(0, previous + 2);
+    }
+
+    return text.empty() ? std::string{"unknown"} : text;
 }
 
-// --------------------------------------------------------------
-// HandleLog implementation
-// --------------------------------------------------------------
-void HandleLog(LogSeverityLevel severity,
-               const std::string& event,
-               const char* file,
-               const char* function,
-               uint32_t line)
+std::string CurrentUtcLogTimestamp()
 {
-    log4cpp::Category& root = Logger::Instance().GetRootCategory();
+    using namespace std::chrono;
+    const auto now = system_clock::now();
+    const auto milliseconds = duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+    const std::tm calendar = UtcCalendar(system_clock::to_time_t(now));
 
-    log4cpp::Priority::Value p = log4cpp::Priority::INFO;
-    switch (severity) {
-        case LogSeverityLevel::DEBUG: p = log4cpp::Priority::DEBUG; break;
-        case LogSeverityLevel::INFO:  p = log4cpp::Priority::INFO;  break;
-        case LogSeverityLevel::WARN:  p = log4cpp::Priority::WARN;  break;
-        case LogSeverityLevel::ERROR: p = log4cpp::Priority::ERROR; break;
-        case LogSeverityLevel::ALERT: p = log4cpp::Priority::ALERT; break;
-    }
+    return fmt::format("{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}.{:03d}",
+                       calendar.tm_year + 1900, calendar.tm_mon + 1, calendar.tm_mday,
+                       calendar.tm_hour, calendar.tm_min, calendar.tm_sec,
+                       static_cast<int>(milliseconds.count()));
+}
 
-    std::ostringstream ss;
+std::string FormatUsd(double value)
+{
+    if (!std::isfinite(value))
+        return "unavailable USD";
 
-    if (Logger::Instance().IncludeHeader()) {
-        ss << file << ";"
-           << function << ";"
-           << line << ";";
-    }
+    const bool negative = value < 0;
+    const long long cents = std::llround(std::fabs(value) * 100.0);
+    std::string whole = std::to_string(cents / 100);
+    for (int position = static_cast<int>(whole.size()) - 3; position > 0; position -= 3)
+        whole.insert(static_cast<std::size_t>(position), ",");
 
-    ss << event;
+    return fmt::format("{}{}.{:02d} USD", negative ? "-" : "", whole, static_cast<int>(cents % 100));
+}
 
-    root << p << ss.str();
+std::string FormatQuantity(double value)
+{
+    if (!std::isfinite(value))
+        return "unavailable";
+    std::string text = fmt::format("{:.10f}", value);
+    while (!text.empty() && text.back() == '0')
+        text.pop_back();
+    if (!text.empty() && text.back() == '.')
+        text.pop_back();
+    return text == "-0" ? "0" : text;
+}
+
+std::string FormatDayKey(int64_t yyyymmdd)
+{
+    if (yyyymmdd == 0)
+        return "none";
+    if (yyyymmdd < 10000101 || yyyymmdd > 99991231)
+        return std::to_string(yyyymmdd);
+    return fmt::format("{:04d}-{:02d}-{:02d}",
+                       static_cast<int>(yyyymmdd / 10000),
+                       static_cast<int>(yyyymmdd / 100 % 100),
+                       static_cast<int>(yyyymmdd % 100));
+}
+
+std::string FormatEpochMilliseconds(int64_t epochMilliseconds)
+{
+    if (epochMilliseconds == 0)
+        return "none";
+    const std::tm calendar = UtcCalendar(static_cast<std::time_t>(epochMilliseconds / 1000));
+    return fmt::format("{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}.{:03d}",
+                       calendar.tm_year + 1900, calendar.tm_mon + 1, calendar.tm_mday,
+                       calendar.tm_hour, calendar.tm_min, calendar.tm_sec,
+                       static_cast<int>(epochMilliseconds % 1000));
 }

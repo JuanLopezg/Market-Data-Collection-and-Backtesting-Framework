@@ -175,7 +175,9 @@ def checkpoints(root: pathlib.Path) -> Dict[str, object]:
 
 def target_committed(root: pathlib.Path, target: int) -> bool:
     logs = compose(root, ["logs", "--no-color", "historical-market-data"], capture=True, check=False)
-    return bool(re.search(rf"event=historical_day_committed\s+date={target}(?:\s|$)", logs))
+    readable = f"{str(target)[:4]}-{str(target)[4:6]}-{str(target)[6:]}"
+    return bool(re.search(rf"event=historical_day_committed\s+date={target}(?:\s|$)", logs)
+                or f"Saved historical day {readable}:" in logs)
 
 
 def container_failures(root: pathlib.Path) -> str:
@@ -525,6 +527,13 @@ def main() -> int:
         "event=notional_plan_state_mismatch",
         "event=submit_conflict",
         "event=fill_failed",
+        # Current readable log equivalents.
+        "[ALERT]",
+        "with the exchange snapshot of",
+        "Rejected invalid order plan",
+        "built for state revision",
+        "submitted again with different content",
+        "Fill handling failed",
     ]
     critical_lines = [line for line in all_logs.splitlines() if any(token in line for token in critical_tokens)]
 

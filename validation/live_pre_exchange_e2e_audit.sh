@@ -86,22 +86,22 @@ need 'lib/src/contracts/notional_order_planning.h' \
 
 # Acceptance/log observability markers needed by the runtime verifier.
 need 'live_trading/market_data_service/src/update_publisher.cpp' \
-  'event=market_data_updated_published' \
+  'Published market update for' \
   'MarketData runtime acceptance marker missing'
 need 'live_trading/strategy_service/src/strategy_service_main.cpp' \
-  'event=strategy_intents_published' \
+  'Published strategy intents for' \
   'Strategy runtime acceptance marker missing'
 need 'live_trading/execution_state_service/src/execution_state_service_main.cpp' \
-  'event=market_data_account_snapshot_published' \
+  'Published account snapshot after the' \
   'ExecutionState daily account snapshot acceptance marker missing'
 need 'live_trading/portfolio_risk_service/src/portfolio_risk_service_main.cpp' \
-  'event=decision_published' \
+  'Published risk decision for' \
   'PortfolioRisk runtime acceptance marker missing'
 need 'live_trading/execution_state_service/src/execution_state_service_main.cpp' \
-  'event=notional_planning_request_published' \
+  'Requested order plan for' \
   'ExecutionState planning acceptance marker missing'
 need 'live_trading/order_planner_service/src/order_planner_service_main.cpp' \
-  'event=notional_order_plan_published' \
+  'Published order plan for' \
   'OrderPlanner runtime acceptance marker missing'
 
 if [[ $fail -ne 0 ]]; then

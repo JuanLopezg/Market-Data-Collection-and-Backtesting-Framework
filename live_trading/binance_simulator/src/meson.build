@@ -14,6 +14,8 @@ executable(
     dependencies: [
         global_deps['boost_dep'],
         global_deps['nlohmann_json_dep'],
-        threads_dep
+        threads_dep,
+        # Shared readable logger only.
+        libalgolib_dep
     ]
 )

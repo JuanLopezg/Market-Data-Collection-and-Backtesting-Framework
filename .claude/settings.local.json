@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wsl.exe -e bash -lc 'cd /mnt/c/Users/Juan/Documents/Python/algoTrading; B=build/research/src/legacy/algotrading_research; ldd $B | grep -E \"algolib|fmt\"; echo LD=$LD_LIBRARY_PATH; nm -DC build/lib/src/libalgolib.so | grep -c \"Logger::Write\"; grep -n \"LD_LIBRARY_PATH\\\\|algolib\" research/replay.py | head; grep -n \"fmt\" lib/src/meson.build meson.build research/src/legacy/meson.build | head; ls -la build/lib/src/libalgolib.so* build/research/src/legacy/algotrading_research')",
+      "Bash(wsl.exe -e bash -lc 'cd /mnt/c/Users/Juan/Documents/Python/algoTrading; nm -D build/lib/src/libalgolib.so | grep \"Logger5Write\"; echo ---; nm -D build/research/src/legacy/algotrading_research | grep -E \"Logger5Write|ShortFunctionName\"; echo ---; nm -D build/lib/src/libalgolib.so | grep -c ShortFunctionName; nm -D build/lib/src/libalgolib.so | grep ShortFunctionName; grep -n \"Write\\\\|ShortFunctionName\" lib/src/logging/logger.h')"
+    ]
+  }
+}

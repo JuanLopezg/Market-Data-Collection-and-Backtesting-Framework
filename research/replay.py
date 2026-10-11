@@ -6,6 +6,7 @@ import csv
 from datetime import datetime
 from functools import lru_cache
 import json
+import logging
 import math
 import os
 from pathlib import Path
@@ -13,7 +14,25 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 from typing import Iterable
+
+LOG_FORMAT = "%(asctime)s.%(msecs)03d [%(levelname)-5s] %(funcName)s : %(message)s"
+LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+
+def setup_logging() -> None:
+    """Readable UTC log lines, same shape as the C++ logger."""
+    formatter = logging.Formatter(LOG_FORMAT, LOG_DATE_FORMAT)
+    formatter.converter = time.gmtime
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(formatter)
+    root = logging.getLogger()
+    root.handlers[:] = [handler]
+    # Same switch as the C++ logger: DEBUG shows full IDs and hashes.
+    root.setLevel(logging.DEBUG if os.environ.get("ALGOTRADING_LOG_DEBUG") == "1" else logging.INFO)
+    logging.addLevelName(logging.WARNING, "WARN")
+
 
 # Canonical replay front door. Old step-specific runners remain historical only.
 FULL_START = "2020-01-01"
@@ -59,6 +78,7 @@ FULL_RUN_SOURCES = [
     "lib/src/indicator/indicator_engine.cpp",
     "lib/src/indicator/indicator_calculators.cpp",
     "lib/src/indicator/indicator_spec.cpp",
+    "lib/src/logging/logger.cpp",
 ]
 
 FAST_RUN_SOURCES = [
@@ -80,7 +100,7 @@ def run(
     log: Path | None = None,
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
-    print("+ " + q(cmd), flush=True)
+    logging.info("Running %s", q(cmd))
     command = [str(x) for x in cmd]
     if log is None:
         proc = subprocess.run(command, cwd=str(cwd), env=env, text=True, check=False)
@@ -205,6 +225,7 @@ def build_full_runner(force: bool = False) -> Path:
         *includes,
         *(str(ROOT / rel) for rel in FULL_RUN_SOURCES),
         "-pthread",
+        "-lfmt",
         "-o",
         str(CANONICAL_RUNNER_BIN),
     ]
@@ -936,11 +957,11 @@ def execute_full(args: argparse.Namespace, *, run_command=run, state_dir: Path |
             "--visual-end", visual_end,
             "--ui-delay-ms", str(delay_ms),
         ]
-        print("Dashboard state: " + str(state_dir) if isolated_state else "Dashboard: http://localhost:8080")
-        print(
-            f"Visual window: {visual_start}..{visual_end}; "
-            f"{delay_ms} ms per OPEN/CLOSE phase"
-        )
+        if isolated_state:
+            logging.info("Dashboard state directory: %s", state_dir)
+        else:
+            logging.info("Dashboard: http://localhost:8080")
+        logging.info("Visual window %s..%s, %d ms per OPEN/CLOSE phase", visual_start, visual_end, delay_ms)
 
     log = run_dir / "runtime.log"
     run_command(cmd, log=log)
@@ -1112,6 +1133,17 @@ def execute_resources(args: argparse.Namespace) -> dict:
 
 
 def main() -> int:
+    """Run the CLI; argument/validation failures become readable ERROR lines."""
+    try:
+        return run_cli()
+    except SystemExit as stop:
+        if isinstance(stop.code, str):
+            logging.error(stop.code.removeprefix("ERROR: "))
+            return 1
+        raise
+
+
+def run_cli() -> int:
     args = parser().parse_args()
     if hasattr(args, "speed") and (not math.isfinite(args.speed) or args.speed <= 0):
         raise SystemExit("ERROR: --speed must be finite and positive")
@@ -1121,41 +1153,26 @@ def main() -> int:
 
     summary = args.func(args)
     if args.mode == "resources":
-        print("RESOURCE-PROFILE: " + summary["result"])
-        print("HTML report: " + summary["report"])
+        logging.info("Resource profile %s; HTML report %s", summary["result"], summary["report"])
         return 0 if summary["result"] == "PASS" else 1
     if summary.get("result") == "CHECKPOINTED":
-        print("\n============================================================")
-        print("CANONICAL REPLAY: CHECKPOINTED — READY TO RESUME")
-        print("============================================================")
-        print(f"mode={summary['mode']}")
-        print(
-            f"window={summary['start']}..{summary['end']} "
-            f"days={summary['days']}"
-        )
-        print(
-            f"checkpointDate={summary['checkpointDate']} "
-            f"daysProcessed={summary['daysProcessed']}"
-        )
-        print(f"checkpointState={summary['checkpointState']}")
+        logging.info("Canonical replay checkpointed and ready to resume (%s mode, window %s..%s, %s days)",
+                     summary["mode"], summary["start"], summary["end"], summary["days"])
+        logging.info("Checkpoint %s after %s days, state %s",
+                     summary["checkpointDate"], summary["daysProcessed"], summary["checkpointState"])
         return 0
 
-    print("\n============================================================")
-    print("CANONICAL REPLAY: PASS")
-    print("============================================================")
-    print(f"mode={summary['mode']}")
-    print(f"window={summary['start']}..{summary['end']} days={summary['days']}")
+    logging.info("Canonical replay PASSED (%s mode, window %s..%s, %s days)",
+                 summary["mode"], summary["start"], summary["end"], summary["days"])
     if "canonicalFills" in summary:
-        print(f"canonicalFills={summary['canonicalFills']}")
-        print(f"fullRunFingerprint={summary['fullRunFingerprint']}")
+        logging.info("%s canonical fills", summary["canonicalFills"])
+        logging.debug("Full-run fingerprint %s", summary["fullRunFingerprint"])
     rt = summary.get("realTest", {})
-    print(
-        "RealTest=PASS (direct CSV comparison); "
-        f"differences={rt.get('differences', 0)}; "
-        f"manualAccepted={rt.get('manualAccepted')}"
-    )
+    logging.info("RealTest direct CSV comparison PASSED: %s differences, manually accepted: %s",
+                 rt.get("differences", 0), rt.get("manualAccepted"))
     return 0
 
 
 if __name__ == "__main__":
+    setup_logging()
     raise SystemExit(main())

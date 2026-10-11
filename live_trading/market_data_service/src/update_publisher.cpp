@@ -76,8 +76,8 @@ void MarketDataUpdatePublisher::publish(const MarketDataIngestionSummary& summar
         prices.metadata.correlation_id = prices.metadata.message_id;
         prices.prices = summary.paper_opening_prices;
         bus.publish(MessageSubjects::EXECUTION_PRICES, MessageJson::encode(prices), prices.metadata.message_id);
-        LG_INFO("service=market-data event=paper_execution_open_published decision_timestamp={} execution_timestamp={} prices={}",
-                prices.decision_timestamp, prices.timestamp, prices.prices.size());
+        LG_INFO("Published {} opening prices for {} (decision {})",
+                prices.prices.size(), FormatDayKey(prices.timestamp), FormatDayKey(prices.decision_timestamp));
     }
 
     const std::string payload = MessageJson::encode(event);
@@ -88,13 +88,8 @@ void MarketDataUpdatePublisher::publish(const MarketDataIngestionSummary& summar
     );
     bus.flush();
 
-    LG_INFO(
-        "service=market-data event=market_data_updated_published completed_through={} subject={} message_id={} stream={} downloaded_rows={} maintained_symbols={}",
-        completedThrough,
-        MessageSubjects::MARKET_DATA_UPDATED,
-        event.metadata.message_id,
-        stream_,
-        event.downloaded_rows,
-        event.maintained_symbols
-    );
+    LG_INFO("Published market update for {}: {} rows downloaded, {} symbols maintained",
+            FormatDayKey(completedThrough), event.downloaded_rows, event.maintained_symbols);
+    LG_DEBUG("Market update message id {}, stream {}, subject {}",
+             event.metadata.message_id, stream_, MessageSubjects::MARKET_DATA_UPDATED);
 }

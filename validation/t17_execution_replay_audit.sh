@@ -22,7 +22,7 @@ runner = Path('tools/historical_replay/run_t17_execution_replay.py').read_text()
 assert 'class HistoricalOpenCsvSource' in source_h
 assert 'Parse exactly the visible-at-open prefix' in source_cpp
 assert 'std::getline(stream, openField' in source_cpp
-assert 'event=execution_open_published' in feeder
+assert 'opening prices for' in feeder
 assert 'MessageSubjects::EXECUTION_PRICES' in feeder
 assert '*nextOpen > businessDate' in feeder
 assert 'previousDay(static_cast<unsigned int>(day.date))' in feeder
@@ -32,7 +32,7 @@ assert 'execution-state-notional-plans' in execution
 assert 'order.notional_usd / order.reference_close' in execution
 assert 'nextDay(static_cast<unsigned int>(plan.decision_timestamp))' in execution
 assert 'engine_.applyOrderPlan(' in execution
-assert 'event=notional_plan_applied' in execution
+assert 'Applied order plan for' in execution
 
 # T17 must not reintroduce shared-clock transport/authority.
 for forbidden in ('ClockState', 'CLOCK_STATE', 'CLOCK_SYNC_REQUEST', 'CLOCK_CONTROL'):

@@ -1,15 +1,28 @@
+// Shared human-readable logger for lib/, live_trading/ and research/.
+//
+// Every line has the same shape, always in UTC:
+//
+//   2026-10-07 20:33:50.456 [INFO ] ExecutionStateServiceRuntime::run : Service ready
+//
+// The function label is derived from the compiler's function signature, so call
+// sites only write the message. INFO/WARN/ERROR/ALERT messages are short English
+// sentences for a human reader; exact identifiers, hashes and unrounded values
+// belong in DEBUG lines. Never log secrets.
+
 #ifndef LOGGER_H
 #define LOGGER_H
 
-#include <log4cpp/Category.hh>
-#include <string>
-#include <sstream>
 #include <cstdint>
-#include <fmt/core.h>
+#include <fstream>
+#include <mutex>
+#include <string>
+#include <string_view>
+#include <utility>
 
-// --------------------------------------------------------------
-// ENUM severity
-// --------------------------------------------------------------
+// format.h (not only core.h): fmt 8 rejects later format.h includes after
+// core.h has already instantiated the std::string formatter.
+#include <fmt/format.h>
+
 enum class LogSeverityLevel {
     DEBUG,
     INFO,
@@ -18,108 +31,74 @@ enum class LogSeverityLevel {
     ALERT
 };
 
-// --------------------------------------------------------------
-// Extract basename of __FILE__
-// --------------------------------------------------------------
-inline const char* BaseName(const char* path) {
-    const char* p = path;
-    const char* last = path;
-    while (*p) {
-        if (*p == '/' || *p == '\\') last = p + 1;
-        ++p;
-    }
-    return last;
-}
-
-// --------------------------------------------------------------
-// Logger singleton
-// --------------------------------------------------------------
 class Logger {
 public:
     static Logger& Instance();
 
-    void Setup(bool debugEnabled,
-               bool quiet,
-               const std::string& fileAppenderPath,
-               const std::string& rollingAppenderPath,
-               bool includeHeader);
+    // debugEnabled: also write DEBUG lines.
+    // quiet: do not write to stdout.
+    // filePath: optional append-only copy of every line (empty = stdout only).
+    void Setup(bool debugEnabled, bool quiet, const std::string& filePath = "");
 
-    log4cpp::Category& GetRootCategory();
+    bool IsEnabled(LogSeverityLevel severity) const;
 
-    bool IncludeHeader() const { return includeHeader_; }
-
-    // spdlog-style wrappers
-    template<typename... Args>
-    static void info(const char* fmtstr, Args&&... args) {
-        LG_INFO(fmtstr, std::forward<Args>(args)...);
-    }
-
-    template<typename... Args>
-    static void warn(const char* fmtstr, Args&&... args) {
-        LG_WARN(fmtstr, std::forward<Args>(args)...);
-    }
-
-    template<typename... Args>
-    static void error(const char* fmtstr, Args&&... args) {
-        LG_ERROR(fmtstr, std::forward<Args>(args)...);
-    }
-
-    template<typename... Args>
-    static void debug(const char* fmtstr, Args&&... args) {
-        LG_DEBUG(fmtstr, std::forward<Args>(args)...);
-    }
+    void Write(LogSeverityLevel severity,
+               std::string_view functionName,
+               std::string_view message);
 
 private:
     Logger() = default;
-    bool includeHeader_ = true;
+
+    mutable std::mutex mutex_;
+    bool debugEnabled_ = false;
+    bool quiet_ = false;
+    std::ofstream file_;
 };
 
-// --------------------------------------------------------------
-// Internal log handler
-// --------------------------------------------------------------
-void HandleLog(LogSeverityLevel severity,
-               const std::string& msg,
-               const char* file,
-               const char* function,
-               uint32_t line);
+// Reduces a compiler signature such as
+//   "void {anonymous}::ExecutionStateServiceRuntime::persist(const string&)"
+// to "ExecutionStateServiceRuntime::persist". Lambdas report their enclosing
+// function. Free functions keep their namespace, e.g. "ServiceLogging::setup".
+std::string ShortFunctionName(std::string_view prettyFunction);
 
-// --------------------------------------------------------------
-// FormatLog — FIXED VERSION USING vformat()
-// --------------------------------------------------------------
-inline std::string FormatLog(const std::string& s) {
-    return s;
-}
+// "2026-10-07 20:33:50.456" for the current UTC time.
+std::string CurrentUtcLogTimestamp();
 
-inline std::string FormatLog(const char* s) {
-    return std::string{s};
-}
-
-template<typename T>
-inline std::string FormatLog(const T& v) {
-    return fmt::format("{}", v);
-}
+// Readable values for log messages.
+// FormatUsd(100000) -> "100,000.00 USD"; negative values keep their sign.
+std::string FormatUsd(double value);
+// FormatQuantity(0.000123456) -> "0.000123456" (no trailing zeros).
+std::string FormatQuantity(double value);
+// Daily market key YYYYMMDD (the Timestamp type) -> "2026-10-07". Zero -> "none".
+std::string FormatDayKey(int64_t yyyymmdd);
+// Epoch milliseconds -> "2026-10-07 20:33:50.471" (UTC). Zero -> "none".
+std::string FormatEpochMilliseconds(int64_t epochMilliseconds);
+// "yes"/"no".
+inline const char* YesNo(bool value) { return value ? "yes" : "no"; }
 
 template<typename... Args>
-inline std::string FormatLog(const char* fmtstr, Args&&... args) {
-    return fmt::vformat(fmtstr, fmt::make_format_args(args...));
+inline std::string FormatLog(fmt::format_string<Args...> format, Args&&... args) {
+    return fmt::format(format, std::forward<Args>(args)...);
 }
 
-// --------------------------------------------------------------
-// Logging macros – same API as spdlog
-// --------------------------------------------------------------
-#define LG_DEBUG(fmtstr, ...) \
-    HandleLog(LogSeverityLevel::DEBUG, FormatLog(fmtstr, ##__VA_ARGS__), BaseName(__FILE__), __func__, __LINE__)
+inline std::string FormatLog(const std::string& message) {
+    return message;
+}
 
-#define LG_INFO(fmtstr, ...) \
-    HandleLog(LogSeverityLevel::INFO,  FormatLog(fmtstr, ##__VA_ARGS__), BaseName(__FILE__), __func__, __LINE__)
+// The static label is computed once per call site; the message is only formatted
+// when its severity is enabled (DEBUG is usually disabled outside diagnostics).
+#define LG_LOG_AT(severity, ...)                                                       \
+    do {                                                                               \
+        if (Logger::Instance().IsEnabled(severity)) {                                  \
+            static const std::string lgFunctionName = ShortFunctionName(__PRETTY_FUNCTION__); \
+            Logger::Instance().Write(severity, lgFunctionName, FormatLog(__VA_ARGS__)); \
+        }                                                                              \
+    } while (false)
 
-#define LG_WARN(fmtstr, ...) \
-    HandleLog(LogSeverityLevel::WARN,  FormatLog(fmtstr, ##__VA_ARGS__), BaseName(__FILE__), __func__, __LINE__)
-
-#define LG_ERROR(fmtstr, ...) \
-    HandleLog(LogSeverityLevel::ERROR, FormatLog(fmtstr, ##__VA_ARGS__), BaseName(__FILE__), __func__, __LINE__)
-
-#define LG_ALERT(fmtstr, ...) \
-    HandleLog(LogSeverityLevel::ALERT, FormatLog(fmtstr, ##__VA_ARGS__), BaseName(__FILE__), __func__, __LINE__)
+#define LG_DEBUG(...) LG_LOG_AT(LogSeverityLevel::DEBUG, __VA_ARGS__)
+#define LG_INFO(...)  LG_LOG_AT(LogSeverityLevel::INFO,  __VA_ARGS__)
+#define LG_WARN(...)  LG_LOG_AT(LogSeverityLevel::WARN,  __VA_ARGS__)
+#define LG_ERROR(...) LG_LOG_AT(LogSeverityLevel::ERROR, __VA_ARGS__)
+#define LG_ALERT(...) LG_LOG_AT(LogSeverityLevel::ALERT, __VA_ARGS__)
 
 #endif

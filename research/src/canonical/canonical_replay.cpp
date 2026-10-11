@@ -28,6 +28,7 @@
 #include "validated/pure_rsi.h"
 #include "risk_constraints.h"
 #include "time_handler.h"
+#include "logger.h"
 
 using namespace Replay;
 using namespace MockVenue;
@@ -1004,12 +1005,8 @@ void emitDashboardState(
             day_index, day_count, rows_processed,
             market, history, generation));
 
-    std::cout
-        << "RESEARCH_REPLAY_STATE generation=" << generation
-        << " phase=" << phase
-        << " date=" << date
-        << " ts=" << ts << "\n"
-        << std::flush;
+    LG_DEBUG("Dashboard state {} published: phase {}, date {}", generation, phase, date);
+    LG_DEBUG("Dashboard state {} timestamp {}", generation, ts);
 
     if (args.ui_delay_ms > 0)
         std::this_thread::sleep_for(
@@ -1031,6 +1028,8 @@ bool inRange(
 
 int main(int argc, char** argv)
 {
+    Logger::Instance().Setup(false, false);
+
     try {
         const Args args = parseArgs(argc, argv);
         const auto mapping = loadMapping(args.mapping);
@@ -1236,12 +1235,9 @@ int main(int argc, char** argv)
             resume_after_date = checkpoint.checkpoint_date;
             std::filesystem::remove_all(scratch_dir, ignored);
 
-            std::cout
-                << "RESEARCH_REPLAY_RESUME checkpoint="
-                << checkpoint.checkpoint_date
-                << " dayIndex=" << checkpoint.day_index
-                << " adapterSequence=" << checkpoint.adapter_sequence
-                << "\n" << std::flush;
+            LG_INFO("Resuming replay after checkpoint {} (day {})",
+                    checkpoint.checkpoint_date, checkpoint.day_index);
+            LG_DEBUG("Resume adapter sequence {}", checkpoint.adapter_sequence);
         }
 
         for (const auto& pair : days) {
@@ -1367,11 +1363,8 @@ int main(int argc, char** argv)
                     << "  \"adapterSequence\": "
                     << adapter.chaos().runtime().lastCheckpointSequence() << "\n"
                     << "}\n";
-                std::cout
-                    << "RESEARCH_REPLAY_CHECKPOINTED date=" << day.date
-                    << " dayIndex=" << day_index
-                    << " state=" << args.checkpoint_state.string()
-                    << "\n" << std::flush;
+                LG_INFO("Saved replay checkpoint at {} (day {}) to {}",
+                        day.date, day_index, args.checkpoint_state.string());
                 return 0;
             }
         }
@@ -1580,33 +1573,15 @@ int main(int argc, char** argv)
         out << "}\n";
         out.close();
 
-        std::cout
-            << "RESEARCH_REPLAY_RESULT="
-            << (pass ? "PASS" : "FAIL")
-            << "\n";
-        std::cout
-            << "RESEARCH_REPLAY_MODE="
-            << args.mode << "\n";
-        std::cout
-            << "RESEARCH_REPLAY_DAYS="
-            << days.size() << "\n";
-        std::cout
-            << "RESEARCH_REPLAY_FILLS="
-            << evidence.canonical_fills << "\n";
-        std::cout
-            << "RESEARCH_REPLAY_FULL_RUN_FINGERPRINT="
-            << evidence.full_run_fingerprint
-            << "\n";
-        std::cout
-            << "RESEARCH_REPLAY_SUMMARY="
-            << args.output.string() << "\n";
+        LG_INFO("Replay {} ({} mode, {} days, {} fills)",
+                pass ? "PASSED" : "FAILED", args.mode, days.size(), evidence.canonical_fills);
+        LG_DEBUG("Full-run fingerprint {}", evidence.full_run_fingerprint);
+        LG_INFO("Summary written to {}", args.output.string());
 
         return pass ? 0 : 1;
     }
     catch (const std::exception& error) {
-        std::cerr
-            << "RESEARCH_REPLAY_FATAL="
-            << error.what() << "\n";
+        LG_ALERT("Replay stopped by a fatal error: {}", error.what());
         return 2;
     }
 }

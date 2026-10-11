@@ -177,7 +177,9 @@ def checkpoints(root: pathlib.Path) -> Dict[str, object]:
 
 def target_committed(root: pathlib.Path, target: int) -> bool:
     logs = compose(root, ["logs", "--no-color", "historical-market-data"], capture=True, check=False)
-    return bool(re.search(rf"event=historical_day_committed\s+date={target}(?:\s|$)", logs))
+    readable = f"{str(target)[:4]}-{str(target)[4:6]}-{str(target)[6:]}"
+    return bool(re.search(rf"event=historical_day_committed\s+date={target}(?:\s|$)", logs)
+                or f"Saved historical day {readable}:" in logs)
 
 
 EXPECTED_ONE_SHOT_SERVICES = {
@@ -418,6 +420,7 @@ def main() -> int:
     critical_lines = [
         line for line in all_logs.splitlines()
         if "event=fatal" in line or "event=reconciliation_blocked" in line
+        or "[ALERT]" in line
     ]
 
     report: Dict[str, object] = {

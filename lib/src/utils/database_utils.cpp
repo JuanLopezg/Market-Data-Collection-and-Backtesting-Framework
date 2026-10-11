@@ -174,7 +174,7 @@ OHLCVData loadDatabaseFromSQLite(
 
     if (sqlite3_open(path.c_str(), &db) != SQLITE_OK)
     {
-        LG_ERROR("Failed to open DB: {}", sqlite3_errmsg(db));
+        LG_ERROR("Failed to open database: {}", sqlite3_errmsg(db));
         return ohlcvData;
     }
 
@@ -190,7 +190,7 @@ OHLCVData loadDatabaseFromSQLite(
 
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK)
     {
-        LG_ERROR("Prepare failed: {}", sqlite3_errmsg(db));
+        LG_ERROR("Failed to prepare database query: {}", sqlite3_errmsg(db));
         sqlite3_close(db);
         return ohlcvData;
     }

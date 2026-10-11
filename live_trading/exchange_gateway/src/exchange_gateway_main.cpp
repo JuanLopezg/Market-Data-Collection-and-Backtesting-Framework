@@ -213,13 +213,11 @@ private:
             MessageJson::encode(value),
             value.metadata.message_id
         );
-        LG_INFO(
-            "service=exchange-gateway event=order_update_published order_id={} timestamp={} status={} message_id={}",
-            value.update.order_id,
-            value.update.timestamp,
-            static_cast<int>(value.update.status),
-            value.metadata.message_id
-        );
+        LG_INFO("Forwarded update: order {} is now {} ({})",
+                value.update.order_id,
+                executionOrderStatusName(value.update.status),
+                FormatDayKey(value.update.timestamp));
+        LG_DEBUG("Order update message id {}", value.metadata.message_id);
     }
 
     void publish(const FillEvent& value)
@@ -235,16 +233,13 @@ private:
             MessageJson::encode(value),
             value.metadata.message_id
         );
-        LG_INFO(
-            "service=exchange-gateway event=fill_published fill_id={} order_id={} coin={} side={} quantity={} price={} message_id={}",
-            value.fill.fill_id,
-            value.fill.order_id,
-            value.fill.coin,
-            value.fill.side == OrderSide::Buy ? "buy" : "sell",
-            value.fill.quantity,
-            value.fill.price,
-            value.metadata.message_id
-        );
+        LG_INFO("Forwarded fill for order {}: {} {} {} at {}",
+                value.fill.order_id,
+                value.fill.side == OrderSide::Buy ? "BUY" : "SELL",
+                FormatQuantity(value.fill.quantity),
+                value.fill.coin,
+                FormatQuantity(value.fill.price));
+        LG_DEBUG("Fill id {}, message id {}", value.fill.fill_id, value.metadata.message_id);
 
         if (chaos_duplicate_fill_once_ && !chaos_duplicate_fill_done_) {
             FillEvent duplicate = value;
@@ -255,12 +250,8 @@ private:
                 duplicate.metadata.message_id
             );
             chaos_duplicate_fill_done_ = true;
-            LG_WARN(
-                "service=exchange-gateway event=chaos_duplicate_fill_injected fill_id={} order_id={} duplicate_message_id={}",
-                duplicate.fill.fill_id,
-                duplicate.fill.order_id,
-                duplicate.metadata.message_id
-            );
+            LG_WARN("Fault test: sent fill {} for order {} a second time", duplicate.fill.fill_id, duplicate.fill.order_id);
+            LG_DEBUG("Duplicate fill message id {}", duplicate.metadata.message_id);
         }
     }
 
@@ -277,14 +268,12 @@ private:
             MessageJson::encode(value),
             value.metadata.message_id
         );
-        LG_INFO(
-            "service=exchange-gateway event=exchange_snapshot_published timestamp={} cash={} positions={} open_orders={} message_id={}",
-            value.snapshot.timestamp,
-            value.snapshot.cash,
-            value.snapshot.positions.size(),
-            value.snapshot.open_orders.size(),
-            value.metadata.message_id
-        );
+        LG_INFO("Forwarded exchange snapshot for {}: cash {}, {} positions, {} open orders",
+                FormatDayKey(value.snapshot.timestamp),
+                FormatUsd(value.snapshot.cash),
+                value.snapshot.positions.size(),
+                value.snapshot.open_orders.size());
+        LG_DEBUG("Exchange snapshot message id {}", value.metadata.message_id);
     }
 
     DurableMessageDisposition onSubmit(const BusMessage& message)
@@ -298,26 +287,24 @@ private:
 
             // The adapter call returns only after its downstream command is durable.
             // We can therefore ACK this northbound command without losing it on crash.
-            LG_INFO(
-                "service=exchange-gateway event=submit_forwarding order_id={} strategy_id={} coin={} side={} quantity={} active_from={} message_id={}",
-                command.order.order_id,
-                command.order.strategy_id,
-                command.order.coin,
-                command.order.side == OrderSide::Buy ? "buy" : "sell",
-                command.order.quantity,
-                command.order.active_from,
-                command.metadata.message_id
-            );
+            LG_INFO("Forwarding order {}: {} {} {} for {}, active from {}",
+                    command.order.order_id,
+                    command.order.side == OrderSide::Buy ? "BUY" : "SELL",
+                    FormatQuantity(command.order.quantity),
+                    command.order.coin,
+                    command.order.strategy_id,
+                    FormatDayKey(command.order.active_from));
+            LG_DEBUG("Order {} submit message id {}", command.order.order_id, command.metadata.message_id);
             adapter_->submitOrder(command);
-            LG_DEBUG("service=exchange-gateway event=submit_forwarded order_id={} disposition=ack", command.order.order_id);
+            LG_DEBUG("Order {} forwarded", command.order.order_id);
             return DurableMessageDisposition::Ack;
         }
         catch (const std::invalid_argument& error) {
-            LG_WARN("service=exchange-gateway event=submit_invalid disposition=terminate error={}", error.what());
+            LG_WARN("Rejected invalid order: {}", error.what());
             return DurableMessageDisposition::Terminate;
         }
         catch (const std::exception& error) {
-            LG_ERROR("service=exchange-gateway event=submit_failed disposition=retry error={}", error.what());
+            LG_ERROR("Forwarding the order failed; will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -331,22 +318,18 @@ private:
             if (command.order_id == 0)
                 return DurableMessageDisposition::Terminate;
 
-            LG_INFO(
-                "service=exchange-gateway event=cancel_forwarding order_id={} requested_at={} message_id={}",
-                command.order_id,
-                command.requested_at,
-                command.metadata.message_id
-            );
+            LG_INFO("Forwarding cancel for order {} ({})", command.order_id, FormatDayKey(command.requested_at));
+            LG_DEBUG("Cancel message id {}", command.metadata.message_id);
             adapter_->cancelOrder(command);
-            LG_DEBUG("service=exchange-gateway event=cancel_forwarded order_id={} disposition=ack", command.order_id);
+            LG_DEBUG("Cancel for order {} forwarded", command.order_id);
             return DurableMessageDisposition::Ack;
         }
         catch (const std::invalid_argument& error) {
-            LG_WARN("service=exchange-gateway event=cancel_invalid disposition=terminate error={}", error.what());
+            LG_WARN("Rejected invalid cancel: {}", error.what());
             return DurableMessageDisposition::Terminate;
         }
         catch (const std::exception& error) {
-            LG_ERROR("service=exchange-gateway event=cancel_failed disposition=retry error={}", error.what());
+            LG_ERROR("Forwarding the cancel failed; will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -357,20 +340,17 @@ private:
             const ExchangeSnapshotRequest request =
                 MessageJson::decodeExchangeSnapshotRequest(message.payload);
             validateMetadata(request.metadata);
-            LG_INFO(
-                "service=exchange-gateway event=snapshot_request_forwarding message_id={} correlation_id={}",
-                request.metadata.message_id,
-                request.metadata.correlation_id
-            );
+            LG_INFO("Forwarding exchange snapshot request");
+            LG_DEBUG("Snapshot request message id {}, correlation id {}", request.metadata.message_id, request.metadata.correlation_id);
             adapter_->requestSnapshot(request);
             return DurableMessageDisposition::Ack;
         }
         catch (const std::invalid_argument& error) {
-            LG_WARN("service=exchange-gateway event=snapshot_request_invalid disposition=terminate error={}", error.what());
+            LG_WARN("Rejected invalid snapshot request: {}", error.what());
             return DurableMessageDisposition::Terminate;
         }
         catch (const std::exception& error) {
-            LG_ERROR("service=exchange-gateway event=snapshot_request_failed disposition=retry error={}", error.what());
+            LG_ERROR("Forwarding the snapshot request failed; will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -390,16 +370,9 @@ private:
                 );
             }
 
-            LG_INFO(
-                "service=exchange-gateway event=hyperliquid_dry_run_plan_received "
-                "decision_timestamp={} newest_completed_business_day={} "
-                "state_revision={} orders={} message_id={} action=prepare_raw_only",
-                plan.decision_timestamp,
-                newestCompleted,
-                plan.state_revision,
-                plan.submit_orders.size(),
-                plan.metadata.message_id
-            );
+            LG_INFO("Hyperliquid dry run: received plan for {} with {} orders (newest completed day {}); preparing raw orders only",
+                    FormatDayKey(plan.decision_timestamp), plan.submit_orders.size(), FormatDayKey(newestCompleted));
+            LG_DEBUG("Dry-run plan state revision {}, message id {}", plan.state_revision, plan.metadata.message_id);
 
             for (const PlannedNotionalOrder& order : plan.submit_orders) {
                 if (!std::isfinite(order.reference_close) ||
@@ -418,43 +391,24 @@ private:
                         "Invalid raw Hyperliquid dry-run quantity"
                     );
 
-                LG_INFO(
-                    "service=exchange-gateway event=hyperliquid_dry_run_raw_order "
-                    "economic_order_id={} order_id={} coin={} side={} "
-                    "decision_timestamp={} state_revision={} "
-                    "reference_close={} requested_notional_usd={} "
-                    "raw_quantity={} venue=hyperliquid "
-                    "venue_rules_applied=false submitted=false",
-                    order.economic_order_id,
-                    order.order_id,
-                    order.coin,
-                    order.side == OrderSide::Buy ? "buy" : "sell",
-                    order.decision_timestamp,
-                    order.state_revision,
-                    order.reference_close,
-                    order.notional_usd,
-                    rawQuantity
-                );
+                LG_INFO("Hyperliquid dry run: {} {} {} ({} at close {}) - venue rules not applied, not submitted",
+                        order.side == OrderSide::Buy ? "BUY" : "SELL",
+                        FormatQuantity(rawQuantity),
+                        order.coin,
+                        FormatUsd(order.notional_usd),
+                        FormatQuantity(order.reference_close));
+                LG_DEBUG("Dry-run order ids: economic {}, order {}; decision {}, state revision {}",
+                         order.economic_order_id, order.order_id, FormatDayKey(order.decision_timestamp), order.state_revision);
             }
 
             return DurableMessageDisposition::Ack;
         }
         catch (const std::invalid_argument& error) {
-            LG_WARN(
-                "service=exchange-gateway "
-                "event=hyperliquid_dry_run_plan_invalid "
-                "disposition=terminate error={}",
-                error.what()
-            );
+            LG_WARN("Hyperliquid dry run: rejected invalid plan: {}", error.what());
             return DurableMessageDisposition::Terminate;
         }
         catch (const std::exception& error) {
-            LG_ERROR(
-                "service=exchange-gateway "
-                "event=hyperliquid_dry_run_plan_failed "
-                "disposition=retry error={}",
-                error.what()
-            );
+            LG_ERROR("Hyperliquid dry run: plan handling failed; will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -547,15 +501,10 @@ public:
 
     void run()
     {
-        LG_INFO(
-            "service=exchange-gateway event=service_ready mode={} runtime_stream={} control_stream={} backend_stream={} business_date={} time_model=local_time_handler poll_timeout_ms={} real_submission=false",
-            gatewayModeName(options_.mode),
-            options_.runtime_stream,
-            options_.control_stream,
-            options_.backend_stream,
-            currentBusinessUtcDate(time_handler_),
-            options_.poll_timeout_ms
-        );
+        LG_INFO("Exchange gateway ready (mode {}, today {}, real submission disabled)",
+                gatewayModeName(options_.mode), FormatDayKey(currentBusinessUtcDate(time_handler_)));
+        LG_DEBUG("Runtime stream {}, control stream {}, backend stream {}, poll timeout {} ms",
+                 options_.runtime_stream, options_.control_stream, options_.backend_stream, options_.poll_timeout_ms);
         std::cout.flush();
 
         while (running.load()) {
@@ -588,9 +537,9 @@ public:
             }
         }
 
-        LG_INFO("service=exchange-gateway event=shutdown_requested");
+        LG_INFO("Shutdown requested");
         bus_.flush();
-        LG_INFO("service=exchange-gateway event=shutdown_complete");
+        LG_INFO("Shutdown complete");
     }
 };
 
@@ -611,7 +560,7 @@ int main(int argc, char** argv)
         return 0;
     }
     catch (const std::exception& error) {
-        LG_ALERT("service=exchange-gateway event=fatal error={}", error.what());
+        LG_ALERT("Exchange gateway stopped by a fatal error: {}", error.what());
         return 1;
     }
 }

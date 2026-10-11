@@ -579,7 +579,7 @@ private:
 
         const std::optional<StrategyCheckpointStore::Row> row = checkpoint_store_->latest();
         if (!row.has_value()) {
-            LG_INFO("service=strategy event=strategy_recovery_completed checkpoint=empty");
+            LG_INFO("No saved strategy checkpoint; starting from a fresh state");
             return;
         }
 
@@ -589,10 +589,7 @@ private:
         engine_->restore(intent);
         durable_checkpoint_timestamp_ = row->timestamp;
 
-        LG_INFO(
-            "service=strategy event=strategy_recovery_completed checkpoint=latest-only latest_timestamp={}",
-            row->timestamp
-        );
+        LG_INFO("Restored strategy checkpoint for {}", FormatDayKey(row->timestamp));
     }
 
     std::set<Coin> activeSignalCoins() const
@@ -642,15 +639,13 @@ private:
             }
         }
 
-        LG_INFO(
-            "service=strategy event=market_window_loaded timestamp={} warmup_days={} ranked_symbols={} active_history_symbols={} history_symbols={} history_rows={}",
-            date,
-            options_.market_warmup_days,
-            window.ranked_symbols,
-            activeBefore.size(),
-            window.history_symbols,
-            window.history_rows
-        );
+        LG_INFO("Loaded market window for {}: {} ranked symbols, {} symbols with history ({} rows, {} warm-up days)",
+                FormatDayKey(date),
+                window.ranked_symbols,
+                window.history_symbols,
+                window.history_rows,
+                options_.market_warmup_days);
+        LG_DEBUG("Symbols with active history before loading: {}", activeBefore.size());
 
         return engine_->onBarClose(window.raw_data, window.market_data, date);
     }
@@ -661,30 +656,20 @@ private:
             const MarketDataUpdated update = MessageJson::decodeMarketDataUpdated(message.payload);
 
             if (update.source != options_.market_data_source || update.timeframe != "1d") {
-                LG_WARN(
-                    "service=strategy event=market_update_terminated reason=unsupported_source_or_timeframe source={} timeframe={}",
-                    update.source,
-                    update.timeframe
-                );
+                LG_WARN("Rejected market update: unsupported source {} or timeframe {}", update.source, update.timeframe);
                 return DurableMessageDisposition::Terminate;
             }
             if (update.active_top_n != options_.market_top_n) {
-                LG_ALERT(
-                    "service=strategy event=market_update_terminated reason=top_n_config_mismatch event_top_n={} strategy_top_n={}",
-                    update.active_top_n,
-                    options_.market_top_n
-                );
+                LG_ALERT("Rejected market update: it ranks the top {} symbols but the strategy expects the top {}",
+                         update.active_top_n, options_.market_top_n);
                 return DurableMessageDisposition::Terminate;
             }
 
             const Timestamp target = update.completed_through;
             const Timestamp newestCompleted = newestCompletedBusinessUtcDate(time_handler_);
             if (target > newestCompleted) {
-                LG_ALERT(
-                    "service=strategy event=market_update_terminated reason=future_completed_date timestamp={} newest_completed_utc={} disposition=terminate",
-                    target,
-                    newestCompleted
-                );
+                LG_ALERT("Rejected market update for {}: that day is not complete yet (newest completed day {})",
+                         FormatDayKey(target), FormatDayKey(newestCompleted));
                 return DurableMessageDisposition::Terminate;
             }
 
@@ -696,11 +681,8 @@ private:
             const std::optional<Timestamp> canonicalFrontierOpt =
                 market_reader_.latestRankingDateAtOrBefore(newestCompleted);
             if (!canonicalFrontierOpt.has_value()) {
-                LG_WARN(
-                    "service=strategy event=market_update_failed reason=no_canonical_frontier timestamp={} newest_completed_utc={} disposition=retry",
-                    target,
-                    newestCompleted
-                );
+                LG_WARN("Market update for {} has no market data available yet (newest completed day {}); will retry",
+                        FormatDayKey(target), FormatDayKey(newestCompleted));
                 return DurableMessageDisposition::Retry;
             }
             const Timestamp canonicalFrontier = *canonicalFrontierOpt;
@@ -718,22 +700,14 @@ private:
 
             if (freshBootstrap && bootstrap_completed_date_.has_value()) {
                 if (target < *bootstrap_completed_date_) {
-                    LG_INFO(
-                        "service=strategy event=pre_bootstrap_market_update_skipped timestamp={} bootstrap_completed_date={} canonical_frontier={} disposition=ack",
-                        target,
-                        *bootstrap_completed_date_,
-                        canonicalFrontier
-                    );
+                    LG_INFO("Skipped market update for {}: it is before the bootstrap day {} (market data through {})",
+                            FormatDayKey(target), FormatDayKey(*bootstrap_completed_date_), FormatDayKey(canonicalFrontier));
                     return DurableMessageDisposition::Ack;
                 }
 
                 if (target > *bootstrap_completed_date_) {
-                    LG_WARN(
-                        "service=strategy event=market_update_failed reason=awaiting_immutable_bootstrap_date timestamp={} bootstrap_completed_date={} canonical_frontier={} disposition=retry",
-                        target,
-                        *bootstrap_completed_date_,
-                        canonicalFrontier
-                    );
+                    LG_WARN("Market update for {} waits for market data through the bootstrap day {} (available through {}); will retry",
+                            FormatDayKey(target), FormatDayKey(*bootstrap_completed_date_), FormatDayKey(canonicalFrontier));
                     return DurableMessageDisposition::Retry;
                 }
             }
@@ -743,12 +717,8 @@ private:
             // retried instead of ACKed. The frontier is capped by newestCompleted above,
             // so this cannot introduce lookahead.
             if (target > canonicalFrontier) {
-                LG_WARN(
-                    "service=strategy event=market_update_failed reason=canonical_frontier_not_visible timestamp={} canonical_frontier={} newest_completed_utc={} disposition=retry",
-                    target,
-                    canonicalFrontier,
-                    newestCompleted
-                );
+                LG_WARN("Market update for {} waits for market data (available through {}, newest completed day {}); will retry",
+                        FormatDayKey(target), FormatDayKey(canonicalFrontier), FormatDayKey(newestCompleted));
                 return DurableMessageDisposition::Retry;
             }
 
@@ -757,21 +727,13 @@ private:
             // runs calculateForDate() for every missing date since the durable checkpoint
             // and publishes only the frontier day's intent.
             if (target < canonicalFrontier && !anchoredBootstrapTarget) {
-                LG_INFO(
-                    "service=strategy event=stale_market_update_skipped timestamp={} canonical_frontier={} newest_completed_utc={} disposition=ack",
-                    target,
-                    canonicalFrontier,
-                    newestCompleted
-                );
+                LG_INFO("Skipped stale market update for {} (market data through {}, newest completed day {})",
+                        FormatDayKey(target), FormatDayKey(canonicalFrontier), FormatDayKey(newestCompleted));
                 return DurableMessageDisposition::Ack;
             }
 
-            LG_INFO(
-                "service=strategy event=market_data_updated_received timestamp={} message_id={} database={}",
-                target,
-                update.metadata.message_id,
-                options_.market_data_db.string()
-            );
+            LG_INFO("Received market update for {}", FormatDayKey(target));
+            LG_DEBUG("Market update message id {}, database {}", update.metadata.message_id, options_.market_data_db.string());
 
             if (checkpoint_store_) {
                 const std::optional<StrategyCheckpointStore::Row> persisted = checkpoint_store_->rowFor(target);
@@ -779,10 +741,7 @@ private:
                     const MarketDataUpdated persistedUpdate =
                         MessageJson::decodeMarketDataUpdated(persisted->update_payload);
                     if (!sameLogicalUpdate(persistedUpdate, update)) {
-                        LG_ALERT(
-                            "service=strategy event=market_update_checkpoint_conflict timestamp={} disposition=terminate",
-                            target
-                        );
+                        LG_ALERT("Market update for {} differs from the saved checkpoint; rejecting it", FormatDayKey(target));
                         return DurableMessageDisposition::Terminate;
                     }
 
@@ -790,10 +749,7 @@ private:
                         recoverFromCheckpoint();
                     durable_checkpoint_timestamp_ = std::max(durable_checkpoint_timestamp_, target);
 
-                    LG_INFO(
-                        "service=strategy event=market_update_checkpoint_duplicate timestamp={} disposition=ack",
-                        target
-                    );
+                    LG_INFO("Market update for {} was already processed; ignoring the duplicate", FormatDayKey(target));
                     return DurableMessageDisposition::Ack;
                 }
 
@@ -801,21 +757,15 @@ private:
                 // PostgreSQL was committed.  Restore only the latest durable intent before
                 // reprocessing the market update.
                 if (engine_->lastTimestamp() >= target) {
-                    LG_WARN(
-                        "service=strategy event=volatile_state_ahead_of_checkpoint timestamp={} engine_timestamp={} action=recover",
-                        target,
-                        engine_->lastTimestamp()
-                    );
+                    LG_WARN("In-memory strategy state ({}) is ahead of the saved checkpoint for {}; recovering from the checkpoint",
+                            FormatDayKey(engine_->lastTimestamp()), FormatDayKey(target));
                     recoverFromCheckpoint();
                 }
             }
 
             if (engine_->lastTimestamp() > target) {
-                LG_WARN(
-                    "service=strategy event=stale_market_update timestamp={} engine_timestamp={} disposition=ack",
-                    target,
-                    engine_->lastTimestamp()
-                );
+                LG_WARN("Ignoring stale market update for {}: the strategy is already at {}",
+                        FormatDayKey(target), FormatDayKey(engine_->lastTimestamp()));
                 return DurableMessageDisposition::Ack;
             }
 
@@ -824,11 +774,8 @@ private:
                 // First LIVE bootstrap: use bounded history to calculate indicators for the
                 // newest completed day, but intentionally start persistent signal state empty.
                 datesToProcess.push_back(target);
-                LG_WARN(
-                    "service=strategy event=live_signal_bootstrap timestamp={} policy=fresh_signal_state warmup_days={}",
-                    target,
-                    options_.market_warmup_days
-                );
+                LG_WARN("Starting live signals for {} from a fresh signal state ({} warm-up days)",
+                        FormatDayKey(target), options_.market_warmup_days);
             } else {
                 Timestamp date = nextDay(engine_->lastTimestamp());
                 std::size_t guard = 0;
@@ -843,10 +790,7 @@ private:
             }
 
             if (datesToProcess.empty()) {
-                LG_INFO(
-                    "service=strategy event=market_update_duplicate_in_memory timestamp={} disposition=ack",
-                    target
-                );
+                LG_INFO("Market update for {} is already in memory; ignoring the duplicate", FormatDayKey(target));
                 return DurableMessageDisposition::Ack;
             }
 
@@ -859,10 +803,7 @@ private:
 
                 output = calculateForDate(date);
                 if (date != target) {
-                    LG_INFO(
-                        "service=strategy event=signal_state_catchup_processed timestamp={} published=false",
-                        date
-                    );
+                    LG_INFO("Caught up signal state for {} (not published)", FormatDayKey(date));
                 }
             }
 
@@ -886,39 +827,25 @@ private:
             for (const StrategySignalIntent& strategy : output.strategies)
                 activeSignals += strategy.signals.size();
 
-            LG_INFO(
-                "service=strategy event=strategy_intents_published timestamp={} strategies={} active_signals={} catchup_days={} message_id={} correlation_id={}",
-                output.timestamp,
-                output.strategies.size(),
-                activeSignals,
-                datesToProcess.size(),
-                output.metadata.message_id,
-                output.metadata.correlation_id
-            );
+            LG_INFO("Published strategy intents for {}: {} strategies, {} active signals, {} days processed",
+                    FormatDayKey(output.timestamp), output.strategies.size(), activeSignals, datesToProcess.size());
+            LG_DEBUG("Strategy intents message id {}, correlation id {}",
+                     output.metadata.message_id, output.metadata.correlation_id);
 
             if (checkpoint_store_) {
                 checkpoint_store_->save(target, message.payload, encodedIntent);
                 durable_checkpoint_timestamp_ = target;
-                LG_INFO(
-                    "service=strategy event=strategy_checkpoint_committed timestamp={} checkpoint=latest-state-plus-bounded-market-db",
-                    target
-                );
+                LG_INFO("Saved strategy checkpoint for {}", FormatDayKey(target));
             }
 
             return DurableMessageDisposition::Ack;
         }
         catch (const std::logic_error& error) {
-            LG_ALERT(
-                "service=strategy event=market_update_rejected disposition=terminate error={}",
-                error.what()
-            );
+            LG_ALERT("Rejected market update: {}", error.what());
             return DurableMessageDisposition::Terminate;
         }
         catch (const std::exception& error) {
-            LG_ERROR(
-                "service=strategy event=market_update_failed disposition=retry error={}",
-                error.what()
-            );
+            LG_ERROR("Market update handling failed; will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -970,24 +897,20 @@ public:
         constexpr auto loopPeriod = std::chrono::milliseconds(1000);
         constexpr std::int64_t fetchTimeoutMs = 100;
 
-        LG_INFO(
-            "service=strategy event=service_ready time_source=time_handler stream={} config={} market_database={} market_warmup_days={} market_top_n={} market_data_source={} input_subject={} restart_checkpoint=postgres-latest-intent loop_period_ms={} time_speed={} time_identity={}",
-            options_.stream,
-            options_.strategy_config,
-            options_.market_data_db.string(),
-            options_.market_warmup_days,
-            options_.market_top_n,
-            options_.market_data_source,
-            MessageSubjects::MARKET_DATA_UPDATED,
-            loopPeriod.count(),
-            time_config_.speed,
-            time_config_.identity()
-        );
+        LG_INFO("Strategy service ready (config {}, top {} symbols from {}, {} warm-up days, time speed {})",
+                options_.strategy_config,
+                options_.market_top_n,
+                options_.market_data_source,
+                options_.market_warmup_days,
+                time_config_.speed);
+        LG_DEBUG("Stream {}, input subject {}, market database {}, loop period {} ms, time identity {}",
+                 options_.stream,
+                 MessageSubjects::MARKET_DATA_UPDATED,
+                 options_.market_data_db.string(),
+                 loopPeriod.count(),
+                 time_config_.identity());
         if (bootstrap_completed_date_.has_value()) {
-            LG_INFO(
-                "service=strategy event=immutable_bootstrap_business_anchor completed_date={} source=simulated_reference",
-                *bootstrap_completed_date_
-            );
+            LG_INFO("Replay bootstrap day is {} (from the simulated reference)", FormatDayKey(*bootstrap_completed_date_));
         }
         std::cout.flush();
 
@@ -1002,10 +925,7 @@ public:
             // business UTC day. No shared/distributed clock participates in this decision.
             if (durable_checkpoint_timestamp_ >= newestCompleted) {
                 if (!waitingForNextUtcDayLogged || loggedCompletedDate != newestCompleted) {
-                    LG_INFO(
-                        "service=strategy event=daily_checkpoint_complete timestamp={} action=wait_until_next_business_utc_day",
-                        durable_checkpoint_timestamp_
-                    );
+                    LG_INFO("Day {} is processed; waiting for the next UTC day", FormatDayKey(durable_checkpoint_timestamp_));
                     waitingForNextUtcDayLogged = true;
                     loggedCompletedDate = newestCompleted;
                 }
@@ -1028,9 +948,9 @@ public:
             bus_.poll(market_update_subscription_, 32, fetchTimeoutMs);
         }
 
-        LG_INFO("service=strategy event=shutdown_requested");
+        LG_INFO("Shutdown requested");
         bus_.flush();
-        LG_INFO("service=strategy event=shutdown_complete");
+        LG_INFO("Shutdown complete");
     }
 };
 
@@ -1051,7 +971,7 @@ int main(int argc, char** argv)
         return 0;
     }
     catch (const std::exception& error) {
-        LG_ALERT("service=strategy event=fatal error={}", error.what());
+        LG_ALERT("Strategy service stopped by a fatal error: {}", error.what());
         return 1;
     }
 }

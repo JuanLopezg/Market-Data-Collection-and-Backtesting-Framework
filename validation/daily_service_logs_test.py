@@ -133,8 +133,13 @@ class DailyServiceLogsTest(unittest.TestCase):
             self.assertEqual(path.parent.stat().st_mode & 0o777, 0o750)
             self.assertNotIn("PRIVATE_FIXTURE", text)
             self.assertEqual(text.count("[REDACTED:"), 5)
-            self.assertIn("severity=err", text)
-            self.assertIn("source_time=2000-01-01", text)
+            # The routing header selects the file but is not stored: each line is
+            # exactly what the service emitted.
+            self.assertEqual(text.splitlines()[0], "before-restart")
+            self.assertEqual(text.splitlines()[-1], "after-redaction")
+            self.assertNotIn("service=", text)
+            self.assertNotIn("source_time=", text)
+            self.assertNotIn("severity=", text)
             self.send(port, "../../unsafe", "must-not-persist")
         finally:
             self.stop(process)

@@ -447,13 +447,7 @@ try
     if (studyId == "." || studyId == ".." || studyId.find_first_of("/\\") != std::string::npos)
         throw std::invalid_argument("Study ID must be a single directory name");
 
-    Logger::Instance().Setup(
-        true,   // debug enabled
-        false,  // quiet
-        "",     // file appender
-        "",     // rolling appender
-        true    // include header
-    );
+    Logger::Instance().Setup(true, false); // DEBUG on, stdout only
 
     const std::filesystem::path databasesDir = databasesRoot;
     const std::filesystem::path studyDir = std::filesystem::path(outputRoot) / studyId;
@@ -547,14 +541,8 @@ try
                     dataset.id + "_balance_equity.html"
                 );
 
-            LG_INFO("============================================================");
-            LG_INFO(
-                "Running strategy={} dataset={} benchmark={} benchmarkSmaBars={}",
-                strategyDefinition.name,
-                dataset.fileName,
-                dataset.benchmarkSymbol,
-                dataset.benchmarkMovingAverageLength
-            );
+            LG_INFO("Running {} on {} (benchmark {}, SMA {} bars)",
+                    strategyDefinition.name, dataset.fileName, dataset.benchmarkSymbol, dataset.benchmarkMovingAverageLength);
 
             try {
                 // Load a fresh copy for every strategy/dataset pair to prevent
@@ -623,16 +611,13 @@ try
                     initialBalance * benchmarkPoints.back().close /
                     benchmarkFirstClose;
 
-                LG_INFO(
-                    "Buy-and-hold curve: symbol={} points={} first={} "
-                    "firstClose={} last={} lastEquity={}",
-                    dataset.benchmarkSymbol,
-                    benchmarkPoints.size(),
-                    benchmarkPoints.front().timestamp,
-                    benchmarkFirstClose,
-                    benchmarkPoints.back().timestamp,
-                    benchmarkLastEquity
-                );
+                LG_INFO("Buy-and-hold {}: {} points from {} (close {}) to {} (equity {})",
+                        dataset.benchmarkSymbol,
+                        benchmarkPoints.size(),
+                        benchmarkPoints.front().timestamp,
+                        benchmarkFirstClose,
+                        benchmarkPoints.back().timestamp,
+                        benchmarkLastEquity);
 
                 PlotlyXYExpressions oneDayCmcEquityCurve;
 
@@ -643,13 +628,8 @@ try
                             "Equity"
                         );
 
-                    LG_INFO(
-                        "Saved resolved 1d_cmc Equity arrays for {} "
-                        "(dates={} bytes, equity={} bytes)",
-                        strategyDefinition.name,
-                        oneDayCmcEquityCurve.x.size(),
-                        oneDayCmcEquityCurve.y.size()
-                    );
+                    LG_INFO("Saved 1d_cmc equity arrays for {} ({} dates, {} equity values)",
+                            strategyDefinition.name, oneDayCmcEquityCurve.x.size(), oneDayCmcEquityCurve.y.size());
                 }
 
                 chartHtml = injectBuyAndHoldTraceIntoPlotlyData(
@@ -694,31 +674,17 @@ try
                 ++successfulRuns;
                 run["status"] = "success";
 
-                LG_INFO(
-                    "Completed strategy={} dataset={}",
-                    strategyDefinition.name,
-                    dataset.id
-                );
+                LG_INFO("Completed {} on {}", strategyDefinition.name, dataset.id);
             } catch (const std::exception& exception) {
                 ++failedRuns;
                 run["status"] = "failed";
                 run["failure_reason"] = exception.what();
-                LG_ERROR(
-                    "Backtest failed for strategy={} dataset={}: {}",
-                    strategyDefinition.name,
-                    dataset.id,
-                    exception.what()
-                );
+                LG_ERROR("Backtest failed for {} on {}: {}", strategyDefinition.name, dataset.id, exception.what());
             } catch (...) {
                 ++failedRuns;
                 run["status"] = "failed";
                 run["failure_reason"] = "Unknown non-standard exception";
-                LG_ERROR(
-                    "Backtest failed for strategy={} dataset={}: "
-                    "unknown non-standard exception",
-                    strategyDefinition.name,
-                    dataset.id
-                );
+                LG_ERROR("Backtest failed for {} on {}: unknown non-standard exception", strategyDefinition.name, dataset.id);
             }
             manifest["runs"].push_back(run);
         }
@@ -783,7 +749,6 @@ try
         );
     }
 
-    LG_INFO("============================================================");
     LG_INFO(
         "Multi-dataset study completed: {} successful runs, {} failed/skipped runs",
         successfulRuns,
@@ -800,6 +765,6 @@ try
 }
 catch (const std::exception& error)
 {
-    std::cerr << "Scenario study failed: " << error.what() << '\n';
+    LG_ALERT("Scenario study failed: {}", error.what());
     return 1;
 }

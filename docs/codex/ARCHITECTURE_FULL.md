@@ -283,6 +283,15 @@ private output/state directories. Its background service fixture and canonical
 backtest remain distinct workloads. Builds are outside the timed window; failures
 keep partial evidence and shutdown is confined to the generated project.
 
+### Logging
+
+`lib/src/logging/logger.*` is the single C++ logger for lib/, services and research
+tools: one UTC line `YYYY-MM-DD HH:MM:SS.mmm [LEVEL] Class::function : message`, with the
+label derived from `__PRETTY_FUNCTION__`. Disabled DEBUG lines are not formatted.
+`service_logging.h` reads `ALGOTRADING_LOG_DEBUG/QUIET/DIR`. Python entrypoints use the
+same shape (`live_trading/readable_log.py`, `research/replay.py`). Result contracts
+(summary JSON, CSV/HTML reports) are files, not log text. See live_trading/README.md, Logs.
+
 ### Business versus technical time
 
 `lib/src/utils/time_handler.*` controls economically visible time.

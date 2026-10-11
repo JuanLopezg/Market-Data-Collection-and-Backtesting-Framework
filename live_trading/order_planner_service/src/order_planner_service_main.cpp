@@ -414,45 +414,32 @@ private:
 
             const Timestamp newestCompleted = newestCompletedBusinessUtcDate(time_handler_);
             if (request.decision_timestamp > newestCompleted) {
-                LG_WARN(
-                    "service=order-planner event=future_notional_request_rejected decision_timestamp={} newest_completed_utc={}",
-                    request.decision_timestamp,
-                    newestCompleted
-                );
+                LG_WARN("Rejected planning request for {}: that day is not complete yet (newest completed day {})",
+                        FormatDayKey(request.decision_timestamp), FormatDayKey(newestCompleted));
                 return DurableMessageDisposition::Terminate;
             }
             if (replay_bootstrap_completed_date_.has_value() &&
                 request.decision_timestamp < *replay_bootstrap_completed_date_) {
-                LG_INFO(
-                    "service=order-planner event=pre_bootstrap_notional_request_skipped decision_timestamp={} bootstrap_completed_date={} disposition=ack",
-                    request.decision_timestamp,
-                    *replay_bootstrap_completed_date_
-                );
+                LG_INFO("Skipped planning request for {}: it is before the bootstrap day {}",
+                        FormatDayKey(request.decision_timestamp), FormatDayKey(*replay_bootstrap_completed_date_));
                 return DurableMessageDisposition::Ack;
             }
             if (!replay_bootstrap_completed_date_.has_value() &&
                 request.decision_timestamp < newestCompleted) {
-                LG_INFO(
-                    "service=order-planner event=stale_notional_request_skipped decision_timestamp={} newest_completed_utc={} disposition=ack",
-                    request.decision_timestamp,
-                    newestCompleted
-                );
+                LG_INFO("Skipped stale planning request for {} (newest completed day {})",
+                        FormatDayKey(request.decision_timestamp), FormatDayKey(newestCompleted));
                 return DurableMessageDisposition::Ack;
             }
 
             if (const auto persisted = checkpoint_store_.rowFor(request.decision_timestamp)) {
                 if (persisted->request_payload != message.payload) {
-                    LG_ALERT(
-                        "service=order-planner event=notional_checkpoint_conflict decision_timestamp={} disposition=terminate",
-                        request.decision_timestamp
-                    );
+                    LG_ALERT("Planning request for {} differs from the saved checkpoint; rejecting it",
+                             FormatDayKey(request.decision_timestamp));
                     return DurableMessageDisposition::Terminate;
                 }
                 latest_checkpoint_ = std::max(latest_checkpoint_, request.decision_timestamp);
-                LG_INFO(
-                    "service=order-planner event=notional_plan_checkpoint_duplicate decision_timestamp={} disposition=ack",
-                    request.decision_timestamp
-                );
+                LG_INFO("Planning request for {} was already processed; ignoring the duplicate",
+                        FormatDayKey(request.decision_timestamp));
                 return DurableMessageDisposition::Ack;
             }
 
@@ -502,46 +489,38 @@ private:
             checkpoint_store_.save(request.decision_timestamp, message.payload, encoded);
             latest_checkpoint_ = request.decision_timestamp;
 
-            LG_INFO(
-                "service=order-planner event=notional_order_plan_published decision_timestamp={} state_revision={} cancels={} submits={} target_assets={} next_order_id={} message_id={}",
-                output.decision_timestamp,
-                output.state_revision,
-                output.cancel_order_ids.size(),
-                output.submit_orders.size(),
-                output.global_target_notional_usd.size(),
-                output.next_order_id,
-                output.metadata.message_id
-            );
+            LG_INFO("Published order plan for {}: {} new orders, {} cancels, {} target assets",
+                    FormatDayKey(output.decision_timestamp),
+                    output.submit_orders.size(),
+                    output.cancel_order_ids.size(),
+                    output.global_target_notional_usd.size());
+            LG_DEBUG("Order plan for {}: state revision {}, next order id {}, message id {}",
+                     FormatDayKey(output.decision_timestamp),
+                     output.state_revision,
+                     output.next_order_id,
+                     output.metadata.message_id);
             for (const PlannedNotionalOrder& order : output.submit_orders) {
-                LG_INFO(
-                    "service=order-planner event=planned_notional economic_order_id={} order_id={} strategy_id={} coin={} side={} target_notional_usd={} current_notional_usd={} pending_notional_usd={} delta_notional_usd={} reference_close={}",
-                    order.economic_order_id,
-                    order.order_id,
-                    order.strategy_id,
-                    order.coin,
-                    order.side == OrderSide::Buy ? "buy" : "sell",
-                    order.target_notional_usd,
-                    order.current_notional_usd,
-                    order.pending_notional_usd,
-                    order.delta_notional_usd,
-                    order.reference_close
-                );
+                LG_INFO("Planned {} {} for {}: change {} (target {}, current {}, pending {}, close {})",
+                        order.side == OrderSide::Buy ? "BUY" : "SELL",
+                        order.coin,
+                        order.strategy_id,
+                        FormatUsd(order.delta_notional_usd),
+                        FormatUsd(order.target_notional_usd),
+                        FormatUsd(order.current_notional_usd),
+                        FormatUsd(order.pending_notional_usd),
+                        FormatQuantity(order.reference_close));
+                LG_DEBUG("Planned {} order ids: economic {}, order {}; exact delta {} USD",
+                         order.coin, order.economic_order_id, order.order_id, order.delta_notional_usd);
             }
 
             return DurableMessageDisposition::Ack;
         }
         catch (const std::invalid_argument& error) {
-            LG_WARN(
-                "service=order-planner event=notional_request_invalid disposition=terminate error={}",
-                error.what()
-            );
+            LG_WARN("Rejected invalid planning request: {}", error.what());
             return DurableMessageDisposition::Terminate;
         }
         catch (const std::exception& error) {
-            LG_ERROR(
-                "service=order-planner event=notional_request_failed disposition=retry error={}",
-                error.what()
-            );
+            LG_ERROR("Planning request failed, will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -569,13 +548,9 @@ public:
 
     void run()
     {
-        LG_INFO(
-            "service=order-planner event=service_ready mode=live time_source=time_handler stream={} latest_checkpoint={} poll_interval_ms=1000 output=usd_notional time_speed={} time_identity={}",
-            options_.stream,
-            latest_checkpoint_,
-            time_config_.speed,
-            time_config_.identity()
-        );
+        LG_INFO("Order planner ready (stream {}, last completed day {}, time speed {})",
+                options_.stream, FormatDayKey(latest_checkpoint_), time_config_.speed);
+        LG_DEBUG("Order planner time identity {}", time_config_.identity());
         std::cout.flush();
 
         bool waitingForNextUtcDayLogged = false;
@@ -586,9 +561,7 @@ public:
 
             if (latest_checkpoint_ >= target) {
                 if (!waitingForNextUtcDayLogged || loggedCompletedDate != target) {
-                    LG_INFO(
-                        "service=order-planner event=daily_checkpoint_complete timestamp={} action=wait_until_next_utc_day",
-                        latest_checkpoint_);
+                    LG_INFO("Day {} is planned; waiting for the next UTC day", FormatDayKey(latest_checkpoint_));
                     waitingForNextUtcDayLogged = true;
                     loggedCompletedDate = target;
                 }
@@ -609,9 +582,9 @@ public:
                 interruptibleSleepFor(interval - elapsed);
         }
 
-        LG_INFO("service=order-planner event=shutdown_requested");
+        LG_INFO("Shutdown requested");
         bus_.flush();
-        LG_INFO("service=order-planner event=shutdown_complete");
+        LG_INFO("Shutdown complete");
     }
 };
 
@@ -632,7 +605,7 @@ int main(int argc, char** argv)
         return 0;
     }
     catch (const std::exception& error) {
-        LG_ALERT("service=order-planner event=fatal error={}", error.what());
+        LG_ALERT("Order planner stopped by a fatal error: {}", error.what());
         return 1;
     }
 }

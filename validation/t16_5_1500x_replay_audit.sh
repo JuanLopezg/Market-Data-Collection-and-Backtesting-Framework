@@ -10,7 +10,7 @@ echo "============================================================"
 python3 tools/historical_replay/run_exploratory_1500x.py --root . --dry-run
 
 grep -q -- '--init-only' live_trading/historical_market_data_service/src/historical_market_data_service_main.cpp
-grep -q 'event=market_data_db_initialized' live_trading/historical_market_data_service/src/historical_market_data_service_main.cpp
+grep -q 'Initialized market database' live_trading/historical_market_data_service/src/historical_market_data_service_main.cpp
 grep -q '^  market-data-db-init:' deploy/historical_replay/docker-compose.yml
 grep -q '"market-data-db-init"' tools/historical_replay/run_exploratory_1500x.py
 grep -q '"restarting"' tools/historical_replay/run_exploratory_1500x.py

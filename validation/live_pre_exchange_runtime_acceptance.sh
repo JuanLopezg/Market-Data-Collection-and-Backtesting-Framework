@@ -39,7 +39,8 @@ fail=0
 # Hard-failure markers must not be present in this run's service logs. This does
 # not replace detailed log review; it catches obvious invalid acceptance runs.
 for svc in market-data strategy portfolio-risk execution-state order-planner; do
-  if grep -Eq 'event=fatal|checkpoint_conflict' "$TMP/$svc.log"; then
+  # Fatal errors and checkpoint conflicts are logged at ALERT severity.
+  if grep -Fq '[ALERT]' "$TMP/$svc.log"; then
     echo "FAIL: fatal/checkpoint conflict found in $svc logs" >&2
     fail=1
   fi

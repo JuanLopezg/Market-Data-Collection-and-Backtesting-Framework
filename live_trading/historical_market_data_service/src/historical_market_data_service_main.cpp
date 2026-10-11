@@ -212,14 +212,9 @@ void publishExecutionOpen(
     );
     bus.flush();
 
-    LG_INFO(
-        "service=historical-market-data event=execution_open_published "
-        "execution_timestamp={} decision_timestamp={} prices={} message_id={}",
-        event.timestamp,
-        event.decision_timestamp,
-        event.prices.size(),
-        event.metadata.message_id
-    );
+    LG_INFO("Published {} opening prices for {} (decision {})",
+            event.prices.size(), FormatDayKey(event.timestamp), FormatDayKey(event.decision_timestamp));
+    LG_DEBUG("Opening prices message id {}", event.metadata.message_id);
 }
 
 void publishDay(
@@ -246,14 +241,9 @@ void publishDay(
     bus.publish(MessageSubjects::MARKET_DATA_UPDATED, payload, event.metadata.message_id);
     bus.flush();
 
-    LG_INFO(
-        "service=historical-market-data event=market_data_updated_published completed_through={} source={} rows={} symbols={} message_id={}",
-        day.date,
-        event.source,
-        event.downloaded_rows,
-        event.tracked_symbols,
-        event.metadata.message_id
-    );
+    LG_INFO("Published market update for {}: {} rows, {} tracked symbols (source {})",
+            FormatDayKey(day.date), event.downloaded_rows, event.tracked_symbols, event.source);
+    LG_DEBUG("Market update message id {}", event.metadata.message_id);
 }
 
 void commitAndPublish(
@@ -269,13 +259,8 @@ void commitAndPublish(
     // message ID are deterministic for the economic date.
     store.commitDailyUpdate(tracked, day.bars, day.volume_ranking, tracked.date);
 
-    LG_INFO(
-        "service=historical-market-data event=historical_day_committed date={} rows={} symbols={} database={}",
-        day.date,
-        day.rowCount(),
-        day.bars.data.size(),
-        store.path().string()
-    );
+    LG_INFO("Saved historical day {}: {} rows for {} symbols", FormatDayKey(day.date), day.rowCount(), day.bars.data.size());
+    LG_DEBUG("Market database {}", store.path().string());
 
     publishDay(bus, options, day);
 }
@@ -299,10 +284,7 @@ int main(int argc, char** argv)
         // read-only consumers start. It publishes no market-data event.
         if (options.init_only) {
             MarketDataStore store(options.market_data_db);
-            LG_INFO(
-                "service=historical-market-data event=market_data_db_initialized database={} mode=init-only",
-                store.path().string()
-            );
+            LG_INFO("Initialized market database {} (init only)", store.path().string());
             return 0;
         }
 
@@ -336,18 +318,14 @@ int main(int argc, char** argv)
             commitAndPublish(store, bus, options, *checkpointDay);
         }
 
-        LG_INFO(
-            "service=historical-market-data event=service_ready source={} dataset={} database={} stream={} market_top_n={} poll_timeout_ms={} checkpoint={} time_speed={} time_identity={}",
-            options.source_id,
-            options.historical_data.string(),
-            options.market_data_db.string(),
-            options.stream,
-            options.market_top_n,
-            options.poll_timeout_ms,
-            checkpoint,
-            timeConfig.speed,
-            timeConfig.identity()
-        );
+        LG_INFO("Historical market data service ready (source {}, top {} symbols, time speed {}, checkpoint {})",
+                options.source_id, options.market_top_n, timeConfig.speed, checkpoint);
+        LG_DEBUG("Dataset {}, database {}, stream {}, poll timeout {} ms, time identity {}",
+                 options.historical_data.string(),
+                 options.market_data_db.string(),
+                 options.stream,
+                 options.poll_timeout_ms,
+                 timeConfig.identity());
 
         std::optional<HistoricalMarketDay> pending;
 
@@ -366,7 +344,7 @@ int main(int argc, char** argv)
             if (!pending.has_value()) {
                 const auto next = source.nextDate();
                 if (!next.has_value()) {
-                    LG_INFO("service=historical-market-data event=historical_source_exhausted");
+                    LG_INFO("Historical data source has no more days");
                     return 0;
                 }
 
@@ -389,12 +367,8 @@ int main(int argc, char** argv)
                 pending.reset();
             }
             catch (const std::exception& error) {
-                LG_ERROR(
-                    "service=historical-market-data event=day_release_failed date={} retry_ms={} time_domain=technical error={}",
-                    pending->date,
-                    options.poll_timeout_ms,
-                    error.what()
-                );
+                LG_ERROR("Releasing day {} failed; retrying in {} ms: {}",
+                         FormatDayKey(pending->date), options.poll_timeout_ms, error.what());
                 if (options.run_once)
                     return 1;
                 std::this_thread::sleep_for(
@@ -402,11 +376,11 @@ int main(int argc, char** argv)
             }
         }
 
-        LG_INFO("service=historical-market-data event=shutdown_complete");
+        LG_INFO("Shutdown complete");
         return 0;
     }
     catch (const std::exception& error) {
-        LG_ALERT("service=historical-market-data event=fatal error={}", error.what());
+        LG_ALERT("Historical market data service stopped by a fatal error: {}", error.what());
         return 1;
     }
 }

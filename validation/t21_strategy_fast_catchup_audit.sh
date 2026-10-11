@@ -3,10 +3,10 @@ set -euo pipefail
 ROOT="${1:-.}"
 F="$ROOT/live_trading/strategy_service/src/strategy_service_main.cpp"
 
-grep -q 'time_source=time_handler' "$F"
-grep -q 'market_data_source={}' "$F"
+grep -q 'newestCompletedBusinessUtcDate(time_handler_)' "$F"
+grep -q 'options_.market_data_source,' "$F"
 grep -q 'latestRankingDateAtOrBefore' "$F"
-grep -q 'signal_state_catchup_processed' "$F"
+grep -q 'Caught up signal state for' "$F"
 grep -q 'consumer.max_ack_pending = 64;' "$F"
 grep -q 'bus_.poll(market_update_subscription_, 32, fetchTimeoutMs);' "$F"
 if grep -q 'bus_.poll(market_update_subscription_, 1, fetchTimeoutMs);' "$F"; then

@@ -142,7 +142,10 @@ def wait_runtime(root, seconds=10, allowed_stopped=frozenset()):
 
 def feeder_logs(root,tail=5000): return compose(root,["logs","--no-color",f"--tail={tail}","historical-market-data"],capture=True,check=False)
 def latest_committed(root):
-    vals=[int(x) for x in re.findall(r"event=historical_day_committed\s+date=(\d{8})(?:\s|$)",feeder_logs(root,tail=5000))]
+    logs=feeder_logs(root,tail=5000)
+    # Old key=value logs and current readable logs ("Saved historical day 2020-04-10: ...").
+    vals=[int(x) for x in re.findall(r"event=historical_day_committed\s+date=(\d{8})(?:\s|$)",logs)]
+    vals+=[int(y+m+d) for y,m,d in re.findall(r"Saved historical day (\d{4})-(\d{2})-(\d{2}):",logs)]
     return max(vals) if vals else 0
 
 def committed(root,date):
@@ -452,7 +455,7 @@ def main():
         time.sleep(3)
     fp_obj,fp_hash=fingerprint(root,args.target_completed,exec_day)
     logs=compose(root,["logs","--no-color","--tail=5000"],capture=True,check=False)
-    critical_tokens=['event=reconciliation_blocked','event=notional_plan_invalid','event=notional_plan_state_mismatch','event=submit_conflict','event=fill_failed']
+    critical_tokens=['event=reconciliation_blocked','event=notional_plan_invalid','event=notional_plan_state_mismatch','event=submit_conflict','event=fill_failed','[ALERT]','with the exchange snapshot of','Rejected invalid order plan','built for state revision','submitted again with different content','Fill handling failed']
     critical=[x for x in logs.splitlines() if any(t in x for t in critical_tokens)]
     pipeline=cp.get('strategy_latest',0)>=args.target_completed and cp.get('risk_latest',0)>=args.target_completed and cp.get('planner_latest',0)>=args.target_completed and cp.get('execution_last_decision',0)>=args.target_completed and cp.get('execution_last_execution',0)>=exec_day and cp.get('sim_exchange_latest',0)>=exec_day and cp.get('fills',0)>0
     gap_ok=True
@@ -461,7 +464,7 @@ def main():
         # historical-market-data is intentionally very chatty. Observe the
         # service that owns the event instead of relying on a shared log tail.
         strategy_logs=compose(root,["logs","--no-color","--tail=5000","strategy"],capture=True,check=False)
-        gap_ok=bool(state.get('stopped') and state.get('resumed') and 'signal_state_catchup_processed' in strategy_logs)
+        gap_ok=bool(state.get('stopped') and state.get('resumed') and ('signal_state_catchup_processed' in strategy_logs or 'Caught up signal state for' in strategy_logs))
     baseline=None
     if args.full_baseline: baseline=full_baseline(root,cp)
     capacity_ok=True; capacity_span_days=0

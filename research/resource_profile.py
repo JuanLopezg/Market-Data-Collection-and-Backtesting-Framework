@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import http.cookiejar
 import importlib.util
 import json
+import logging
 import os
 from pathlib import Path
 import shutil
@@ -234,7 +235,7 @@ def profile(args, replay):
     campaign = campaign_module(replay.ROOT)
     campaign.require_local_docker()
     runner_source = replay.build_full_runner()
-    print("RESOURCE-PROFILE: preparing isolated services and dashboard; setup is outside the timed window", flush=True)
+    logging.info("Preparing isolated services and dashboard; setup is outside the timed window")
     sandbox = campaign.prepare(args.skip_build)
     runner = sandbox.path / "canonical-runner"
     shutil.copyfile(runner_source, runner)
@@ -271,9 +272,9 @@ def profile(args, replay):
             required = {*campaign.SERVICES, "historical-market-data", "nats", "postgres", *names}
             if not required.issubset(set(sandbox.compose("ps", "--status", "running", "--services").split())):
                 raise RuntimeError("Every requested service must be running before measurement")
-            print("RESOURCE-PROFILE: dashboard " + url + " (viewer / viewer-demo)", flush=True)
+            logging.info("Dashboard %s (viewer / viewer-demo)", url)
             if args.open: open_windows(sandbox, url)
-            print("RESOURCE-PROFILE: measuring " + str(args.seconds) + " seconds; stack stops automatically", flush=True)
+            logging.info("Measuring %s seconds; the stack stops automatically", args.seconds)
             measurement = Measurement(sandbox, args.seconds, url, campaign)
             measurement.start()
             metadata["dashboard_url"] = url
@@ -341,5 +342,5 @@ def profile(args, replay):
         (sandbox.path / "profile_summary.json").write_text(json.dumps(public, indent=2) + "\n")
         write_report(sandbox.path, metadata)
         if args.open: open_windows(sandbox, windows_path(sandbox.path / "resources.html"))
-        print("RESOURCE-PROFILE: " + metadata["result"] + "; report " + str(sandbox.path / "resources.html"), flush=True)
+        logging.info("Resource profile %s; report %s", metadata["result"], sandbox.path / "resources.html")
     return {"result": metadata["result"], "report": str(sandbox.path / "resources.html")}

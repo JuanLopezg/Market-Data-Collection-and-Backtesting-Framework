@@ -353,8 +353,10 @@ checks remain enabled. Reference: Kraken's [authentication specification](https:
 The legacy demo endpoint redirected during the current probe. Its
 [official testing guide](https://support.kraken.com/articles/360024809011-api-testing-environment-derivatives)
 also announces decommissioning. `--environment demo` remains an explicit public probe
-that fails without following redirects or falling back to live. Establish an available
-supported test environment before private lifecycle tests. VPS rollout and real orders
+that fails without following redirects or falling back to live. On 2026-10-10 the
+official sources still conflicted and no replacement test environment was named, so the
+user decided to test private lifecycle with small real-money orders instead of a demo.
+Each real order test needs explicit user authorization; VPS rollout and real orders
 remain separate, unaccepted work. Validation/evidence are in CURRENT_STATE.md.
 
 ## Market-data files
@@ -409,22 +411,36 @@ Keep these existing orders explicit; changing them changes crash recovery.
 
 ## Logs
 
-Operational logs are written in English. Service logs should prefer structured fields:
+`lib/src/logging/logger.*` writes one readable English line per event, always in UTC:
 
 ```text
-service=<name> event=<event_name> symbol=<...> order_id=<...> reason=<...>
+2026-10-07 20:33:50.456 [INFO ] ExecutionStateServiceRuntime::run : Execution state service ready (stream ALGOTRADING, 1 strategies, initial cash 100,000.00 USD, reconciliation required)
+2026-10-07 20:34:02.913 [WARN ] ExecutionStateServiceRuntime::onFill : Fill 7 for order 12 was already applied; ignoring the duplicate
 ```
+
+The `Class::function` label comes from the compiler (`__PRETTY_FUNCTION__`), so call
+sites only write `LG_INFO("...", args)`. Messages are short sentences; use
+`FormatDayKey` for YYYYMMDD business days, `FormatUsd` for money and `FormatQuantity`
+for prices/quantities. Long message IDs, hashes, stream/subject names and unrounded
+values go in a separate `LG_DEBUG` line. `ALGOTRADING_LOG_DEBUG=1` shows DEBUG,
+`ALGOTRADING_LOG_QUIET=1` disables stdout and `ALGOTRADING_LOG_DIR` adds an append-only
+`<service>.log` copy. The live_trading Python tools use `readable_log.py` for the same
+shape; `research/replay.py` has its own setup and also honors `ALGOTRADING_LOG_DEBUG=1`.
+The VPS host receiver (`deploy/live/logging`) stores each service line unchanged, one
+directory per service and one file per UTC day.
 
 Use:
 
-- `DEBUG` for detailed state useful during investigation.
+- `DEBUG` for exact identifiers and detailed state useful during investigation.
 - `INFO` for normal lifecycle/business events.
 - `WARN` for recoverable abnormal situations.
 - `ERROR` for failed operations that require retry/recovery.
-- `ALERT`/fatal-level logging for process-ending failures.
+- `ALERT` for fatal errors, checkpoint conflicts and rejected impossible inputs.
 
-Help text printed to the terminal may use `stdout`; operational failures should use the service
-logger where that service has logging initialized.
+Help text and interactive comparison screens printed to the terminal may use `stdout`;
+operational messages use the logger. Source audits in `validation/` look for some message
+phrases (for example "Skipped stale decision for"); update them when rewording those logs.
+Never log secrets.
 
 ## How to read one service
 

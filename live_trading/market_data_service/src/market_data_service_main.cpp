@@ -134,10 +134,7 @@ bool runTarget(
         return true;
     }
     catch (const std::exception& error) {
-        LG_ERROR(
-            "service=market-data event=daily_cycle_failed target_date={} error={}",
-            formatYMD(targetDate), error.what()
-        );
+        LG_ERROR("Daily cycle for {} failed: {}", formatYMD(targetDate), error.what());
         return false;
     }
 }
@@ -166,13 +163,14 @@ int main(int argc, char** argv)
         MarketDataIngestor ingestor(config);
         MarketDataUpdatePublisher publisher(config);
 
-        LG_INFO(
-            "service=market-data event=service_ready source=binance storage=sqlite database={} ranking_size={} active_top_n={} retention_days={} minimum_history_days={} stream={} update_subject={} time_speed={} time_identity={}",
-            config.database_path.string(), config.ranking_size, config.active_top_n,
-            config.retain_after_top_n_days, config.minimum_history_days,
-            config.stream, MessageSubjects::MARKET_DATA_UPDATED,
-            timeConfig.speed, timeConfig.identity()
-        );
+        LG_INFO("Market data service ready (Binance, ranking {} symbols, top {}, keeps symbols {} days after leaving the top, needs {} days of history, time speed {})",
+                config.ranking_size,
+                config.active_top_n,
+                config.retain_after_top_n_days,
+                config.minimum_history_days,
+                timeConfig.speed);
+        LG_DEBUG("Database {}, stream {}, update subject {}, time identity {}",
+                 config.database_path.string(), config.stream, MessageSubjects::MARKET_DATA_UPDATED, timeConfig.identity());
         std::cout.flush();
 
         // Catch-up is BUSINESS-time based. In normal LIVE the default TimeHandler is identity
@@ -191,10 +189,7 @@ int main(int argc, char** argv)
                 // Retry/backoff is TECHNICAL time. Do not scale it with replay speed.
                 const auto retryAt = std::chrono::system_clock::now() +
                     std::chrono::seconds(config.retry_after_failure_seconds);
-                LG_WARN(
-                    "service=market-data event=retry_scheduled target_date={} retry_seconds={} time_domain=technical",
-                    formatYMD(targetDate), config.retry_after_failure_seconds
-                );
+                LG_WARN("Will retry the cycle for {} in {} seconds", formatYMD(targetDate), config.retry_after_failure_seconds);
                 interruptibleTechnicalWaitUntil(retryAt);
                 if (!running.load())
                     break;
@@ -213,10 +208,7 @@ int main(int argc, char** argv)
 
             const auto scheduled = nextScheduledBusinessRun(
                 timeHandler, config.midnight_delay_seconds);
-            LG_INFO(
-                "service=market-data event=next_daily_run_scheduled business_midnight_delay_seconds={} time_domain=business",
-                config.midnight_delay_seconds
-            );
+            LG_INFO("Next daily run is scheduled {} seconds after the next UTC midnight", config.midnight_delay_seconds);
             interruptibleBusinessWaitUntil(timeHandler, scheduled);
             if (!running.load())
                 break;
@@ -225,12 +217,12 @@ int main(int argc, char** argv)
             success = runTarget(ingestor, publisher, targetDate);
         }
 
-        LG_INFO("service=market-data event=shutdown_complete");
+        LG_INFO("Shutdown complete");
         curl_global_cleanup();
         return 0;
     }
     catch (const std::exception& error) {
-        LG_ALERT("service=market-data event=fatal error={}", error.what());
+        LG_ALERT("Market data service stopped by a fatal error: {}", error.what());
         curl_global_cleanup();
         return 1;
     }

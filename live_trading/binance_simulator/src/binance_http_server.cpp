@@ -1,6 +1,7 @@
 // Implements the local Binance-compatible HTTP API over HistoricalMarketData.
 
 #include "binance_http_server.h"
+#include "logger.h"
 
 #include <boost/asio.hpp>
 #include <boost/beast/core.hpp>
@@ -248,7 +249,7 @@ void handleSession(tcp::socket socket, HistoricalMarketData& marketData)
         socket.shutdown(tcp::socket::shutdown_send, ec);
     }
     catch (const std::exception& e) {
-        std::cerr << "HTTP session failed: " << e.what() << '\n';
+        LG_WARN("HTTP session failed: {}", e.what());
     }
 }
 
@@ -270,8 +271,7 @@ void BinanceHttpServer::run()
     tcp::endpoint endpoint{address_, port_};
     tcp::acceptor acceptor{ioContext, endpoint};
 
-    std::cout << "Binance simulator listening on "
-              << address_.to_string() << ':' << port_ << '\n';
+    LG_INFO("Binance simulator listening on {}:{}", address_.to_string(), port_);
 
     for (;;)
     {

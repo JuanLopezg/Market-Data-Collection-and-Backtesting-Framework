@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Read-only Kraken account polling and durable events for the existing notifier."""
 import argparse
+import logging
 from datetime import datetime, timezone
 import fcntl
 import hashlib
@@ -16,6 +17,7 @@ from kraken_account import AccountJournal, PRIVATE_SCOPE, ROOT, reader_from_cred
 from kraken_portfolio_summary import DailyPortfolio, dollars, position_values
 from kraken_shadow import KrakenPublicReader
 from shadow_observer import number
+from readable_log import setup_logging
 
 
 def utc(timestamp):
@@ -240,7 +242,8 @@ def main():
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
-        raise SystemExit('KRAKEN-MONITOR: another process owns this output directory') from None
+        logging.error('Another process owns this output directory')
+        raise SystemExit(1) from None
     stopped = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stopped.set())
     signal.signal(signal.SIGINT, lambda *_: stopped.set())
@@ -260,7 +263,10 @@ def main():
                 start_notifier(directory)
                 notifier_started = True
             if args.once:
-                print('KRAKEN-MONITOR:', 'read-only observation completed' if result else 'observation failed safely')
+                if result:
+                    logging.info('Kraken read-only observation completed')
+                else:
+                    logging.warning('Kraken observation failed safely')
                 return 0 if result else 1
             stopped.wait(args.interval)
     except Exception:
@@ -268,7 +274,8 @@ def main():
         atomic_text(directory / 'status.json', json.dumps({'version': 'step43-v1',
             'lastSuccessAt': '', 'lastSweepAt': utc(time.time()),
             'lastError': 'Monitor initialization or persistence failed'}))
-        raise SystemExit('KRAKEN-MONITOR: initialization or persistence failed; check local policy and credential setup') from None
+        logging.error('Monitor initialization or persistence failed; check local policy and credential setup')
+        raise SystemExit(1) from None
     finally:
         if monitor:
             monitor.close()
@@ -277,4 +284,5 @@ def main():
 
 
 if __name__ == '__main__':
+    setup_logging()
     raise SystemExit(main())

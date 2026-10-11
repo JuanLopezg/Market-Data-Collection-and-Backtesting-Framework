@@ -30,6 +30,7 @@
 #include "trade_recorder.h"
 #include "trading_state_snapshot.h"
 #include "message_subjects.h"
+#include "service_logging.h"
 
 
 // Internal helpers and service implementation.
@@ -326,7 +327,7 @@ private:
             return DurableMessageDisposition::Ack;
         }
         catch (const std::exception& error) {
-            std::cerr << "Decision delivery failed: " << error.what() << '\n';
+            LG_ERROR("Decision handling failed; will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -401,7 +402,7 @@ private:
             return DurableMessageDisposition::Ack;
         }
         catch (const std::exception& error) {
-            std::cerr << "Execution-price delivery failed: " << error.what() << '\n';
+            LG_ERROR("Execution price handling failed; will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -417,7 +418,7 @@ private:
             return DurableMessageDisposition::Ack;
         }
         catch (const std::exception& error) {
-            std::cerr << "Order-update delivery failed: " << error.what() << '\n';
+            LG_ERROR("Order update handling failed; will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -438,7 +439,7 @@ private:
             return DurableMessageDisposition::Ack;
         }
         catch (const std::exception& error) {
-            std::cerr << "Fill delivery failed: " << error.what() << '\n';
+            LG_ERROR("Fill handling failed; will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -502,7 +503,7 @@ public:
 
     void run()
     {
-        std::cout << "Execution service ready. stream=" << options_.stream << std::endl;
+        LG_INFO("Execution service ready (stream {})", options_.stream);
 
         while (running.load()) {
             // Decisions are polled before execution prices. If network ordering still
@@ -524,6 +525,8 @@ public:
 
 int main(int argc, char** argv)
 {
+    ServiceLogging::setup("execution");
+
     try {
         std::signal(SIGINT, stopHandler);
         std::signal(SIGTERM, stopHandler);
@@ -533,7 +536,7 @@ int main(int argc, char** argv)
         return 0;
     }
     catch (const std::exception& error) {
-        std::cerr << "Execution service fatal error: " << error.what() << '\n';
+        LG_ALERT("Execution service stopped by a fatal error: {}", error.what());
         return 1;
     }
 }

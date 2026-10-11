@@ -1,6 +1,57 @@
 # Current state
 
-Last synchronized: 2026-10-10. Current source and test output take precedence.
+Last synchronized: 2026-10-11. Current source and test output take precedence.
+
+## Readable code logs — implemented and WSL-accepted locally (2026-10-11)
+
+User decision: all lib/, live_trading/ and research/ logs use
+`YYYY-MM-DD HH:MM:SS.mmm [LEVEL] Class::function : message` in UTC; long IDs, hashes,
+streams and unrounded values only in DEBUG; dashboards out of scope. Implemented:
+new `lib/src/logging/logger.*` (no log4cpp layout/rolling appender; label from
+`__PRETTY_FUNCTION__`; FormatDayKey/FormatUsd/FormatQuantity), `service_logging.h`,
+`executionOrderStatusName`, rewritten messages in all services, lib utils and research
+mains, canonical_replay status/result lines (summary JSON contract unchanged),
+`live_trading/readable_log.py` and `research/replay.py` logging. binance_simulator now
+links libalgolib for the logger. Help text, progress bars, interactive RealTest review
+screens and report tables remain plain stdout.
+
+WSL acceptance (`bash storage/logging_validation/run.sh`; evidence in
+storage/logging_validation/, ignored by Git), final pass 2026-10-11:
+- whole-project meson build: PASS (103 steps). The first attempt failed because fmt 8
+  rejects `<fmt/format.h>` after `<fmt/core.h>`; logger.h now includes `<fmt/format.h>`.
+- Step59: PASS, 107 days, 50 fills, RealTest 25/25, zero differences, fingerprint
+  94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2 (unchanged).
+- fast (20 days) and system (20 days) samples: PASS. Every line of runtime.log and of the
+  logger lines in research.log matches the agreed format; the only other research.log lines
+  are the documented plain report tables. 20-day system fingerprints differ from the
+  107-day accepted one by design (different window).
+- kraken_account_test (26) and daily_service_logs_test (8): PASS.
+- validation/*audit*.sh: 37 audits, 32 PASS and the same 5 failures as the pre-change
+  baseline (execution_state/strategy time-handler, historical_market_data_feeder meson,
+  t19_realtest_gate, t21_strategy_canonical_frontier): stale historical paths, not logging.
+
+Integration fixes found by the run (no trading-economics change): research/replay.py
+now compiles `lib/src/logging/logger.cpp` and links `-lfmt` for the canonical runner;
+the full-run fingerprint moved from INFO to DEBUG (C++ runtime.log and replay.py; it
+remains in summary JSON and Step59 output; `ALGOTRADING_LOG_DEBUG=1` shows it in both);
+replay.py honors that variable. Operational note: replay.py puts
+deploy/historical_replay/.runtime_bundle/lib first in LD_LIBRARY_PATH, so a stale
+ignored bundle shadowed the new libalgolib.so (`undefined symbol Logger::Write`);
+regenerated with `bash deploy/historical_replay/build_runtime_bundle.sh`. Rebuild the
+bundle after lib changes before using `replay.py fast`. Non-interactive samples need
+`REALTEST_NONINTERACTIVE=1`.
+
+Host receiver (user decision 2026-10-11, local source only): deploy/live/logging no longer
+stores its own header. rsyslog emits an internal routing header (receipt date + service)
+that clean_daily_logs.py consumes to pick the file; each stored line is exactly the
+service's line (source_time/severity are not stored; the line carries event time and
+level). Non-conforming sources (e.g. NATS/PostgreSQL stdout) now lose their receipt
+timestamp in the file. daily_service_logs_test updated and passing. The VPS still runs the
+previous receiver; installing this one needs a new explicit authorization. Existing VPS
+files keep the old header. Not changed: INFO lines of the ready messages still show the
+short stream name (e.g. `stream ALGOTRADING`) although the rule says streams belong in DEBUG.
+Kraken: no demo; private integration will use explicitly authorized small real-money tests
+(ROADMAP 5-6).
 
 ## Pending reporting requirements recorded (2026-10-10)
 

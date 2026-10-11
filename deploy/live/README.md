@@ -284,8 +284,11 @@ output. Trading commands, profiles, mounts and execution behavior remain unchang
 The base Compose file retains its existing local logging.
 
 The host archive is `/var/log/algotrading/services/algotrading.<container-name>/YYYY-MM-DD.log`.
-Dates and record timestamps use UTC receipt time, independent of trading business
-time. Original event time, service identity and severity remain in each record.
+Daily file dates use UTC receipt time, independent of trading business time. Each
+line is stored exactly as the service emitted it (`YYYY-MM-DD HH:MM:SS.mmm [LEVEL]
+Class::function : message`, UTC): rsyslog adds only an internal routing header
+(receipt date and service) that selects the file and is removed by the writer, so
+the service name is the directory and the event time and level are in the line itself.
 Container recreation reuses the named service directory; receiver restart appends
 to existing files. Rsyslog filters/formats records and passes them through `omprog`
 to `clean_daily_logs.py --receive`, which owns append/trim ordering under a file lock.

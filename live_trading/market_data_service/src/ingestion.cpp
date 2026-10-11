@@ -61,10 +61,8 @@ TrackedMarketData MarketDataIngestor::updateTracker(
 
 MarketDataIngestionSummary MarketDataIngestor::run(std::chrono::year_month_day targetDate)
 {
-    LG_INFO(
-        "service=market-data event=daily_ingestion_started target_date={} database={}",
-        formatYMD(targetDate), config_.database_path.string()
-    );
+    LG_INFO("Starting daily download for {}", formatYMD(targetDate));
+    LG_DEBUG("Market database {}", config_.database_path.string());
 
     MarketDataStore store(config_.database_path);
     const TrackedMarketData previous = store.loadTracked();
@@ -93,20 +91,14 @@ MarketDataIngestionSummary MarketDataIngestor::run(std::chrono::year_month_day t
         std::remove_if(plan.begin(), plan.end(), [&](const MarketDataDownloadRequest& request) {
             if (universe.eligible_symbols.contains(request.symbol))
                 return false;
-            LG_WARN(
-                "service=market-data event=tracked_symbol_not_currently_eligible symbol={} action=skip_download",
-                request.symbol
-            );
+            LG_WARN("{} is tracked but not currently tradable; skipping its download", request.symbol);
             return true;
         }),
         plan.end()
     );
 
-    LG_INFO(
-        "service=market-data event=download_plan target_date={} ranked={} active_top_n={} tracked={} requests={}",
-        formatYMD(targetDate), ranked.size(), config_.active_top_n,
-        tracked.days_since_top_n.size(), plan.size()
-    );
+    LG_INFO("Download plan for {}: {} ranked symbols, top {}, {} tracked, {} requests",
+            formatYMD(targetDate), ranked.size(), config_.active_top_n, tracked.days_since_top_n.size(), plan.size());
 
     const BinanceFetchResult fetched = binance_.fetchDailyBars(plan, config_.max_parallel_requests);
     if (!fetched.failed_symbols.empty()) {
@@ -156,12 +148,14 @@ MarketDataIngestionSummary MarketDataIngestor::run(std::chrono::year_month_day t
     summary.downloaded_rows = rows;
     summary.paper_opening_prices = std::move(paperPrices);
 
-    LG_INFO(
-        "service=market-data event=daily_ingestion_committed target_date={} ranked={} top_n={} tracked={} maintained={} requested={} downloaded_rows={}",
-        formatYMD(targetDate), summary.ranked_symbols, summary.active_top_n,
-        summary.tracked_symbols, summary.maintained_symbols,
-        summary.requested_symbols, summary.downloaded_rows
-    );
+    LG_INFO("Saved daily data for {}: {} rows downloaded for {} symbols ({} ranked, top {}, {} tracked, {} maintained)",
+            formatYMD(targetDate),
+            summary.downloaded_rows,
+            summary.requested_symbols,
+            summary.ranked_symbols,
+            summary.active_top_n,
+            summary.tracked_symbols,
+            summary.maintained_symbols);
 
     return summary;
 }

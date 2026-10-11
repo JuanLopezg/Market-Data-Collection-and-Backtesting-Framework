@@ -5,6 +5,7 @@ No keys, private routes, order submissions, wallet transfers or simulated fills.
 Exported plans remain immutable. Collateral scenarios are never account balances.
 """
 import argparse
+import logging
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_DOWN
 import hashlib
@@ -15,6 +16,7 @@ import time
 import urllib.request
 
 from shadow_observer import NoRedirect, ShadowJournal, digest, number, validate_plan
+from readable_log import setup_logging
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -321,9 +323,10 @@ def main():
         finally:
             journal.close()
     write_report(directory, report)
-    print('KRAKEN-SHADOW: public observation complete; private readiness remains pending')
-    print('Report:', directory / 'report.html')
+    logging.info('Kraken public observation complete; private readiness remains pending')
+    logging.info('Report written to %s', directory / 'report.html')
 
 
 if __name__ == '__main__':
+    setup_logging()
     main()

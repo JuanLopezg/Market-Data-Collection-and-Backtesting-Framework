@@ -1,5 +1,8 @@
-// Configure consistent service logging from environment flags, with stdout fallback
-// when the requested file directory cannot be created.
+// Configure service logging from environment flags.
+//   ALGOTRADING_LOG_DEBUG=1  also write DEBUG lines (exact IDs, hashes, raw values)
+//   ALGOTRADING_LOG_QUIET=1  do not write to stdout
+//   ALGOTRADING_LOG_DIR=dir  also append every line to dir/<service>.log
+// Falls back to stdout only when the requested directory cannot be created.
 
 #pragma once
 
@@ -28,7 +31,6 @@ inline void setup(const std::string& serviceName)
     const bool quiet = envFlag("ALGOTRADING_LOG_QUIET");
 
     std::string filePath;
-    std::string rollingPath;
     std::string requestedLogDir;
     std::error_code directoryError;
 
@@ -37,37 +39,21 @@ inline void setup(const std::string& serviceName)
         const std::filesystem::path directory{logDir};
         std::filesystem::create_directories(directory, directoryError);
 
-        if (!directoryError) {
+        if (!directoryError)
             filePath = (directory / (serviceName + ".log")).string();
-            rollingPath = (directory / (serviceName + "_roll.log")).string();
-        }
     }
 
-    Logger::Instance().Setup(
-        debug,
-        quiet,
-        filePath,
-        rollingPath,
-        true
-    );
+    Logger::Instance().Setup(debug, quiet, filePath);
 
     if (directoryError) {
-        LG_WARN(
-            "service={} event=log_directory_unavailable requested_dir={} error={} fallback=docker_stdout",
-            serviceName,
-            requestedLogDir,
-            directoryError.message()
-        );
+        LG_WARN("Cannot create log directory {} ({}); writing to stdout only",
+                requestedLogDir, directoryError.message());
     }
 
-    LG_INFO(
-        "service={} event=logger_ready debug={} quiet={} file_logging={} log_dir={}",
-        serviceName,
-        debug,
-        quiet,
-        !filePath.empty(),
-        filePath.empty() ? "<docker-stdout-only>" : std::filesystem::path(filePath).parent_path().string()
-    );
+    LG_INFO("{} logger ready (debug {}, output {})",
+            serviceName,
+            debug ? "on" : "off",
+            filePath.empty() ? std::string{"stdout"} : "stdout + " + filePath);
 }
 
 } // namespace ServiceLogging

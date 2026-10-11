@@ -1387,13 +1387,7 @@ try
         return 1;
     }
 
-    Logger::Instance().Setup(
-        true,   // debug enabled
-        false,  // quiet
-        "",     // file appender
-        "",     // rolling appender
-        true    // include header
-    );
+    Logger::Instance().Setup(true, false); // DEBUG on, stdout only
 
     const double periodsPerYear = periodsPerYearFromTimeframe(databaseTimeframe);
     constexpr double initialBalance = 100000.0;
@@ -1434,12 +1428,7 @@ try
     if (ohlcvData.data.empty() || !ohlcvData.data.contains(benchmarkSymbol))
         throw std::invalid_argument("Selected window must contain market data and the annualization benchmark");
     LG_INFO("Database loaded successfully");
-    LG_INFO(
-        "Annualization settings: timeframe={} benchmark_symbol={} periods_per_year={}",
-        databaseTimeframe,
-        benchmarkSymbol,
-        periodsPerYear
-    );
+    LG_INFO("Annualization: {} bars, benchmark {}, {} periods per year", databaseTimeframe, benchmarkSymbol, periodsPerYear);
 
     std::vector<StrategyDefinition> strategyDefinitions = makeStrategyDefinitions();
     if (selectedStrategy != "all") {
@@ -1508,8 +1497,7 @@ try
 
     try {
         for (const StrategyDefinition& definition : strategyDefinitions) {
-            LG_INFO("============================================================");
-            LG_INFO("Running isolated backtest for strategy: {}", definition.name);
+            LG_INFO("Running isolated backtest for {}", definition.name);
 
             const StrategyExecutionResult result = runStrategyAndWriteReport(
                 definition,
@@ -1569,7 +1557,6 @@ try
         return 1;
     }
 
-    LG_INFO("============================================================");
     LG_INFO(
         "Completed {} baseline strategy backtests. Study outputs are in: {}",
         metricsCache.size(),
@@ -1577,20 +1564,9 @@ try
     );
 
     for (const auto& [strategyName, metrics] : metricsCache) {
-        LG_INFO(
-            "Summary {}: return={:.2f}% annualized={:.2f}% max_dd={:.2f}% "
-            "sharpe={:.3f} sortino={:.3f} calmar={:.3f} "
-            "profit_factor={:.3f} trades={}",
-            strategyName,
-            metrics.netReturnPercent,
-            metrics.annualizedReturnPercent,
-            metrics.maxDrawdownPercent,
-            metrics.sharpeRatio,
-            metrics.sortinoRatio,
-            metrics.calmarRatio,
-            metrics.profitFactor,
-            metrics.tradeCount
-        );
+        LG_INFO("Summary {}: return {:.2f}%, annualized {:.2f}%, max drawdown {:.2f}%, Sharpe {:.3f}, Sortino {:.3f}, Calmar {:.3f}, profit factor {:.3f}, {} trades",
+                strategyName, metrics.netReturnPercent, metrics.annualizedReturnPercent, metrics.maxDrawdownPercent,
+                metrics.sharpeRatio, metrics.sortinoRatio, metrics.calmarRatio, metrics.profitFactor, metrics.tradeCount);
     }
 
     return 0;

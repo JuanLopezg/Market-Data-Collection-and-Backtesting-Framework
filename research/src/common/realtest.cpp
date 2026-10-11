@@ -1328,12 +1328,8 @@ static bool compareTradeVectorsIgnoringId(
 
     writeMismatchCsvHeader(mismatchCsv);
 
-    LG_INFO(
-        "Starting trade comparison by entry date and symbol. RealTest trades: {}, backtester trades: {}, mismatchCsv={}",
-        realtestTradesSorted.size(),
-        backtesterTrades.size(),
-        mismatchesCsvPath.string()
-    );
+    LG_INFO("Comparing trades by entry date and symbol: {} RealTest trades, {} backtester trades (mismatches to {})",
+            realtestTradesSorted.size(), backtesterTrades.size(), mismatchesCsvPath.string());
 
     std::vector<bool> backtesterMatched(backtesterTrades.size(), false);
 
@@ -1445,19 +1441,10 @@ static bool compareTradeVectorsIgnoringId(
     std::cout << "Mismatch rows written             : " << writtenMismatchRows << "\n";
     std::cout << "Mismatch CSV                      : " << mismatchesCsvPath.string() << "\n";
 
-    LG_INFO(
-        "Trade comparison finished. checked={}, matched={}, different={}, missing_entry_symbol_matches={}, duplicate_hits={}, unmatched_backtester={}, realtest_total={}, backtester_total={}, mismatch_rows_written={}, mismatch_csv={}",
-        checkedCount,
-        matchedCount,
-        differentCount,
-        missingMatchCount,
-        duplicateMatchCount,
-        unmatchedBacktesterCount,
-        realtestTradesSorted.size(),
-        backtesterTrades.size(),
-        writtenMismatchRows,
-        mismatchesCsvPath.string()
-    );
+    LG_INFO("Trade comparison finished: {} checked, {} matched, {} different, {} without an entry/symbol match, {} duplicate hits, {} unmatched backtester trades",
+            checkedCount, matchedCount, differentCount, missingMatchCount, duplicateMatchCount, unmatchedBacktesterCount);
+    LG_INFO("Totals: {} RealTest trades, {} backtester trades; {} mismatch rows written to {}",
+            realtestTradesSorted.size(), backtesterTrades.size(), writtenMismatchRows, mismatchesCsvPath.string());
 
     return
         differentCount == 0 &&
@@ -1486,13 +1473,8 @@ bool compareBacktests(
         return false;
     }
 
-    LG_INFO(
-        "Starting comparison. RealTest trades: {}, backtester trades: {}, showAllTrades={}, mismatchCsv={}",
-        realtestTrades.size(),
-        backtesterTradesHistory.size(),
-        showAllTrades,
-        mismatchesCsvPath.string()
-    );
+    LG_INFO("Starting comparison: {} RealTest trades, {} backtester trades (show all trades: {}, mismatches to {})",
+            realtestTrades.size(), backtesterTradesHistory.size(), YesNo(showAllTrades), mismatchesCsvPath.string());
 
     // TERMINAL MODE ONLY:
     // Ignore showAllTrades and mismatchesCsvPath here so this function always prints
@@ -1751,16 +1733,9 @@ bool compareBacktestCampaigns(
     if (interactiveQuit)
         std::cout << "Interactive display                     : stopped by user; full CSV/summary still completed\n";
 
-    LG_INFO(
-        "Vol-target campaign validation finished. matched={}, different={}, missing={}, unmatched_backtester={}, pnl_sign_matches={}/{}, csv={}",
-        matchedCampaigns,
-        differentCampaigns,
-        missingCampaigns,
-        unmatchedBacktester,
-        pnlSignMatches,
-        comparedPnlSigns,
-        comparisonCsvPath.string()
-    );
+    LG_INFO("Vol-target campaign check finished: {} matched, {} different, {} missing, {} unmatched backtester, PnL sign matches {}/{} (details in {})",
+            matchedCampaigns, differentCampaigns, missingCampaigns, unmatchedBacktester,
+            pnlSignMatches, comparedPnlSigns, comparisonCsvPath.string());
 
     return differentCampaigns == 0 && missingCampaigns == 0 && unmatchedBacktester == 0;
 }

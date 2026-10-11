@@ -109,6 +109,21 @@ inline bool isTerminalExecutionOrderStatus(ExecutionOrderStatus status)
            status == ExecutionOrderStatus::Rejected;
 }
 
+// Lower-case status name for human-readable logs.
+inline const char* executionOrderStatusName(ExecutionOrderStatus status)
+{
+    switch (status) {
+        case ExecutionOrderStatus::Created:         return "created";
+        case ExecutionOrderStatus::Submitted:       return "submitted";
+        case ExecutionOrderStatus::Accepted:        return "accepted";
+        case ExecutionOrderStatus::PartiallyFilled: return "partially filled";
+        case ExecutionOrderStatus::Filled:          return "filled";
+        case ExecutionOrderStatus::Canceled:        return "canceled";
+        case ExecutionOrderStatus::Rejected:        return "rejected";
+    }
+    return "unknown";
+}
+
 // Mutable lifecycle state for one immutable ExecutionOrder command
 struct TrackedOrder {
     ExecutionOrder request;

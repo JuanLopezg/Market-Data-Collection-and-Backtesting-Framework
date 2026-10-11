@@ -129,7 +129,7 @@ remove them only when their consumers have migrated.
 | `execution/` | Orders, fills, execution plans, order tracking and target resolution. |
 | `filter/` | Market/universe filters. |
 | `indicator/` | Indicator definitions, calculation and cached indicator access. |
-| `logging/` | Shared logger and service logging setup. |
+| `logging/` | Shared readable UTC logger (`date time [LEVEL] Class::function : message`), value formatters and service logging setup. |
 | `market/` | Market-data reading, released history and price snapshots. |
 | `persistence/` | Durable trading-state storage. |
 | `portfolio/` | Portfolio targets, weights and aggregation. |

@@ -473,13 +473,8 @@ Plotly.newPlot(
 
     html.close();
 
-    LG_INFO(
-        "Volatility chart uses {}-bar rolling account-equity returns, annualized with {} periods/year. Strategy id={} name={}",
-        rollingVolatilityWindow,
-        periodsPerYear,
-        plottedStrategyId,
-        plottedStrategyName
-    );
+    LG_INFO("Volatility chart uses {}-bar rolling equity returns, annualized with {} periods per year (strategy {} {})",
+            rollingVolatilityWindow, periodsPerYear, plottedStrategyId, plottedStrategyName);
 
 #ifdef _WIN32
     std::string cmd = "start \"\" \"" + outputHtml + "\"";
@@ -514,37 +509,33 @@ void printBalanceEquityChart(
 void printTradesHistory(const std::map<TradeID, Trade>& tradesHistory)
 {
     if (tradesHistory.empty()) {
-        LG_INFO("Trades history is empty");
+        LG_INFO("Trade history is empty");
         return;
     }
 
-    LG_INFO("Trades history count={}", tradesHistory.size());
+    LG_INFO("Trade history has {} trades", tradesHistory.size());
 
     for (const auto& [tradeId, trade] : tradesHistory) {
-        LG_INFO(
-            "TRADE id={} coin={} strategy={} direction={} "
-            "start={} end={} entry={} exit={} current_price={} "
-            "size={} pnl={} commission={} "
-            "sl={} slReference={} barsHeld={} "
-            "isSimulated={} exited={}",
-            tradeId,
-            trade.coin_,
-            trade.strategy_name_,
-            static_cast<int>(trade.direction_),
-            trade.start_,
-            trade.end_,
-            trade.entry_,
-            trade.exit_,
-            trade.current_price_,
-            trade.size_,
-            trade.pnl_,
-            trade.commission_,
-            trade.sl_,
-            trade.slReference_,
-            trade.barsHeld,
-            trade.isSimulated_,
-            trade.exited_
-        );
+        LG_INFO("Trade {}: {} {} {} for {} from {} to {}, entry {} exit {}, PnL {}, commission {}{}",
+                tradeId,
+                trade.direction_ == Direction::Long ? "LONG" : trade.direction_ == Direction::Short ? "SHORT" : "FLAT",
+                FormatQuantity(trade.size_),
+                trade.coin_,
+                trade.strategy_name_,
+                FormatDayKey(trade.start_),
+                FormatDayKey(trade.end_),
+                FormatQuantity(trade.entry_),
+                FormatQuantity(trade.exit_),
+                FormatUsd(trade.pnl_),
+                FormatUsd(trade.commission_),
+                trade.exited_ ? "" : " (still open)");
+        LG_DEBUG("Trade {} details: current price {}, stop {}, stop reference {}, bars held {}, simulated {}",
+                 tradeId,
+                 trade.current_price_,
+                 trade.sl_,
+                 trade.slReference_,
+                 trade.barsHeld,
+                 YesNo(trade.isSimulated_));
     }
 }
 
@@ -745,9 +736,7 @@ void scaleLuncOHLCBy1000(
         closeCol < 0
     )
     {
-        LG_ERROR(
-            "Could not find required columns. Need coin/symbol/ticker plus open/high/low/close."
-        );
+        LG_ERROR("Could not find the required columns: coin/symbol/ticker plus open/high/low/close");
         return;
     }
 
@@ -809,12 +798,7 @@ void scaleLuncOHLCBy1000(
         scaleCsvWriteLine(output, fields);
     }
 
-    LG_INFO(
-        "Scaled LUNC OHLC by 1000. Changed rows: {} / {}. Output saved to: {}",
-        changedRows,
-        totalRows,
-        output_path.string()
-    );
+    LG_INFO("Scaled LUNC prices by 1000 in {} of {} rows; saved to {}", changedRows, totalRows, output_path.string());
 }
 
 void filterCSVByDateRange(

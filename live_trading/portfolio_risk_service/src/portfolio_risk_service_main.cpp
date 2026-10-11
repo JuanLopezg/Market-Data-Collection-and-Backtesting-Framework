@@ -629,9 +629,7 @@ private:
         durable_checkpoint_timestamp_ = checkpoint_store_->latestDecisionTimestamp();
         engine_->restoreLastTimestamp(durable_checkpoint_timestamp_);
 
-        LG_INFO(
-            "service=portfolio-risk event=portfolio_risk_recovery_completed checkpoint=latest-only last_decision_timestamp={} account_join_buffer=postgres-bounded",
-            durable_checkpoint_timestamp_);
+        LG_INFO("Restored risk checkpoint (last decision {})", FormatDayKey(durable_checkpoint_timestamp_));
     }
 
     DurableMessageDisposition onAccountSnapshot(const BusMessage& message)
@@ -656,26 +654,20 @@ private:
 
             const Timestamp newestCompleted = newestCompletedBusinessUtcDate(time_handler_);
             if (snapshot.timestamp > newestCompleted) {
-                LG_ALERT(
-                    "service=portfolio-risk event=account_snapshot_terminated reason=future_date timestamp={} newest_completed_utc={}",
-                    snapshot.timestamp,
-                    newestCompleted);
+                LG_ALERT("Rejected account snapshot for {}: that day is not complete yet (newest completed day {})",
+                         FormatDayKey(snapshot.timestamp), FormatDayKey(newestCompleted));
                 return DurableMessageDisposition::Terminate;
             }
             if (replay_bootstrap_completed_date_.has_value() &&
                 snapshot.timestamp < *replay_bootstrap_completed_date_) {
-                LG_INFO(
-                    "service=portfolio-risk event=pre_bootstrap_account_snapshot_skipped timestamp={} bootstrap_completed_date={} disposition=ack",
-                    snapshot.timestamp,
-                    *replay_bootstrap_completed_date_);
+                LG_INFO("Skipped account snapshot for {}: it is before the bootstrap day {}",
+                        FormatDayKey(snapshot.timestamp), FormatDayKey(*replay_bootstrap_completed_date_));
                 return DurableMessageDisposition::Ack;
             }
             if (!replay_bootstrap_completed_date_.has_value() &&
                 snapshot.timestamp < newestCompleted) {
-                LG_INFO(
-                    "service=portfolio-risk event=stale_account_snapshot_skipped timestamp={} newest_completed_utc={} disposition=ack",
-                    snapshot.timestamp,
-                    newestCompleted);
+                LG_INFO("Skipped stale account snapshot for {} (newest completed day {})",
+                        FormatDayKey(snapshot.timestamp), FormatDayKey(newestCompleted));
                 return DurableMessageDisposition::Ack;
             }
 
@@ -685,21 +677,16 @@ private:
             const std::string expectedMessageId =
                 "account-snapshot:market-data:" + std::to_string(snapshot.timestamp);
             if (snapshot.metadata.message_id != expectedMessageId) {
-                LG_DEBUG(
-                    "service=portfolio-risk event=non_daily_account_snapshot_skipped timestamp={} message_id={} expected_message_id={} disposition=ack",
-                    snapshot.timestamp,
-                    snapshot.metadata.message_id,
-                    expectedMessageId);
+                LG_DEBUG("Skipped non-daily account snapshot for {} (message id {}, expected {})",
+                         FormatDayKey(snapshot.timestamp), snapshot.metadata.message_id, expectedMessageId);
                 return DurableMessageDisposition::Ack;
             }
 
             const auto existing = checkpoint_store_->accountFor(snapshot.timestamp);
             if (existing.has_value() && existing->message_id == snapshot.metadata.message_id) {
                 if (existing->payload != message.payload) {
-                    LG_ALERT(
-                        "service=portfolio-risk event=account_snapshot_checkpoint_conflict timestamp={} message_id={} disposition=terminate",
-                        snapshot.timestamp,
-                        snapshot.metadata.message_id);
+                    LG_ALERT("Account snapshot for {} differs from the saved one; rejecting it", FormatDayKey(snapshot.timestamp));
+                    LG_DEBUG("Conflicting account snapshot message id {}", snapshot.metadata.message_id);
                     return DurableMessageDisposition::Terminate;
                 }
                 return DurableMessageDisposition::Ack;
@@ -713,17 +700,13 @@ private:
 
             checkpoint_store_->saveAccount(snapshotTimestamp, messageId, message.payload);
 
-            LG_INFO(
-                "service=portfolio-risk event=account_snapshot_ready timestamp={} cash={} physical_positions={} strategy_position_sets={} message_id={} storage=postgres-bounded",
-                snapshotTimestamp,
-                cash,
-                physicalPositions,
-                strategyPositionSets,
-                messageId);
+            LG_INFO("Account snapshot ready for {}: cash {}, {} positions, {} strategy position sets",
+                    FormatDayKey(snapshotTimestamp), FormatUsd(cash), physicalPositions, strategyPositionSets);
+            LG_DEBUG("Account snapshot message id {}", messageId);
             return DurableMessageDisposition::Ack;
         }
         catch (const std::exception& error) {
-            LG_ERROR("service=portfolio-risk event=account_snapshot_failed disposition=retry error={}", error.what());
+            LG_ERROR("Account snapshot handling failed; will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -733,34 +716,28 @@ private:
         try {
             StrategyIntentBatch signals = MessageJson::decodeStrategyIntentBatch(message.payload);
             if (signals.timestamp == 0) {
-                LG_WARN("service=portfolio-risk event=strategy_intents_terminated reason=zero_timestamp");
+                LG_WARN("Rejected strategy intents without a date");
                 return DurableMessageDisposition::Terminate;
             }
 
             const Timestamp target = signals.timestamp;
             const Timestamp newestCompleted = newestCompletedBusinessUtcDate(time_handler_);
             if (target > newestCompleted) {
-                LG_ALERT(
-                    "service=portfolio-risk event=strategy_intents_terminated reason=future_completed_date timestamp={} newest_completed_utc={}",
-                    target,
-                    newestCompleted);
+                LG_ALERT("Rejected strategy intents for {}: that day is not complete yet (newest completed day {})",
+                         FormatDayKey(target), FormatDayKey(newestCompleted));
                 return DurableMessageDisposition::Terminate;
             }
 
             const auto persistedDecision = checkpoint_store_->decisionFor(target);
             if (persistedDecision.has_value()) {
                 if (persistedDecision->signals_payload != message.payload) {
-                    LG_ALERT(
-                        "service=portfolio-risk event=decision_checkpoint_conflict timestamp={} disposition=terminate",
-                        target);
+                    LG_ALERT("Strategy intents for {} differ from the saved decision; rejecting them", FormatDayKey(target));
                     return DurableMessageDisposition::Terminate;
                 }
                 durable_checkpoint_timestamp_ = std::max(durable_checkpoint_timestamp_, target);
                 if (engine_->lastTimestamp() < target)
                     engine_->restoreLastTimestamp(target);
-                LG_INFO(
-                    "service=portfolio-risk event=strategy_intents_checkpoint_duplicate timestamp={} disposition=ack",
-                    target);
+                LG_INFO("Strategy intents for {} were already processed; ignoring the duplicate", FormatDayKey(target));
                 return DurableMessageDisposition::Ack;
             }
 
@@ -770,33 +747,25 @@ private:
             // even if processing latency means TimeHandler has advanced to a later day.
             if (replay_bootstrap_completed_date_.has_value() &&
                 target < *replay_bootstrap_completed_date_) {
-                LG_INFO(
-                    "service=portfolio-risk event=pre_bootstrap_strategy_intents_skipped timestamp={} bootstrap_completed_date={} disposition=ack",
-                    target,
-                    *replay_bootstrap_completed_date_);
+                LG_INFO("Skipped strategy intents for {}: they are before the bootstrap day {}",
+                        FormatDayKey(target), FormatDayKey(*replay_bootstrap_completed_date_));
                 return DurableMessageDisposition::Ack;
             }
             if (!replay_bootstrap_completed_date_.has_value() && target < newestCompleted) {
-                LG_WARN(
-                    "service=portfolio-risk event=stale_strategy_intents timestamp={} newest_completed_utc={} disposition=ack",
-                    target,
-                    newestCompleted);
+                LG_WARN("Ignoring stale strategy intents for {} (newest completed day {})",
+                        FormatDayKey(target), FormatDayKey(newestCompleted));
                 return DurableMessageDisposition::Ack;
             }
 
             if (engine_->lastTimestamp() >= target) {
-                LG_WARN(
-                    "service=portfolio-risk event=volatile_decision_state_ahead_of_checkpoint timestamp={} engine_timestamp={} action=recover",
-                    target,
-                    engine_->lastTimestamp());
+                LG_WARN("In-memory risk state ({}) is ahead of the saved checkpoint for {}; recovering from the checkpoint",
+                        FormatDayKey(engine_->lastTimestamp()), FormatDayKey(target));
                 recoverFromCheckpoint();
             }
 
             const auto accountRow = checkpoint_store_->accountFor(target);
             if (!accountRow.has_value()) {
-                LG_DEBUG(
-                    "service=portfolio-risk event=strategy_intents_waiting timestamp={} missing=account_snapshot disposition=retry",
-                    target);
+                LG_DEBUG("Strategy intents for {} wait for the account snapshot; will retry", FormatDayKey(target));
                 return DurableMessageDisposition::Retry;
             }
 
@@ -815,13 +784,9 @@ private:
                     symbols);
             }
 
-            LG_INFO(
-                "service=portfolio-risk event=market_window_loaded timestamp={} history_days={} symbols={} rows={} database={}",
-                target,
-                required_history_days_,
-                symbols.size(),
-                marketRowCount(marketData),
-                options_.market_data_db.string());
+            LG_INFO("Loaded {} days of market history for {}: {} symbols, {} rows",
+                    required_history_days_, FormatDayKey(target), symbols.size(), marketRowCount(marketData));
+            LG_DEBUG("Market database {}", options_.market_data_db.string());
 
             std::vector<PortfolioRiskEvaluation> evaluations;
             DecisionBatch output = engine_->onSignals(signals, marketData, account, &evaluations);
@@ -855,27 +820,20 @@ private:
             for (const StrategyDecisionIntent& strategy : output.strategies)
                 decisions += strategy.decisions.size();
 
-            LG_INFO(
-                "service=portfolio-risk event=decision_published timestamp={} strategies={} decisions={} reference_cash={} message_id={} correlation_id={}",
-                output.decision_timestamp,
-                output.strategies.size(),
-                decisions,
-                account.cash,
-                output.metadata.message_id,
-                output.metadata.correlation_id);
-            LG_INFO(
-                "service=portfolio-risk event=portfolio_risk_checkpoint_committed timestamp={} checkpoint=decision-plus-account-reference market_history_retained_in_ram=false",
-                target);
+            LG_INFO("Published risk decision for {}: {} strategies, {} decisions, reference cash {}",
+                    FormatDayKey(output.decision_timestamp), output.strategies.size(), decisions, FormatUsd(account.cash));
+            LG_DEBUG("Decision message id {}, correlation id {}", output.metadata.message_id, output.metadata.correlation_id);
+            LG_INFO("Saved risk checkpoint for {}", FormatDayKey(target));
 
             // marketData is a local value and is released here when this callback returns.
             return DurableMessageDisposition::Ack;
         }
         catch (const std::logic_error& error) {
-            LG_ALERT("service=portfolio-risk event=strategy_intents_rejected disposition=terminate error={}", error.what());
+            LG_ALERT("Rejected strategy intents: {}", error.what());
             return DurableMessageDisposition::Terminate;
         }
         catch (const std::exception& error) {
-            LG_ERROR("service=portfolio-risk event=strategy_intents_failed disposition=retry error={}", error.what());
+            LG_ERROR("Strategy intents handling failed; will retry: {}", error.what());
             return DurableMessageDisposition::Retry;
         }
     }
@@ -932,17 +890,15 @@ public:
         constexpr auto loopPeriod = std::chrono::milliseconds(1000);
         constexpr std::int64_t fetchTimeoutMs = 100;
 
-        LG_INFO(
-            "service=portfolio-risk event=service_ready mode=live time_source=time_handler stream={} config={} market_database={} market_history_days={} input_strategy_subject={} input_account_subject={} restart_checkpoint=postgres-latest-only loop_period_ms={} time_speed={} time_identity={}",
-            options_.stream,
-            options_.portfolio_config,
-            options_.market_data_db.string(),
-            required_history_days_,
-            MessageSubjects::STRATEGY_INTENTS,
-            MessageSubjects::ACCOUNT_SNAPSHOT,
-            loopPeriod.count(),
-            time_config_.speed,
-            time_config_.identity());
+        LG_INFO("Portfolio risk service ready (config {}, {} days of market history, time speed {})",
+                options_.portfolio_config, required_history_days_, time_config_.speed);
+        LG_DEBUG("Stream {}, inputs {} and {}, market database {}, loop period {} ms, time identity {}",
+                 options_.stream,
+                 MessageSubjects::STRATEGY_INTENTS,
+                 MessageSubjects::ACCOUNT_SNAPSHOT,
+                 options_.market_data_db.string(),
+                 loopPeriod.count(),
+                 time_config_.identity());
         std::cout.flush();
 
         bool waitingForNextUtcDayLogged = false;
@@ -953,9 +909,7 @@ public:
 
             if (durable_checkpoint_timestamp_ >= newestCompleted) {
                 if (!waitingForNextUtcDayLogged || loggedCompletedDate != newestCompleted) {
-                    LG_INFO(
-                        "service=portfolio-risk event=daily_checkpoint_complete timestamp={} action=wait_until_next_utc_day",
-                        durable_checkpoint_timestamp_);
+                    LG_INFO("Day {} is decided; waiting for the next UTC day", FormatDayKey(durable_checkpoint_timestamp_));
                     waitingForNextUtcDayLogged = true;
                     loggedCompletedDate = newestCompleted;
                 }
@@ -979,9 +933,9 @@ public:
                 interruptibleSleepFor(loopPeriod - elapsed);
         }
 
-        LG_INFO("service=portfolio-risk event=shutdown_requested");
+        LG_INFO("Shutdown requested");
         bus_.flush();
-        LG_INFO("service=portfolio-risk event=shutdown_complete");
+        LG_INFO("Shutdown complete");
     }
 };
 
@@ -1001,7 +955,7 @@ int main(int argc, char** argv)
         return 0;
     }
     catch (const std::exception& error) {
-        LG_ALERT("service=portfolio-risk event=fatal error={}", error.what());
+        LG_ALERT("Portfolio risk service stopped by a fatal error: {}", error.what());
         return 1;
     }
 }
