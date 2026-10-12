@@ -1,6 +1,10 @@
 import { AlertTriangle, LockKeyhole, Pause, Play, ShieldAlert, ShieldCheck, Skull } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { Panel } from '../components/Panel'
 import { DataLoadError } from '../components/DataLoadError'
+import { DAILY_PRESETS, DEFAULT_DAILY_RANGE, LineChart, chartDate, dailyWindow } from '../components/LineChart'
+import { TimeRangePicker } from '../components/TimeRangePicker'
+import type { TimeRange } from '../components/TimeRangePicker'
 import { useDashboardResource } from '../hooks/useDashboardResource'
 import type { RealRiskAsset, RiskData, RiskLimitState } from '../types/dashboard'
 
@@ -24,7 +28,7 @@ function RealRiskView({ data }: { data: RiskData }) {
 
   return <>
     <div className="page-heading">
-      <div><h1>Risk & Safety</h1><p>{snapshot ? 'Canonical MOCK account observations and risk diagnostic availability.' : 'Persisted PortfolioRisk decision boundary and input evidence.'}</p></div>
+      <h1>Risk & Safety</h1>
       <div className="cycle-label"><ShieldCheck size={14}/><span>{data.riskState}</span></div>
     </div>
 
@@ -107,7 +111,7 @@ function RealRiskView({ data }: { data: RiskData }) {
 function MockRiskView({ data }: { data: RiskData }) {
   return <>
     <div className="page-heading">
-      <div><h1>Risk & Safety</h1><p>Configured limits, current utilisation, breaches and safety state.</p></div>
+      <h1>Risk & Safety</h1>
       <div className="cycle-label"><ShieldCheck size={14}/><span>{data.riskState}</span></div>
     </div>
 
@@ -145,11 +149,82 @@ function MockRiskView({ data }: { data: RiskData }) {
   </>
 }
 
+// Risk: leverage (green up to 1.5x, orange up to 2.5x, red above), exposure, drawdown,
+// each strategy's caps and whether one is binding, and each asset against its cap.
+// Display only: account alerts are warnings and nothing here stops trading.
+
+const TONE_CLASS: Record<string, string> = { positive: 'positive', elevated: 'leverage--elevated', negative: 'negative' }
+const LEVERAGE = { key: 'leverage', label: 'Leverage', color: 'var(--series-2)' }
+const DRAWDOWN = { key: 'drawdown', label: 'Drawdown', color: 'var(--series-1)' }
+const times = (value: number) => `${value.toFixed(2)}x`
+const pct = (value: number) => `${value.toFixed(1)}%`
+
+function utilizationState(value: number): RiskLimitState {
+  return value >= 100 ? 'BREACH' : value >= 80 ? 'WARN' : 'OK'
+}
+
+function RiskView({ data }: { data: RiskData }) {
+  const [range, setRange] = useState<TimeRange>(DEFAULT_DAILY_RANGE)
+  const history = useMemo(() => data.history ?? [], [data])
+  const days = useMemo(() => history.map(point => chartDate(point.label)).filter(Number.isFinite), [history])
+  const visible = days.length ? dailyWindow(range, Math.min(...days), Math.max(...days)) : { from: 0, to: 1 }
+  const shared = { ...visible, onSelectRange: (from: number, to: number) => setRange({ kind: 'custom', from, to }), onReset: () => setRange(DEFAULT_DAILY_RANGE) }
+  const hasLeverage = history.some(point => point.leverage !== undefined)
+  const limits = data.strategyLimits ?? []
+  const exposures = data.exposures ?? []
+
+  return <>
+    <div className="page-heading">
+      <h1>Risk</h1>
+      {history.length > 0 && <TimeRangePicker presets={DAILY_PRESETS} value={range} onChange={setRange} precision="date"/>}
+    </div>
+
+    <section className="overview-stats">
+      {(data.summary ?? []).map(card => <div className="overview-stat" key={card.label}><span>{card.label}</span><strong className={TONE_CLASS[card.tone ?? ''] ?? ''}>{card.value}</strong></div>)}
+    </section>
+
+    {history.length > 0 && <section className={hasLeverage ? 'risk-charts' : ''}>
+      {hasLeverage && <Panel title="Leverage"><LineChart data={history} lines={[LEVERAGE]} formatValue={times} compact shared={shared}/></Panel>}
+      <Panel title="Drawdown"><LineChart data={history} lines={[DRAWDOWN]} formatValue={pct} compact shared={shared}/></Panel>
+    </section>}
+
+    <div className="execution-stack risk-stack">
+      <Panel title="Strategy Limits">
+        <div className="table-wrap"><table className="wide-table"><thead><tr>
+          <th>Strategy</th><th>Capital</th><th>Sizer</th><th>Max Asset</th><th>Max Gross</th><th>Gross After Asset Caps</th><th>Gross Scale</th><th>Approved Gross</th><th>Binding</th>
+        </tr></thead><tbody>
+          {limits.length === 0 && <tr><td colSpan={9} className="empty-cell">No risk evaluation yet</td></tr>}
+          {limits.map(limit => <tr key={limit.name}>
+            <td><strong>{limit.name}</strong></td><td>{limit.capital}</td><td>{limit.sizer}</td><td>{limit.maxAsset}</td><td>{limit.maxGross}</td>
+            <td>{limit.sizedGross}</td><td>{limit.scale}</td><td><strong>{limit.approvedGross}</strong></td>
+            <td className={limit.binding === 'None' ? 'muted' : 'warning'}>{limit.binding}</td>
+          </tr>)}
+        </tbody></table></div>
+      </Panel>
+
+      <Panel title="Exposure by Asset">
+        <div className="table-wrap"><table className="wide-table"><thead><tr>
+          <th>Asset</th><th>Side</th><th>Notional</th><th>Weight</th><th>Approved</th><th>Cap</th><th>Cap Usage</th>
+        </tr></thead><tbody>
+          {exposures.length === 0 && <tr><td colSpan={7} className="empty-cell">No open positions</td></tr>}
+          {exposures.map(row => <tr key={row.asset}>
+            <td><strong>{row.asset}</strong></td>
+            <td className={row.side === 'Short' ? 'negative' : 'positive'}>{row.side}</td>
+            <td>{row.notional}</td><td>{row.weightLabel}</td><td>{row.approved}</td><td>{row.cap}</td>
+            <td>{row.cap === '—' ? <span className="muted">—</span> : <Utilization value={row.utilization} state={utilizationState(row.utilization)}/>}</td>
+          </tr>)}
+        </tbody></table></div>
+      </Panel>
+    </div>
+  </>
+}
+
 export function RiskPage() {
   const { data, error, retry } = useDashboardResource('getRisk')
 
   if (error) return <DataLoadError title="Risk data unavailable" error={error} onRetry={retry}/>
   if (!data) return <div className="page-loading">Loading risk…</div>
 
+  if (data.summary || data.strategyLimits) return <RiskView data={data}/>
   return data.sourceMode === 'REAL' || data.evidenceKind ? <RealRiskView data={data}/> : <MockRiskView data={data}/>
 }

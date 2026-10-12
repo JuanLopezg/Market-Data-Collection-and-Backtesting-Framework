@@ -29,11 +29,11 @@ its rolling comparison after that boundary. See the PAPER guide for state migrat
 | Directory | What belongs here |
 | --- | --- |
 | `lib/` | Current reusable trading domain and venue simulation. |
-| `live_trading/` | Service entrypoints, adapters and service-owned lifecycle. |
+| `live_trading/` | Service entrypoints, adapters and service-owned lifecycle. Real venues: `exchange_gateway/src/venue/` (LiveVenueAdapter + one VenueProtocol per exchange). |
 | `research/` | Public replay CLI, canonical runner and research executables. |
 | `dashboard/` | React UI, Go read-model API, observability stores and deployment. |
 | `validation/` | Current release gate, component tests and focused source audits. |
-| `deploy/` | LIVE, current-data paper and isolated historical Compose deployments and packaging. |
+| `deploy/` | `chain/` (runtime root layout, single compose.yml, `algo` launcher, log receiver, host monitor), plus the previous LIVE/paper and isolated historical Compose deployments. |
 | `config/` | Runtime configuration, source-symbol maps and venue registries. |
 | `docs/` | Documentation index, agent handoff and frozen venue specifications. |
 | `storage/` | Historical inputs, reports and accepted run evidence. |
@@ -393,7 +393,7 @@ must not invent missing funding or double-count costs. Keep trade and Perpetuals
 Costs totals consistent with durable account history. The ordered roadmap also
 reserves a task for future dashboard adjustments once the user specifies them.
 
-The optional PAPER activity study adds `deploy/paper_trading/comparison.py`, a host
+The optional PAPER activity study adds `deploy/chain/comparison.py`, a host
 read-only collector with a separate immutable daily market/account observation
 journal. It invokes `research/src/common/paper_baseline.cpp` through the existing
 fast research binary in a network-disabled container. CURRENT TradingEngine,

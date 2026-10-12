@@ -22,6 +22,7 @@ Neither is a cumulative development diary.
 | Ordered remaining work and user requirements | [Roadmap](ROADMAP.md) |
 | Library domains and reading order | [lib](../lib/README.md) |
 | Live service ownership, timing and durability | [live_trading](../live_trading/README.md) |
+| Real exchanges behind the gateway (Kraken Futures) | [Exchange gateway](../live_trading/exchange_gateway/README.md) |
 | Replay modes, cutoff, pacing and resume | [research/replay](../research/REPLAY.md) |
 | Tests, structural audits and integration checks | [validation](../validation/README.md) |
 | Controlled local service/recovery environment before renting a VPS | [Local campaign](../validation/LOCAL_SERVICE_CAMPAIGN.md) |
@@ -32,6 +33,7 @@ Neither is a cumulative development diary.
 | Dashboard access controls | [Authentication](../dashboard/docs/AUTH_SECURITY.md) |
 | Dashboard VPS deployment | [Deployment](../dashboard/docs/AWS_DEPLOYMENT.md) |
 | Dashboard production review | [Checklist](../dashboard/docs/PRODUCTION_CHECKLIST.md) |
+| Runtime layout, single Compose file and `algo` launcher | [Chain](../deploy/chain/README.md) |
 | Live Compose stack | [Live deploy](../deploy/live/README.md) |
 | Current-data paper stack and dashboard host telemetry | [Paper trading](../deploy/paper_trading/README.md) |
 | Isolated distributed historical stack | [Historical deploy](../deploy/historical_replay/README.md) |

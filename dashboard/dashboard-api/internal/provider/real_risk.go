@@ -30,17 +30,25 @@ type realRiskData struct {
 	ApprovedGrossTargetLabel    string               `json:"approvedGrossTargetLabel"`
 	ApprovedNetTargetLabel      string               `json:"approvedNetTargetLabel"`
 	ApprovedTargetNotionalLabel string               `json:"approvedTargetNotionalLabel"`
-	ActiveTargetCount           int                  `json:"activeTargetCount"`
-	NonZeroSignalCount          int                  `json:"nonZeroSignalCount"`
-	StrategyCount               int                  `json:"strategyCount"`
-	Assets                      []realRiskAsset      `json:"realAssets"`
-	MissingDiagnostics          []string             `json:"missingDiagnostics"`
-	ActiveLimitsAvailable       bool                 `json:"activeLimitsAvailable"`
-	BreachesAvailable           bool                 `json:"breachesAvailable"`
-	CurrentValuationAvailable   bool                 `json:"currentValuationAvailable"`
-	EvidenceKind                string               `json:"evidenceKind"`
-	DecisionDetail              string               `json:"decisionDetail"`
-	Policies                    []riskPolicy         `json:"policies"`
+	// Approved gross target over reference capital (0.20 = 0.20x); valid only when known.
+	approvedGrossRatio        float64
+	approvedGrossRatioKnown   bool
+	ActiveTargetCount         int             `json:"activeTargetCount"`
+	NonZeroSignalCount        int             `json:"nonZeroSignalCount"`
+	StrategyCount             int             `json:"strategyCount"`
+	Assets                    []realRiskAsset `json:"realAssets"`
+	MissingDiagnostics        []string        `json:"missingDiagnostics"`
+	ActiveLimitsAvailable     bool            `json:"activeLimitsAvailable"`
+	BreachesAvailable         bool            `json:"breachesAvailable"`
+	CurrentValuationAvailable bool            `json:"currentValuationAvailable"`
+	EvidenceKind              string          `json:"evidenceKind"`
+	DecisionDetail            string          `json:"decisionDetail"`
+	Policies                  []riskPolicy    `json:"policies"`
+	// Risk page view (risk_view.go); empty when the inputs are not available.
+	Summary        []riskCard          `json:"summary,omitempty"`
+	History        []riskHistoryPoint  `json:"history,omitempty"`
+	StrategyLimits []riskStrategyLimit `json:"strategyLimits,omitempty"`
+	Exposures      []riskExposure      `json:"exposures,omitempty"`
 }
 
 type realRiskAsset struct {
@@ -63,7 +71,67 @@ func (p *Real) risk(ctx context.Context) (realRiskData, error) {
 	}
 	data := buildRealRisk(checkpoint)
 	applyRiskEvaluations(&data, checkpoint.RiskDiagnostics)
+
+	// Page view: valued account positions, daily PAPER equity (drawdown only; gross is not
+	// kept per day) and the persisted risk evaluation. Missing inputs leave sections empty.
+	var history []riskEquityPoint
+	if p.cfg.PaperComparisonFile != "" {
+		for _, row := range readPaperComparison(p.cfg.PaperComparisonFile).Rows {
+			history = append(history, riskEquityPoint{label: row.Date, equity: row.LiveEquity})
+		}
+	}
+	if positions, err := p.positions(ctx); err == nil {
+		realRiskView(&data, checkpoint.RiskDiagnostics, positions, history)
+	}
 	return data, nil
+}
+
+func realRiskView(data *realRiskData, report *pgstore.RiskDiagnostics, positions realPositionsData, equity []riskEquityPoint) {
+	history, maxDrawdown := riskHistory(equity)
+	data.History = history
+
+	assetCap := 0.0
+	if report != nil {
+		totalCapital := 0.0
+		for _, strategy := range report.Strategies {
+			totalCapital += strategy.ReferenceCapital
+		}
+		for _, strategy := range report.Strategies {
+			share := 1.0
+			if totalCapital > 0 {
+				share = strategy.ReferenceCapital / totalCapital
+			}
+			assetCap = math.Max(assetCap, strategy.MaxAssetWeight*share)
+			capReduced := false
+			for _, asset := range strategy.Assets {
+				if asset.SizedWeight != nil && asset.AssetCappedWeight != nil && math.Abs(*asset.AssetCappedWeight) < math.Abs(*asset.SizedWeight)-1e-12 {
+					capReduced = true
+				}
+			}
+			data.StrategyLimits = append(data.StrategyLimits, riskStrategyLimit{Name: strategy.Name, Capital: formatDollars(strategy.ReferenceCapital),
+				Sizer: strategy.Sizer, MaxAsset: formatPercent(strategy.MaxAssetWeight * 100), MaxGross: formatPercent(strategy.MaxGrossLeverage * 100),
+				SizedGross: formatPercent(strategy.GrossAfterAssetCap * 100), Scale: fmt.Sprintf("%.3fx", strategy.GrossScale),
+				ApprovedGross: formatPercent(strategy.GrossAfterAssetCap * strategy.GrossScale * 100),
+				Binding:       riskBinding(strategy.GrossScale, capReduced)})
+		}
+	}
+
+	if positions.ValuationState != "AVAILABLE" {
+		return
+	}
+	values := make([]riskPositionValue, 0, len(positions.Positions))
+	for _, position := range positions.Positions {
+		if !position.ValuationAvailable {
+			continue
+		}
+		row := riskPositionValue{asset: position.Asset, value: position.EffectiveQty * position.CurrentPrice}
+		if position.TargetAvailable {
+			weight := position.TargetWeightPct / 100
+			row.approved = &weight
+		}
+		values = append(values, row)
+	}
+	data.Summary, data.Exposures = riskAccountView(positions.equityValue, values, assetCap, history, maxDrawdown)
 }
 
 func buildRealRisk(checkpoint pgstore.PipelineCheckpoint) realRiskData {
@@ -173,7 +241,9 @@ func buildRealRisk(checkpoint pgstore.PipelineCheckpoint) realRiskData {
 
 	grossPct := "—"
 	netPct := "—"
+	grossRatio := 0.0
 	if totalReferenceCapital > 0 {
+		grossRatio = totalGrossTarget / totalReferenceCapital
 		grossPct = formatPercent((totalGrossTarget / totalReferenceCapital) * 100)
 		netPct = formatSignedPercent((totalNetTarget / totalReferenceCapital) * 100)
 	}
@@ -196,6 +266,8 @@ func buildRealRisk(checkpoint pgstore.PipelineCheckpoint) realRiskData {
 		ApprovedGrossTargetLabel:    grossPct,
 		ApprovedNetTargetLabel:      netPct,
 		ApprovedTargetNotionalLabel: notionalLabel,
+		approvedGrossRatio:          grossRatio,
+		approvedGrossRatioKnown:     totalReferenceCapital > 0,
 		ActiveTargetCount:           activeTargets,
 		NonZeroSignalCount:          nonZeroSignalCount,
 		StrategyCount:               len(checkpoint.Signals.Strategies),

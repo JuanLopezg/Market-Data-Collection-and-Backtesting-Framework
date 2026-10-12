@@ -43,6 +43,7 @@ type ManualPreviewRow struct {
 	EstimatedNotionalLabel string  `json:"estimatedNotionalLabel"`
 	DeltaPct               float64 `json:"deltaPct"`
 	RiskNote               string  `json:"riskNote,omitempty"`
+	Action                 string  `json:"action,omitempty"` // BUY, SELL, CLOSE or HOLD
 }
 
 type ManualOrderPreviewRow struct {
@@ -104,6 +105,21 @@ type ManualControlData struct {
 	CurrentTargetTimestamp       string                  `json:"currentTargetTimestamp"`
 	PreviewKind                  string                  `json:"previewKind"`
 	SafetyNote                   string                  `json:"safetyNote"`
+
+	// Manual rebalance in the replay simulation; zero for other providers.
+	AcceptingRequests bool                  `json:"acceptingRequests"`
+	MaxGrossPct       float64               `json:"maxGrossPct,omitempty"` // portfolio-risk limits, % of equity
+	MaxAssetPct       float64               `json:"maxAssetPct,omitempty"`
+	Requests          []ManualRequestStatus `json:"requests"` // newest first
+}
+
+// Where one manual request is on its way to the exchange.
+type ManualRequestStatus struct {
+	ID     string `json:"id"`
+	Stage  string `json:"stage"`  // QUEUED, EXECUTED, AT_EXCHANGE, FILLED, RESYNCED or FAILED
+	Detail string `json:"detail"` // what happened at the latest stage
+	Orders int    `json:"orders"`
+	Filled int    `json:"filled"`
 }
 
 func (p *Real) manualControlBase(ctx context.Context) (ManualControlData, error) {

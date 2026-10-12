@@ -409,6 +409,12 @@ For durable routes, the ordering depends on which state the service owns:
 
 Keep these existing orders explicit; changing them changes crash recovery.
 
+## Real venues
+
+The exchange gateway's `--mode venue` connects a real exchange through one common
+`LiveVenueAdapter` and one `VenueProtocol` per exchange (Kraken Futures today). Order
+submission is disabled by default. See [exchange_gateway/README.md](exchange_gateway/README.md).
+
 ## Logs
 
 `lib/src/logging/logger.*` writes one readable English line per event, always in UTC:
@@ -426,8 +432,8 @@ values go in a separate `LG_DEBUG` line. `ALGOTRADING_LOG_DEBUG=1` shows DEBUG,
 `ALGOTRADING_LOG_QUIET=1` disables stdout and `ALGOTRADING_LOG_DIR` adds an append-only
 `<service>.log` copy. The live_trading Python tools use `readable_log.py` for the same
 shape; `research/replay.py` has its own setup and also honors `ALGOTRADING_LOG_DEBUG=1`.
-The VPS host receiver (`deploy/live/logging`) stores each service line unchanged, one
-directory per service and one file per UTC day.
+The host receiver (`deploy/chain/logging`) stores each service line unchanged in
+`<root>/logs/<service>/YYYYMMDD.log` (see `deploy/chain/README.md`).
 
 Use:
 

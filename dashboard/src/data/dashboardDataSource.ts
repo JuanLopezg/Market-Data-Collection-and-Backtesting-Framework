@@ -1,4 +1,4 @@
-import type { AlertAcknowledgementInput, AlertAcknowledgementResult, AlertsAuditData, DashboardDiagnostics, ExecutionData, InfrastructureData, LiveVsExpectedData, ManualControlData, ManualControlPreviewInput, ManualControlRouteInput, ManualControlRouteResult, MarketDataData, OverviewData, PipelineData, PositionsData, ReconciliationData, RiskData, ShellStatus, ProviderStatus, SafetyGateData, GlobalReadinessData, VenueFoundationData, VenuePublicData, VenueSymbolMappingData, VenueTradingRulesData, SymbolRegistryData, LedgerData } from '../types/dashboard'
+import type { AlertAcknowledgementInput, AlertAcknowledgementResult, AlertsAuditData, DashboardDiagnostics, ExecutionData, InfrastructureData, LiveVsExpectedData, ManualControlData, ManualControlPreviewInput, ManualControlRouteInput, ManualControlRouteResult, MarketDataData, OverviewData, PipelineData, PositionsData, ReconciliationData, RiskData, ShellStatus, ProviderStatus, SafetyGateData, GlobalReadinessData, VenueFoundationData, VenuePublicData, VenueSymbolMappingData, VenueTradingRulesData, SymbolRegistryData, LedgerData, HostHistoryData, HostHistoryQuery } from '../types/dashboard'
 
 export interface DashboardDataSource {
   getProviderStatus(): Promise<ProviderStatus>
@@ -20,6 +20,7 @@ export interface DashboardDataSource {
   getRisk(): Promise<RiskData>
   getMarketData(): Promise<MarketDataData>
   getInfrastructure(): Promise<InfrastructureData>
+  getHostHistory(query: HostHistoryQuery): Promise<HostHistoryData>
   getAlertsAudit(): Promise<AlertsAuditData>
   acknowledgeAlert(input: AlertAcknowledgementInput, csrfToken: string): Promise<AlertAcknowledgementResult>
   getLiveVsExpected(): Promise<LiveVsExpectedData>

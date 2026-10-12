@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -79,75 +80,81 @@ func TestSimulationProviderReadsCanonicalSnapshot(t *testing.T) {
 	}
 }
 
-func TestSimulationManualPreviewAndRouteQueuesFile(t *testing.T) {
-	dir := t.TempDir()
-	s := writeSimulationFixture(t, dir)
-	p := NewSimulation(SimulationConfig{Dir: dir})
-	csv := "asset,weight_pct\nBTCUSDT,10\nCASH,90\n"
-
-	preview, err := p.PreviewManualControl(context.Background(), ManualControlPreviewRequest{Actor: "juan / OPERATOR", Filename: "manual.csv", CSV: csv})
-	if err != nil {
-		t.Fatal(err)
+func TestReplayPipelineShowsDecisionLineage(t *testing.T) {
+	liquidity, target := 1.5e6, 5000.0
+	// Two strategies with half the capital each: only the first signals BTC.
+	rsiLine := simulationPipelineStrategy{StrategyID: 1, Name: "Pure_RSI", Capital: 50000, Share: 0.5, Signal: 1, Detail: "RSI(7) 84.3 · #1 by RSI in its universe",
+		Sizer: "EqualWeight", SizedWeight: 0.1, CappedWeight: 0.1, ApprovedWeight: 0.1, MaxAsset: 1.5, MaxGross: 1.5, GrossAfterAssetCap: 0.1, GrossScale: 1, Action: "TARGET"}
+	otherLine := simulationPipelineStrategy{StrategyID: 2, Name: "Other", Capital: 50000, Share: 0.5, Action: "HOLD"}
+	s := simulationSnapshot{BusinessTimestamp: 1, VenueID: "MOCK", Reconciliation: simulationReconciliation{State: "CLEAN"},
+		Orders: []simulationOrder{{OrderID: "41", Asset: "BTC", Quantity: 0.1, FilledQuantity: 0.1, Status: "FILLED", ActiveFrom: 20240302}},
+		Pipeline: &simulationPipeline{Date: "2024-03-01", DecisionTimestamp: 1, LiquidityLength: 25, LiquidityTopN: 20,
+			TotalCapital: 100000, ApprovedGross: 0.05, StrategyCount: 2, ObservedAssets: 200, UniverseSize: 20, ActiveSignals: 1,
+			Assets: []simulationPipelineAsset{
+				{Asset: "BTC", Close: 50000, Liquidity: &liquidity, LiquidityRank: 1, InUniverse: true,
+					Strategies: []simulationPipelineStrategy{rsiLine, otherLine}, Signal: 0.5,
+					SizedWeight: 0.05, CappedWeight: 0.05, ApprovedWeight: 0.05, Action: "TARGET", TargetUSD: &target,
+					Orders: []simulationPipelineOrder{{OrderID: "41", Side: "BUY", NotionalUSD: 5000, DeltaUSD: 5000}}},
+				{Asset: "ETH", Close: 2000, LiquidityRank: 2, InUniverse: true, Action: "HOLD"},
+			}}}
+	data := NewSimulation(SimulationConfig{}).pipeline(s)
+	if data.EvidenceState != "OBSERVED" || len(data.Rows) != 2 || data.ActionablePlans != 1 || len(data.Summary) == 0 {
+		t.Fatalf("pipeline = %+v", data)
 	}
-	if !preview.ValidationPassed || !preview.RouteEnabled || preview.RequestHash == "" {
-		t.Fatalf("unexpected preview: %+v", preview)
+	btc, eth := data.Rows[0], data.Rows[1]
+	if btc.SignalValue == nil || *btc.SignalValue != 0.5 || btc.RawTargetLabel != "5.0%" || btc.DecisionLabel != "ENTER" ||
+		btc.TargetLabel != "5,000$" || btc.RequiredDeltaLabel != "+5,000$" || btc.PlannedAction != "BUY 5,000$" || btc.ExchangeState != "FILLED" {
+		t.Fatalf("btc row = %+v", btc)
 	}
-	if preview.CurrentTargetTimestamp != "202001029" {
-		t.Fatalf("timestamp: %s", preview.CurrentTargetTimestamp)
+	if len(btc.Strategies) != 2 || btc.Strategies[0].SignalLabel != "+1.00" || btc.Strategies[0].ShareLabel != "50.0%" ||
+		btc.Strategies[0].Decision != "ENTER" || btc.Strategies[1].SignalLabel != "0.00" || btc.Strategies[1].Decision != "HOLD" {
+		t.Fatalf("btc breakdown = %+v", btc.Strategies)
 	}
-
-	result, err := p.RouteManualControl(context.Background(), SimulationManualRouteRequest{
-		Actor: "juan / OPERATOR", Filename: "manual.csv", CSV: csv,
-		RequestHash: preview.RequestHash, ReferenceTargetTimestamp: preview.CurrentTargetTimestamp,
-	})
-	if err != nil {
-		t.Fatal(err)
+	if eth.DecisionLabel != "HOLD" || eth.TargetLabel != "—" || eth.ExchangeState != "NONE" {
+		t.Fatalf("eth row = %+v", eth)
 	}
-	if result.Status != "ACCEPTED" || result.Submitted || !result.AuditPersisted || result.CorrelationID == "" {
-		t.Fatalf("unexpected route result: %+v", result)
-	}
-
-	requestPath := filepath.Join(dir, "requests", result.CorrelationID+".request")
-	raw, err := os.ReadFile(requestPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(raw)
-	for _, want := range []string{
-		"STEP58_MANUAL_V1\n",
-		"correlation_id=" + result.CorrelationID + "\n",
-		"request_hash=" + preview.RequestHash + "\n",
-		"decision_timestamp=202001039\n",
-		"execution_timestamp=202001040\n",
-		"reference_generation=7\n",
-		"target=BTCUSDT,0.100000000000\n",
-		"cash=0.900000000000\n",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("request missing %q:\n%s", want, body)
-		}
-	}
-
-	// A stale target timestamp must fail closed and must not create another request.
-	stale, err := p.RouteManualControl(context.Background(), SimulationManualRouteRequest{
-		Actor: "juan / OPERATOR", Filename: "manual.csv", CSV: csv,
-		RequestHash: preview.RequestHash, ReferenceTargetTimestamp: "202001019",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stale.Status != "BLOCKED" || stale.Submitted {
-		t.Fatalf("stale request did not block: %+v", stale)
-	}
-	if s.Manual.Ready != true {
-		t.Fatal("fixture invalid")
+	if trace := data.Traces[btc.CycleID]; trace.Execution.FillState != "FILLED" || trace.Strategy.Signal != "+0.50 aggregated" {
+		t.Fatalf("btc trace = %+v", trace)
 	}
 }
 
-func TestSimulationManualCSVRejectsDuplicateCash(t *testing.T) {
-	_, _, err := parseSimulationManualCSV("asset,weight_pct\nCASH,50\nCASH,50\n")
-	if err == nil {
-		t.Fatal("duplicate CASH must fail")
+func TestReplayReconciliationComparesLedgerWithExchange(t *testing.T) {
+	s := simulationSnapshot{BusinessTimestamp: 202112239, Reconciliation: simulationReconciliation{State: "CLEAN", LocalSequence: 9, VenueSequence: 9},
+		Ledger: simulationLedger{Entries: []simulationLedgerEntry{
+			{Kind: "FILL", Asset: "BTCUSDT", PositionDelta: 1},
+			{Kind: "FILL", Asset: "BTCUSDT", PositionDelta: 0.5},
+			{Kind: "FILL", Asset: "ETHUSDT", PositionDelta: 2},
+			{Kind: "FILL", Asset: "ETHUSDT", PositionDelta: -2}, // closed: no row
+			{Kind: "FILL", Asset: "SOLUSDT", PositionDelta: 3},
+		}},
+		Account: simulationAccount{Positions: []simulationPosition{{Asset: "BTCUSDT", Quantity: 1.5}, {Asset: "SOLUSDT", Quantity: 2.9}}},
+		Orders:  []simulationOrder{{OrderID: "7", Asset: "XRPUSDT", Side: "SELL", Quantity: 10, RemainingQuantity: 4, Status: "RESTING", ActiveFrom: 202112241}},
+	}
+	data := NewSimulation(SimulationConfig{}).reconciliation(s)
+	rows := data["rows"].([]map[string]any)
+	if len(rows) != 3 || data["lastChecked"] != "2021-12-23 close" || data["evidenceFresh"] != true {
+		t.Fatalf("reconciliation = %+v", data)
+	}
+	btc, sol, xrp := rows[0], rows[1], rows[2]
+	if btc["asset"] != "BTCUSDT" || btc["status"] != "ALIGNED" || btc["deltaQty"] != 0.0 {
+		t.Fatalf("btc = %+v", btc)
+	}
+	if sol["status"] != "BLOCKED" || sol["deltaQtyLabel"] != "-0.1" {
+		t.Fatalf("sol = %+v", sol)
+	}
+	if xrp["pendingQtyLabel"] != "-4" || xrp["localQty"] != 0.0 || xrp["status"] != "ALIGNED" {
+		t.Fatalf("xrp = %+v", xrp)
+	}
+	if open := data["openOrders"].([]map[string]any); len(open) != 1 || open[0]["age"] != "2021-12-24 open" {
+		t.Fatalf("open orders = %+v", open)
+	}
+}
+
+func TestFormatDollars(t *testing.T) {
+	for value, want := range map[float64]string{1234567.4: "1,234,567$", -1000: "-1,000$", 12.5: "12.50$", 0: "0.00$"} {
+		if got := formatDollars(value); got != want {
+			t.Fatalf("formatDollars(%v) = %s, want %s", value, got, want)
+		}
 	}
 }
 
@@ -169,5 +176,45 @@ func TestReplayDiagnosticsExposeObservationsWithoutFalseCycleProof(t *testing.T)
 	risk := p.risk(s)
 	if risk.EvidenceKind != "REPLAY_SNAPSHOT" || !risk.CurrentValuationAvailable || risk.ActiveLimitsAvailable || risk.BreachesAvailable || risk.Assets[0].CurrentWeightLabel != "-4.0%" || risk.Assets[0].ApprovedWeightLabel != "Not exposed" {
 		t.Fatalf("false replay risk verdict: %+v", risk)
+	}
+}
+
+func TestSimulationSlippageIsAdversePositiveAndNotionalWeighted(t *testing.T) {
+	orders := map[string]simulationOrder{
+		"1": {OrderID: "1", Side: "BUY", LimitPrice: 100},
+		"2": {OrderID: "2", Side: "SELL", LimitPrice: 100},
+	}
+	fills := []simulationFill{
+		{OrderID: "1", Quantity: 1, Price: 101, Timestamp: 202401021}, // buy 1% above: +100 bps
+		{OrderID: "2", Quantity: 3, Price: 100, Timestamp: 202401021}, // sell at expected: 0 bps
+		{OrderID: "2", Quantity: 1, Price: 99, Timestamp: 202401031},  // sell 1% below: +100 bps
+	}
+	summary := simulationSlippage(fills, orders)
+	if !summary.available || len(summary.daily) != 2 || summary.worstLabel != "+100.00 bps" || summary.bestLabel != "0.00 bps" {
+		t.Fatalf("summary = %+v", summary)
+	}
+	// Day 1: (100*101 + 0*300) / 401.
+	if day := summary.daily[0]; day["label"] != "2024-01-02" || math.Abs(day["bps"].(float64)-10100.0/401) > 1e-9 || day["fills"] != 2 {
+		t.Fatalf("day 1 = %+v", day)
+	}
+}
+
+func TestSimulationServesLastGoodSnapshotOverTornRead(t *testing.T) {
+	dir := t.TempDir()
+	writeSimulationFixture(t, dir)
+	p := NewSimulation(SimulationConfig{Dir: dir})
+	if _, err := p.load(); err != nil {
+		t.Fatal(err)
+	}
+	// A half-written file (as seen mid-rewrite) must not surface as an outage.
+	if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte(`{"schemaVersion":1,"gener`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if s, err := p.load(); err != nil || s.VenueID != "MOCK" {
+		t.Fatalf("torn read surfaced: %v", err)
+	}
+	// Without a recent good snapshot the error stays visible.
+	if _, err := NewSimulation(SimulationConfig{Dir: dir}).load(); err == nil {
+		t.Fatal("invalid state accepted without a previous good snapshot")
 	}
 }

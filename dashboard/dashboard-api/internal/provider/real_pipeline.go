@@ -27,6 +27,8 @@ type realPipelineData struct {
 	SourceNote      string                  `json:"sourceNote"`
 	EvidenceState   string                  `json:"evidenceState"`
 	EmptyReason     string                  `json:"emptyReason,omitempty"`
+	// Headline figures of the cycle (label/value cards); empty when not known.
+	Summary []realOverviewMetric `json:"summary,omitempty"`
 }
 
 type realPipelineStage struct {
@@ -59,6 +61,30 @@ type realPipelineAssetRow struct {
 	PlannedAction       string              `json:"plannedAction"`
 	ExchangeState       string              `json:"exchangeState"`
 	Stages              []realPipelineStage `json:"stages"`
+	// Rebalance decision (ENTER, RESIZE, EXIT, HOLD) and its approved USD target.
+	DecisionLabel string `json:"decisionLabel,omitempty"`
+	TargetLabel   string `json:"targetLabel,omitempty"`
+	// Inside the strategy's liquidity universe; nil when unknown.
+	InUniverse *bool `json:"inUniverse,omitempty"`
+	// Aggregated signal in [-1, +1] (strategy signals weighted by capital share) and the
+	// per-strategy breakdown behind it.
+	SignalValue *float64               `json:"signalValue,omitempty"`
+	Strategies  []realPipelineStrategy `json:"strategies,omitempty"`
+}
+
+// One strategy's contribution to an asset decision. Weights are fractions of that
+// strategy's capital; "—" when not known.
+type realPipelineStrategy struct {
+	Name          string  `json:"name"`
+	CapitalLabel  string  `json:"capitalLabel"`
+	ShareLabel    string  `json:"shareLabel"`
+	Signal        float64 `json:"signal"`
+	SignalLabel   string  `json:"signalLabel"`
+	Detail        string  `json:"detail"`
+	Rule          string  `json:"rule,omitempty"`
+	SizedLabel    string  `json:"sizedLabel"`
+	ApprovedLabel string  `json:"approvedLabel"`
+	Decision      string  `json:"decision"`
 }
 
 type realWhyTrace struct {
@@ -279,7 +305,17 @@ func buildRealPipeline(checkpoint pgstore.PipelineCheckpoint, state pgstore.Runt
 		evidenceState = "PENDING"
 		plannerState = "Planner checkpoint is not present for this decision timestamp; planner stages are shown as PENDING, never inferred."
 	}
+	ordersLabel := "Pending"
+	if checkpoint.Plan != nil {
+		ordersLabel = strconv.Itoa(actionable)
+	}
 	return realPipelineData{
+		Summary: []realOverviewMetric{
+			{Label: "Decision", Value: formatTradingTimestamp(checkpoint.Timestamp)},
+			{Label: "Universe", Value: strconv.Itoa(universe)},
+			{Label: "Active Signals", Value: strconv.Itoa(activeSignals)},
+			{Label: "Orders", Value: ordersLabel},
+		},
 		EvidenceState:   evidenceState,
 		EmptyReason:     "This checkpoint contains no asset-level intents, holdings or planner reference prices. No change is different from missing processing evidence.",
 		CycleLabel:      fmt.Sprintf("REAL · decision %d", checkpoint.Timestamp),
@@ -358,7 +394,97 @@ func pipelineRow(checkpoint pgstore.PipelineCheckpoint, facts pipelineAssetFacts
 		{ID: "order-plan", Label: "Order plan", Value: facts.plannedAction, Detail: "OrderPlanner durable plan at the same decision timestamp.", State: stageState(plannerReady, "OK", "PENDING")},
 		{ID: "exchange", Label: "Execution state", Value: facts.exchangeState, Detail: facts.exchangeDetail, State: facts.exchangeStage},
 	}
-	return realPipelineAssetRow{CycleID: cycleID, Asset: facts.asset, DecisionTime: formatTradingTimestamp(checkpoint.Timestamp), RankLabel: "Not persisted", RSILabel: "Not persisted", Signal: facts.signal, RawTargetLabel: "Not persisted", VolTargetLabel: "Not persisted", ApprovedTargetLabel: approved, CurrentWeightLabel: currentLabel, RequiredDeltaLabel: deltaLabel, PlannedAction: facts.plannedAction, ExchangeState: facts.exchangeState, Stages: stages}
+	row := realPipelineAssetRow{CycleID: cycleID, Asset: facts.asset, DecisionTime: formatTradingTimestamp(checkpoint.Timestamp), RankLabel: "—", RSILabel: "—", Signal: facts.signal, RawTargetLabel: "—", VolTargetLabel: "—", ApprovedTargetLabel: "—", CurrentWeightLabel: currentLabel, RequiredDeltaLabel: deltaLabel, PlannedAction: facts.plannedAction, ExchangeState: facts.exchangeState, Stages: stages}
+	row.TargetLabel = "—"
+	if pipelineHasTarget(checkpoint, facts.asset) {
+		row.TargetLabel = formatDollars(facts.targetNotional)
+	}
+	// Same-cycle risk evaluation (persisted with the decision) gives sized/approved weights and the action.
+	if evaluated, ok := pipelineRiskAsset(checkpoint, facts.asset); ok {
+		if evaluated.SizedWeight != nil {
+			row.RawTargetLabel = formatPercent(*evaluated.SizedWeight * 100)
+		}
+		if evaluated.ApprovedWeight != nil {
+			row.ApprovedTargetLabel = formatPercent(*evaluated.ApprovedWeight * 100)
+		}
+		action := map[string]string{"FLAT": "FLAT", "TARGET_WEIGHT": "TARGET"}[evaluated.Action]
+		row.DecisionLabel = pipelineDecision(action, facts.currentQty)
+		for i := range row.Stages {
+			switch row.Stages[i].ID {
+			case "raw-target":
+				row.Stages[i] = realPipelineStage{ID: "raw-target", Label: "Sizing", Value: row.RawTargetLabel, Detail: "Sizer weight of strategy capital (same-cycle risk evaluation).", State: "OK"}
+			case "vol-target":
+				row.Stages[i] = realPipelineStage{ID: "vol-target", Label: "Risk caps", Value: row.ApprovedTargetLabel, Detail: "Approved weight after the asset cap and gross scale.", State: "OK"}
+			}
+		}
+	} else if checkpoint.RiskDiagnostics != nil {
+		row.DecisionLabel = "HOLD"
+	}
+	if strategies, aggregated, ok := realStrategyBreakdown(checkpoint, facts.asset, facts.currentQty); ok {
+		row.Strategies, row.SignalValue = strategies, &aggregated
+	}
+	return row
+}
+
+// Per-strategy signals of the cycle joined with each strategy's risk evaluation. The
+// aggregated signal weights each strategy by its share of the evaluated reference capital
+// (equal shares when no evaluation was persisted).
+func realStrategyBreakdown(checkpoint pgstore.PipelineCheckpoint, asset string, currentQty float64) ([]realPipelineStrategy, float64, bool) {
+	if len(checkpoint.Signals.Strategies) == 0 {
+		return nil, 0, false
+	}
+	evaluations := map[uint64]pgstore.RiskStrategyEvaluation{}
+	totalCapital := 0.0
+	if checkpoint.RiskDiagnostics != nil {
+		for _, evaluated := range checkpoint.RiskDiagnostics.Strategies {
+			evaluations[evaluated.StrategyID] = evaluated
+			totalCapital += evaluated.ReferenceCapital
+		}
+	}
+	lines := make([]realPipelineStrategy, 0, len(checkpoint.Signals.Strategies))
+	aggregated := 0.0
+	for _, strategy := range checkpoint.Signals.Strategies {
+		signal := strategy.Signals[asset]
+		share := 1.0 / float64(len(checkpoint.Signals.Strategies))
+		line := realPipelineStrategy{Name: strategy.StrategyName, CapitalLabel: "—", ShareLabel: "—", Signal: signal,
+			SignalLabel: formatSignal(signal), Detail: "Indicators not persisted", SizedLabel: "—", ApprovedLabel: "—", Decision: "—"}
+		if evaluated, ok := evaluations[strategy.StrategyID]; ok {
+			if totalCapital > 0 {
+				share = evaluated.ReferenceCapital / totalCapital
+			}
+			line.CapitalLabel = formatDollars(evaluated.ReferenceCapital)
+			line.Decision = "HOLD"
+			if row, ok := evaluated.Assets[asset]; ok {
+				if row.SizedWeight != nil {
+					line.SizedLabel = formatPercent(*row.SizedWeight * 100)
+				}
+				if row.ApprovedWeight != nil {
+					line.ApprovedLabel = formatPercent(*row.ApprovedWeight * 100)
+				}
+				line.Decision = pipelineDecision(map[string]string{"FLAT": "FLAT", "TARGET_WEIGHT": "TARGET"}[row.Action], currentQty)
+			}
+		}
+		line.ShareLabel = formatPercent(share * 100)
+		aggregated += share * signal
+		lines = append(lines, line)
+	}
+	return lines, aggregated, true
+}
+
+// Risk evaluation of one asset when exactly one strategy evaluated it (weights are per strategy capital).
+func pipelineRiskAsset(checkpoint pgstore.PipelineCheckpoint, asset string) (pgstore.RiskAssetEvaluation, bool) {
+	if checkpoint.RiskDiagnostics == nil {
+		return pgstore.RiskAssetEvaluation{}, false
+	}
+	var found pgstore.RiskAssetEvaluation
+	count := 0
+	for _, strategy := range checkpoint.RiskDiagnostics.Strategies {
+		if evaluated, ok := strategy.Assets[asset]; ok {
+			found = evaluated
+			count++
+		}
+	}
+	return found, count == 1
 }
 
 func pipelineTrace(checkpoint pgstore.PipelineCheckpoint, state pgstore.RuntimeState, facts pipelineAssetFacts, cycleID string, recon realReconciliationRow, reconErr error, mode string) realWhyTrace {
@@ -507,6 +633,37 @@ func stageState(condition bool, yes, no string) string {
 	}
 	return no
 }
+
+// "12,345$" / "-1,234$" / "12.50$": the dashboard amount style (no cents above 1,000$).
+func formatDollars(value float64) string {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return "—"
+	}
+	sign := ""
+	if value < 0 {
+		sign, value = "-", -value
+	}
+	if value < 1000 {
+		return fmt.Sprintf("%s%.2f$", sign, value)
+	}
+	digits := strconv.FormatFloat(math.Round(value), 'f', 0, 64)
+	var grouped strings.Builder
+	for i, digit := range digits {
+		if i > 0 && (len(digits)-i)%3 == 0 {
+			grouped.WriteByte(',')
+		}
+		grouped.WriteRune(digit)
+	}
+	return sign + grouped.String() + "$"
+}
+
+func signedDollars(value float64) string {
+	if value > 0 {
+		return "+" + formatDollars(value)
+	}
+	return formatDollars(value)
+}
+
 func signedUSD(value float64) string {
 	if value > 0 {
 		return "+" + formatUSD(value)

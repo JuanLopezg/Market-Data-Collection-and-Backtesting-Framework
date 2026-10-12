@@ -1,23 +1,50 @@
-import { AlertTriangle, CheckCircle2, ChevronRight, FileCheck2, FileUp, LockKeyhole, RefreshCw, ShieldCheck, UploadCloud } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { Check, UploadCloud, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { Panel } from '../components/Panel'
 import { DataLoadError } from '../components/DataLoadError'
 import { useDashboardResource } from '../hooks/useDashboardResource'
 import { useAuth } from '../providers/AuthProvider'
 import { useDashboardDataSource } from '../providers/DashboardDataSourceProvider'
-import type { ManualControlData, ManualControlRouteResult, ManualControlStage, ManualValidationSeverity } from '../types/dashboard'
+import type { ManualControlData, ManualRequestStatus } from '../types/dashboard'
 
-const stages: { id: ManualControlStage; label: string; number: number }[] = [
-  { id: 'UPLOAD', label: 'Upload', number: 1 },
-  { id: 'VALIDATE', label: 'Validate', number: 2 },
-  { id: 'PREVIEW', label: 'Preview', number: 3 },
-  { id: 'RISK_CHECK', label: 'Risk boundary', number: 4 },
-  { id: 'ORDER_PREVIEW', label: 'Target delta', number: 5 },
-  { id: 'CONFIRM', label: 'Confirm', number: 6 },
+// Manual Control: upload a target portfolio CSV, preview it against the current account
+// and send it. The replay executes it at its next price; the end-of-day decision then
+// returns to the strategy targets. A progress bar follows the request to the exchange.
+
+const MAX_BYTES = 256 * 1024
+const POLL_MS = 2000
+
+type Notice = { tone: 'ok' | 'bad'; text: string }
+
+const STEPS: { stage: ManualRequestStatus['stage']; label: string }[] = [
+  { stage: 'QUEUED', label: 'Sent' },
+  { stage: 'EXECUTED', label: 'Picked up by replay' },
+  { stage: 'AT_EXCHANGE', label: 'Orders at exchange' },
+  { stage: 'FILLED', label: 'Filled' },
+  { stage: 'RESYNCED', label: 'Back to strategy targets' },
 ]
+const STEP_INDEX: Record<string, number> = Object.fromEntries(STEPS.map((step, index) => [step.stage, index]))
 
-function issueTone(severity: ManualValidationSeverity) {
-  return severity === 'ERROR' ? 'bad' : severity === 'WARN' ? 'warn' : 'good'
+const pct = (value: number) => `${value.toFixed(2)}%`
+const signedPct = (value: number) => `${value > 0 ? '+' : ''}${value.toFixed(2)}%`
+
+function actionTone(action?: string) {
+  return action === 'BUY' ? 'positive' : action === 'SELL' || action === 'CLOSE' ? 'negative' : 'muted'
+}
+
+function RequestProgress({ status }: { status?: ManualRequestStatus }) {
+  const failed = status?.stage === 'FAILED'
+  const reached = status ? (failed ? 0 : STEP_INDEX[status.stage]) : 0
+  return <div className="manual-progress">
+    <ol>{STEPS.map((step, index) => {
+      const state = failed && index === 1 ? 'failed' : index <= reached ? 'done' : index === reached + 1 && !failed ? 'current' : 'todo'
+      const label = step.stage === 'AT_EXCHANGE' && status && status.orders > 0 ? `${step.label} (${status.filled}/${status.orders} filled)` : step.label
+      return <li key={step.stage} className={`manual-progress__step manual-progress__step--${state}`}>
+        <span>{state === 'done' ? <Check size={12}/> : state === 'failed' ? <X size={12}/> : index + 1}</span>{failed && index === 1 ? 'Rejected' : label}
+      </li>
+    })}</ol>
+    {status?.detail && <small className={failed ? 'negative' : 'muted'}>{status.detail}</small>}
+  </div>
 }
 
 export function ManualControlPage() {
@@ -26,184 +53,145 @@ export function ManualControlPage() {
   const { session } = useAuth()
   const isOperator = session?.user.role === 'OPERATOR'
   const [preview, setPreview] = useState<ManualControlData | null>(null)
-  const [routeResult, setRouteResult] = useState<ManualControlRouteResult | null>(null)
-  const [stage, setStage] = useState<ManualControlStage>('UPLOAD')
-  const [filename, setFilename] = useState('manual-target.csv')
-  const [csvText, setCsvText] = useState('')
+  const [file, setFile] = useState<{ name: string; csv: string } | null>(null)
   const [busy, setBusy] = useState(false)
-  const [routeBusy, setRouteBusy] = useState(false)
-  const [previewError, setPreviewError] = useState<string | null>(null)
-  const [routeError, setRouteError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<Notice | null>(null)
+  const [trackedId, setTrackedId] = useState<string | null>(null)
+  const [dragging, setDragging] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const view = preview ?? data
-  const activeIndex = useMemo(() => stages.findIndex(item => item.id === stage), [stage])
+  const tracked = data?.requests?.find(request => request.id === trackedId)
+  const finished = tracked?.stage === 'RESYNCED' || tracked?.stage === 'FAILED'
+
+  // Poll while a sent request is still on its way.
+  useEffect(() => {
+    if (!trackedId || finished) return
+    const timer = window.setInterval(retry, POLL_MS)
+    return () => window.clearInterval(timer)
+  }, [trackedId, finished, retry])
 
   if (error) return <DataLoadError title="Manual control unavailable" error={error} onRetry={retry}/>
-  if (!view) return <div className="page-loading">Loading manual control…</div>
+  if (!data) return <div className="page-loading">Loading manual control…</div>
 
-  const runPreview = async (nextFilename: string, csv: string) => {
-    if (!isOperator || !session?.csrfToken) return
+  const canSend = isOperator && !!session?.csrfToken
+
+  const runPreview = async (name: string, csv: string) => {
+    if (!canSend) return
     setBusy(true)
-    setPreviewError(null)
-    setRouteError(null)
-    setRouteResult(null)
+    setNotice(null)
     try {
-      const result = await dataSource.previewManualControl({ filename: nextFilename, csv }, session.csrfToken)
-      setFilename(nextFilename)
-      setCsvText(csv)
-      setPreview(result)
-      setStage('VALIDATE')
+      setPreview(await dataSource.previewManualControl({ filename: name, csv }, session!.csrfToken))
+      setFile({ name, csv })
     } catch (cause) {
-      setPreviewError(cause instanceof Error ? cause.message : 'Manual-control preview failed.')
+      setNotice({ tone: 'bad', text: cause instanceof Error ? cause.message : 'Preview failed.' })
     } finally {
       setBusy(false)
     }
   }
 
-  const evaluateRoute = async () => {
-    if (!isOperator || !session?.csrfToken || !preview?.requestHash || !preview.currentTargetTimestamp || !csvText) return
-    setRouteBusy(true)
-    setRouteError(null)
-    try {
-      const result = await dataSource.routeManualControl({
-        filename,
-        csv: csvText,
-        requestHash: preview.requestHash,
-        referenceTargetTimestamp: preview.currentTargetTimestamp,
-        confirmation: preview.confirmationPhrase ?? 'CONFIRM_MANUAL_ROUTE',
-      }, session.csrfToken)
-      setRouteResult(result)
-    } catch (cause) {
-      setRouteError(cause instanceof Error ? cause.message : 'Manual route admission failed.')
-    } finally {
-      setRouteBusy(false)
-    }
-  }
-
-  const useDemo = () => { void runPreview('manual-target-demo.csv', view.exampleCsv) }
-
-  const onFile = async (file?: File) => {
-    if (!isOperator || !file) return
-    if (file.size > 256 * 1024) {
-      setPreviewError('CSV exceeds the 256 KB limit.')
+  const onFile = async (selected?: File) => {
+    if (!selected) return
+    if (selected.size > MAX_BYTES) {
+      setNotice({ tone: 'bad', text: 'The CSV is larger than 256 KB.' })
       return
     }
-    try {
-      await runPreview(file.name, await file.text())
-    } catch {
-      setPreviewError('Could not read the selected CSV.')
-    }
+    await runPreview(selected.name, await selected.text())
   }
 
-  const next = () => {
-    if (!isOperator) return
-    if (stage === 'VALIDATE' && !view.validationPassed) return
-    const nextStage = stages[Math.min(activeIndex + 1, stages.length - 1)]
-    setStage(nextStage.id)
-  }
-
-  const reset = () => {
-    setStage('UPLOAD')
+  const clear = () => {
     setPreview(null)
-    setRouteResult(null)
-    setPreviewError(null)
-    setRouteError(null)
-    setFilename('manual-target.csv')
-    setCsvText('')
+    setFile(null)
     if (inputRef.current) inputRef.current.value = ''
   }
 
-  const routeBlockers = view.routeBlockers ?? []
-  const recentAudits = view.recentRouteAudits ?? []
+  const send = async () => {
+    if (!canSend || !preview || !file) return
+    setBusy(true)
+    try {
+      const result = await dataSource.routeManualControl({
+        filename: file.name, csv: file.csv, requestHash: preview.requestHash,
+        referenceTargetTimestamp: preview.currentTargetTimestamp ?? '',
+        confirmation: preview.confirmationPhrase ?? 'CONFIRM_MANUAL_ROUTE',
+      }, session!.csrfToken)
+      if (result.status === 'QUEUED') {
+        setTrackedId(result.correlationId)
+        setNotice(null)
+        clear()
+        retry()
+      } else {
+        setNotice({ tone: 'bad', text: `Not sent: ${result.blockers.join(', ') || result.note}` })
+      }
+    } catch (cause) {
+      setNotice({ tone: 'bad', text: cause instanceof Error ? cause.message : 'Sending failed.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const errors = preview?.validationIssues.filter(issue => issue.severity !== 'INFO') ?? []
+  const summary = preview?.validationIssues.find(issue => issue.severity === 'INFO')
+  const blockers = (preview?.routeBlockers ?? []).filter(item => item !== 'PREVIEW_VALIDATION_FAILED')
+  const sendable = !!preview?.validationPassed && !!preview.routeEnabled && !busy
+  const grossPct = data.maxGrossPct ?? 100
+  const assetPct = data.maxAssetPct ?? 100
 
   return <>
-    <div className="page-heading">
-      <div><h1>Manual Portfolio Control</h1><p>Confirmed server-side admission contract that can never bypass PortfolioRisk → Planner → ExecutionState → venue adapter.</p></div>
-      <div className="manual-mode"><LockKeyhole size={13}/><span>{view.mode}</span><strong>{view.exchange}</strong></div>
-    </div>
+    <div className="page-heading"><h1>Manual Control</h1></div>
 
-    {!isOperator && <div className="manual-role-lock"><LockKeyhole size={15}/><div><strong>VIEWER access</strong><span>Manual portfolio preview and route admission require an OPERATOR session.</span></div></div>}
+    {!isOperator && <div className="manual-banner">Sign in as an OPERATOR to send a portfolio.</div>}
+    {notice && <div className={`manual-banner manual-banner--${notice.tone}`}>{notice.text}</div>}
 
-    <div className="manual-warning"><AlertTriangle size={15}/><div><strong>{view.contractVersion?.startsWith('step58') ? 'Step 58 · MOCK Simulation Routing' : 'Step 46 · Safe Routing Contract'}</strong><span>{view.safetyNote ?? 'Routing remains fail-closed until the normal trading-control path and private venue lifecycle are proven.'}</span></div></div>
-    {previewError && <div className="manual-role-lock"><AlertTriangle size={15}/><div><strong>Preview failed</strong><span>{previewError}</span></div></div>}
-    {routeError && <div className="manual-role-lock"><AlertTriangle size={15}/><div><strong>Route admission failed</strong><span>{routeError}</span></div></div>}
-
-    <Panel title={view.contractVersion?.startsWith('step58') ? "Step 58 · Simulation Routing Contract" : "Step 46 · Routing Admission Contract"} right={<span className={view.routingContractReady ? 'positive' : 'negative'}>{view.contractVersion ?? 'UNVERSIONED'} · {view.routingContractReady ? 'READY' : 'BLOCKED'}</span>}>
-      <div className="gate-list">
-        <span>Contract mode<strong>{view.routingContractMode ?? '—'}</strong></span>
-        <span>Durable human audit<strong>{view.humanAuditAvailable ? 'AVAILABLE' : 'UNAVAILABLE'}</strong></span>
-        <span>Trading-control sink<strong>{view.tradingControlSink ?? 'UNCONFIGURED'}</strong></span>
-        <span>Private auth<strong>{view.privateAuth ?? 'DEFERRED'}</strong></span>
-        <span>Order lifecycle<strong>{view.orderLifecycle ?? 'DEFERRED'}</strong></span>
-        <span>Actual routing<strong>{view.routeEnabled ? 'ENABLED' : 'DISABLED'}</strong></span>
-      </div>
-      <div className="preview-note"><ShieldCheck size={13}/><span>{view.executionBoundary ?? 'Normal pipeline only.'}</span></div>
-    </Panel>
-
-    <section className={`manual-stepper ${!isOperator ? 'manual-stepper--locked' : ''}`}>
-      {stages.map((item, index) => <button key={item.id} onClick={() => isOperator && preview && index <= activeIndex ? setStage(item.id) : undefined} className={`${item.id === stage ? 'manual-step--active' : ''} ${index < activeIndex ? 'manual-step--done' : ''}`}>
-        <span>{index < activeIndex ? <CheckCircle2 size={14}/> : item.number}</span><strong>{item.label}</strong>{index < stages.length - 1 && <ChevronRight size={12}/>} 
-      </button>)}
-    </section>
-
-    {stage === 'UPLOAD' && <section className="manual-grid manual-grid--upload">
-      <Panel title="Target Portfolio CSV" right={<span className="muted">Schema · {view.schemaLabel}</span>}>
-        <div className={`upload-zone ${!isOperator ? 'upload-zone--locked' : ''}`} onClick={() => isOperator && !busy ? inputRef.current?.click() : undefined}>
-          <UploadCloud size={32}/><strong>{busy ? 'Validating on server…' : 'Choose target portfolio CSV'}</strong><span>Authenticated backend parser · max {view.maxUploadSizeLabel}</span><button type="button" disabled={busy || !isOperator}>Select CSV</button>
-          <input ref={inputRef} type="file" disabled={!isOperator || busy} accept=".csv,text/csv" onChange={e => void onFile(e.target.files?.[0])}/>
-        </div>
-        <div className="manual-actions"><button className="button-secondary" onClick={useDemo} disabled={!isOperator || busy}><FileCheck2 size={13}/> Validate current-target demo</button></div>
-      </Panel>
-      <Panel title="Expected Format" right={<span className="muted">Backend contract</span>}>
-        <pre className="csv-preview">{view.exampleCsv}</pre>
-        <div className="preview-note"><ShieldCheck size={13}/><span>The backend validates schema, duplicates, 100% weights, canonical assets, explicit symbol-registry routability and current public venue-rule coverage. Browser checks are convenience only.</span></div>
-      </Panel>
-    </section>}
-
-    {stage === 'VALIDATE' && <section className="manual-grid">
-      <Panel title="Backend Validation Result" right={<span className={view.validationPassed ? 'positive' : 'negative'}><FileUp size={12}/> {view.validationPassed ? 'PASS' : 'FAIL'}</span>}>
-        <div className="manual-file"><FileCheck2 size={24}/><div><strong>{filename}</strong><span>Server-side parser · actor {view.auditActorLabel} · preview not persisted</span></div></div>
-        <div className="validation-list">{view.validationIssues.map((issue, index) => <div className={`validation-row validation-row--${issueTone(issue.severity)}`} key={`${issue.field}-${index}`}><span>{issue.severity}</span><div><strong>{issue.field}</strong><small>{issue.message}</small></div></div>)}</div>
-      </Panel>
-      <Panel title="Safety Gate" right={<span className={view.validationPassed ? 'positive' : 'negative'}>{view.validationPassed ? 'VALIDATED' : 'BLOCKED'}</span>}>
-        <div className="gate-list"><span>Backend validation<strong>{view.backendAuthoritative ? 'SERVER' : 'MOCK'}</strong></span><span>Exchange constraints<strong>{view.exchangeConstraintsValidated ? 'VALIDATED' : 'BLOCKED'}</strong></span><span>PortfolioRisk manual check<strong>{view.riskCheckAvailable ? 'AVAILABLE' : 'NOT WIRED'}</strong></span><span>Routing<strong>{view.routeEnabled ? 'ENABLED' : 'DISABLED'}</strong></span><span>Reference target<strong>{view.currentTargetTimestamp ?? '—'}</strong></span></div>
-      </Panel>
-    </section>}
-
-    {stage === 'PREVIEW' && <Panel title="Current Approved Target vs Requested Target" right={<span className="muted">Reference-capital delta · not an order</span>}>
-      <div className="table-wrap"><table className="wide-table manual-preview-table"><thead><tr><th>Asset</th><th>Current approved</th><th>Requested</th><th>Delta</th><th>Target notional delta</th><th>Status</th></tr></thead><tbody>{view.previewRows.map(row => <tr key={row.asset}><td><strong>{row.asset}</strong></td><td>{row.currentWeightPct.toFixed(2)}%</td><td>{row.requestedWeightPct.toFixed(2)}%</td><td className={row.deltaPct > 0 ? 'positive' : row.deltaPct < 0 ? 'negative' : ''}>{row.deltaPct > 0 ? '+' : ''}{row.deltaPct.toFixed(2)}%</td><td>{row.estimatedNotionalLabel}</td><td><span className="manual-tag">TARGET</span></td></tr>)}</tbody></table></div>
+    {trackedId && <Panel title="Request Progress" right={finished ? <button className="button-secondary" onClick={() => setTrackedId(null)}>Close</button> : undefined}>
+      <RequestProgress status={tracked ?? { id: trackedId, stage: 'QUEUED', detail: 'Waiting for the next replay price', orders: 0, filled: 0 }}/>
     </Panel>}
 
-    {stage === 'RISK_CHECK' && <section className="manual-grid">
-      <Panel title="Manual Risk Boundary" right={<span className={view.riskCheckAvailable ? 'positive' : 'warning'}>{view.riskCheckAvailable ? 'STEP57 WIRED' : 'NOT EXECUTED'}</span>}>
-        <div className="manual-authority"><ShieldCheck size={28}/><strong>PortfolioRisk remains authoritative</strong><p>{view.riskCheckAvailable ? 'The confirmed MOCK request will enter the Step57 manual PortfolioRisk transformation and production planner. Preview values remain non-authoritative until that execution-time risk check runs.' : 'The request is structurally/exchange-admission validated only. This provider cannot turn requested weights into an approved target.'}</p></div>
+    {!preview && <section className="manual-layout">
+      <Panel title="Upload Target Portfolio">
+        <div
+          className={`upload-zone ${!canSend ? 'upload-zone--locked' : ''} ${dragging ? 'upload-zone--drag' : ''}`}
+          onClick={() => canSend && !busy ? inputRef.current?.click() : undefined}
+          onDragOver={event => { event.preventDefault(); if (canSend) setDragging(true) }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={event => { event.preventDefault(); setDragging(false); if (canSend && !busy) void onFile(event.dataTransfer.files?.[0]) }}>
+          <UploadCloud size={30}/>
+          <strong>{busy ? 'Checking…' : 'Drop a CSV here or click to choose'}</strong>
+          <span>Max 256 KB</span>
+          <input ref={inputRef} type="file" disabled={!canSend || busy} accept=".csv,text/csv" onChange={event => void onFile(event.target.files?.[0])}/>
+        </div>
       </Panel>
-      <Panel title="Current route blockers" right={<span className="negative">FAIL CLOSED</span>}>
-        <div className="gate-list">{routeBlockers.map(blocker => <span key={blocker}>{blocker}<strong>BLOCKED</strong></span>)}</div>
-      </Panel>
-    </section>}
-
-    {stage === 'ORDER_PREVIEW' && <section className="manual-grid manual-grid--orders">
-      <Panel title="Target Delta Preview" right={<span className="muted">{view.routeEnabled ? 'MOCK normal pipeline only' : 'Not executable'}</span>}>
-        <div className="table-wrap"><table className="wide-table"><thead><tr><th>Asset</th><th>Direction</th><th>Δ weight</th><th>Reference-capital delta</th><th>Fee</th><th>Boundary</th></tr></thead><tbody>{view.orderPreview.map(row => <tr key={row.asset}><td><strong>{row.asset}</strong></td><td className={row.action === 'BUY' ? 'positive' : row.action === 'SELL' ? 'negative' : ''}>{row.action}</td><td>{row.deltaWeightPct > 0 ? '+' : ''}{row.deltaWeightPct.toFixed(2)}%</td><td>{row.estimatedNotionalLabel}</td><td>{row.estimatedFeeLabel}</td><td>{row.note}</td></tr>)}</tbody></table></div>
-      </Panel>
-      <Panel title="Request Summary">
-        <div className="manual-summary"><span>Target turnover<strong>{view.estimatedTurnoverLabel}</strong></span><span>Estimated fees<strong>{view.estimatedFeesLabel}</strong></span><span>Request hash<code>{view.requestHash || '—'}</code></span><span>Registry<strong>{view.registryVersion ?? '—'}</strong></span><span>Actor<strong>{view.auditActorLabel}</strong></span></div>
-      </Panel>
-    </section>}
-
-    {stage === 'CONFIRM' && <section className="manual-grid">
-      <Panel title="Final Confirmation / Admission" right={<span className={view.routeEnabled ? 'positive' : 'negative'}><LockKeyhole size={12}/> {view.routeEnabled ? 'MOCK routing enabled' : 'routing disabled'}</span>}>
-        <div className="confirm-box"><ShieldCheck size={34}/><h2>Confirm the exact hashed request</h2><p>{view.routeEnabled ? 'The server will recompute the hash and stale-reference checks, then queue the request to the Step58 simulation trading-control sink. The runner invokes Step57 Risk → Planner → CanonicalVenueAdapter → MOCK; the browser never talks to the venue.' : 'The server will recompute the CSV hash, reject a stale reference target, and remain fail-closed.'}</p><button className="button-primary" onClick={() => void evaluateRoute()} disabled={!isOperator || routeBusy || !view.validationPassed || !view.requestHash}>{routeBusy ? 'Evaluating…' : 'Evaluate safe route admission'}</button><small>Confirmation token: {view.confirmationPhrase ?? 'CONFIRM_MANUAL_ROUTE'} · {view.routeEnabled ? 'simulation sink only · no private venue / no capital' : 'no trading command dispatched'}.</small></div>
-        {routeResult && <div className="alerts-gap-note"><strong>{routeResult.status} · submitted={String(routeResult.submitted)} · audit={routeResult.auditPersisted ? 'PERSISTED' : 'FAILED'}</strong><span>{routeResult.note}</span><code>{routeResult.correlationId}</code><span>{routeResult.blockers.join(' · ')}</span></div>}
-      </Panel>
-      <Panel title="Durable Operator-Intent Audit" right={<span className={view.humanAuditAvailable ? 'positive' : 'negative'}>{view.humanAuditAvailable ? 'AVAILABLE' : 'UNAVAILABLE'}</span>}>
-        <div className="audit-preview"><span>Action<strong>MANUAL_ROUTE_ADMISSION</strong></span><span>Mode<strong>{view.mode}</strong></span><span>Boundary<strong>{view.exchange}</strong></span><span>Request hash<code>{view.requestHash || '—'}</code></span><span>Expected result<strong>{view.routeEnabled ? 'QUEUED TO MOCK / STEP57' : 'REJECTED / NOT_SUBMITTED'}</strong></span></div>
-        {recentAudits.length > 0 && <div className="table-wrap"><table className="wide-table audit-table"><thead><tr><th>Recorded</th><th>Actor</th><th>Result</th><th>Submitted</th><th>Correlation</th><th>Blockers</th></tr></thead><tbody>{recentAudits.slice(0, 8).map(row => <tr key={row.correlationId}><td>{row.recordedAt}</td><td>{row.actor}</td><td>{row.result}</td><td>{String(row.submitted)}</td><td><code>{row.correlationId}</code></td><td>{row.blockers.join(', ')}</td></tr>)}</tbody></table></div>}
+      <Panel title="Format" right={<button className="button-secondary" onClick={() => void runPreview('example.csv', data.exampleCsv)} disabled={!canSend || busy}>Try example</button>}>
+        <pre className="csv-preview">{data.exampleCsv}</pre>
+        <ul className="manual-rules">
+          <li><code>weight_pct</code> is the % of equity per asset.</li>
+          <li>CASH is optional; whatever is not allocated stays in cash.</li>
+          <li>Held assets missing from the file are closed.</li>
+          <li>Risk limits: total up to {grossPct.toFixed(0)}% ({(grossPct / 100).toFixed(2)}x), {assetPct.toFixed(0)}% per asset, long only.</li>
+          <li>Executes at the next price; the end-of-day decision then returns to the strategy targets.</li>
+        </ul>
       </Panel>
     </section>}
 
-    {stage !== 'UPLOAD' && <footer className="manual-footer"><button className="button-secondary" onClick={reset}><RefreshCw size={13}/> Reset</button><span>{filename} · server admission contract · {view.routeEnabled ? 'MOCK simulation routing enabled' : 'actual routing disabled'}</span>{stage !== 'CONFIRM' && <button className="button-primary" onClick={next} disabled={!isOperator || (stage === 'VALIDATE' && !view.validationPassed)}>Continue <ChevronRight size={13}/></button>}</footer>}
+    {preview && <Panel title={`Preview · ${file?.name ?? ''}`} right={<span className={preview.validationPassed ? 'positive' : 'negative'}>{preview.validationPassed ? 'Valid' : 'Invalid'}</span>}>
+      {errors.length > 0 && <ul className="manual-issues">{errors.map((issue, index) => <li key={index} className={issue.severity === 'ERROR' ? 'negative' : 'warning'}><strong>{issue.field}</strong> {issue.message}</li>)}</ul>}
+      {preview.validationPassed && <>
+        <div className="table-wrap"><table className="wide-table">
+          <thead><tr><th>Asset</th><th>Action</th><th>Current</th><th>Target</th><th>Change</th><th>Approx. Amount</th></tr></thead>
+          <tbody>{preview.previewRows.map(row => <tr key={row.asset}>
+            <td><strong>{row.asset}</strong></td>
+            <td className={actionTone(row.action)}>{row.action ?? '—'}</td>
+            <td>{pct(row.currentWeightPct)}</td>
+            <td>{pct(row.requestedWeightPct)}</td>
+            <td className={row.deltaPct > 0 ? 'positive' : row.deltaPct < 0 ? 'negative' : ''}>{signedPct(row.deltaPct)}</td>
+            <td>{row.estimatedNotionalLabel}</td>
+          </tr>)}</tbody>
+        </table></div>
+        <div className="manual-summary-line">{summary?.message} Turnover {preview.estimatedTurnoverLabel}. Amounts use the current equity; the planner sizes the final orders at the execution price.</div>
+      </>}
+      {blockers.length > 0 && <div className="manual-banner manual-banner--bad">Cannot send now: {blockers.join(', ')}</div>}
+      <div className="manual-actions">
+        <button className="button-secondary" onClick={clear} disabled={busy}>Cancel</button>
+        <button className="button-primary" onClick={() => void send()} disabled={!sendable}>{busy ? 'Sending…' : 'Send to replay'}</button>
+      </div>
+    </Panel>}
   </>
 }

@@ -2,6 +2,9 @@
 #include "validated/pure_rsi.h"
 #include "equal_weight_sizer.h"
 #include "entry_exit_only_rebalance_policy.h"
+#include "sample_covariance_estimator.h"
+#include "threshold_rebalance_policy.h"
+#include "volatility_target_sizer.h"
 #include "donchian_signal_strategy.h"
 #include "xh_breakout_strategy.h"
 #include "backtest_metrics.h"
@@ -673,6 +676,21 @@ std::size_t countSensitivityCombinations(
     return count;
 }
 
+// Position sizing for every run of the study, chosen once on the command line.
+// equal-weight: fixed quantityPercent per signal, entry/exit-only rebalance (default).
+// volatility-target: config/portfolio/pure_rsi_vol_target.json semantics: signal shape
+// scaled to an annualized portfolio volatility from a sample covariance, positions
+// resized when their weight drifts beyond the threshold.
+struct StudySizing {
+    std::string sizer = "equal-weight";
+    double targetVolatility = 0.20;
+    std::size_t covarianceLookback = 5;
+    double periodsPerYear = 365.0;
+    double rebalanceThreshold = 0.02;
+};
+
+StudySizing studySizing;
+
 StrategyPortfolio makeStudyPortfolio(
     const StrategyDefinition& definition,
     const ParameterValues& parameters
@@ -680,8 +698,23 @@ StrategyPortfolio makeStudyPortfolio(
 {
     // The study allocates all capital to one strategy. Signal strength and
     // fixed asset weight are separate; execution quantities resolve at next open.
-    const double assetWeight = parameterOr(parameters, "quantityPercent", 10.0) / 100.0;
     StrategyPortfolio portfolio;
+    if (studySizing.sizer == "volatility-target") {
+        portfolio.emplace_back(
+            1,
+            definition.create(parameters),
+            1.0,
+            std::make_unique<VolatilityTargetSizer>(
+                std::make_unique<SampleCovarianceEstimator>(
+                    studySizing.covarianceLookback, studySizing.periodsPerYear),
+                studySizing.targetVolatility),
+            RiskConstraints(1.5, 1.5),
+            std::make_unique<ThresholdRebalancePolicy>(studySizing.rebalanceThreshold)
+        );
+        return portfolio;
+    }
+
+    const double assetWeight = parameterOr(parameters, "quantityPercent", 10.0) / 100.0;
     portfolio.emplace_back(
         1,
         definition.create(parameters),
@@ -1446,7 +1479,11 @@ try
         ("output-root", options::value(&outputRoot)->default_value("storage/backtests/sensitivity_results"), "Study parent directory")
         ("strategy", options::value(&selectedStrategy)->default_value("PureRSI"), "Strategy name or all")
         ("grid", options::value(&grid)->default_value("none"), "none, compact or full sensitivity grid")
-        ("fee-taker", options::value(&feeTaker)->default_value(0.0), "Market commission fraction per fill");
+        ("fee-taker", options::value(&feeTaker)->default_value(0.0), "Market commission fraction per fill")
+        ("sizer", options::value(&studySizing.sizer)->default_value("equal-weight"), "equal-weight or volatility-target")
+        ("target-volatility", options::value(&studySizing.targetVolatility)->default_value(0.20), "volatility-target: annualized target (0.20 = 20%)")
+        ("covariance-lookback", options::value(&studySizing.covarianceLookback)->default_value(5), "volatility-target: returns in the sample covariance")
+        ("rebalance-threshold", options::value(&studySizing.rebalanceThreshold)->default_value(0.02), "volatility-target: weight drift that triggers a resize");
     try {
         options::variables_map values;
         options::store(options::parse_command_line(argc, argv, arguments), values);
@@ -1469,6 +1506,12 @@ try
             throw std::invalid_argument("Grid must be none, compact or full");
         if (!std::isfinite(feeTaker) || feeTaker < 0.0)
             throw std::invalid_argument("Fee must be finite and non-negative");
+        if (studySizing.sizer != "equal-weight" && studySizing.sizer != "volatility-target")
+            throw std::invalid_argument("Sizer must be equal-weight or volatility-target");
+        if (!std::isfinite(studySizing.targetVolatility) || studySizing.targetVolatility <= 0.0 ||
+            studySizing.covarianceLookback < 2U ||
+            !std::isfinite(studySizing.rebalanceThreshold) || studySizing.rebalanceThreshold < 0.0)
+            throw std::invalid_argument("Volatility-target settings must be positive (lookback >= 2)");
         if (studyId.empty()) {
             studyId = utcTimestamp();
             studyId.erase(std::remove(studyId.begin(), studyId.end(), ':'), studyId.end());
@@ -1490,6 +1533,13 @@ try
         LG_ERROR("{}", exception.what());
         return 1;
     }
+
+    studySizing.periodsPerYear = periodsPerYear;
+    if (studySizing.sizer == "volatility-target")
+        LG_INFO("Sizer: volatility-target {:.0f}% annualized, covariance of {} returns, rebalance at {:.1f}% drift, max gross 1.5x",
+                studySizing.targetVolatility * 100.0, studySizing.covarianceLookback, studySizing.rebalanceThreshold * 100.0);
+    else
+        LG_INFO("Sizer: equal-weight (quantityPercent per signal), entry/exit-only rebalance");
 
     constexpr double initialBalance = 100000.0;
 

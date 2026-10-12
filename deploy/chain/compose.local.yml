@@ -1,0 +1,26 @@
+# Local overlay, used by ./algo only when chain.env has LOG_MODE=local.
+# Docker Desktop's daemon runs in its own VM and cannot reach a receiver on the
+# WSL loopback. Containers keep Docker's json-file logs and monitor.py copies them
+# with the same writer into <root>/logs/<service>/YYYYMMDD.log.
+x-local-logging: &local_logging
+  driver: json-file
+  options:
+    max-size: 25m
+    max-file: "2"
+
+services:
+  data-init: {logging: !override {<<: *local_logging}}
+  nats: {logging: !override {<<: *local_logging}}
+  postgres: {logging: !override {<<: *local_logging}}
+  market-data-init: {logging: !override {<<: *local_logging}}
+  market-data: {logging: !override {<<: *local_logging}}
+  strategy: {logging: !override {<<: *local_logging}}
+  risk: {logging: !override {<<: *local_logging}}
+  planner: {logging: !override {<<: *local_logging}}
+  execution: {logging: !override {<<: *local_logging}}
+  gateway: {logging: !override {<<: *local_logging}}
+  sim-exchange: {logging: !override {<<: *local_logging}}
+  dash-api: {logging: !override {<<: *local_logging}}
+  dash-web: {logging: !override {<<: *local_logging}}
+  watchdog: {logging: !override {<<: *local_logging}}
+  notifier: {logging: !override {<<: *local_logging}}

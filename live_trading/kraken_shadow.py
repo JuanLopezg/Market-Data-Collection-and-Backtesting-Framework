@@ -286,13 +286,15 @@ def main():
     parser.add_argument('--configuration-fingerprint', help='Required persisted source risk fingerprint when observing plans')
     parser.add_argument('--collateral-scenario', type=Path, help='Explicit hypothetical BTC/USD cross-margin scenario JSON')
     parser.add_argument('--output', type=Path, help='Separate ignored local study directory, reusable for journal restart')
+    parser.add_argument('--study-root', type=Path, default=ROOT / 'storage/kraken_shadow',
+                        help='Folder that must contain every study (an installed chain uses <root>/data/kraken_shadow)')
     args = parser.parse_args()
     if args.plans and not args.configuration_fingerprint:
         parser.error('--plans requires the persisted --configuration-fingerprint')
-    directory = args.output or ROOT / 'storage/kraken_shadow' / datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+    directory = args.output or args.study_root / datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     directory = directory.resolve()
-    if not directory.is_relative_to((ROOT / 'storage/kraken_shadow').resolve()):
-        parser.error('Keep this study under ignored storage/kraken_shadow')
+    if not directory.is_relative_to(args.study_root.resolve()):
+        parser.error(f'Keep this study under {args.study_root}')
     scenario = json.loads(args.collateral_scenario.read_text(encoding='utf-8')) if args.collateral_scenario else None
     capture = directory / 'raw' / datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     reader = KrakenPublicReader(args.environment, capture)

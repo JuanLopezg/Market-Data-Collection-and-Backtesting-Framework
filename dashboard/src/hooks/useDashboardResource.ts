@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DashboardDataSource } from '../data/dashboardDataSource'
 import { useDashboardDataSource } from '../providers/DashboardDataSourceProvider'
 import { DASHBOARD_STREAM_INVALIDATE_EVENT, type DashboardStreamInvalidation } from './useDashboardStream'
@@ -26,6 +26,8 @@ const streamResourceName: Partial<Record<ResourceKey, string>> = {
   getLiveVsExpected: 'live-vs-expected',
   getManualControl: 'manual-control',
 }
+
+const REFRESH_RETRY_MS = 2000
 
 export interface DashboardResourceState<T> {
   data: T | null
@@ -72,10 +74,16 @@ export function useDashboardResource<K extends ResourceKey>(resource: K): Dashbo
     }
   }, [resource])
 
+  // A failed refresh keeps the last good data on screen and retries quietly; the error is
+  // only surfaced while nothing has loaded yet (a dropped connection or a container
+  // restart must not blank a page that is already showing data).
+  const hasData = useRef(false)
+
   useEffect(() => {
     let active = true
+    let retryTimer: number | null = null
     setLoading(true)
-    setError(null)
+    if (!hasData.current) setError(null)
 
     // Keep the DashboardDataSource method bound to its instance.
     // ApiDashboardDataSource methods use `this.client`; extracting a method and
@@ -85,17 +93,26 @@ export function useDashboardResource<K extends ResourceKey>(resource: K): Dashbo
       .then(loader)
       .then(result => {
         if (!active) return
+        hasData.current = true
         setData(result)
+        setError(null)
       })
       .catch(cause => {
         if (!active) return
+        if (hasData.current) {
+          retryTimer = window.setTimeout(() => setAttempt(value => value + 1), REFRESH_RETRY_MS)
+          return
+        }
         setError(cause instanceof Error ? cause : new Error('Unknown dashboard data error.'))
       })
       .finally(() => {
         if (active) setLoading(false)
       })
 
-    return () => { active = false }
+    return () => {
+      active = false
+      if (retryTimer !== null) window.clearTimeout(retryTimer)
+    }
   }, [attempt, dataSource, resource])
 
   return { data, error, loading, retry }

@@ -3,6 +3,10 @@
 // 1. Read runtime/control/backend stream configuration.
 // 2. Subscribe to submit, cancel, snapshot, or dry-run planning messages.
 // 3. Forward commands to the backend adapter and publish normalized order/fill/snapshot events.
+//
+// Modes: "backend" (simulated exchange over NATS), "venue" (real exchange through
+// venue/LiveVenueAdapter; order submission disabled unless --order-submission enabled)
+// and "hyperliquid-dry-run" (plan inspection only).
 
 #include <atomic>
 #include <csignal>
@@ -23,6 +27,10 @@
 #include "time_handler_factory.h"
 #include "time_utils.h"
 #include "message_subjects.h"
+#include "venue/http_transport.h"
+#include "venue/kraken_futures_protocol.h"
+#include "venue/live_venue_adapter.h"
+#include "venue/venue_journal.h"
 
 
 // Internal helpers and service implementation.
@@ -61,6 +69,7 @@ Timestamp newestCompletedUtcDate(const TimeHandler& timeHandler)
 
 enum class GatewayMode {
     Backend,
+    Venue,
     HyperliquidDryRun
 };
 
@@ -68,11 +77,13 @@ GatewayMode parseGatewayMode(const std::string& value)
 {
     if (value == "backend")
         return GatewayMode::Backend;
+    if (value == "venue")
+        return GatewayMode::Venue;
     if (value == "hyperliquid-dry-run")
         return GatewayMode::HyperliquidDryRun;
 
     throw std::invalid_argument(
-        "--mode must be backend or hyperliquid-dry-run"
+        "--mode must be backend, venue or hyperliquid-dry-run"
     );
 }
 
@@ -81,6 +92,8 @@ const char* gatewayModeName(GatewayMode mode)
     switch (mode) {
     case GatewayMode::Backend:
         return "backend";
+    case GatewayMode::Venue:
+        return "venue";
     case GatewayMode::HyperliquidDryRun:
         return "hyperliquid-dry-run";
     }
@@ -97,6 +110,15 @@ struct Options {
     std::string backend_stream = "ALGOTRADING_EXCHANGE_BACKEND";
     GatewayMode mode = GatewayMode::Backend;
     int poll_timeout_ms = 250;
+
+    // Venue mode only.
+    std::string venue = "kraken-futures";
+    std::string venue_host = "https://futures.kraken.com";
+    std::string credentials_file;
+    std::string venue_journal;
+    std::string account_namespace;
+    bool order_submission_enabled = false;
+    int dead_mans_switch_seconds = 0;
 };
 
 
@@ -124,6 +146,24 @@ Options parseOptions(int argc, char** argv)
             options.mode = parseGatewayMode(requireValue("--mode"));
         else if (arg == "--poll-timeout-ms")
             options.poll_timeout_ms = std::stoi(requireValue("--poll-timeout-ms"));
+        else if (arg == "--venue")
+            options.venue = requireValue("--venue");
+        else if (arg == "--venue-host")
+            options.venue_host = requireValue("--venue-host");
+        else if (arg == "--credentials-file")
+            options.credentials_file = requireValue("--credentials-file");
+        else if (arg == "--venue-journal")
+            options.venue_journal = requireValue("--venue-journal");
+        else if (arg == "--account-namespace")
+            options.account_namespace = requireValue("--account-namespace");
+        else if (arg == "--dead-mans-switch-seconds")
+            options.dead_mans_switch_seconds = std::stoi(requireValue("--dead-mans-switch-seconds"));
+        else if (arg == "--order-submission") {
+            const std::string value = requireValue("--order-submission");
+            if (value != "enabled" && value != "disabled")
+                throw std::invalid_argument("--order-submission must be enabled or disabled");
+            options.order_submission_enabled = value == "enabled";
+        }
         else if (arg == "--help" || arg == "-h") {
             std::cout
                 << "Exchange gateway options:\n"
@@ -131,8 +171,16 @@ Options parseOptions(int argc, char** argv)
                 << "  --stream NAME\n"
                 << "  --control-stream NAME\n"
                 << "  --backend-stream NAME\n"
-                << "  --mode backend|hyperliquid-dry-run\n"
-                << "  --poll-timeout-ms N\n";
+                << "  --mode backend|venue|hyperliquid-dry-run\n"
+                << "  --poll-timeout-ms N\n"
+                << "Venue mode:\n"
+                << "  --venue kraken-futures\n"
+                << "  --venue-host URL (default https://futures.kraken.com)\n"
+                << "  --credentials-file PATH (KRAKEN_API_KEY / KRAKEN_API_SECRET)\n"
+                << "  --venue-journal PATH (SQLite)\n"
+                << "  --account-namespace NAME (part of client order ids; change it after any state reset)\n"
+                << "  --order-submission disabled|enabled (default disabled: GET requests only)\n"
+                << "  --dead-mans-switch-seconds N (0: off)\n";
             std::exit(0);
         }
         else
@@ -144,6 +192,16 @@ Options parseOptions(int argc, char** argv)
         throw std::invalid_argument("Gateway stream names cannot be empty");
     if (options.poll_timeout_ms <= 0)
         throw std::invalid_argument("--poll-timeout-ms must be positive");
+    if (options.mode == GatewayMode::Venue) {
+        if (options.venue != "kraken-futures")
+            throw std::invalid_argument("--venue must be kraken-futures");
+        if (options.credentials_file.empty() || options.venue_journal.empty() || options.account_namespace.empty())
+            throw std::invalid_argument("Venue mode needs --credentials-file, --venue-journal and --account-namespace");
+        if (options.dead_mans_switch_seconds < 0)
+            throw std::invalid_argument("--dead-mans-switch-seconds cannot be negative");
+    }
+    else if (options.order_submission_enabled)
+        throw std::invalid_argument("--order-submission applies to venue mode only");
 
     return options;
 }
@@ -156,7 +214,14 @@ private:
     const Options options_;
     TimeHandler time_handler_;
     JetStreamBus bus_;
-    std::unique_ptr<BackendGateway> adapter_;
+
+    // Venue mode: protocol, transport and journal outlive the adapter that uses them.
+    std::unique_ptr<Venue::VenueProtocol> venue_protocol_;
+    std::unique_ptr<Venue::HttpTransport> venue_http_;
+    std::unique_ptr<Venue::HttpTransport> venue_transport_;
+    std::unique_ptr<Venue::VenueJournal> venue_journal_;
+
+    std::unique_ptr<ExchangeGatewayAdapter> adapter_;
 
     MessageBus::SubscriptionID submit_subscription_ = 0;
     MessageBus::SubscriptionID cancel_subscription_ = 0;
@@ -413,6 +478,35 @@ private:
         }
     }
 
+    std::unique_ptr<ExchangeGatewayAdapter> createVenueAdapter()
+    {
+        venue_protocol_ = std::make_unique<Venue::KrakenFuturesProtocol>(
+            options_.venue_host, Venue::loadKrakenCredentials(options_.credentials_file));
+        venue_http_ = std::make_unique<Venue::CurlHttpTransport>(10000, 4 * 1024 * 1024);
+        if (options_.order_submission_enabled)
+            venue_transport_ = nullptr;
+        else
+            // Read-only operation: no POST can leave the process, whatever the code path.
+            venue_transport_ = std::make_unique<Venue::GetOnlyTransport>(*venue_http_);
+        venue_journal_ = std::make_unique<Venue::VenueJournal>(
+            options_.venue_journal, venue_protocol_->name(), options_.account_namespace);
+
+        Venue::LiveVenueOptions venueOptions;
+        venueOptions.order_submission_enabled = options_.order_submission_enabled;
+        venueOptions.account_namespace = options_.account_namespace;
+        venueOptions.dead_mans_switch_seconds = options_.dead_mans_switch_seconds;
+
+        auto adapter = std::make_unique<Venue::LiveVenueAdapter>(
+            *venue_protocol_,
+            venue_transport_ ? *venue_transport_ : *venue_http_,
+            *venue_journal_,
+            [this] { return currentBusinessUtcDate(time_handler_); }, // Business time.
+            Venue::technicalUnixMs,                                   // Technical time only.
+            venueOptions);
+        adapter->verifyPermissions();
+        return adapter;
+    }
+
 public:
     explicit ExchangeGatewayRuntime(Options options)
         : options_(std::move(options)),
@@ -427,15 +521,18 @@ public:
             options_.runtime_stream,
             MessageSubjects::tradingRuntimeSubjects()
         );
-        if (options_.mode == GatewayMode::Backend) {
+        if (options_.mode == GatewayMode::Backend || options_.mode == GatewayMode::Venue) {
             bus_.ensureStream(
                 options_.control_stream,
                 MessageSubjects::exchangeGatewayControlSubjects()
             );
 
-            adapter_ = std::make_unique<BackendGateway>(
-                options_.nats_url, options_.backend_stream
-            );
+            if (options_.mode == GatewayMode::Backend)
+                adapter_ = std::make_unique<BackendGateway>(
+                    options_.nats_url, options_.backend_stream
+                );
+            else
+                adapter_ = createVenueAdapter();
             adapter_->setHandlers({
                 [this](const OrderUpdateEvent& value) { publish(value); },
                 [this](const FillEvent& value) { publish(value); },
@@ -501,14 +598,15 @@ public:
 
     void run()
     {
-        LG_INFO("Exchange gateway ready (mode {}, today {}, real submission disabled)",
-                gatewayModeName(options_.mode), FormatDayKey(currentBusinessUtcDate(time_handler_)));
+        LG_INFO("Exchange gateway ready (mode {}, today {}, real order submission {})",
+                gatewayModeName(options_.mode), FormatDayKey(currentBusinessUtcDate(time_handler_)),
+                options_.order_submission_enabled ? "ENABLED" : "disabled");
         LG_DEBUG("Runtime stream {}, control stream {}, backend stream {}, poll timeout {} ms",
                  options_.runtime_stream, options_.control_stream, options_.backend_stream, options_.poll_timeout_ms);
         std::cout.flush();
 
         while (running.load()) {
-            if (options_.mode == GatewayMode::Backend) {
+            if (options_.mode == GatewayMode::Backend || options_.mode == GatewayMode::Venue) {
                 // Existing replay/test path remains unchanged.
                 adapter_->poll(options_.poll_timeout_ms);
                 bus_.poll(

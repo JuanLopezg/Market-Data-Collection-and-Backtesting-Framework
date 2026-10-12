@@ -40,6 +40,8 @@ fmt_dep = dependency('fmt', required: true)
 
 # --- NEW: CURL dependency ---
 curl_dep = dependency('libcurl', required: true)
+# Request signing for real venues (exchange gateway).
+openssl_dep = dependency('openssl', required: true)
 
 # ------------------------------
 # Export dependencies to subdirs
@@ -51,6 +53,7 @@ global_deps = {
     'log4cpp_dep'                : log4cpp_dep,
     'sqlite3_dep'               : sqlite3_dep,
     'curl_dep'                  : curl_dep, 
+    'openssl_dep'               : openssl_dep,
     'fmt_dep'                   : fmt_dep, 
     'arrow_dep'                 : arrow_dep,
     'parquet_dep'               : parquet_dep,

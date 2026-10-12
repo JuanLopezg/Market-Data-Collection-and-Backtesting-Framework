@@ -4,7 +4,7 @@ x-daily-logging: &daily_logging
   options:
     syslog-address: "tcp://127.0.0.1:5514"
     syslog-format: "rfc5424micro"
-    tag: "algotrading.{{.Name}}"
+    tag: "{{.Name}}"
     mode: "non-blocking"
     max-buffer-size: "4m"
     cache-disabled: "false"

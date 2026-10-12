@@ -78,10 +78,17 @@ func main() {
 		ManualAuditDir:  strings.TrimSpace(os.Getenv("DASHBOARD_MANUAL_AUDIT_DIR")),
 		AlertAckDir:     strings.TrimSpace(os.Getenv("DASHBOARD_ALERT_ACK_DIR")),
 		AlertStoreDir:   strings.TrimSpace(envOr("DASHBOARD_ALERT_STORE_DIR", "/data/watchdog")),
+		HostHistoryFile: strings.TrimSpace(os.Getenv("DASHBOARD_HOST_HISTORY_FILE")),
 	})
 	if err != nil {
 		logger.Error("failed to initialize dashboard api", "error", err)
 		os.Exit(1)
+	}
+
+	if dir := strings.TrimSpace(os.Getenv("DASHBOARD_REPORTS_DIR")); dir != "" {
+		if reporter, ok := dataProvider.(provider.ClosedPositionsReporter); ok {
+			go writeReportsLoop(dir, reporter, logger)
+		}
 	}
 
 	providerHealth := dataProvider.Health(context.Background())
@@ -123,6 +130,34 @@ func main() {
 	logger.Info("dashboard api stopped")
 }
 
+// reportsInterval keeps reports/ at most this old; a closed position appears within it.
+const reportsInterval = 10 * time.Minute
+
+// writeReportsLoop rewrites the closed-positions CSV files in reports/ now and then
+// every reportsInterval. Failures are logged and retried at the next tick.
+func writeReportsLoop(dir string, reporter provider.ClosedPositionsReporter, logger *slog.Logger) {
+	write := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		report, err := reporter.ClosedPositionsReport(ctx)
+		if err == nil {
+			var files []string
+			files, err = provider.WriteClosedPositionsReports(dir, report)
+			if err == nil {
+				logger.Debug("closed-positions report written", "dir", dir, "files", len(files), "positions", len(report.Closed))
+				return
+			}
+		}
+		logger.Warn("closed-positions report not written", "dir", dir, "error", err)
+	}
+	write()
+	ticker := time.NewTicker(reportsInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		write()
+	}
+}
+
 func configuredProvider() (provider.Provider, error) {
 	mode := strings.ToLower(strings.TrimSpace(envOr("DASHBOARD_DATA_PROVIDER", "mock")))
 	switch mode {
@@ -133,7 +168,9 @@ func configuredProvider() (provider.Provider, error) {
 		if dir == "" {
 			return nil, fmt.Errorf("DASHBOARD_SIMULATION_DIR must not be empty")
 		}
-		return provider.NewSimulation(provider.SimulationConfig{Dir: dir}), nil
+		return provider.NewSimulation(provider.SimulationConfig{Dir: dir,
+			HostMetricsFile:    strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_FILE")),
+			HostMetricsProject: strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_PROJECT"))}), nil
 	case "real":
 		// Step 36 keeps all prior read-only/safety boundaries and adds public Hyperliquid TESTNET trading-rule validation for supported mappings only.
 		// The proof never creates trades; it only correlates already-durable Strategy/Risk/Planner/Execution/Fill/Reconciliation evidence.

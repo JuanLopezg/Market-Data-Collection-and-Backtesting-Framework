@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -34,10 +35,14 @@ type realOverviewMetric struct {
 	Trend  []float64 `json:"trend,omitempty"`
 }
 
+// One day of the Overview charts. Balance, Expected and CloseLoop are omitted when the
+// source does not provide them.
 type realEquityPoint struct {
-	Label     string  `json:"label"`
-	Equity    float64 `json:"equity"`
-	Benchmark float64 `json:"benchmark"`
+	Label     string   `json:"label"`
+	Equity    float64  `json:"equity"`
+	Balance   *float64 `json:"balance,omitempty"`
+	Expected  *float64 `json:"expected,omitempty"`
+	CloseLoop string   `json:"closeLoop,omitempty"`
 }
 
 type realRecentEvent struct {
@@ -83,7 +88,51 @@ func (p *Real) overview(ctx context.Context) (realOverviewData, error) {
 		warnings = append(warnings, "Market-data read model unavailable: "+marketErr.Error())
 	}
 
-	return buildRealOverview(positions, reconciliation, reconciliationErr, execution, executionErr, risk, riskErr, market, marketErr, warnings), nil
+	overview := buildRealOverview(positions, reconciliation, reconciliationErr, execution, executionErr, risk, riskErr, market, marketErr, warnings)
+	addPositionValuation(&overview, positions)
+	if p.cfg.PaperComparisonFile != "" {
+		addPaperComparison(&overview, readPaperComparison(p.cfg.PaperComparisonFile))
+	}
+	return overview, nil
+}
+
+// addPositionValuation shows equity and leverage from positions marked at the latest close.
+func addPositionValuation(overview *realOverviewData, positions realPositionsData) {
+	if positions.ValuationState != "AVAILABLE" {
+		return
+	}
+	overview.Stats[0] = realOverviewMetric{Label: "Total Equity", Value: positions.TotalEquity}
+	overview.Stats[2] = realOverviewMetric{Label: "Leverage", Value: fmt.Sprintf("%.2fx", positions.grossValue/positions.equityValue)}
+}
+
+// addPaperComparison fills equity and Live vs Expected from the daily PAPER comparison:
+// account equity marked at each execution open, next to the fast-backtest equity.
+func addPaperComparison(overview *realOverviewData, comparison *paperComparison) {
+	if comparison == nil || len(comparison.Rows) == 0 {
+		return
+	}
+	curve := make([]realEquityPoint, 0, len(comparison.Rows))
+	expected := make([]realEquityPoint, 0, len(comparison.Rows))
+	for _, row := range comparison.Rows {
+		value := row.ExpectedEquity
+		curve = append(curve, realEquityPoint{Label: row.Date, Equity: row.LiveEquity})
+		expected = append(expected, realEquityPoint{Label: row.Date, Equity: row.LiveEquity, Expected: &value})
+	}
+	overview.EquityCurve, overview.LiveExpected = curve, expected
+	overview.EquityAvailable, overview.LiveExpectedAvailable = true, true
+
+	if overview.Stats[0].Value != "Not available" {
+		return // Already valued at the latest close; the comparison marks are older.
+	}
+	latest := comparison.Rows[len(comparison.Rows)-1]
+	overview.Stats[0] = realOverviewMetric{Label: "Total Equity", Value: formatUSD(latest.LiveEquity)}
+	if latest.LiveEquity > 0 {
+		gross := 0.0
+		for _, position := range comparison.Positions {
+			gross += math.Abs(position.LiveUSD)
+		}
+		overview.Stats[2] = realOverviewMetric{Label: "Leverage", Value: fmt.Sprintf("%.2fx", gross/latest.LiveEquity)}
+	}
 }
 
 func buildRealOverview(
@@ -110,16 +159,10 @@ func buildRealOverview(
 		Delta:  "REAL",
 		Detail: "Durable ExecutionState snapshot",
 	}
-	approvedTarget := realOverviewMetric{
-		Label:  "Approved Gross Target",
-		Value:  "Not available",
-		Delta:  "—",
-		Detail: "PortfolioRisk checkpoint unavailable",
-	}
-	if riskErr == nil {
-		approvedTarget.Value = risk.ApprovedGrossTargetLabel
-		approvedTarget.Delta = risk.ApprovedTargetNotionalLabel
-		approvedTarget.Detail = fmt.Sprintf("%d active approved target(s)", risk.ActiveTargetCount)
+	// Until marked positions exist, leverage is the approved gross target over capital.
+	leverage := realOverviewMetric{Label: "Leverage", Value: "Not available"}
+	if riskErr == nil && risk.approvedGrossRatioKnown {
+		leverage.Value = fmt.Sprintf("%.2fx", risk.approvedGrossRatio)
 	}
 
 	reconciliationStatus := "PENDING"
@@ -174,7 +217,7 @@ func buildRealOverview(
 	}
 
 	return realOverviewData{
-		Stats:                 []realOverviewMetric{totalEquity, cash, approvedTarget},
+		Stats:                 []realOverviewMetric{totalEquity, cash, leverage},
 		EquityCurve:           []realEquityPoint{},
 		LiveExpected:          []realEquityPoint{},
 		Positions:             topPositions,

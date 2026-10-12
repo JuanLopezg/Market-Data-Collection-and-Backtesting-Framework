@@ -665,6 +665,11 @@ int main(int argc, char** argv)
         balanceEquityHtmlPath.string()
     );
 
+    // replay.py: daily series for the dashboard "Expected" line.
+    const std::string equityCsvOutput = envText("ALGOTRADING_REPLAY_EQUITY_CSV", "");
+    if (!equityCsvOutput.empty())
+        storeBalanceEquityCSV(context.GetBalanceEquityHistoric(), marketData, equityCsvOutput);
+
     if (compareWithReferenceBacktest)
     {
         compareBacktestBySizing(

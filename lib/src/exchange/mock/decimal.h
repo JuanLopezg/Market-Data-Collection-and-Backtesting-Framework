@@ -227,9 +227,13 @@ inline bool checkedMulU64(
 }
 
 /*
- * Computes round(a*b/denominator) without requiring a*b to fit into uint64.
- * The decomposition keeps the only remainder product below denominator^2.
+ * Computes round(a*b/denominator) (half up) with an exact 128-bit product, so any
+ * denominator works. Weighted average entry prices divide by a position quantity
+ * (up to ~1e10+ units at 8 decimals), where a 64-bit remainder product overflowed.
+ * Fails only when the rounded result does not fit into uint64.
  */
+__extension__ typedef unsigned __int128 MockU128;
+
 inline bool mulDivRoundNearestU64(
     std::uint64_t a,
     std::uint64_t b,
@@ -239,42 +243,15 @@ inline bool mulDivRoundNearestU64(
     if (out == nullptr || denominator == 0U)
         return false;
 
-    const std::uint64_t qa = a / denominator; // Decompose both factors into quotient and remainder.
-    const std::uint64_t ra = a % denominator;
-    const std::uint64_t qb = b / denominator;
-    const std::uint64_t rb = b % denominator;
+    const MockU128 product = static_cast<MockU128>(a) * b;
+    MockU128 quotient = product / denominator;
+    const MockU128 remainder = product % denominator;
+    if (remainder >= (static_cast<MockU128>(denominator) + 1U) / 2U)
+        ++quotient;
 
-    std::uint64_t q_product = 0U;
-    std::uint64_t term1 = 0U;
-    std::uint64_t term2 = 0U;
-    std::uint64_t term3 = 0U;
-    if (!checkedMulU64(qa, qb, &q_product) ||
-        !checkedMulU64(q_product, denominator, &term1) ||
-        !checkedMulU64(qa, rb, &term2) ||
-        !checkedMulU64(qb, ra, &term3))
+    if (quotient > std::numeric_limits<std::uint64_t>::max())
         return false;
-
-    // ra, rb < denominator. In this project denominator is at most 1e8 or 1e6,
-    // so the remainder product is safely bounded well below uint64 max.
-    std::uint64_t remainder_product = 0U;
-    if (!checkedMulU64(ra, rb, &remainder_product))
-        return false;
-
-    std::uint64_t result = 0U;
-    if (!checkedAddU64(term1, term2, &result) ||
-        !checkedAddU64(result, term3, &result) ||
-        !checkedAddU64(
-            result,
-            remainder_product / denominator,
-            &result))
-        return false;
-
-    const std::uint64_t remainder = remainder_product % denominator;
-    if (remainder >= (denominator + 1U) / 2U) {
-        if (result == std::numeric_limits<std::uint64_t>::max())
-            return false;
-        ++result;
-    }
+    const std::uint64_t result = static_cast<std::uint64_t>(quotient);
 
     *out = result;
     return true;
@@ -362,15 +339,37 @@ inline std::string formatSignedScaled(
     return out.str();
 }
 
-inline double signedScaledToDouble(
-    std::int64_t units,
+// Grid units -> the double nearest to units / 10^scale, so doubleToScaledUnitsExact()
+// reads back the same units. Up to 2^53 units both operands are exact doubles and the
+// IEEE division rounds once. A long-double division cast to double rounds twice and
+// left about one value in 4,000 one ULP off the grid (rejected as SIZE_INCREMENT).
+// Larger values cannot be exact in a double anyway and keep the long-double path.
+inline double unsignedScaledToDouble(
+    std::uint64_t units,
     std::size_t scale)
 {
+    if (units <= (std::uint64_t{1} << 53) && scale <= 22U) {
+        double factor = 1.0;
+        for (std::size_t i = 0; i < scale; ++i)
+            factor *= 10.0;
+        return static_cast<double>(units) / factor;
+    }
     long double factor = 1.0L;
     for (std::size_t i = 0; i < scale; ++i)
         factor *= 10.0L;
     return static_cast<double>(
         static_cast<long double>(units) / factor);
+}
+
+inline double signedScaledToDouble(
+    std::int64_t units,
+    std::size_t scale)
+{
+    const std::uint64_t magnitude = units < 0
+        ? static_cast<std::uint64_t>(-(units + 1)) + 1U
+        : static_cast<std::uint64_t>(units);
+    const double value = unsignedScaledToDouble(magnitude, scale);
+    return units < 0 ? -value : value;
 }
 
 // For the current MOCK rules, price and quantity each use eight decimal places.

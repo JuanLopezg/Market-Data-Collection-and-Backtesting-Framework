@@ -131,6 +131,47 @@ public:
 
     bool routeSafe() const;
 
+    // Display-only lineage of the latest close decision (signals, risk evaluation and
+    // approved decisions). Off by default; collecting it never changes trading results.
+    void enableDecisionDiagnostics();
+
+    const std::optional<StrategyIntentBatch>& lastSignalBatch() const;
+
+    const std::optional<DecisionBatch>& lastDecisionBatch() const;
+
+    const std::vector<PortfolioRiskEvaluation>& lastRiskEvaluations() const;
+
+    // Operator rebalance (Manual Control). The account is rebalanced right away to
+    // `weights` (asset -> fraction of equity; omitted held assets are closed), priced at
+    // `prices`, the first prices after the request. A pending strategy plan is discarded:
+    // the operator acted after that decision. The next close then re-syncs every
+    // strategy to its risk-approved target weights (not only entries/exits), so the
+    // manual positions last until that end-of-day decision.
+    // Limits come from the portfolio-risk config (see manualLimits()); a request above
+    // them is rejected, never clipped. Throws std::invalid_argument when rejected.
+    struct ManualLimits {
+        double max_gross_leverage = 0.0;   // sum of weights
+        double max_asset_weight = 0.0;     // any single weight
+    };
+
+    ManualLimits manualLimits() const;
+
+    struct ManualRebalanceResult {
+        std::size_t submits = 0U;
+        std::size_t cancels = 0U;
+        bool discarded_strategy_plan = false;
+    };
+
+    ManualRebalanceResult rebalanceToManualTarget(
+        const std::map<Coin, double>& weights,
+        Timestamp execution_timestamp,
+        const ExecutionReferencePrices& prices);
+
+    bool targetResyncPending() const;
+
+    // Id the planner will give the next order (manual requests record their order range).
+    OrderID nextOrderId() const { return next_order_id_; }
+
     ReplayEvidence finalizeEvidence(
         Timestamp snapshot_time);
 
@@ -156,6 +197,13 @@ private:
         pending_plan_;
     std::optional<StrategyIntentBatch>
         last_signal_batch_;
+
+    bool collect_decision_diagnostics_ = false;
+    std::optional<DecisionBatch> last_decision_batch_;
+    std::vector<PortfolioRiskEvaluation> last_risk_evaluations_;
+
+    // Set by a manual rebalance; the next close re-syncs strategies to their targets.
+    bool resync_targets_after_manual_ = false;
 
     OrderID next_order_id_ = 1U;
     std::uint64_t planning_revision_ = 0U;
@@ -217,6 +265,11 @@ private:
 
     ::AccountSnapshot portfolioRiskAccountView(
         Timestamp timestamp) const;
+
+    DecisionBatch resyncToApprovedTargets(
+        const DecisionBatch& approved,
+        const std::vector<PortfolioRiskEvaluation>& evaluations,
+        const ExecutionReferencePrices& closes) const;
 
     void markCurrentPositionsAtClose(
         Timestamp timestamp,

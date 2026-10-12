@@ -1,0 +1,22 @@
+[Unit]
+Description=algoTrading host/container telemetry (read-only observation)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /chain/monitor.py --project algotrading --output /data/telemetry/host.json --disk-path /
+Restart=on-failure
+RestartSec=10
+# Docker inspection needs the Docker socket. This is a host-only service;
+# the dashboard receives the JSON files and never receives socket access.
+User=root
+UMask=0022
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/data/telemetry
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

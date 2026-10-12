@@ -1,6 +1,410 @@
 # Current state
 
-Last synchronized: 2026-10-11. Current source and test output take precedence.
+Last synchronized: 2026-10-12. Current source and test output take precedence.
+
+## PureRSI 80/70 with 20% volatility target on Binance perpetuals, 2025 to date (2026-10-12)
+
+Research study at the user's request (fast research Backtester via
+`algotrading_research_html`, which gained `--sizer volatility-target`; defaults unchanged).
+Data: new `tools/binance_perp_daily.py`, 655 USDT perpetuals (523 TRADING, 132 SETTLING,
+GAIB without candles) 2024-12-07..2026-10-11, volume = USDT quote volume, in
+`storage/databases/1d_binance_perp_quote_20241207.csv`. Rules: RSI(7) entry > 80 / exit < 70,
+top 20 by SMA(quote volume, 25), max 10 signals; volatility target 20%, covariance of 5
+returns, 2% rebalance threshold, 1.5x gross. Close(T) decisions, next-open fills.
+Results (`storage/backtests/sensitivity_results/pure_rsi_voltarget20_binance_perps_2025_fee*/reports/PureRSI.html`):
+zero fees +33.6% (17.0% annualized), max DD 14.7%, Sharpe 0.85, 160 trades, 35% win
+rate, profit factor 1.47; with 0.05% taker fee +30.6%, max DD 15.0%. BTC over the same
+period -10.5% (max DD -53%). Not modelled: funding, slippage, delisted contracts already
+removed from exchangeInfo (survivorship), Kraken availability.
+`validation/research_html_report_gate.py` PASS (default equal-weight behaviour unchanged);
+its `algotrading_research_stats` summary regex was updated to the readable-log format
+introduced on 2026-10-11 ("return 12.34%, ..., 56 trades"), which it no longer matched.
+
+## Manual rebalance executes immediately; closed positions, fees/funding and tax CSV (2026-10-12)
+
+Manual Control semantics changed (supersedes the "held until released" model below):
+a confirmed CSV is executed by the replay at the next price it has — the open for
+requests that arrived overnight (it replaces the pending strategy plan), a point just
+before the close (`YYYYMMDD5`, close prices, synthetic flat bars) for daytime requests —
+through `ReplayRuntime::rebalanceToManualTarget` (same planner/venue path; evidence
+counters untouched). The next close re-syncs every strategy to its risk-approved weights
+(`resyncToApprovedTargets`: HOLD positions are resized, not only entries/exits), so the
+manual positions last until the end-of-day decision. Only the newest queued request runs;
+older ones are recorded as SUPERSEDED. Release endpoint/button removed.
+Limits now come from the portfolio-risk config (`ReplayRuntime::manualLimits()`: minimum
+over strategies of `RiskConstraints` max gross / max asset; Pure_RSI 1.5x / 1.5), published
+in state.json and enforced by the API and the runtime; above them the request is
+rejected, never clipped. Previously a hard-coded 100%.
+Manual Control page: only upload + format rules, preview, and a progress bar per request
+(Sent -> Picked up by replay -> Orders at exchange (n/m filled) -> Filled -> Back to
+strategy targets), fed by `requests[]` in `/api/manual-control` (order ids recorded by the
+replay in the processed request).
+Verified: short repro (overnight request executed at the open replacing the plan, closed at
+the next open by the re-sync) and browser run on the full replay (daytime request: 3 orders
+filled at the close, RESYNCED). step59 gate PASS (`94fdf8d8…`, RealTest 25/25).
+
+Positions: open positions gain Opened, Fees, Funding (only when the source records it)
+and Net PnL (unrealized + realized so far - fees + funding); new Closed Positions table
+(flat to flat: entry/exit, gross PnL, fees, funding, net PnL, net %) with a CSV download;
+cards Realized PnL (net) and Total Fees. Shared `position_history.go` rebuilds positions
+from fills (average cost, partial closes, zero crossings split the fee), fees
+(TRADING_FEE/REBATE by fill) and funding (by asset, to the open position). Simulation:
+whole MOCK stream; PAPER/LIVE: all `trading_fills` (`TradeHistoryFills`, up to 200,000;
+funding not persisted there, shown as unavailable).
+Cross-check on one replay snapshot (2021-03-01, 327 fills): 100k + realized - fees + funding
+= MOCK cashTotal exactly (181255.4164).
+
+Reports: `GET /api/reports/closed-positions.csv[?year=YYYY]` and, with
+`DASHBOARD_REPORTS_DIR`, `closed_positions.csv` + `closed_positions_<YEAR>.csv` rewritten
+every 10 minutes (atomic; not written if the history is incomplete). Chain: `dash-api`
+mounts `<root>/reports` (`ALGO_REPORTS`, owned by uid 70 via data-init). Local simulation:
+`deploy/historical_replay/run/reports/`.
+
+Full history with the new binary (2026-10-12): control `replay.py system` without manual
+requests (`system_control_20261012`): 628 fully matched, the same four known differences
+(BNB exit date, FET missing + extra, final ZEC), 1261 fills, i.e. identical to the earlier
+baseline. The dashboard run with one manual test request on 2020-01-29
+(`dashboard_manual2_20261012`): 625 matched / 11 differences = those four + four from the
+request itself (ETC sold at the close and re-bought by the re-sync, BTC/ETH bought and
+closed by the re-sync) + EOS 2021-08-08 missing and LUNC entering 2021-12-23 instead of
+2021-12-22.
+
+Root cause of EOS/LUNC (a real bug, fixed): signals and decisions were identical with and
+without the request (pipeline compared on 2021-08-07); only equity differed by 0.06%, so
+order quantities changed slightly. The EOS order (451) and the LUNC order (554) were
+created but MOCK rejected them at admission: grid units were converted to double by a
+long-double division followed by a cast to double (two roundings), which leaves about
+one 8-decimal quantity in 4,000 one ULP off the grid, so `divisibleByIncrement` failed
+(SIZE_INCREMENT). The strategy kept its signal with no position and retried the next day
+(LUNC) or exited first (EOS). Fix: `MockVenue::unsignedScaledToDouble` / 
+`signedScaledToDouble` in `lib/src/exchange/mock/decimal.h` divide two exact doubles
+(single IEEE rounding) up to 2^53 units, used by `ReplayRuntime::unitsToDouble`,
+`ManualControl` order building, MOCK matching/account and the canonical replay.
+Check: 6 million random grid values up to 10 million units round-trip exactly (the old
+path failed 0.02-0.025%). Above ~10 million units (16 significant digits) a double cannot
+hold 8 decimals at all; relevant for very cheap coins (see ROADMAP 7b).
+Evidence: short dashboard replays with the same manual request reproduce the missing
+EOS order before the fix (order id gap 450 -> 452) and, after it, EOS fills on
+2021-08-08 and LUNC on 2021-12-22 (274 matched, only the 4 request trades differ).
+step59 gate PASS after the fix with the unchanged fingerprint `94fdf8d8…` (RealTest 25/25).
+
+Reconciliation page (2026-10-12): cards Status (with a plain explanation), Last Checked,
+Assets Compared (how many differ) and Open Orders; table "Positions: Ours vs Exchange"
+(Ours, Exchange, Difference, Open Orders, Status); "Problems Found" only when the
+reconciler reports issues (kinds in plain words); Open Orders. The fixed-text panels and
+the Target/Effective columns were removed. The simulation used to copy the exchange
+quantity into both columns; it now compares the reconciler's local ledger with the MOCK
+account (Go test added). Go tests/vet and the web build pass.
+
+Historical step gates (2026-10-12): every numbered gate from step47a to step58 except
+47b failed at its frozen-checksum stage (files moved/changed by the restructure), not on
+behaviour. New `validation/mock_component_tests.sh` builds the current lib sources once
+and runs the 11 component tests (step47a-step57 `*_test.cpp`, -Werror): all PASS.
+`step58a_canonical_replay_suite_gate.sh` lost only its checksum stage and its mode list
+was updated (`{resources,fast,system,dashboard}`); it passes, including the frozen Step56A
+mock-default 107-day economics. `step47c` now depends on 47b only. The retired gate
+scripts (47a, 48-57, 56a, 58) were deleted with the user's authorization and the `.ai/`
+index was regenerated (`generate_ai_index.py --check` PASS).
+
+The old local `deploy/paper_trading/monitor.py` (project algotrading-paper, writing
+storage/paper_trading/telemetry) was stopped in WSL on 2026-10-12; the Kraken account
+monitor and the chain `deploy/chain/monitor.py` keep running.
+
+Pending after this session (details in docs/ROADMAP.md): user review and commit. New recorded requirement (ROADMAP 7b): source/venue contract
+units, e.g. Binance `1000PEPEUSDT` (per 1000 PEPE) versus Kraken `PF_PEPEUSD` (per 1
+PEPE); today a hard-coded `SCALED_ASSETS` list in `venue_protocol.cpp` (copied in
+`kraken_shadow.py`) handles it. Not implemented yet.
+
+## Manual Control works in the replay; Alerts & Audit and Live vs Expected rebuilt (2026-10-12)
+
+Superseded for Manual Control semantics by the entry above (no persistent manual target,
+no RELEASE); the fixes and the Alerts/Live vs Expected/Infrastructure notes still apply.
+
+Manual Control (replay simulation): the operator uploads `asset,weight_pct` (Excel `;` /
+decimal comma accepted, CASH optional, total <= 100%, long only), previews it against the
+current account (BUY/SELL/CLOSE per asset; held assets missing from the file are closed)
+and sends it. dashboard-api queues `REPLAY_MANUAL_V1` in `<state dir>/requests`; the
+canonical replay applies it before the next close (`applyManualRequests`), and
+`ReplayRuntime::setManualTargetWeights` then replaces the approved strategy decisions at
+every close (signals/risk still run; same planner -> MOCK path; per-strategy reference
+capital kept) until "Return control to strategies" queues `action=RELEASE`. Requests are
+checked again in C++ (explicit MOCK route, close available, weights). Processed requests
+get `result/detail/replay_date` appended and form the Alerts & Audit log. Requests are
+cleared at replay start; a resume checkpoint refuses to snapshot an active manual target.
+A manual target rebalances to its exact weights at every close.
+Verified end to end in the browser on the full-history dashboard replay (SET applied at the
+next close, positions 30%/20%, RELEASE applied, audit rows present). Not for PAPER/LIVE:
+the real provider still fails closed.
+
+Fixes found on the way:
+- `MockVenue::mulDivRoundNearestU64` now uses an exact 128-bit product. The old
+  decomposition overflowed when the denominator was large (weighted average entry price
+  divides by the position quantity), so increasing an existing position above ~43 coins
+  at 8 decimals rejected the fill ("matcher emitted fill rejected by Step52 account").
+  Strategy trades (enter/exit whole) never increase a position, so the canonical replay
+  was unaffected; results are identical wherever the old code succeeded. That error now
+  names the asset, order, quantity and price.
+- state.json `routeSafe` now reports `ReplayRuntime::routeSafe()`. It used
+  `canRouteNewSubmit()`, which is false whenever events arrived since the last
+  reconciliation (almost always), although the runtime reconciles before each submit.
+- (Resolved later the same day: see "Historical step gates" above.)
+  `validation/step52_mock_account_margin_positions_accounting_gate.sh` is stale: it hashes
+  files from the old layout (`lib/src/exchange/mock_decimal_grid_v1.h`) and fails before
+  testing anything.
+
+Alerts & Audit: cards Critical / Warnings / Info (and "Seen by Operator" when ACK
+exists); one "Open Alerts" table (Severity, What happened + detail, Area, Since, Status,
+"Mark as seen"); Alert History only when lifecycle events exist; "Audit Log" (When, Who,
+Action, Result, Detail). Watchdog/step panels and banners removed. The simulation
+derives notices for route safety, reconciliation, leverage and drawdown (same scales as
+Overview/Risk, with the date the condition started), rejected orders and manual-target
+state. Alerts remain notices only.
+
+Live vs Expected: cards Equity, Expected, Difference ($, %), Largest Gap, Days Matching
+(within ±0.5%); "Equity vs Expected" and "Difference (%)" charts with one shared range;
+Positions vs Expected (PAPER) and a Daily Comparison table (signal mismatches column only
+when non-zero). The Step 45 behaviour-baseline cards, contract and anomaly panels were
+removed from the page.
+
+Infrastructure tiles show only name and state; CPU, RAM and Disk are separate panels.
+
+Validation: step59 gate PASS with fingerprint
+`94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2` (RealTest 25/25) after
+the runtime, replay and decimal changes; Go tests and web build pass.
+
+## Market Data and Infrastructure simplified; local host telemetry (2026-10-12)
+
+Market Data: cards Latest Candle, Healthy Assets, Missing Candles, Duplicate Timestamps,
+Gaps, Invalid Rows; one "Freshness" table (Asset, Last Candle, Age, Status; unhealthy
+first, filter, 20 rows + "Show more"). Source/active-signal/universe cards, the integrity
+panel, universe & candidate diagnostics and the strategy snapshot were removed (strategy
+detail lives in Pipeline). Replay age shows `0d`.
+Infrastructure: one tile per component (containers, trading processes, and PostgreSQL /
+NATS / exchange when the provider uses them) showing only the name and Up / Degraded /
+Down / Unknown (green, orange, red, grey); then one shared time-range picker and CPU, RAM
+and Disk each in its own panel (default "Last 1 hour", captions removed).
+All Step 32-37 venue/readiness panels, API diagnostics, readiness, outbox and tables were
+removed from the page (endpoints unchanged).
+The local replay dashboard now has host telemetry: `research/replay.py dashboard` starts
+`deploy/chain/monitor.py --project dashboard --services dashboard-api,dashboard-web`
+detached (pid in `deploy/historical_replay/run/telemetry/monitor.pid`, replaced on the next
+launch); `docker-compose.simulation.yml` mounts that folder and sets
+`DASHBOARD_HOST_METRICS_FILE/PROJECT` and `DASHBOARD_HOST_HISTORY_FILE`; the simulation
+provider reads the snapshot for the VPS and container rows. `monitor.py` accepts the
+project name `dashboard`.
+Page subtitles (the explanatory line under each title) were removed from every page.
+
+## Risk page redesigned; dashboard outage hardening (2026-10-12)
+
+Risk (`risk_view.go`, shared by replay and PAPER): cards Leverage (green <= 1.5x, orange
+<= 2.5x, red above), Gross/Net Exposure % of equity, Largest Position, Drawdown and Max
+Drawdown (% below the running equity peak); Leverage and Drawdown daily charts with one
+page time range; "Strategy Limits" per strategy (capital, sizer, max asset, max gross,
+gross after asset caps, gross scale, approved gross, binding limit: None / Asset cap /
+Gross cap); "Exposure by Asset" (weight, approved weight, account-level asset cap =
+max(strategy cap x capital share), cap usage bar). Display only, no new limits. Replay
+equity points carry `gross` (display only) for the leverage history; PAPER has no daily
+gross, so only the drawdown chart (from the comparison equity) shows. Old evidence
+panels/message IDs remain only as a fallback when no view data exists.
+Outage hardening: the API returned sporadic 503s because state.json can be read half
+written (tmp+rename is not atomic on the Docker Desktop bind mount); the simulation
+provider now retries 3x and serves the last good snapshot when it is < 10 s old. The web
+`useDashboardResource` keeps the last good data on a failed refresh and retries every 2 s;
+the error page only shows when nothing loaded. Stress test: 1000/1000 OK (was 6/600 503).
+
+## Execution page simplified (2026-10-12)
+
+Cards: Open Orders, Filled Orders, Rejected, Total Fees (latency/slippage cards and the
+"Step 42 ledger foundation" metrics removed). "Average Slippage" chart: daily
+notional-weighted slippage in bps, fill price against the order's expected price (open of
+the execution day, the order limit price); positive = adverse. Replay computes it in Go
+(`simulationSlippage`, `slippageHistory` in `/api/execution`); realtest-parity fills at the
+expected open, so it is 0 bps there. PAPER has no expected price persisted: "No slippage
+data". Orders table: Order ID, Asset, Side, Qty, Filled, State, Expected, Avg Fill,
+Slippage, Fees, Submitted (newest first, 20 rows + "Show more"). The ledger is now
+"Fills": Time, Order ID, Asset, Side, Qty, Price, Notional, Fee (entry id, fill id, hash
+and cash delta removed). Replay times show as `2021-05-20 open`. Rejects and
+cancels/replacements panels appear only when non-empty; order rows are not clickable (the
+order inspector was removed at the user's request). The simulation execution read model no longer scans every fee x
+fill per order (was cubic over the full history); per-order fees/fills use maps.
+Caddy fix (both Caddyfiles): `header` runs before `try_files`, so the old
+`header /index.html no-cache` never matched "/" or SPA routes and browsers kept a stale
+index.html pointing at an old bundle after redeploys. Now everything outside `/assets/*`
+is served `Cache-Control: no-cache` (verified on `/` and `/execution`).
+
+## Pipeline page finished; Overview PnL/Leverage colours (2026-10-11)
+
+Overview cards: PnL green when >= 0, red when negative; Leverage green up to 1.5x,
+orange up to 2.5x, red above (display only; no limits). Positions' Unrealized PnL card
+uses the same colours.
+Pipeline works locally with the replay (no live/PAPER services needed). The replay
+dashboard mode turns on `ReplayRuntime::enableDecisionDiagnostics()` (keeps the last
+signal batch, DecisionBatch and `PortfolioRiskEvaluation`; off by default, collection only)
+and `StrategySignalEngine::indicators()` (read-only), and writes a `pipeline` block per
+close: liquidity rank and top-20 membership and RSI rank (same `TopNLiquidityUniverse`/
+`IndicatorRanker` classes), RSI(7), signal, sized/capped/approved weights, rebalance action,
+target USD, position at decision time, planned orders. Go maps it to the decision matrix
+(Asset, Liq. Rank, RSI(7), Signal, Sized W., Approved W., Decision, Target, Current, Delta,
+Order, Execution), a 12-stage rail and the Why? trace; execution state comes from the
+routed venue order with the same id. PAPER pipeline now fills sized/approved weights and
+the decision from the persisted risk evaluation; RSI/rank stay "—" (not persisted by the
+strategy service). Page restyled like Overview: "Pipeline" heading, summary cards, no
+source banners; the proof panel ("Cycle Proof") appears only for service cycles. Go
+tests added (replay lineage, dollar format, PAPER risk evaluation).
+Multi-strategy breakdown (user request): the matrix has no RSI column and shows the
+aggregated signal in [-1, +1] (0 = flat) = sum of strategy signals weighted by capital
+share (strategy reference capital / total). Expanding an asset shows one row per strategy
+(capital, weight in signal, signal, its own indicator, sized/approved weight of its capital,
+decision) plus the aggregated row, then the stage rail. Matrix Sized/Approved W. combine
+the strategies by the same share (fraction of total capital). The replay `pipeline` block
+carries `strategies` per asset; PAPER builds the same breakdown from the persisted signal
+batch and risk evaluation (indicator "not persisted").
+
+## Positions page finished (2026-10-11)
+
+Same treatment as the Overview: no captions or source banners, amounts like `30,771$`.
+Table: Asset, Side, Qty, Notional, Entry, Mark, Current W., Target W., Δ Weight, PnL,
+PnL %, Status (last). Current W. = position value / equity; Target W. = latest approved
+risk target / equity; Δ Weight = target − current (what the next rebalance still changes).
+Replay: state.json carries `targets` (latest decision's target USD per asset, display only).
+PAPER: positions are now valued (`real_position_valuation.go`): marks = latest completed
+close in the market SQLite (`sqlite.Reader.LatestCloses`), equity = cash + marked
+positions, targets from the latest PortfolioRisk decision, entry/PnL = average cost of
+persisted fills when the whole fill history fits the 1000-row read, per-position status
+from reconciliation; anything missing stays "—". The PAPER Overview uses this valuation
+for Total Equity and Leverage. Go tests added (average cost, weights/PnL, no marks).
+
+## Overview redesign requested by the user (2026-10-11)
+
+Top bar keeps only the SSE state and the alerts bell (Mode/Exchange/Data/Trading/
+Reconciliation/Readiness and the UTC/business label removed). Overview: no captions;
+figure cards Total Equity, Cash, Unrealized PnL, Leverage (gross position value / equity,
+replaces Margin Used; PAPER uses the comparison positions or the approved gross target);
+System Readiness, Reconciliation panel and Recent Events removed. Equity Curve: Balance
+(blue, equity minus open-position PnL) and Equity (orange), no reference line, axis values
+like `300,000$`, plus a Grafana-style "Close loop" state timeline (green CLEAN / red
+otherwise). Live vs Expected (Overview panel
+and page): equity against the fast backtest; the replay dashboard now runs the fast
+backtest of the same window first (`expected_equity.csv` via `ALGOTRADING_REPLAY_EQUITY_CSV`),
+PAPER keeps the daily comparison. Active Positions: Asset, Side, Notional, Status, PnL.
+Alerts panel (replaces Recent Events): most severe then most recent active alert, "+N more", "No active alerts" when none. Close loop is its own full-width state-timeline panel; one page-level time range (Grafana-style dropdown button, e.g. "Last 7 days", with presets and From/To; used by every time picker) drives every Overview chart and a drag-zoom on any chart zooms all of them; Positions column order Asset, Side, Notional, PnL, Status; top bar band removed (SSE state and bell float top-right).
+Replay state equity points carry `balance` and `closeLoop` (display only).
+Real PAPER Overview still lacks per-position marks/PnL and balance history (roadmap 11).
+
+## VPS PAPER -> chain migration prepared and rehearsed locally (2026-10-11)
+
+Read-only VPS inventory (no changes): the 50/40 study runs as `algotrading-paper` with the
+activity overlay (PostgreSQL/NATS in `algotrading-paper-activity-*` volumes, study since
+2026-10-10 15:37 UTC), comparison collector and monitor as host units, logs under
+`/var/log/algotrading`. Leftovers: three stopped hashed projects with their volumes, old
+archives in `/home/ubuntu`, two failed `algotrading-quote-*` units. Notifier test sink and
+watchdog events grow ~5 MB/day each.
+
+Prepared: `deploy/chain/migrate_paper.py` (copy-only, discovers sources from the old
+containers, SHA-256 per file, copies the dashboard password without printing it, sets the
+chain PostgreSQL password, rewrites comparison paths), `algo release` (images + source +
+SHA256SUMS), `chain/systemd/` units (chain, monitor, comparison), comparison collector moved
+to `deploy/chain/comparison.py` (container names/paths configurable; `kraken_shadow.py
+--study-root`), dashboard comparison panel in chain via `PAPER_COMPARISON_FILE`.
+
+Rehearsal: consistent snapshot streamed from the VPS (pg_basebackup, SQLite online backup,
+volume tars) into a stopped local replica, migrated into a fresh installation, `algo up`:
+strategy/risk restored the 2026-10-10 checkpoint, simulated exchange restored cash
+59,864.40 USD, 4 positions, 0 active orders; the dashboard shows the same fills, positions
+and comparison; the fast baseline recomputed from the new paths with identical rows.
+Strategy and portfolio files are byte-identical to the VPS. paper_comparison_test (2) and
+kraken_shadow_test (13) pass. VPS execution pending authorization (runbook:
+deploy/chain/README.md).
+
+## Dashboard charts: Grafana-style host resources and equity (2026-10-11)
+
+User requests: Infrastructure CPU/RAM/disk as Grafana-style time charts with an overall line and a
+per-container breakdown in the same chart; the Overview equity (and Live vs Expected) charts in the
+same style. Final design after the user's review: plain lines without area fill; "By container" shows
+one line per container (user decision: no grouping unless more than 30 containers; identity = 7 validated hues x 5 dash patterns; clicking a legend entry isolates that line, clicking again shows all); the By-container tooltip lists containers from highest to lowest value; zooming keeps the chosen view (a stale hover index after a zoom re-fetch used to crash the charts back to Overall); time
+range chosen Grafana style: presets (infra 1H/6H/24H/7D ending now and refreshed every 30 s; equity
+7D/1M/6M/1Y/ALL) or an explicit From/To in UTC, and dragging across any chart selects a span (zoom
+in, also written into From/To); double-click returns to the default range. Value axis on the right
+fits the visible data; crosshair tooltip lists every series.
+Source: `dashboard/src/components/TimeSeriesChart.tsx`, `TimeRangePicker.tsx`, `HostResourceCharts.tsx`,
+`LineChart.tsx`; colors from the validated categorical palette for the dark panel surface (#0d1826).
+Data: `deploy/chain/monitor.py` appends `history.jsonl` (30 s rows, 7 days; container CPU divided by
+host cores); `GET /api/infrastructure/history?range=…` or `?from=…&to=…` (RFC 3339, within the
+retained week; at most 720 averaged buckets; absent values stay absent; stale flag), served by
+dashboard-api `internal/server/host_history.go`; chain compose sets `DASHBOARD_HOST_HISTORY_FILE`.
+`algo` starts the monitor with `setsid` and waits for its first sample (a background monitor started
+from a short WSL command used to die).
+
+Evidence (local chain): Go tests all PASS (history test covers bucket means, absent values, stale
+flag and explicit windows); web/API images build (TypeScript check); host_monitor_test OK (1 skip);
+Playwright screenshots of the real Infrastructure page (overall, by-container lines, drag-select
+re-fetching 10:27–10:39 at 30 s resolution) and of the Overview equity chart with mock demo data
+(hover, 7D, drag-select), no page errors. On WSL, Docker Desktop containers run in a separate VM from
+the measured host. Not deployed to the VPS.
+
+## Real-venue adapter and Kraken Futures protocol — offline and read-only (2026-10-11)
+
+User request: one exchange class whose venue-specific parts are replaced per exchange;
+Kraken only for now; no orders (the current key is read-only). Implemented in
+`live_trading/exchange_gateway/src/venue/` (guide: live_trading/exchange_gateway/README.md):
+common `LiveVenueAdapter` (implements ExchangeGatewayAdapter), `VenueProtocol` interface,
+`KrakenFuturesProtocol`, SQLite `VenueJournal`, libcurl transport with `GetOnlyTransport`
+guard. Gateway mode `--mode venue` (order submission disabled by default: local rejection
+and GET-only transport). Rules: journal before ACK, SENDING committed before the request,
+ambiguous submit -> UNKNOWN resolved only by open orders/fills (never resent), not-processed
+errors resent, fill de-duplication with stable local FillIDs, unavailable/expired markets and
+sub-step quantities rejected without substitution, quantity rounded down, scaled Binance
+coins converted (x1000/x1e6) and back, keys with transfer/withdraw refused. OpenSSL is a
+new dependency of the gateway only; libalgolib unchanged. Sources: docs.kraken.com Futures
+REST reference (sendorder, cancelorder, openorders, fills, orders/status, batchorder,
+instruments), authentication and rate-limit guides; unconfirmed points are listed in the
+guide (trading-key permission value, mkt response details, clientOrderIdAlreadyExist scope,
+cancelallordersafter, fees absent from fills).
+
+Evidence (WSL): whole-project build PASS; offline `algotrading_venue_adapter_test` PASS
+(16 groups, 72 checks: signing equal to the Python reference, credentials, catalogue,
+disabled submission never posts, accept/fill/restart without duplicates, scaled coin,
+local rejections, ambiguous and crash-while-sending recovery, not-processed resend,
+held/cancel, partial fill, unattributed/reused-id fills, snapshot, permissions); log
+storage/kraken_shadow/venue_adapter_test.log. Real read-only probe (`--live-read-only`,
+GET only): key read yes/trade no/withdraw no, 201 PF markets, accounts/positions/open
+orders/fills parsed (Kraken accepted the C++ signature). Step59 PASS, fingerprint
+94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2 (storage/kraken_shadow/venue_step59.log).
+Audits PASS: exchange_gateway_time_handler, live_deploy_topology, live_contract_identity,
+no_legacy_clock. No order, cancel or other POST was sent; VPS unchanged.
+Known gaps: fills publish commission 0 (Kraken fills have no fee; roadmap 9); snapshot cash is
+the USD wallet balance (collateral/margin: roadmap 8); venue mode is not yet in chain/compose.yml.
+
+## Runtime root and chain launcher — implemented and validated locally (2026-10-11)
+
+User decisions: one installation per machine; on the VPS the root is `/` itself with
+/chain (compose + launcher), /config, /secrets, /data, /logs, /reports, /backups,
+/releases; short names (market-data, strategy, risk, planner, execution, gateway,
+sim-exchange, nats, postgres, dash-api, dash-web, watchdog, notifier); daily logs
+`/logs/<service>/YYYYMMDD.log`. Source: `deploy/chain/` (compose.yml, compose.local.yml,
+algo, monitor.py moved from deploy/paper_trading, logging/ moved from deploy/live/logging).
+`algo install <root>` creates the tree, copies chain files, writes chain.env/config
+defaults and a 0600 secrets/chain.env once (never overwritten). Data uses bind mounts
+(data/postgres, nats, market, dashboard/{watchdog,audit,alerts,notifier}, telemetry,
+receiver). Receiver: chain paths, tag = container name, YYYYMMDD files, root must be
+named `logs`. Dashboard Go accepts the short names besides the old ones (running VPS).
+Trading economics, streams, DB names and service binaries are unchanged.
+
+Local WSL acceptance (root ~/algotrading-runtime, images algotrading-runtime:chain,
+algotrading-dash-api:chain, algotrading-dash-web:chain; build log storage/chain_build.log):
+install twice (idempotent; secrets 0700/0600); compose config 15 services; `algo up`
+started all 13 long-running services healthy/running and both one-shots exited 0;
+every line of the 8 C++ service logs matches the agreed format (NATS/PostgreSQL/Go
+dashboard keep their own formats); dashboard login, PAPER mode, host telemetry HEALTHY,
+simulated exchange connected and 13 short container names; `down risk`/`up risk`,
+`restart planner`; `show` masks all secrets (0 secret values in 697 lines); `backup`
+wrote a 0600 archive with dashboard/market/nats/postgres and restarted all 13. Tests:
+daily_service_logs_test 8 OK, host_monitor_test 3 OK (1 skip), dashboard Go tests
+(CGO_ENABLED=0) all OK. Docker Desktop cannot reach the WSL-loopback receiver, so local
+installs use LOG_MODE=local (json-file + monitor copy into the same files); the VPS uses
+the systemd receiver. Not done: VPS install (needs authorization), comparison collector
+and Kraken account monitor inside the chain, removal of deploy/paper_trading.
+Stop locally with `~/algotrading-runtime/chain/algo down`.
 
 ## Readable code logs — implemented and WSL-accepted locally (2026-10-11)
 

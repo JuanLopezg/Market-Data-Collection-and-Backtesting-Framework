@@ -53,12 +53,25 @@ func TestBuildRealPipelineUsesDurableApprovedNotionalAndDoesNotInventRSI(t *test
 		t.Fatalf("expected one row, got %+v", data.Rows)
 	}
 	row := data.Rows[0]
-	if row.RSILabel != "Not persisted" || row.ApprovedTargetLabel != "$10000.00" || row.ExchangeState != "FILLED" {
+	if row.RSILabel != "—" || row.TargetLabel != "10,000$" || row.ApprovedTargetLabel != "—" || row.ExchangeState != "FILLED" {
 		t.Fatalf("unexpected row: %+v", row)
 	}
 	trace := data.Traces[row.CycleID]
 	if trace.Strategy.RSI != "Not persisted" || trace.Portfolio.ApprovedTarget != "$10000.00" || trace.Planning.StateRevision != "7" {
 		t.Fatalf("unexpected trace: %+v", trace)
+	}
+
+	// The same-cycle risk evaluation fills the sized/approved weights and the decision.
+	sized, approved, held := 0.10, 0.08, 0.1
+	checkpoint.RiskDiagnostics = &pgstore.RiskDiagnostics{Strategies: []pgstore.RiskStrategyEvaluation{{StrategyID: 1,
+		Assets: map[string]pgstore.RiskAssetEvaluation{"BTC": {SizedWeight: &sized, ApprovedWeight: &approved, CurrentQuantity: &held, Action: "TARGET_WEIGHT"}}}}}
+	row = buildRealPipeline(checkpoint, state, realReconciliationData{}, nil, "LIVE").Rows[0]
+	if row.RawTargetLabel != "10.0%" || row.ApprovedTargetLabel != "8.0%" || row.DecisionLabel != "RESIZE" {
+		t.Fatalf("risk evaluation not applied: %+v", row)
+	}
+	if row.SignalValue == nil || *row.SignalValue != 1 || len(row.Strategies) != 1 || row.Strategies[0].SignalLabel != "+1.00" ||
+		row.Strategies[0].ApprovedLabel != "8.0%" || row.Strategies[0].Decision != "RESIZE" {
+		t.Fatalf("strategy breakdown: %+v", row.Strategies)
 	}
 }
 
@@ -75,7 +88,7 @@ func TestPipelineQuietCycleShowsReferenceAssetsWithoutInventingTargets(t *testin
 		t.Fatalf("quiet cycle disappeared: %+v", data)
 	}
 	for _, row := range data.Rows {
-		if row.Signal != "UNKNOWN" || row.ApprovedTargetLabel != "HOLD / no new target" || row.PlannedAction != "NO ORDER" {
+		if row.Signal != "UNKNOWN" || row.TargetLabel != "—" || row.DecisionLabel != "" || row.PlannedAction != "NO ORDER" {
 			t.Fatalf("invented quiet-cycle evidence: %+v", row)
 		}
 	}

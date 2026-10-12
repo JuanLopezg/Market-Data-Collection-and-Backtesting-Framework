@@ -231,7 +231,7 @@ func (p *Real) loadInfrastructure(ctx context.Context) realInfrastructure {
 		result.Exchange.Venue = "SIMULATED"
 		result.Exchange.ReconnectState = "Local simulated backend; no private venue connection"
 		for _, row := range result.Containers {
-			if row.Name == "simulated-exchange" {
+			if row.Name == "sim-exchange" || row.Name == "simulated-exchange" {
 				result.Exchange.Connected = row.State == "RUNNING"
 				result.Exchange.State = row.Health
 			}

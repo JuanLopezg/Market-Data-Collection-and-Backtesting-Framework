@@ -193,8 +193,37 @@ not implemented. Readable code logs were agreed and implemented locally on 2026-
 lib/, live_trading/ and research/ log "YYYY-MM-DD HH:MM:SS.mmm [LEVEL] Class::function :
 message" in UTC; long IDs/hashes/unrounded values only in DEBUG (see live_trading/README.md
 Logs). WSL build/Step59 acceptance of that change is recorded in CURRENT_STATE.md. The local
-host-receiver source (deploy/live/logging) now stores each service line unchanged; the VPS
+host-receiver source (now deploy/chain/logging) stores each service line unchanged; the VPS
 still runs the previous receiver until a new authorization installs it.
+Runtime layout (roadmap step 4, user decisions 2026-10-11): deploy/chain/ is installed
+with `deploy/chain/algo install <root>`; the VPS root will be / itself: /chain (compose.yml,
+algo, chain.env), /config, /secrets, /data, /logs, /reports, /backups, /releases. Short
+service/container names (market-data, strategy, risk, planner, execution, gateway,
+sim-exchange, nats, postgres, dash-api, dash-web, watchdog, notifier); logs are
+/logs/<service>/YYYYMMDD.log (user dislikes dashes in file names). One installation per
+machine. Local WSL root ~/algotrading-runtime uses LOG_MODE=local because Docker Desktop
+cannot reach the WSL loopback receiver. Locally validated; VPS redeploy not authorized yet.
+Kraken private integration (roadmap 6, 2026-10-11): live_trading/exchange_gateway/src/venue/
+has the common LiveVenueAdapter (one class for every exchange) and KrakenFuturesProtocol (the
+per-exchange part). Gateway --mode venue; order submission disabled by default (GET-only).
+Offline tests and a real read-only probe pass; no order has been sent. Next: trading key plus
+individually authorized small real-money tests; see live_trading/exchange_gateway/README.md.
+Dashboard (2026-10-11): shared components/TimeSeriesChart.tsx + TimeRangePicker.tsx, Grafana style (lines,
+presets or From/To, drag-select zoom, double-click reset) used by the Overview equity chart and Infrastructure CPU/RAM/disk history charts with a
+per-container breakdown; data from chain/monitor.py history.jsonl via GET /api/infrastructure/history.
+Dashboard (2026-10-12): every page reviewed, Reconciliation last (ours vs exchange per
+asset; the simulation compares the reconciler ledger with the MOCK account). Manual Control (replay
+simulation only) executes a CSV target at the next available price, with limits from the
+portfolio-risk config (rejected, never clipped), and the next close re-syncs to the
+strategy targets. Positions has active/closed tables with fees, funding and net PnL;
+dash-api writes closed_positions.csv and closed_positions_<YEAR>.csv to <root>/reports for
+the yearly tax report. Alerts stay notices only. See CURRENT_STATE.md top entries.
+Recorded for later (ROADMAP 7b): contract units differ between venues (Binance
+1000PEPEUSDT = 1000 PEPE per unit, Kraken PF_PEPEUSD = 1 PEPE); a wrong conversion
+sends orders 1000x too small or too large. Today a hard-coded SCALED_ASSETS list in
+live_trading/exchange_gateway/src/venue/venue_protocol.cpp handles it; it must be
+derived/checked from instrument data, fail closed and be tested end to end before real
+orders on scaled assets.
 Dashboards are out of scope. Next roadmap item: one configurable runtime root/readable
 paths. Daily host retention remains two files (today/yesterday), 50 MiB each.
 This planning update does not authorize another VPS rollout or private orders.
@@ -415,7 +444,8 @@ redelivery/deduplication checks. The caller owns economic fill deduplication.
 This does not accept the full deployed service pipeline, outbox/crash campaign,
 container recreation, private routing or VPS. Keep those roadmap checks pending.
 
-VPS logging implementation: deploy/live/logging/ contains a loopback rsyslog host
+VPS logging implementation (installed copy on the running VPS; source now deploy/chain/logging/
+with the chain paths): a loopback rsyslog host
 receiver with a bounded Python diagnostic writer and a minute systemd cleanup timer.
 Keep today and yesterday per service, at most 50 MiB per file; trim oldest lines
 before appending beyond the cap and keep roughly the newest 25 MiB. No extra rotated

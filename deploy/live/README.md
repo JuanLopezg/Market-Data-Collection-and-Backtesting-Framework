@@ -313,48 +313,15 @@ archive is not a durable trading journal or an end-to-end delivery guarantee.
 
 ### Install on the Linux VPS
 
-Use Docker Compose 2.24.4+ (`!override` replaces the old driver's options), rsyslog 8
-with its `omprog` module (locally tested on 8.2112.0), and Python 3.9+.
-Run from the repository root on the actual Linux Docker host;
-Docker Desktop's daemon loopback is different from WSL's loopback. These commands
-prepare host logging without deploying trading services:
-
-```bash
-sudo apt-get install rsyslog python3
-sudo install -d -m 0755 /etc/algotrading/logging /usr/local/lib/algotrading
-sudo install -m 0644 deploy/live/logging/rsyslog.conf /etc/algotrading/logging/rsyslog.conf
-sudo install -m 0644 deploy/live/logging/clean_daily_logs.py /usr/local/lib/algotrading/clean_daily_logs.py
-sudo install -m 0644 deploy/live/logging/algotrading-logs.service /etc/systemd/system/
-sudo install -m 0644 deploy/live/logging/algotrading-log-cleanup.service /etc/systemd/system/
-sudo install -m 0644 deploy/live/logging/algotrading-log-cleanup.timer /etc/systemd/system/
-
-# Ubuntu 24.04 confines rsyslogd with AppArmor. Keep that profile enabled and
-# permit only the dedicated receiver paths and its bounded Python writer.
-if [ -f /etc/apparmor.d/usr.sbin.rsyslogd ]; then
-  sudo install -d -m 0755 /etc/apparmor.d/rsyslog.d
-  sudo install -m 0644 deploy/live/logging/rsyslog.apparmor /etc/apparmor.d/rsyslog.d/algotrading
-  sudo apparmor_parser -r /etc/apparmor.d/usr.sbin.rsyslogd
-fi
-sudo systemctl daemon-reload
-sudo systemctl enable --now algotrading-logs.service algotrading-log-cleanup.timer
-sudo systemctl start algotrading-log-cleanup.service
-sudo systemctl status algotrading-logs.service algotrading-log-cleanup.timer
-sudo ss -ltn 'sport = :5514'
-```
-
-The Ubuntu rsyslog package supplies the `syslog` user and `adm` group; systemd creates
-the receiver's runtime/state/log directories. Only loopback is bound, with no public
-port or Docker-socket mount. Start the receiver before recreating containers with
-the overlay. When deploying, add the logging overlay last:
-
-```bash
-docker compose --env-file deploy/live/.env \
-  -f deploy/live/docker-compose.yml -f deploy/live/docker-compose.logging.yml up -d
-```
-
-For the dashboard, add `dashboard/docker-compose.logging.yml` last after its existing
-production and real-provider files, using the same receiver. Logging settings apply
-to recreated containers. Do not change a running VPS during local validation.
+The receiver source moved to `deploy/chain/logging/` and now follows the chain layout:
+`/logs/<service>/YYYYMMDD.log`, short container names as tags, state in `/data/receiver`,
+writer at `/chain/logging/clean_daily_logs.py`. Install it with the chain, as described
+in [deploy/chain/README.md](../chain/README.md). The running VPS still uses the previous
+installation (`/etc/algotrading/logging`, `/usr/local/lib/algotrading`,
+`/var/log/algotrading/services`) until its authorized from-scratch redeploy; its
+installed copy is not changed by repository edits. The older overlays in this
+directory, `deploy/paper_trading` and `dashboard` now tag records with the plain
+container name (`{{.Name}}`), which the new receiver accepts.
 
 ### Validation and outstanding VPS acceptance
 

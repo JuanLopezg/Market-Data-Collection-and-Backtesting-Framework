@@ -6,7 +6,7 @@ Wants=algotrading-paper.service
 [Service]
 Type=simple
 WorkingDirectory=/opt/algotrading
-ExecStart=/usr/bin/python3 deploy/paper_trading/comparison.py --output storage/paper_trading/comparison --image algotrading-runtime:activity
+ExecStart=/usr/bin/python3 deploy/chain/comparison.py --output storage/paper_trading/comparison --image algotrading-runtime:activity
 Restart=on-failure
 RestartSec=15
 Nice=10

@@ -339,10 +339,13 @@ export interface StatMetric {
   trend?: number[]
 }
 
+// One day of the Overview charts. Optional fields are omitted when the source lacks them.
 export interface EquityPoint {
   label: string
   equity: number
-  benchmark: number
+  balance?: number              // equity without open-position PnL
+  expected?: number             // fast-backtest equity (Live vs Expected)
+  closeLoop?: string            // reconciliation state that day (CLEAN = reconciled)
 }
 
 export interface Position {
@@ -371,6 +374,28 @@ export interface Position {
   pnlAvailable?: boolean
   reconciliationAvailable?: boolean
   strategyBreakdown?: Array<{ strategyId: number; quantity: number; quantityLabel: string }>
+  openedAt?: string
+  feesUsd?: number          // fees paid by this position so far
+  fundingUsd?: number       // funding so far (+ received)
+  netPnlUsd?: number        // unrealized + realized so far - fees + funding
+  feesAvailable?: boolean
+  fundingAvailable?: boolean
+}
+
+// One position from flat to flat (Positions page and closed-positions CSV).
+export interface ClosedPosition {
+  asset: string
+  side: 'Long' | 'Short'
+  openedAt: string
+  closedAt: string
+  quantity: number          // largest size held
+  entryPrice: number
+  exitPrice: number
+  grossPnl: number
+  fees: number
+  funding: number
+  netPnl: number            // gross - fees + funding
+  netPnlPct: number         // net PnL / cost basis
 }
 
 export interface RecentEvent {
@@ -419,14 +444,18 @@ export interface PositionsData {
   sourceUpdatedAt?: string
   valuationState?: 'AVAILABLE' | 'UNAVAILABLE'
   sourceNote?: string
+  closedPositions?: ClosedPosition[]
+  closedAvailable?: boolean   // whole fill history was read
+  fundingAvailable?: boolean  // funding payments are recorded by this source
 }
 
+// One asset: our books (local) against the exchange; pending = signed open-order remainder.
 export interface ReconciliationRow {
   asset: string
-  targetQty: number
+  targetQty?: number
   targetQtyLabel?: string
   targetAvailable?: boolean
-  effectiveQty: number
+  effectiveQty?: number
   effectiveQtyLabel?: string
   localQty: number
   localQtyLabel?: string
@@ -465,9 +494,9 @@ export interface ReconciliationData {
   status: ReconciliationState
   lastChecked: string
   tolerance: string
-  targetPortfolioValue: string
-  localPortfolioValue: string
-  exchangePortfolioValue: string
+  targetPortfolioValue?: string
+  localPortfolioValue?: string
+  exchangePortfolioValue?: string
   rows: ReconciliationRow[]
   openOrders: OpenOrderSummary[]
   sourceMode?: 'MOCK' | 'REAL'
@@ -511,6 +540,25 @@ export interface PipelineAssetRow {
   plannedAction: string
   exchangeState: 'FILLED' | 'PARTIAL' | 'PENDING' | 'NONE' | 'REJECTED' | 'CANCELED'
   stages: PipelineStage[]
+  decisionLabel?: string     // ENTER, RESIZE, EXIT, HOLD
+  targetLabel?: string       // approved USD target ("—" on HOLD)
+  inUniverse?: boolean
+  signalValue?: number       // aggregated signal in [-1, +1]
+  strategies?: PipelineStrategy[]
+}
+
+// One strategy's contribution to an asset decision (weights: fraction of its capital).
+export interface PipelineStrategy {
+  name: string
+  capitalLabel: string
+  shareLabel: string
+  signal: number
+  signalLabel: string
+  detail: string
+  rule?: string
+  sizedLabel: string
+  approvedLabel: string
+  decision: string
 }
 
 export interface WhyTraceMarket {
@@ -615,6 +663,7 @@ export interface PipelineData {
   actionablePlans: number
   rows: PipelineAssetRow[]
   traces: Record<string, WhyTrace>
+  summary?: { label: string; value: string }[]
 }
 
 export type ExecutionOrderState = 'NEW' | 'PARTIAL' | 'FILLED' | 'REJECTED' | 'CANCELED' | 'PENDING_CANCEL'
@@ -706,6 +755,8 @@ export interface ExecutionData {
   sourceNote?: string
   latencyAvailable?: boolean
   slippageAvailable?: boolean
+  // Daily notional-weighted slippage in bps (positive = adverse); absent when not measurable.
+  slippageHistory?: { label: string; bps: number; fills: number }[]
   orderWindowTruncated?: boolean
   fillWindowTruncated?: boolean
 }
@@ -764,7 +815,23 @@ export interface RealRiskAsset {
   limitLabel: string
 }
 
+// Risk page view (cards, leverage/drawdown history, per-strategy limits, exposures).
+export interface RiskCard { label: string; value: string; tone?: 'positive' | 'elevated' | 'negative' }
+export interface RiskHistoryPoint { label: string; leverage?: number; drawdown: number }
+export interface RiskStrategyLimit {
+  name: string; capital: string; sizer: string; maxAsset: string; maxGross: string
+  sizedGross: string; scale: string; approvedGross: string; binding: string
+}
+export interface RiskExposure {
+  asset: string; side: 'Long' | 'Short'; notional: string; weight: number; weightLabel: string
+  approved: string; cap: string; utilization: number
+}
+
 export interface RiskData {
+  summary?: RiskCard[]
+  history?: RiskHistoryPoint[]
+  strategyLimits?: RiskStrategyLimit[]
+  exposures?: RiskExposure[]
   configurationFingerprint?: string
   riskEvaluations?: {
     strategyId: number; name: string; state: string; sizer: string; capital: string
@@ -1178,6 +1245,7 @@ export interface ManualPortfolioTemplateRow {
   estimatedNotionalLabel: string
   deltaPct: number
   riskNote?: string
+  action?: string               // BUY, SELL, CLOSE or HOLD (replay simulation)
 }
 
 export interface ManualValidationIssue {
@@ -1245,6 +1313,22 @@ export interface ManualControlData {
   currentTargetTimestamp?: string
   previewKind?: string
   safetyNote?: string
+  // Manual rebalance in the replay simulation.
+  acceptingRequests?: boolean
+  maxGrossPct?: number            // portfolio-risk limits, % of equity
+  maxAssetPct?: number
+  requests?: ManualRequestStatus[] | null   // newest first
+| null
+  lastRequest?: { id: string; actor: string; status: string; detail: string }
+}
+
+// Where a manual request is on its way to the exchange.
+export interface ManualRequestStatus {
+  id: string
+  stage: 'QUEUED' | 'EXECUTED' | 'AT_EXCHANGE' | 'FILLED' | 'RESYNCED' | 'FAILED'
+  detail: string
+  orders: number
+  filled: number
 }
 
 export interface ManualControlPreviewInput {
@@ -1304,4 +1388,32 @@ export interface DashboardDiagnostics {
     sysBytes: number
     heapObjects: number
   }
+}
+
+// Host resource history (GET /api/infrastructure/history). CPU is percent of host
+// capacity (containers included on the same scale); RAM in MiB; disk in GiB.
+export type HostHistoryRange = '1h' | '6h' | '24h' | '7d'
+// Either a preset ending now or an explicit UTC window (RFC 3339).
+export type HostHistoryQuery = { range: HostHistoryRange } | { from: string; to: string }
+
+export interface HostHistoryPoint {
+  t: string
+  cpuPct: number | null
+  ramUsedMiB: number | null
+  ramTotalMiB: number | null
+  diskUsedGiB: number | null
+  diskTotalGiB: number | null
+  containerCpuPct: Record<string, number>
+  containerRamMiB: Record<string, number>
+}
+
+export interface HostHistoryData {
+  available: boolean
+  reason?: string
+  range: string
+  bucketSeconds: number
+  newestAt?: string
+  stale: boolean
+  containers: string[]
+  points: HostHistoryPoint[]
 }

@@ -6,5 +6,13 @@ services:
       DASHBOARD_RUNTIME_MODE: "REPLAY"
       DASHBOARD_AUTH_ALLOW_DEMO: "true"
       DASHBOARD_AUTH_COOKIE_SECURE: "false"
+      # Host/container telemetry written by deploy/chain/monitor.py (started by research/replay.py).
+      DASHBOARD_HOST_METRICS_FILE: "/data/telemetry/host.json"
+      DASHBOARD_HOST_METRICS_PROJECT: "dashboard"
+      DASHBOARD_HOST_HISTORY_FILE: "/data/telemetry/history.jsonl"
+      # Closed-positions CSV report of the running replay (same files as <root>/reports/ in the chain).
+      DASHBOARD_REPORTS_DIR: "/data/reports"
     volumes:
       - ../deploy/historical_replay/run/step58_dashboard:/data/simulation
+      - ../deploy/historical_replay/run/reports:/data/reports
+      - ../deploy/historical_replay/run/telemetry:/data/telemetry:ro

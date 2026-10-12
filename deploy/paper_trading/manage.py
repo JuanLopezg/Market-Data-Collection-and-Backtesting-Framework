@@ -77,9 +77,14 @@ def main():
         compose('ps', '-a')
     if args.action in ('monitor', 'run'):
         try:
-            subprocess.run(['python3', str(COMPOSE.with_name('monitor.py')), '--project', 'algotrading-paper',
+            # The shared monitor lives in deploy/chain; this older stack keeps its long service names.
+            monitor = ROOT / 'deploy/chain/monitor.py'
+            legacy_services = ('nats,postgres,market-data,strategy,portfolio-risk,execution-state,order-planner,'
+                               'exchange-gateway,simulated-exchange,dashboard-api,dashboard-web,dashboard-watchdog,'
+                               'dashboard-alert-notifier')
+            subprocess.run(['python3', str(monitor), '--project', 'algotrading-paper', '--services', legacy_services,
                             '--output', str(RUN / 'telemetry/host.json'), '--disk-path', str(RUN),
-                            '--log-root', str(RUN / 'algotrading/services')], check=True)
+                            '--log-root', str(RUN / 'logs')], check=True)
         except KeyboardInterrupt:
             pass
         finally:

@@ -1,11 +1,16 @@
-import { ChevronRight, CircleDot, Search, Waypoints } from 'lucide-react'
+import { ChevronRight, Search, Waypoints } from 'lucide-react'
 import { Fragment, useMemo, useState } from 'react'
 import { Panel } from '../components/Panel'
 import { StatePill } from '../components/StatePill'
 import { WhyInspector } from '../components/WhyInspector'
 import { DataLoadError } from '../components/DataLoadError'
+import { displayAmount } from '../components/LineChart'
 import { useDashboardResource } from '../hooks/useDashboardResource'
 import type { PipelineAssetRow, PipelineData, PipelineStageState } from '../types/dashboard'
+
+// Pipeline: the latest close decision asset by asset. The matrix shows the aggregated
+// signal (-1..+1, strategies weighted by capital share) and what followed from it. Click a
+// row for the per-strategy breakdown and the stage rail, "Why?" for the full trace.
 
 function StageState({ state }: { state: PipelineStageState }) {
   const cls = state === 'OK' ? 'stage-state stage-state--ok' : state === 'CHANGED' ? 'stage-state stage-state--changed' : state === 'BLOCKED' ? 'stage-state stage-state--blocked' : 'stage-state stage-state--pending'
@@ -20,11 +25,75 @@ function PipelineRail({ row }: { row: PipelineAssetRow }) {
         <StageState state={stage.state}/>
       </div>
       <strong>{stage.label}</strong>
-      <b>{stage.value}</b>
+      <b>{displayAmount(stage.value)}</b>
       <small>{stage.detail}</small>
-      {index < row.stages.length - 1 && <ChevronRight className="pipeline-stage__arrow" size={16}/>} 
+      {index < row.stages.length - 1 && <ChevronRight className="pipeline-stage__arrow" size={16}/>}
     </div>)}
   </div>
+}
+
+const DECISION_TONE: Record<string, string> = { ENTER: 'positive', EXIT: 'negative', RESIZE: 'info', HOLD: 'muted' }
+
+// Signal in [-1, +1]: +0.50 long, -0.50 short, 0.00 flat.
+const signalText = (value: number) => Math.abs(value) < 0.005 ? '0.00' : `${value > 0 ? '+' : ''}${value.toFixed(2)}`
+const signalTone = (value: number) => Math.abs(value) < 0.005 ? 'muted' : value > 0 ? 'positive' : 'negative'
+
+// Rows without a numeric signal (older payloads) fall back to the LONG/SHORT/FLAT label.
+function rowSignal(row: PipelineAssetRow) {
+  if (row.signalValue !== undefined) return row.signalValue
+  return row.signal === 'LONG' ? 1 : row.signal === 'SHORT' ? -1 : row.signal === 'FLAT' ? 0 : null
+}
+
+function SignalCell({ value }: { value: number | null }) {
+  return <td className={value === null ? 'muted' : signalTone(value)}>{value === null ? '—' : signalText(value)}</td>
+}
+
+// Each strategy's signal and risk outcome, then the capital-weighted aggregate.
+function StrategyBreakdown({ row }: { row: PipelineAssetRow }) {
+  const strategies = row.strategies ?? []
+  if (!strategies.length) return null
+  const aggregated = rowSignal(row)
+  return <div className="pipeline-breakdown">
+    <table><thead><tr>
+      <th>Strategy</th><th>Capital</th><th>Weight in signal</th><th>Signal</th><th>Indicator</th><th>Sized W.</th><th>Approved W.</th><th>Decision</th>
+    </tr></thead><tbody>
+      {strategies.map(strategy => <tr key={strategy.name}>
+        <td><strong>{strategy.name}</strong>{strategy.rule && <small className="cell-sub">{strategy.rule}</small>}</td>
+        <td>{strategy.capitalLabel}</td>
+        <td>{strategy.shareLabel}</td>
+        <td className={signalTone(strategy.signal)}>{strategy.signalLabel}</td>
+        <td>{strategy.detail}</td>
+        <td>{strategy.sizedLabel}</td>
+        <td>{strategy.approvedLabel}</td>
+        <td className={DECISION_TONE[strategy.decision] ?? 'muted'}>{strategy.decision}</td>
+      </tr>)}
+      <tr className="pipeline-breakdown__total">
+        <td><strong>Aggregated</strong></td><td></td><td>100%</td>
+        <td className={aggregated === null ? 'muted' : signalTone(aggregated)}>{aggregated === null ? '—' : signalText(aggregated)}</td>
+        <td></td>
+        <td>{row.rawTargetLabel ?? '—'}</td>
+        <td>{row.approvedTargetLabel ?? '—'}</td>
+        <td className={DECISION_TONE[row.decisionLabel ?? ''] ?? 'muted'}>{row.decisionLabel ?? '—'}</td>
+      </tr>
+    </tbody></table>
+  </div>
+}
+
+// Changes first, then the universe by liquidity rank, then the rest alphabetically.
+function orderRows(rows: PipelineAssetRow[]) {
+  const changed = (row: PipelineAssetRow) => row.decisionLabel && row.decisionLabel !== 'HOLD' ? 0 : 1
+  const rank = (row: PipelineAssetRow) => row.rank > 0 ? row.rank : Number.MAX_SAFE_INTEGER
+  return [...rows].sort((a, b) => changed(a) - changed(b) || rank(a) - rank(b) || a.asset.localeCompare(b.asset))
+}
+
+function summaryOf(data: PipelineData) {
+  if (data.summary?.length) return data.summary
+  return [
+    { label: 'Decision', value: data.latestDecision },
+    { label: 'Universe', value: String(data.universeSize) },
+    { label: 'Active Signals', value: String(data.activeSignals) },
+    { label: 'Orders', value: String(data.actionablePlans) },
+  ]
 }
 
 export function PipelinePage() {
@@ -33,26 +102,50 @@ export function PipelinePage() {
   const [expandedCycle, setExpandedCycle] = useState<string | null>(null)
   const [query, setQuery] = useState('')
 
-
-  const rows = useMemo(() => data?.rows.filter(row => row.asset.toLowerCase().includes(query.toLowerCase())) ?? [], [data, query])
+  const rows = useMemo(() => orderRows(data?.rows.filter(row => row.asset.toLowerCase().includes(query.trim().toLowerCase())) ?? []), [data, query])
   if (error) return <DataLoadError title="Pipeline unavailable" error={error} onRetry={retry}/>
   if (!data) return <div className="page-loading">Loading pipeline…</div>
   const selectedTrace = selectedCycle ? data.traces[selectedCycle] : null
 
   return <>
-    <div className="page-heading">
-      <div><h1>Strategy → Portfolio Pipeline</h1><p>Explain every transformation from market observation to exchange state.</p></div>
-      <div className="cycle-label"><CircleDot size={14}/><span>{data.cycleLabel}</span></div>
-    </div>
+    <div className="page-heading"><h1>Pipeline</h1></div>
 
-    {data.sourceNote && <div className="real-source-banner pipeline-source-note"><strong>{data.sourceMode} · {data.evidenceState ?? 'cycle-aligned durable lineage'}</strong><span>{data.sourceNote}</span></div>}
+    <section className="overview-stats">
+      {summaryOf(data).map(stat => <div className="overview-stat" key={stat.label}><span>{stat.label}</span><strong>{stat.value}</strong></div>)}
+    </section>
 
-    {data.proof && <Panel title="Step 31 · End-to-End Proof" right={<StatePill state={data.proof.status}/>}>
+    <Panel title="Decision Matrix" right={<label className="search-box"><Search size={14}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Filter asset"/></label>}>
+      <div className="table-wrap"><table className="wide-table pipeline-table"><thead><tr>
+        <th>Asset</th><th>Liq. Rank</th><th>Signal</th><th>Sized W.</th><th>Approved W.</th><th>Decision</th><th>Target</th><th>Current</th><th>Delta</th><th>Order</th><th>Execution</th><th></th>
+      </tr></thead>
+      <tbody>
+        {rows.length === 0 && <tr><td colSpan={12} className="empty-cell">{query ? 'No assets match the filter' : data.emptyReason ?? 'No decision yet'}</td></tr>}
+        {rows.map(row => <Fragment key={row.cycleId}>
+          <tr className={`clickable-row${row.inUniverse === false ? ' pipeline-row--outside' : ''}`} onClick={() => setExpandedCycle(expandedCycle === row.cycleId ? null : row.cycleId)}>
+            <td><strong>{row.asset}</strong></td>
+            <td>{row.rankLabel ?? `#${row.rank}`}</td>
+            <SignalCell value={rowSignal(row)}/>
+            <td>{row.rawTargetLabel ?? `${row.rawTargetPct.toFixed(1)}%`}</td>
+            <td><strong>{row.approvedTargetLabel ?? `${row.approvedTargetPct.toFixed(1)}%`}</strong></td>
+            <td className={DECISION_TONE[row.decisionLabel ?? ''] ?? 'muted'}>{row.decisionLabel ?? '—'}</td>
+            <td>{displayAmount(row.targetLabel ?? '—')}</td>
+            <td>{displayAmount(row.currentWeightLabel ?? '—')}</td>
+            <td className={row.requiredDeltaLabel?.startsWith('+') ? 'positive' : row.requiredDeltaLabel?.startsWith('-') ? 'negative' : ''}>{displayAmount(row.requiredDeltaLabel ?? '—')}</td>
+            <td>{row.plannedAction}</td>
+            <td><span className={`exchange-state exchange-state--${row.exchangeState.toLowerCase()}`}>{row.exchangeState}</span></td>
+            <td><button className="why-button" onClick={event => { event.stopPropagation(); setSelectedCycle(row.cycleId) }}><Waypoints size={13}/> Why?</button></td>
+          </tr>
+          {expandedCycle === row.cycleId && <tr className="pipeline-expanded"><td colSpan={12}><StrategyBreakdown row={row}/><PipelineRail row={row}/></td></tr>}
+        </Fragment>)}
+      </tbody></table></div>
+    </Panel>
+
+    {data.proof && <Panel title="Cycle Proof" right={<StatePill state={data.proof.status}/>} className="pipeline-proof">
       <div className="e2e-proof-head">
         <div><span>Cycle</span><strong>{data.proof.cycleTimestamp}</strong><small>{data.proof.completion.replace(/_/g, ' ')}</small></div>
-        <div><span>Correlation</span><strong>{data.proof.correlationId}</strong><small>Durable decision metadata</small></div>
+        <div><span>Correlation</span><strong>{data.proof.correlationId}</strong></div>
         <div><span>Orders</span><strong>{data.proof.matchedOrders}/{data.proof.submitOrders}</strong><small>{data.proof.cancelOrders} cancel request(s)</small></div>
-        <div><span>Fill coverage</span><strong>{data.proof.matchedFills}/{data.proof.submitOrders}</strong><small>{data.proof.fillIds.length} persisted fill row(s)</small></div>
+        <div><span>Fill coverage</span><strong>{data.proof.matchedFills}/{data.proof.submitOrders}</strong><small>{data.proof.fillIds.length} fill row(s)</small></div>
       </div>
       <div className="e2e-proof-grid">
         {data.proof.steps.map((step, index) => <div className="e2e-proof-step" key={step.id}>
@@ -62,31 +155,8 @@ export function PipelinePage() {
           <small>{step.source}</small>
         </div>)}
       </div>
-      <div className="e2e-proof-note">{data.proof.sourceNote}</div>
     </Panel>}
 
-    <div className="pipeline-summary">
-      <div className="mini-metric"><span>Latest decision</span><strong>{data.latestDecision}</strong><small>Authoritative business time</small></div>
-      <div className="mini-metric"><span>Observed assets / candidates</span><strong>{data.universeSize}</strong><small>Not necessarily the selected strategy universe</small></div>
-      <div className="mini-metric"><span>Active signals</span><strong>{data.evidenceState === 'PARTIAL' || data.latestDecision === 'Pending' ? 'Not exposed' : data.activeSignals}</strong><small>Persisted strategy intent</small></div>
-      <div className="mini-metric"><span>Actionable plans</span><strong>{data.evidenceState === 'PARTIAL' || data.evidenceState === 'PENDING' ? 'Pending / unavailable' : data.actionablePlans}</strong><small>Same-cycle planner instructions</small></div>
-    </div>
-
-    <Panel title="Decision Matrix" right={<div className="table-actions"><div className="search-box"><Search size={13}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Asset…"/></div></div>}>
-      <div className="table-wrap"><table className="wide-table pipeline-table"><thead><tr><th>Asset</th><th>Rank</th><th>RSI(7)</th><th>Signal</th><th>Raw target</th><th>Vol target</th><th>Approved</th><th>Current</th><th>Delta</th><th>Plan</th><th>Exchange</th><th></th></tr></thead>
-      <tbody>{rows.length === 0 && <tr><td colSpan={12} className="empty-cell">{query ? 'No assets match your search.' : data.emptyReason ?? 'No asset-level evidence is available for this cycle.'}</td></tr>}{rows.map(row => <Fragment key={row.cycleId}>
-        <tr key={row.cycleId} className="clickable-row" onClick={()=>setExpandedCycle(expandedCycle === row.cycleId ? null : row.cycleId)}>
-          <td><strong>{row.asset}</strong><small className="cell-sub">{row.decisionTime}</small></td><td>{row.rankLabel ?? `#${row.rank}`}</td><td className={!row.rsiLabel && row.rsi > 80 ? 'warning' : ''}>{row.rsiLabel ?? row.rsi.toFixed(1)}</td><td><span className={`signal signal--${row.signal.toLowerCase()}`}>{row.signal}</span></td><td>{row.rawTargetLabel ?? `${row.rawTargetPct.toFixed(1)}%`}</td><td>{row.volTargetLabel ?? `${row.volTargetPct.toFixed(1)}%`}</td><td><strong>{row.approvedTargetLabel ?? `${row.approvedTargetPct.toFixed(1)}%`}</strong></td><td>{row.currentWeightLabel ?? `${row.currentWeightPct.toFixed(1)}%`}</td><td className={row.requiredDeltaLabel ? '' : row.requiredDeltaPct === 0 ? '' : row.requiredDeltaPct > 0 ? 'positive' : 'warning'}>{row.requiredDeltaLabel ?? `${row.requiredDeltaPct > 0 ? '+' : ''}${row.requiredDeltaPct.toFixed(1)}%`}</td><td>{row.plannedAction}</td><td><span className={`exchange-state exchange-state--${row.exchangeState.toLowerCase()}`}>{row.exchangeState}</span></td><td><button className="why-button" onClick={(e)=>{e.stopPropagation();setSelectedCycle(row.cycleId)}}><Waypoints size={13}/> Why?</button></td>
-        </tr>
-        {expandedCycle === row.cycleId && <tr key={`${row.cycleId}-rail`} className="pipeline-expanded"><td colSpan={12}><PipelineRail row={row}/></td></tr>}
-      </Fragment>)}</tbody></table></div>
-    </Panel>
-
-    <div className="pipeline-help">
-      <div><strong>Interaction model</strong><span>Click a row to expand the stage-by-stage transformation. Use “Why?” for the complete trading-cycle inspector.</span></div>
-      <StatePill state={data.proof?.status ?? 'PENDING'}/>
-    </div>
-
-    {selectedTrace && <><div className="inspector-backdrop" onClick={()=>setSelectedCycle(null)}/><WhyInspector trace={selectedTrace} onClose={()=>setSelectedCycle(null)}/></>}
+    {selectedTrace && <><div className="inspector-backdrop" onClick={() => setSelectedCycle(null)}/><WhyInspector trace={selectedTrace} onClose={() => setSelectedCycle(null)}/></>}
   </>
 }

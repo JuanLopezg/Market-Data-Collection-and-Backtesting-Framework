@@ -34,6 +34,9 @@ public:
 
     Timestamp lastTimestamp() const { return last_timestamp_; }
 
+    // Indicator values computed at the latest onBarClose() (read-only, for diagnostics).
+    const IndicatorEngine& indicators() const { return indicators_; }
+
     const StrategySignalPortfolio& strategies() const { return strategies_; }
     StrategySignalPortfolio& strategies() { return strategies_; }
 };

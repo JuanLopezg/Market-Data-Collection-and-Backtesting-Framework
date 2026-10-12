@@ -348,6 +348,25 @@ across current studies even when no sensitivity grid is requested.
 
 CURRENT sizing uses 10% fixed weight, full strategy allocation, 1.5 gross/asset
 risk limits and entry/exit-only rebalance, matching the public fast configuration.
+`--sizer volatility-target` instead uses `config/portfolio/pure_rsi_vol_target.json`
+semantics: `VolatilityTargetSizer` with a sample covariance of `--covariance-lookback`
+(default 5) daily returns, `--target-volatility` (default 0.20) and a
+`ThresholdRebalancePolicy` of `--rebalance-threshold` (default 0.02), same 1.5 limits.
+
+Current Binance perpetual data: `python3 tools/binance_perp_daily.py --start YYYY-MM-DD
+--output storage/databases/<name>.csv` writes every USDT perpetual (COIN underlying, any
+status still listed by exchangeInfo) with `volume` = USDT quote volume, completed UTC days
+only. Use `--benchmark BTCUSDT` with it. Example (2025 to date, 20% vol target):
+
+```bash
+build/research/src/legacy/algotrading_research_html \
+  --database storage/databases/1d_binance_perp_quote_20241207.csv \
+  --start 20241207 --end 20261011 --benchmark BTCUSDT \
+  --sizer volatility-target --target-volatility 0.20 --study-id <new id>
+```
+
+The window starts cold: 2024-12-07 gives 25 days for the SMA(volume, 25) universe, so
+the first decision is the 2024-12-31 close.
 Market decisions at close(T) execute at the next available open. Commission is netted once
 from actual fills. Open campaigns stay marked at cutoff, enter exposure, and are
 excluded from closed-trade statistics/Monte Carlo. Holding duration counts observed

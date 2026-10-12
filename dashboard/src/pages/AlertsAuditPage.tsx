@@ -1,57 +1,55 @@
-import { AlertOctagon, AlertTriangle, CheckCircle2, CircleCheckBig, Filter, History, Search, ShieldCheck } from 'lucide-react'
+import { Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useAuth } from '../providers/AuthProvider'
 import { useDashboardDataSource } from '../providers/DashboardDataSourceProvider'
 import { Panel } from '../components/Panel'
 import { DataLoadError } from '../components/DataLoadError'
 import { useDashboardResource } from '../hooks/useDashboardResource'
-import type { AlertsAuditData, AlertStatus, Severity } from '../types/dashboard'
+import type { AlertStatus, Severity } from '../types/dashboard'
+
+// Alerts & Audit: what needs attention now, and who did what. Alerts are notices only;
+// acknowledging one records that an operator saw it, it does not resolve the condition.
+
+const SEVERITY_ORDER: Record<Severity, number> = { CRITICAL: 0, WARN: 1, INFO: 2 }
+const SEVERITY_LABEL: Record<Severity, string> = { CRITICAL: 'Critical', WARN: 'Warning', INFO: 'Info' }
+const STATUS_LABEL: Record<AlertStatus, string> = { ACTIVE: 'Open', ACKNOWLEDGED: 'Seen', RESOLVED: 'Resolved' }
+const PAGE = 20
 
 function SeverityPill({ severity }: { severity: Severity }) {
   const tone = severity === 'CRITICAL' ? 'bad' : severity === 'WARN' ? 'warn' : 'info'
-  return <span className={`alert-severity alert-severity--${tone}`}>{severity}</span>
-}
-
-function AlertStatusPill({ status }: { status: AlertStatus }) {
-  const tone = status === 'ACTIVE' ? 'bad' : status === 'ACKNOWLEDGED' ? 'warn' : 'good'
-  return <span className={`alert-status alert-status--${tone}`}>{status}</span>
+  return <span className={`alert-severity alert-severity--${tone}`}>{SEVERITY_LABEL[severity]}</span>
 }
 
 export function AlertsAuditPage() {
   const { data, error, retry } = useDashboardResource('getAlertsAudit')
   const [severity, setSeverity] = useState<'ALL' | Severity>('ALL')
-  const [status, setStatus] = useState<'ALL' | AlertStatus>('ALL')
   const [query, setQuery] = useState('')
+  const [auditLimit, setAuditLimit] = useState(PAGE)
   const dataSource = useDashboardDataSource()
   const { session } = useAuth()
   const isOperator = session?.user.role === 'OPERATOR'
   const [ackBusyId, setAckBusyId] = useState<string | null>(null)
-  const [ackMessage, setAckMessage] = useState<string | null>(null)
   const [ackError, setAckError] = useState<string | null>(null)
 
-  const filteredAlerts = useMemo(() => {
+  const alerts = useMemo(() => {
     if (!data) return []
     const q = query.trim().toLowerCase()
-    return data.alerts.filter(alert => (severity === 'ALL' || alert.severity === severity) && (status === 'ALL' || alert.status === status) && (!q || `${alert.title} ${alert.detail} ${alert.service} ${alert.asset ?? ''} ${alert.correlationId ?? ''}`.toLowerCase().includes(q)))
-  }, [data, severity, status, query])
+    return data.alerts
+      .filter(alert => alert.status !== 'RESOLVED')
+      .filter(alert => severity === 'ALL' || alert.severity === severity)
+      .filter(alert => !q || `${alert.title} ${alert.detail} ${alert.service} ${alert.asset ?? ''}`.toLowerCase().includes(q))
+      .sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
+  }, [data, severity, query])
 
   const acknowledge = async (alertId: string, acknowledgementKey?: string) => {
     if (!isOperator || !session?.csrfToken || !acknowledgementKey) return
-    const comment = window.prompt('Optional acknowledgement comment (max 500 characters):', '')
-    if (comment === null) return
-    if (comment.length > 500) {
-      setAckError('Acknowledgement comment exceeds 500 characters.')
-      return
-    }
     setAckBusyId(alertId)
     setAckError(null)
-    setAckMessage(null)
     try {
-      const result = await dataSource.acknowledgeAlert({ alertId, acknowledgementKey, comment }, session.csrfToken)
-      setAckMessage(result.alreadyAcknowledged ? 'Alert was already acknowledged.' : 'Acknowledgement persisted. The alert remains unresolved.')
-      window.setTimeout(() => retry(), 2200)
+      await dataSource.acknowledgeAlert({ alertId, acknowledgementKey, comment: '' }, session.csrfToken)
+      window.setTimeout(() => retry(), 1500)
     } catch (cause) {
-      setAckError(cause instanceof Error ? cause.message : 'Alert acknowledgement failed.')
+      setAckError(cause instanceof Error ? cause.message : 'Acknowledgement failed.')
     } finally {
       setAckBusyId(null)
     }
@@ -60,67 +58,75 @@ export function AlertsAuditPage() {
   if (error) return <DataLoadError title="Alerts and audit unavailable" error={error} onRetry={retry}/>
   if (!data) return <div className="page-loading">Loading alerts and audit…</div>
 
-  const real = data.sourceMode === 'REAL'
   const ackAvailable = data.acknowledgementAvailable !== false
-  const historyAvailable = data.durableAlertHistoryAvailable !== false
-  const humanAuditAvailable = data.humanAuditAvailable !== false
-  const durableEvents = data.durableLifecycleEvents ?? []
+  const history = data.durableLifecycleEvents ?? []
+  const open = data.alerts.filter(alert => alert.status !== 'RESOLVED')
+  const info = open.filter(alert => alert.severity === 'INFO').length
 
   return <>
-    <div className="page-heading">
-      <div><h1>Alerts & Audit</h1><p>Operational alerts, system evidence and durable audit boundaries.</p></div>
-      <div className="cycle-label"><History size={14}/><span>{real ? 'Real operational evidence' : 'Operational timeline'}</span></div>
-    </div>
+    <div className="page-heading"><h1>Alerts & Audit</h1></div>
 
-    {real && <div className="real-source-banner"><strong>REAL DATA · Step 43 lifecycle + Step 46 manual audit + Step 46A human ACK</strong><span>{data.sourceNote} {data.sourceUpdatedAt ? `Checked ${data.sourceUpdatedAt}.` : ''}</span></div>}
-
-    {real && <Panel title="Step 43 · Durable Alert Watchdog" right={<span className="muted">{data.watchdogState ?? 'UNKNOWN'}</span>}>
-      <div className="alerts-summary">
-        <div className="mini-metric"><span>Watchdog state</span><strong className={data.watchdogState === 'HEALTHY' ? 'positive' : 'warning'}>{data.watchdogState ?? 'UNKNOWN'}</strong><small>Independent of the browser</small></div>
-        <div className="mini-metric"><span>Durable events</span><strong>{data.durableEventCount ?? 0}</strong><small>OPENED / UPDATED / RESOLVED transitions</small></div>
-        <div className="mini-metric"><span>Last sweep</span><strong>{data.watchdogLastSweepAt ? data.watchdogLastSweepAt.slice(11,19) : '—'}</strong><small>{data.watchdogLastSweepAt ?? 'No persisted heartbeat yet'}</small></div>
-        <div className="mini-metric"><span>Human acknowledgement</span><strong>{ackAvailable ? data.acknowledged : 'Not wired'}</strong><small>{ackAvailable ? 'Append-only ACK · does not resolve alerts' : 'Acknowledgement store unavailable'}</small></div>
-      </div>
-      {!data.watchdogAvailable && <div className="alerts-gap-note"><strong>Watchdog store not ready.</strong><span>The current alert projection remains read-only/fail-closed. The separate watchdog must persist a successful heartbeat before durable history is claimed.</span></div>}
-    </Panel>}
-
-    {ackError && <div className="manual-role-lock"><AlertTriangle size={15}/><div><strong>Acknowledgement failed</strong><span>{ackError}</span></div></div>}
-    {ackMessage && <div className="alerts-gap-note"><strong>Human acknowledgement recorded.</strong><span>{ackMessage}</span></div>}
-
-    <section className="alerts-summary">
-      <div className="mini-metric mini-metric--critical"><span>Active critical</span><strong className="negative">{data.activeCritical}</strong><small>Current derived conditions</small></div>
-      <div className="mini-metric"><span>Active warnings</span><strong className="warning">{data.activeWarnings}</strong><small>Current derived conditions</small></div>
-      <div className="mini-metric"><span>Durable lifecycle</span><strong className={historyAvailable ? 'positive' : ''}>{historyAvailable ? (data.durableEventCount ?? durableEvents.length) : 'Not wired'}</strong><small>{historyAvailable ? 'Persisted alert transitions' : 'No durable alert-history window yet'}</small></div>
-      <div className="mini-metric"><span>Resolved history</span><strong className={historyAvailable ? 'positive' : ''}>{historyAvailable ? data.resolved24h : 'Not wired'}</strong><small>{historyAvailable ? 'Resolved in the last 24h' : 'No durable alert-history window yet'}</small></div>
+    <section className="overview-stats">
+      <div className="overview-stat"><span>Critical</span><strong className={data.activeCritical > 0 ? 'negative' : ''}>{data.activeCritical}</strong></div>
+      <div className="overview-stat"><span>Warnings</span><strong className={data.activeWarnings > 0 ? 'leverage--elevated' : ''}>{data.activeWarnings}</strong></div>
+      <div className="overview-stat"><span>Info</span><strong>{info}</strong></div>
+      {ackAvailable && <div className="overview-stat"><span>Seen by Operator</span><strong>{data.acknowledged}</strong></div>}
     </section>
 
-    <Panel title="Alert Center" right={<span className="muted">{real ? 'Current conditions derived from canonical sources' : 'ACK is human evidence; only RESOLVED clears the condition'}</span>}>
+    {ackError && <div className="manual-banner manual-banner--bad">Acknowledgement failed: {ackError}</div>}
+
+    <Panel title="Open Alerts">
       <div className="alert-toolbar">
-        <div className="search-box"><Search size={13}/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search service, asset, event or correlation ID"/></div>
-        <label><Filter size={12}/><span>Severity</span><select value={severity} onChange={e => setSeverity(e.target.value as 'ALL' | Severity)}><option>ALL</option><option>CRITICAL</option><option>WARN</option><option>INFO</option></select></label>
-        <label><span>Status</span><select value={status} onChange={e => setStatus(e.target.value as 'ALL' | AlertStatus)}><option>ALL</option><option>ACTIVE</option><option>ACKNOWLEDGED</option><option>RESOLVED</option></select></label>
+        <div className="search-box"><Search size={13}/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search alerts"/></div>
+        <label><span>Severity</span><select value={severity} onChange={e => setSeverity(e.target.value as 'ALL' | Severity)}>
+          <option value="ALL">All</option><option value="CRITICAL">Critical</option><option value="WARN">Warning</option><option value="INFO">Info</option>
+        </select></label>
       </div>
-      <div className="alert-list">{filteredAlerts.map(alert => <div className={`alert-row alert-row--${alert.severity.toLowerCase()}`} key={alert.id}>
-        <div className="alert-row__icon">{alert.severity === 'CRITICAL' ? <AlertOctagon size={16}/> : alert.severity === 'WARN' ? <AlertTriangle size={16}/> : <CheckCircle2 size={16}/>}</div>
-        <div className="alert-row__main"><div><strong>{alert.title}</strong><SeverityPill severity={alert.severity}/><AlertStatusPill status={alert.status}/></div><p>{alert.detail}</p><small>{alert.timestamp} · {alert.service}{alert.asset ? ` · ${alert.asset}` : ''} · {alert.eventType}</small></div>
-        <div className="alert-row__meta">
-          {alert.correlationId && <code>{alert.correlationId}</code>}
-          {alert.linkedContext && <span>{alert.linkedContext}</span>}
-          {alert.status === 'ACKNOWLEDGED' && <small>{alert.acknowledgedBy ?? 'operator'} · {alert.acknowledgedAt ?? 'persisted'}{alert.acknowledgementComment ? ` · ${alert.acknowledgementComment}` : ''}</small>}
-          {ackAvailable && alert.status === 'ACTIVE' && alert.acknowledgementKey && <button className="button-secondary" onClick={() => void acknowledge(alert.id, alert.acknowledgementKey)} disabled={!isOperator || ackBusyId === alert.id}>{ackBusyId === alert.id ? 'Acknowledging…' : 'Acknowledge'}</button>}
-          {ackAvailable && alert.status === 'ACTIVE' && !alert.acknowledgementKey && <small>Waiting for durable watchdog lifecycle</small>}
-          {ackAvailable && !isOperator && alert.status === 'ACTIVE' && <small>OPERATOR required to acknowledge</small>}
-        </div>
-      </div>)}{filteredAlerts.length === 0 && <div className="empty-state">No alerts match the current filters.</div>}</div>
+      <div className="table-wrap"><table className="wide-table alerts-table">
+        <thead><tr><th>Severity</th><th>What happened</th><th>Area</th><th>Since</th><th>Status</th>{ackAvailable && <th/>}</tr></thead>
+        <tbody>
+          {alerts.map(alert => <tr key={alert.id}>
+            <td><SeverityPill severity={alert.severity}/></td>
+            <td><strong>{alert.title}</strong>{alert.asset ? ` · ${alert.asset}` : ''}{alert.detail && <small className="alerts-table__detail">{alert.detail}</small>}</td>
+            <td>{alert.service}</td>
+            <td>{alert.timestamp || '—'}</td>
+            <td>{STATUS_LABEL[alert.status]}{alert.status === 'ACKNOWLEDGED' && alert.acknowledgedBy ? ` by ${alert.acknowledgedBy}` : ''}</td>
+            {ackAvailable && <td>{alert.status === 'ACTIVE' && alert.acknowledgementKey && isOperator &&
+              <button className="button-secondary" onClick={() => void acknowledge(alert.id, alert.acknowledgementKey)} disabled={ackBusyId === alert.id}>{ackBusyId === alert.id ? 'Saving…' : 'Mark as seen'}</button>}</td>}
+          </tr>)}
+          {alerts.length === 0 && <tr><td colSpan={ackAvailable ? 6 : 5} className="empty-cell">{open.length === 0 ? 'No open alerts' : 'No alerts match the filters'}</td></tr>}
+        </tbody>
+      </table></div>
     </Panel>
 
-    {real && historyAvailable && <Panel title="Durable Alert Lifecycle" right={<span className="muted"><History size={12}/> append-only observability evidence</span>}>
-      <div className="table-wrap"><table className="wide-table audit-table"><thead><tr><th>Recorded</th><th>Transition</th><th>Severity</th><th>Service</th><th>Event</th><th>Asset</th><th>Title</th></tr></thead><tbody>{durableEvents.map(event => <tr key={event.eventId}><td>{event.recordedAt}</td><td><strong>{event.transition}</strong></td><td><SeverityPill severity={event.alert.severity}/></td><td>{event.alert.service}</td><td>{event.alert.eventType}</td><td>{event.alert.asset ?? '—'}</td><td>{event.alert.title}</td></tr>)}{durableEvents.length === 0 && <tr><td colSpan={7}>No lifecycle transition has been persisted yet. This is valid when the current system has not opened/resolved an alert since the watchdog store was initialized.</td></tr>}</tbody></table></div>
+    {history.length > 0 && <Panel title="Alert History">
+      <div className="table-wrap"><table className="wide-table">
+        <thead><tr><th>Time</th><th>Change</th><th>Severity</th><th>Alert</th><th>Area</th></tr></thead>
+        <tbody>{history.slice(0, PAGE).map(event => <tr key={event.eventId}>
+          <td>{event.recordedAt}</td>
+          <td>{event.transition === 'OPENED' ? 'Opened' : event.transition === 'RESOLVED' ? 'Resolved' : 'Updated'}</td>
+          <td><SeverityPill severity={event.alert.severity}/></td>
+          <td>{event.alert.title}</td>
+          <td>{event.alert.service}</td>
+        </tr>)}</tbody>
+      </table></div>
     </Panel>}
 
-    <Panel title={real ? 'System Evidence Timeline' : 'Audit Trail'} right={<span className="muted"><ShieldCheck size={12}/> {real ? (humanAuditAvailable ? 'canonical evidence · durable human actions' : 'canonical evidence · human audit unavailable') : 'append-only UI model'}</span>}>
-      {real && !humanAuditAvailable && <div className="alerts-gap-note"><strong>Durable manual-intent audit is unavailable.</strong><span>System evidence remains reconstructed from canonical runtime sources, but Step 46 manual route admission records cannot be claimed durable until the separate operator-intent store is readable. Alert acknowledgement is stored separately by Step 46A when available.</span></div>}
-      <div className="table-wrap"><table className="wide-table audit-table"><thead><tr><th>Timestamp</th><th>Actor</th><th>Type</th><th>Action</th><th>Target</th><th>Result</th><th>Correlation</th><th>Detail</th></tr></thead><tbody>{data.audit.map(row => <tr key={row.id}><td>{row.timestamp}</td><td><strong>{row.actor}</strong></td><td>{row.actorType}</td><td>{row.action}</td><td>{row.target}</td><td><span className={`audit-result audit-result--${row.result.toLowerCase()}`}>{row.result === 'SUCCESS' ? <CircleCheckBig size={11}/> : row.result === 'REJECTED' ? <AlertTriangle size={11}/> : <CheckCircle2 size={11}/>} {row.result}</span></td><td>{row.correlationId ? <code>{row.correlationId}</code> : '—'}</td><td>{row.detail}</td></tr>)}</tbody></table></div>
+    <Panel title="Audit Log">
+      <div className="table-wrap"><table className="wide-table">
+        <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Result</th><th>Detail</th></tr></thead>
+        <tbody>
+          {data.audit.slice(0, auditLimit).map(row => <tr key={row.id} title={row.correlationId}>
+            <td>{row.timestamp || '—'}</td>
+            <td>{row.actor}</td>
+            <td>{row.action}</td>
+            <td className={row.result === 'REJECTED' ? 'negative' : row.result === 'SUCCESS' ? 'positive' : ''}>{row.result === 'SUCCESS' ? 'Done' : row.result === 'REJECTED' ? 'Rejected' : 'No change'}</td>
+            <td>{row.detail || '—'}</td>
+          </tr>)}
+          {data.audit.length === 0 && <tr><td colSpan={5} className="empty-cell">No operator actions yet</td></tr>}
+        </tbody>
+      </table></div>
+      {data.audit.length > auditLimit && <div className="table-more"><span className="muted">{auditLimit} of {data.audit.length}</span><button className="ghost-button" onClick={() => setAuditLimit(limit => limit + PAGE)}>Show more</button></div>}
     </Panel>
   </>
 }

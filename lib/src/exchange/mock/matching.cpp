@@ -347,10 +347,7 @@ double MockMatching::scaledUnitsToDouble(
     std::uint64_t units,
     std::size_t scale)
 {
-    long double factor = 1.0L;
-    for (std::size_t i = 0; i < scale; ++i)
-        factor *= 10.0L;
-    return static_cast<double>(static_cast<long double>(units) / factor);
+    return unsignedScaledToDouble(units, scale);
 }
 
 bool MockMatching::latencySatisfied(

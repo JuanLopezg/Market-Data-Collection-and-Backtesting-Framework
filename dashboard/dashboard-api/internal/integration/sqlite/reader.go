@@ -200,6 +200,38 @@ func (r *Reader) LoadStrategyWindow(ctx context.Context, canonicalTopN, historyD
 	return result, nil
 }
 
+// LatestClose is the most recent completed daily close of one pair.
+type LatestClose struct {
+	Pair  string  `json:"pair"`
+	Date  uint64  `json:"date"`
+	Close float64 `json:"close"`
+}
+
+// LatestCloses returns the newest persisted close for each requested pair (pairs without
+// candles are absent). Used to value open positions; read-only.
+func (r *Reader) LatestCloses(ctx context.Context, pairs []string) (map[string]LatestClose, error) {
+	result := map[string]LatestClose{}
+	if r.databasePath == "" {
+		return result, errors.New("market-data SQLite path is not configured")
+	}
+	if len(pairs) == 0 {
+		return result, nil
+	}
+	query := fmt.Sprintf(`SELECT o.pair AS pair, o.date AS date, o.close AS close FROM ohlcv_data o
+JOIN (SELECT pair, MAX(date) AS date FROM ohlcv_data WHERE pair IN (%s) GROUP BY pair) latest
+ON o.pair = latest.pair AND o.date = latest.date;`, quotedStringList(pairs))
+	var rows []LatestClose
+	if err := r.queryRows(ctx, query, &rows); err != nil {
+		return result, err
+	}
+	for _, row := range rows {
+		if row.Close > 0 {
+			result[row.Pair] = row
+		}
+	}
+	return result, nil
+}
+
 func (r *Reader) queryRows(parent context.Context, query string, destination any) error {
 	ctx, cancel := context.WithTimeout(parent, r.timeout)
 	defer cancel()

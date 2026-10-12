@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -828,6 +829,30 @@ def dashboard_up() -> None:
         "up", "-d", "--build", "--force-recreate",
     ]
     run(cmd, cwd=ROOT / "dashboard")
+    start_host_monitor()
+
+
+# Host CPU/RAM/disk and dashboard-container telemetry for the Infrastructure page. The
+# collector keeps running with the dashboard (detached); a new launch replaces it.
+HOST_TELEMETRY_DIR = ROOT / "deploy/historical_replay/run/telemetry"
+
+
+def start_host_monitor() -> None:
+    HOST_TELEMETRY_DIR.mkdir(parents=True, exist_ok=True)
+    pid_file = HOST_TELEMETRY_DIR / "monitor.pid"
+    if pid_file.is_file():
+        try:
+            os.kill(int(pid_file.read_text().strip()), signal.SIGTERM)
+        except (OSError, ValueError):
+            pass
+    log = (HOST_TELEMETRY_DIR / "monitor.log").open("ab")
+    process = subprocess.Popen(
+        [sys.executable, str(ROOT / "deploy/chain/monitor.py"),
+         "--project", "dashboard", "--services", "dashboard-api,dashboard-web",
+         "--output", str(HOST_TELEMETRY_DIR / "host.json")],
+        stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
+    pid_file.write_text(f"{process.pid}\n")
+    logging.info("Host telemetry collector started (pid %s)", process.pid)
 
 
 def execute_fast(args: argparse.Namespace) -> dict:
@@ -874,6 +899,26 @@ def execute_fast(args: argparse.Namespace) -> dict:
         json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     return summary
+
+
+def write_expected_equity(args: argparse.Namespace, start: str, end: str, run_dir: Path, state_dir: Path) -> None:
+    """Fast backtest of the same window; its daily equity is the dashboard's "Expected" line."""
+    binary = build_fast_runner(args.rebuild)
+    env = bundle_env()
+    env.update(
+        {
+            "ALGOTRADING_REPLAY_DATABASE_PATH": str(HISTORICAL_DATA),
+            "ALGOTRADING_REPLAY_OUTPUT_DIR": str(run_dir / "fast_artifacts"),
+            "ALGOTRADING_REPLAY_START_DATE": start,
+            "ALGOTRADING_REPLAY_END_DATE": end,
+            "ALGOTRADING_REPLAY_TRADES_CSV": str(run_dir / "fast_trades.csv"),
+            "ALGOTRADING_REPLAY_SKIP_INTERNAL_REALTEST": "1",
+            "ALGOTRADING_REPLAY_EQUITY_CSV": str(state_dir / "expected_equity.csv"),
+        }
+    )
+    (run_dir / "fast_artifacts").mkdir(parents=True, exist_ok=True)
+    run([binary], env=env, log=run_dir / "fast_expected.log")
+    logging.info("Expected equity (fast backtest) written to %s", state_dir / "expected_equity.csv")
 
 
 def execute_full(args: argparse.Namespace, *, run_command=run, state_dir: Path | None = None) -> dict:
@@ -937,6 +982,8 @@ def execute_full(args: argparse.Namespace, *, run_command=run, state_dir: Path |
         isolated_state = state_dir is not None
         state_dir = state_dir or ROOT / "deploy/historical_replay/run/step58_dashboard"
         state_dir.mkdir(parents=True, exist_ok=True)
+        if not isolated_state:
+            write_expected_equity(args, start, end, run_dir, state_dir)
         if args.dashboard_up:
             dashboard_up()
 

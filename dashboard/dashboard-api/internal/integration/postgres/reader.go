@@ -436,6 +436,33 @@ func (r *Reader) LedgerFills(ctx context.Context, limit int) (LedgerFillWindow, 
 	return result, nil
 }
 
+// MaxTradeHistoryFills bounds TradeHistoryFills; a larger table is reported as incomplete.
+const MaxTradeHistoryFills = 200000
+
+// TradeHistoryFills returns every fill (oldest first) for position history and the
+// closed-positions report. TotalRows > len(Rows) means the history did not fit.
+func (r *Reader) TradeHistoryFills(ctx context.Context) (LedgerFillWindow, error) {
+	var result LedgerFillWindow
+	if r.dsn == "" {
+		return result, errors.New("PostgreSQL DSN is not configured")
+	}
+	raw, err := r.query(ctx, fmt.Sprintf(ledgerFillsSQL, MaxTradeHistoryFills))
+	if err != nil {
+		return result, err
+	}
+	if len(raw) == 0 || string(raw) == "null" {
+		result.Rows = []tradingwire.Fill{}
+		return result, nil
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return result, fmt.Errorf("decode trade history fills: %w", err)
+	}
+	if result.Rows == nil {
+		result.Rows = []tradingwire.Fill{}
+	}
+	return result, nil
+}
+
 func (r *Reader) FillsForOrders(ctx context.Context, orderIDs []uint64, limit int) (FillWindow, error) {
 	var result FillWindow
 	if r.dsn == "" {

@@ -12,6 +12,7 @@
 #include <iomanip>
 #include <map>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -503,6 +504,25 @@ void printBalanceEquityChart(
         365.0,
         outputHtml
     );
+}
+
+
+void storeBalanceEquityCSV(
+    const std::vector<std::pair<Balance, Equity>>& eqbal,
+    const MarketData& marketData,
+    const std::filesystem::path& outputCsv
+)
+{
+    std::ofstream out(outputCsv);
+    if (!out)
+        throw std::runtime_error("Cannot write balance/equity CSV: " + outputCsv.string());
+    out << "date,balance,equity\n" << std::setprecision(15);
+
+    // eqbal holds one entry per market bar, in market-data order.
+    auto it = marketData.begin();
+    for (std::size_t i = 0; i < eqbal.size() && it != marketData.end(); ++i, ++it)
+        out << timestampToISODate(it->first) << ',' << eqbal[i].first << ',' << eqbal[i].second << '\n';
+    LG_INFO("Balance/equity series written: {} rows to {}", eqbal.size(), outputCsv.string());
 }
 
 

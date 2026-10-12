@@ -393,8 +393,8 @@ cleanup, per-write size trimming, oversized-record handling and merged LIVE/dash
 logging overlays. Requires rsyslog 8 with `omprog`, Python and
 Docker Compose 2.24.4+ under WSL. It uses only temporary files and dummy configuration;
 it does not deploy trading containers or install host services. Systemd units can
-be checked with `systemd-analyze verify deploy/live/logging/*.service
-deploy/live/logging/*.timer`. Actual Docker-to-host delivery and VPS acceptance
+be checked with `systemd-analyze verify deploy/chain/logging/*.service
+deploy/chain/logging/*.timer`. Actual Docker-to-host delivery and VPS acceptance
 remain separate. Setup and limits are in the [logging guide](../deploy/live/README.md#vps-log-retention).
 
 `python3 validation/ai_index_test.py` checks generated navigation exclusions,
@@ -479,14 +479,18 @@ failures. `live_pre_exchange_runtime_acceptance.sh` is the separate runtime
 campaign; read its requirements before running it. Historical Compose preparation
 is documented in [deploy/historical_replay/README.md](../deploy/historical_replay/README.md).
 
-## Retained component gates
+## Component tests and retained gates
 
-Numbered names are retained because they identify accepted contracts/evidence and are
-referenced by other gates. They are not the recommended reading order for the code.
+Numbered names identify the accepted contracts/evidence in `docs/venue/step*/`. They are
+not the recommended reading order for the code.
 
-| Gate family | Responsibility |
+```bash
+bash validation/mock_component_tests.sh   # builds lib sources once, runs all component tests
+```
+
+| Test (`validation/*_test.cpp`) | Responsibility |
 | --- | --- |
-| `step47a` / `step47b` / `step47c` | Multi-venue boundaries, Hyperliquid semantics and portability specifications. |
+| `step47a` | Multi-venue boundaries. |
 | `step48` | Canonical multi-venue adapter interface. |
 | `step49` | MOCK catalog and venue rules. |
 | `step50` | Order admission and lifecycle. |
@@ -496,16 +500,21 @@ referenced by other gates. They are not the recommended reading order for the co
 | `step54` | Reconciliation and ledger parity. |
 | `step55` | Fault/chaos/rate-limit behavior. |
 | `step56` | Full-system replay runtime. |
-| `step56a` | Source mapping and replay acceptance foundation. |
 | `step57` | Manual targets through the normal risk/planning/MOCK pipeline. |
-| `step58` | Dashboard simulation publication/integration. |
-| `step58a` | Canonical replay suite and compatibility/equivalence implementation checks. |
+
+| Gate | Responsibility |
+| --- | --- |
+| `step47b` / `step47c` | Hyperliquid semantics and portability specifications (frozen documents). |
+| `step58a` | Canonical replay CLI, `--days` cutoff, 107-day RealTest match, RealTest-parity settings, frozen Step56A mock-default economics, open-trade cutoff policy. |
 | `step59` | Current compact release gate. |
 
-Each component gate lives beside its `*_test.cpp` or Python audit when applicable.
-Use the relevant component gate for a behavior change; use Step59 for release evidence.
-`docs/venue/step*/` files, registries and historical checksum manifests are inputs
-to retained gates, so they remain intact.
+The numbered `step47a`, `step48`-`step57`, `step56a` and `step58` gate scripts were
+retired on 2026-10-12. Besides their test they verified SHA-256 manifests of the source
+snapshot they were accepted on; the restructure moved and changed those files, so they
+failed before testing anything. Their tests now run in `mock_component_tests.sh`; the
+Step56A economics check lives in `step58a`; `step58` checked the replaced Manual Control
+semantics (held target, RELEASE) and its Go tests run with `go test`.
+`docs/venue/step*/` files and checksum manifests remain intact as historical evidence.
 
 Historical checksums describe their frozen source snapshot. Library renames may make
 old paths/hashes differ from current source. Such drift must be reported and interpreted;

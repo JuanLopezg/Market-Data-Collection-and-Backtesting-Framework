@@ -168,7 +168,8 @@ def main(build=True):
                                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
                     log.write(result.stdout)
                     assert result.returncode == 0
-                    logged = re.findall(r"Summary (\w+): return=([-\d.]+)%.*?trades=(\d+)", result.stdout)
+                    # stats.cpp: "Summary <name>: return 12.34%, ..., profit factor 1.234, 56 trades"
+                    logged = re.findall(r"Summary (\w+): return ([-\d.]+)%.*?, (\d+) trades", result.stdout)
                     assert len(logged) == 7
                     expected = {r["strategy"]: r for r in rows(work / study / "metrics.csv")}
                     for name, net_return, trade_count in logged:

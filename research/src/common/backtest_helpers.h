@@ -39,6 +39,13 @@ void printBalanceEquityChart(
         "/mnt/c/Users/Juan/Documents/Python/algoTrading/storage/backtests/balance_equity.html"
 );
 
+// Writes date,balance,equity per market bar (the same series as the chart above).
+void storeBalanceEquityCSV(
+    const std::vector<std::pair<Balance, Equity>>& eqbal,
+    const MarketData& marketData,
+    const std::filesystem::path& outputCsv
+);
+
 // Logs all trades in a backtest trade-history map.
 void printTradesHistory(const std::map<TradeID, Trade>& tradesHistory);
 

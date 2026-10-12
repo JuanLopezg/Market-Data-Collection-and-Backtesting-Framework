@@ -138,13 +138,14 @@ int main(int argc, char** argv) {
                                          "phase": phase, "sample": json.loads(row)}) + "\n")
 
     def capture(self):
-        root = self.path / "algotrading/services"
+        # Same layout as the chain: logs/<service>/YYYYMMDD.log.
+        root = self.path / "logs"
         cursor_path = self.path / "log_cursors.json"
         cursors = json.loads(cursor_path.read_text()) if cursor_path.exists() else {}
         for service in (*SERVICES, "nats", "postgres", "historical-market-data"):
             container = self.compose("ps", "-a", "-q", service).strip()
             logs = self.compose("logs", "--no-color", "--no-log-prefix", "--timestamps", service)
-            directory = root / ("algotrading." + self.project + "." + service)
+            directory = root / service
             directory.mkdir(parents=True, exist_ok=True, mode=0o750)
             days = {}
             lines = redact(logs).splitlines()
@@ -157,14 +158,14 @@ int main(int argc, char** argv) {
                 day = line[:10] if re.match(r"\d{4}-\d{2}-\d{2}T", line) else datetime.now(timezone.utc).date().isoformat()
                 days.setdefault(day, []).append(line + " container=" + container)
             for day, lines in days.items():
-                path = directory / (day + ".log")
+                path = directory / (day.replace("-", "") + ".log")
                 with path.open("a") as output:
                     output.write("\n".join(lines) + "\n")
                 path.chmod(0o640)
             if signatures:
                 cursors[service] = {"container": container, "last": signatures[-1]}
         cursor_path.write_text(json.dumps(cursors, indent=2) + "\n")
-        spec = importlib.util.spec_from_file_location("daily_cleanup", ROOT / "deploy/live/logging/clean_daily_logs.py")
+        spec = importlib.util.spec_from_file_location("daily_cleanup", ROOT / "deploy/chain/logging/clean_daily_logs.py")
         cleanup = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cleanup)
         cleanup.clean(root, datetime.now(timezone.utc).date())

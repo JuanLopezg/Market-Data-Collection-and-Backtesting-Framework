@@ -1,113 +1,129 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Search } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Download, Search } from 'lucide-react'
 import { DataLoadError } from '../components/DataLoadError'
+import { displayAmount, usd } from '../components/LineChart'
 import { useDashboardResource } from '../hooks/useDashboardResource'
-import type { Position, PositionsData } from '../types/dashboard'
+import type { ClosedPosition, Position } from '../types/dashboard'
 import { Panel } from '../components/Panel'
 import { StatePill } from '../components/StatePill'
 
-function valueOrDash(available: boolean | undefined, value: string) {
-  return available === false ? '—' : value
-}
+// Positions: account figures, open positions and closed positions (flat to flat).
+// Current W. = position value / equity; Target W. = latest approved risk target / equity;
+// Δ Weight = what the next rebalance would still change. Fees and funding belong to the
+// position they were paid on; Net PnL = PnL - fees + funding (funding + = received).
 
-function PositionRow({ position, onSelect }: { position: Position; onSelect: (position: Position) => void }) {
-  const weightsAvailable = position.valuationAvailable !== false && position.targetAvailable !== false
-  const targetDelta = weightsAvailable ? position.targetWeightPct - position.currentWeightPct : null
-  const pnlAvailable = position.pnlAvailable !== false
+const valued = (position: Position) => position.valuationAvailable !== false && Number.isFinite(position.currentPrice) && position.currentPrice > 0
+const targeted = (position: Position) => valued(position) && position.targetAvailable !== false
+const pnlKnown = (position: Position) => position.pnlAvailable !== false && Number.isFinite(position.pnlUsd)
 
-  return <tr className="clickable-row" onClick={() => onSelect(position)}>
+const percent = (value: number) => `${value.toFixed(1)}%`
+const signedPercent = (value: number) => `${value > 0 ? '+' : ''}${value.toFixed(1)}%`
+const signedUsd = (value: number) => Math.abs(value) < 0.005 ? '0$' : `${value > 0 ? '+' : '-'}${usd(Math.abs(value))}`
+// Prices keep six significant digits (small coins trade far below 1$).
+const price = (value: number) => `${new Intl.NumberFormat('en-US', { maximumSignificantDigits: 6 }).format(value)}$`
+const quantity = (value: number) => new Intl.NumberFormat('en-US', { maximumSignificantDigits: 8 }).format(value)
+const notional = (position: Position) => valued(position) ? usd(position.quantity * position.currentPrice) : '—'
+const tone = (value: number) => value > 0 ? 'positive' : value < 0 ? 'negative' : ''
+const PAGE = 20
+
+function PositionRow({ position, showFunding }: { position: Position; showFunding: boolean }) {
+  const delta = targeted(position) ? position.targetWeightPct - position.currentWeightPct : null
+  const net = position.netPnlUsd
+  const netKnown = pnlKnown(position) && position.feesAvailable && net !== undefined
+  return <tr>
     <td><strong>{position.asset}</strong></td>
     <td className={position.side === 'Short' ? 'negative' : 'positive'}>{position.side}</td>
-    <td>{position.valuationAvailable === false ? '—' : `${position.currentWeightPct.toFixed(1)}%`}</td>
-    <td>{position.targetAvailable === false ? '—' : `${position.targetWeightPct.toFixed(1)}%`}</td>
-    <td className={targetDelta === null || Math.abs(targetDelta) < 0.05 ? 'muted' : targetDelta > 0 ? 'positive' : 'negative'}>{targetDelta === null ? '—' : `${targetDelta > 0 ? '+' : ''}${targetDelta.toFixed(1)}%`}</td>
+    <td>{position.openedAt || '—'}</td>
     <td>{position.quantityLabel}</td>
-    <td>{valueOrDash(position.valuationAvailable, position.entryPriceLabel)}</td>
-    <td>{valueOrDash(position.valuationAvailable, position.currentPriceLabel)}</td>
-    <td className={!pnlAvailable ? 'muted' : position.pnlUsd >= 0 ? 'positive' : 'negative'}>{pnlAvailable ? position.pnlUsdLabel : '—'}</td>
-    <td className={!pnlAvailable ? 'muted' : position.pnlPct >= 0 ? 'positive' : 'negative'}>{pnlAvailable ? position.pnlPctLabel : '—'}</td>
+    <td>{notional(position)}</td>
+    <td>{valued(position) && position.entryPrice > 0 ? price(position.entryPrice) : '—'}</td>
+    <td>{valued(position) ? price(position.currentPrice) : '—'}</td>
+    <td>{valued(position) ? percent(position.currentWeightPct) : '—'}</td>
+    <td>{targeted(position) ? percent(position.targetWeightPct) : '—'}</td>
+    <td className={delta === null || Math.abs(delta) < 0.05 ? 'muted' : delta > 0 ? 'positive' : 'negative'}>{delta === null ? '—' : signedPercent(delta)}</td>
+    <td className={!pnlKnown(position) ? 'muted' : tone(position.pnlUsd)}>{pnlKnown(position) ? signedUsd(position.pnlUsd) : '—'}</td>
+    <td>{position.feesAvailable ? usd(position.feesUsd ?? 0) : '—'}</td>
+    {showFunding && <td className={tone(position.fundingUsd ?? 0)}>{position.fundingAvailable ? signedUsd(position.fundingUsd ?? 0) : '—'}</td>}
+    <td className={netKnown ? tone(net!) : 'muted'}>{netKnown ? signedUsd(net!) : '—'}</td>
     <td><StatePill state={position.status}/></td>
   </tr>
 }
 
-function RealDetail({ position }: { position: Position }) {
-  const breakdown = position.strategyBreakdown ?? []
-  return <div className="detail-stack">
-    <div className="detail-status"><div><span>Reconciliation</span><StatePill state={position.status}/></div><small>Exchange reconciliation is not yet a durable dashboard read model, so alignment is not inferred.</small></div>
-    <div className="key-value-grid">
-      <span>Physical account quantity</span><strong>{position.localQty}</strong>
-      <span>Effective local quantity</span><strong>{position.effectiveQty}</strong>
-      <span>Approved target quantity</span><strong>—</strong>
-      <span>Exchange quantity</span><strong>—</strong>
-      <span>Reconciliation delta</span><strong>—</strong>
-      <span>Valuation</span><strong>Not wired</strong>
-    </div>
-    <div className="callout callout--info"><strong>Strategy virtual positions</strong><span>{breakdown.length === 0 ? 'No non-zero strategy virtual position is present for this asset.' : breakdown.map(item => `Strategy ${item.strategyId}: ${item.quantityLabel}`).join(' · ')}</span></div>
-  </div>
-}
-
-function MockDetail({ position }: { position: Position }) {
-  return <div className="detail-stack">
-    <div className="detail-status"><div><span>Alignment</span><StatePill state={position.status}/></div><small>Data-source boundary active · execution detail can be backed by the Dashboard API later.</small></div>
-    <div className="key-value-grid">
-      <span>Target quantity</span><strong>{position.targetQty}</strong>
-      <span>Effective quantity</span><strong>{position.effectiveQty}</strong>
-      <span>Local executed</span><strong>{position.localQty}</strong>
-      <span>Exchange quantity</span><strong>{position.exchangeQty}</strong>
-      <span>Reconciliation delta</span><strong>{position.deltaQty}</strong>
-      <span>Current weight</span><strong>{position.currentWeightPct.toFixed(1)}%</strong>
-      <span>Approved target</span><strong>{position.targetWeightPct.toFixed(1)}%</strong>
-    </div>
-    <div className="callout callout--info"><strong>Why? trace arrives through the Pipeline page.</strong><span>The selected asset can be traced through market → signal → target → order as real lineage sources are enabled.</span></div>
-  </div>
+function ClosedRow({ position, showFunding }: { position: ClosedPosition; showFunding: boolean }) {
+  return <tr>
+    <td><strong>{position.asset}</strong></td>
+    <td className={position.side === 'Short' ? 'negative' : 'positive'}>{position.side}</td>
+    <td>{position.openedAt}</td>
+    <td>{position.closedAt}</td>
+    <td>{quantity(position.quantity)}</td>
+    <td>{price(position.entryPrice)}</td>
+    <td>{price(position.exitPrice)}</td>
+    <td className={tone(position.grossPnl)}>{signedUsd(position.grossPnl)}</td>
+    <td>{usd(position.fees)}</td>
+    {showFunding && <td className={tone(position.funding)}>{signedUsd(position.funding)}</td>}
+    <td className={tone(position.netPnl)}><strong>{signedUsd(position.netPnl)}</strong></td>
+    <td className={tone(position.netPnl)}>{signedPercent(position.netPnlPct)}</td>
+  </tr>
 }
 
 export function PositionsPage() {
   const { data, error, retry } = useDashboardResource('getPositions')
   const [query, setQuery] = useState('')
-  const [selected, setSelected] = useState<Position | null>(null)
-
-  useEffect(() => {
-    if (!data) return
-    if (selected) {
-      const current = data.positions.find(position => position.asset === selected.asset)
-      if (current) {
-        if (current !== selected) setSelected(current)
-        return
-      }
-    }
-    setSelected(data.positions[0] ?? null)
-  }, [data, selected])
+  const [closedQuery, setClosedQuery] = useState('')
+  const [closedLimit, setClosedLimit] = useState(PAGE)
 
   const filtered = useMemo(() => data?.positions.filter(position => position.asset.toLowerCase().includes(query.trim().toLowerCase())) ?? [], [data, query])
+  const closed = useMemo(() => (data?.closedPositions ?? []).filter(position => position.asset.toLowerCase().includes(closedQuery.trim().toLowerCase())), [data, closedQuery])
   if (error) return <DataLoadError title="Positions unavailable" error={error} onRetry={retry}/>
   if (!data) return <div className="page-loading">Loading positions…</div>
 
-  const isReal = data.sourceMode === 'REAL'
+  const showFunding = data.fundingAvailable === true
+  const allClosed = data.closedPositions ?? []
+  const realized = allClosed.reduce((sum, position) => sum + position.netPnl, 0)
+  const fees = allClosed.reduce((sum, position) => sum + position.fees, 0) + data.positions.reduce((sum, position) => sum + (position.feesUsd ?? 0), 0)
+  const stats = [
+    { label: 'Active Positions', value: String(data.activePositions), tone: '' },
+    { label: 'Gross Exposure', value: displayAmount(data.grossExposure), tone: '' },
+    { label: 'Net Exposure', value: displayAmount(data.netExposure), tone: '' },
+    { label: 'Unrealized PnL', value: displayAmount(data.unrealizedPnl), tone: /\d/.test(data.unrealizedPnl) ? (data.unrealizedPnl.startsWith('-') ? 'negative' : 'positive') : '' },
+    ...(data.closedAvailable ? [
+      { label: 'Realized PnL (net)', value: signedUsd(realized), tone: tone(realized) },
+      { label: 'Total Fees', value: usd(fees), tone: '' },
+    ] : []),
+  ]
 
   return <>
-    <div className="page-heading"><div><h1>Positions</h1><p>Durable account positions and strategy virtual positions from ExecutionState.</p></div></div>
+    <div className="page-heading"><h1>Positions</h1></div>
 
-    {isReal && <div className="real-source-banner"><strong>REAL DATA</strong><span>{data.sourceNote} {data.sourceUpdatedAt ? `Persisted ${data.sourceUpdatedAt}.` : ''}</span></div>}
-
-    <section className="metric-row">
-      <div className="mini-metric"><span>Active Positions</span><strong>{data.activePositions}</strong><small>{isReal ? 'Non-zero physical account positions' : 'Persistent strategy positions'}</small></div>
-      {isReal
-        ? <div className="mini-metric"><span>Account Cash</span><strong>{data.accountCash ?? '—'}</strong><small>Durable ExecutionState snapshot</small></div>
-        : <div className="mini-metric"><span>Gross Exposure</span><strong>{data.grossExposure}</strong><small>{data.grossExposurePct} of equity</small></div>}
-      {isReal
-        ? <div className="mini-metric"><span>Portfolio Valuation</span><strong>{data.totalEquity}</strong><small>Canonical price adapter not enabled yet</small></div>
-        : <div className="mini-metric"><span>Net Exposure</span><strong>{data.netExposure}</strong><small>Directional net notional</small></div>}
-      <div className="mini-metric"><span>Unrealized PnL</span><strong className={isReal ? 'muted' : 'positive'}>{data.unrealizedPnl}</strong><small>{isReal ? 'No durable accounting/PnL model yet' : 'Across active positions'}</small></div>
+    <section className="overview-stats">
+      {stats.map(stat => <div className="overview-stat" key={stat.label}><span>{stat.label}</span><strong className={stat.tone}>{stat.value}</strong></div>)}
     </section>
 
     <section className="positions-layout">
       <Panel title="Active Positions" right={<label className="search-box"><Search size={14}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Filter asset" /></label>}>
-        <div className="table-wrap"><table className="wide-table"><thead><tr><th>Asset</th><th>Side</th><th>Current W.</th><th>Target W.</th><th>Δ Weight</th><th>Qty</th><th>Entry</th><th>Mark</th><th>PnL</th><th>PnL %</th><th>Status</th></tr></thead><tbody>{filtered.length === 0 && <tr><td colSpan={11} className="muted">{isReal ? 'No non-zero physical positions in the persisted runtime snapshot.' : 'No positions match the filter.'}</td></tr>}{filtered.map(position => <PositionRow key={position.asset} position={position} onSelect={setSelected}/>)}</tbody></table></div>
+        <div className="table-wrap"><table className="wide-table"><thead><tr>
+          <th>Asset</th><th>Side</th><th>Opened</th><th>Qty</th><th>Notional</th><th>Entry</th><th>Mark</th><th>Current W.</th><th>Target W.</th><th>Δ Weight</th><th>PnL</th><th>Fees</th>{showFunding && <th>Funding</th>}<th>Net PnL</th><th>Status</th>
+        </tr></thead><tbody>
+          {filtered.length === 0 && <tr><td colSpan={showFunding ? 15 : 14} className="empty-cell">{data.positions.length ? 'No positions match the filter' : 'No open positions'}</td></tr>}
+          {filtered.map(position => <PositionRow key={position.asset} position={position} showFunding={showFunding}/>)}
+        </tbody></table></div>
       </Panel>
 
-      <Panel title={selected ? `${selected.asset} Position Detail` : 'Position Detail'}>
-        {selected ? (isReal ? <RealDetail position={selected}/> : <MockDetail position={selected}/>) : <div className="empty-state">{isReal ? 'No active physical position to inspect.' : 'Select a position to inspect it.'}</div>}
+      <Panel title="Closed Positions" right={<div className="panel-actions">
+        <label className="search-box"><Search size={14}/><input value={closedQuery} onChange={event => setClosedQuery(event.target.value)} placeholder="Filter asset" /></label>
+        {data.closedAvailable && <a className="button-secondary" href="/api/reports/closed-positions.csv" download><Download size={13}/> CSV</a>}
+      </div>}>
+        {!data.closedAvailable
+          ? <div className="empty-cell">Trade history unavailable</div>
+          : <>
+            <div className="table-wrap"><table className="wide-table"><thead><tr>
+              <th>Asset</th><th>Side</th><th>Opened</th><th>Closed</th><th>Qty</th><th>Entry</th><th>Exit</th><th>Gross PnL</th><th>Fees</th>{showFunding && <th>Funding</th>}<th>Net PnL</th><th>Net %</th>
+            </tr></thead><tbody>
+              {closed.length === 0 && <tr><td colSpan={showFunding ? 12 : 11} className="empty-cell">{allClosed.length ? 'No positions match the filter' : 'No closed positions yet'}</td></tr>}
+              {closed.slice(0, closedLimit).map((position, index) => <ClosedRow key={`${position.asset}-${position.closedAt}-${index}`} position={position} showFunding={showFunding}/>)}
+            </tbody></table></div>
+            {closed.length > closedLimit && <div className="table-more"><span className="muted">{closedLimit} of {closed.length}</span><button className="ghost-button" onClick={() => setClosedLimit(limit => limit + PAGE)}>Show more</button></div>}
+          </>}
       </Panel>
     </section>
   </>

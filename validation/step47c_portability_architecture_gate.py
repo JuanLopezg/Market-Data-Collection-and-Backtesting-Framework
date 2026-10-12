@@ -18,9 +18,10 @@ print("============================================================")
 print("STEP 47C — PORTABILITY / ARCHITECTURE FREEZE GATE")
 print("============================================================")
 
-print("[1/8] Step47A and Step47B preconditions remain valid")
+# The Step47A architecture test now runs in validation/mock_component_tests.sh; its old
+# gate only added frozen source hashes that the restructure invalidated.
+print("[1/8] Step47B precondition remains valid")
 for script in (
-    ROOT / "validation/step47a_multi_exchange_architecture_gate.sh",
     ROOT / "validation/step47b_hyperliquid_semantics_gate.sh",
 ):
     if not script.is_file():
@@ -30,7 +31,7 @@ for script in (
     if proc.returncode != 0:
         print(proc.stdout)
         fail(f"prerequisite gate failed: {script.name}")
-ok("Step47A architecture baseline and Step47B Hyperliquid mapping still pass")
+ok("Step47B Hyperliquid mapping still passes")
 
 print("[2/8] Step47C artifacts are present and hash-stable")
 required = [

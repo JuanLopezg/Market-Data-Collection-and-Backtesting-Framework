@@ -1,0 +1,411 @@
+# algoTrading chain: every service, its mounts and ports in one file.
+#
+# Use it through ./algo (same directory). The script sets the host folders:
+#   ALGO_DATA   = <root>/data     durable state, one subfolder per owner
+#   ALGO_CONFIG = <root>/config   non-secret configuration (read-only here)
+# and loads chain.env (non-secret settings) plus <root>/secrets/chain.env.
+#
+# Current mode: PAPER. Public Binance market data, virtual funds and the simulated
+# exchange. No private venue connection exists in this file.
+#
+# Logs: every container writes to the host receiver on 127.0.0.1:5514, which stores
+# <root>/logs/<container name>/YYYYMMDD.log. Start the receiver first (./algo does it).
+name: algotrading
+
+x-logging: &logging
+  driver: syslog
+  options:
+    syslog-address: "tcp://127.0.0.1:5514"
+    syslog-format: "rfc5424micro"
+    tag: "{{.Name}}"
+    mode: "non-blocking"
+    max-buffer-size: "4m"
+    # Small local cache so "docker logs" and "./algo logs" still work.
+    cache-disabled: "false"
+    cache-max-size: "25m"
+    cache-max-file: "2"
+
+# C++ trading services: one runtime image, stdout logging only.
+x-runtime: &runtime
+  image: ${RUNTIME_IMAGE:?set in chain.env}
+  init: true
+  restart: unless-stopped
+  logging: *logging
+  networks: [chain]
+  environment:
+    ALGOTRADING_LOG_DEBUG: ${LOG_DEBUG:-0}
+    ALGOTRADING_LOG_QUIET: "0"
+    ALGOTRADING_LOG_DIR: ""
+
+# Dashboard read model settings shared by dash-api and watchdog.
+x-dashboard-environment: &dashboard_environment
+  DASHBOARD_DATA_PROVIDER: real
+  DASHBOARD_POSTGRES_DSN: host=postgres port=5432 dbname=algotrading_paper user=algotrading password=${POSTGRES_PASSWORD:?missing secrets/chain.env}
+  DASHBOARD_NATS_URL: nats://nats:4222
+  DASHBOARD_NATS_MONITOR_URL: http://nats:8222
+  DASHBOARD_NATS_STREAM: ALGOTRADING_PAPER_RUNTIME
+  DASHBOARD_RUNTIME_MODE: PAPER
+  DASHBOARD_MARKET_DATA_DB: /data/market/database.db
+  DASHBOARD_MARKET_TOP_N: "50"
+  DASHBOARD_MARKET_HISTORY_DAYS: ${MARKET_WARMUP_DAYS:-100}
+  DASHBOARD_STRATEGY_UNIVERSE_N: "20"
+  DASHBOARD_QUOTE_VOLUME: "true"
+  DASHBOARD_QUOTE_VOLUME_FROM: ${QUOTE_VOLUME_FROM:-}
+  DASHBOARD_RSI_ENTRY: ${RSI_ENTRY:-80}
+  DASHBOARD_RSI_EXIT: ${RSI_EXIT:-70}
+  DASHBOARD_SOURCE_PROBE_TIMEOUT: 1s
+  DASHBOARD_EXECUTION_VENUE: SIMULATED
+  DASHBOARD_VENUE_TARGET_ENVIRONMENT: PAPER
+  DASHBOARD_EXCHANGE_GATEWAY_MODE: backend
+  DASHBOARD_ALERT_STORE_DIR: /data/watchdog
+  DASHBOARD_MANUAL_AUDIT_DIR: /data/manual-audit
+  DASHBOARD_ALERT_ACK_DIR: /data/alert-ack
+  DASHBOARD_HOST_METRICS_FILE: /data/telemetry/host.json
+  DASHBOARD_HOST_METRICS_PROJECT: algotrading
+  # Live vs. fast-backtest study written by chain/comparison.py; empty disables the panel.
+  DASHBOARD_PAPER_COMPARISON_FILE: ${PAPER_COMPARISON_FILE:-}
+
+services:
+  # ---------------------------------------------------------------- setup
+  # One-shot: create data folders with the owners the containers need.
+  # 10001 = runtime user (market SQLite), 70 = postgres user of the dashboard image.
+  data-init:
+    image: alpine:3.20
+    container_name: data-init
+    restart: "no"
+    logging: *logging
+    network_mode: none
+    command:
+      - sh
+      - -c
+      - >-
+        mkdir -p /data/market /data/dashboard/watchdog /data/dashboard/audit
+        /data/dashboard/alerts /data/dashboard/notifier /data/telemetry /data/comparison &&
+        chown 10001:10001 /data/market && chmod 0777 /data/market &&
+        chown 70:70 /data/dashboard/watchdog /data/dashboard/audit /data/dashboard/alerts /data/dashboard/notifier /reports
+    volumes:
+      - ${ALGO_DATA:?run through ./algo}:/data
+      - ${ALGO_REPORTS:?run through ./algo}:/reports
+
+  # ------------------------------------------------------------ messaging
+  nats:
+    image: nats:2.10-alpine
+    container_name: nats
+    restart: unless-stopped
+    logging: *logging
+    networks: [chain]
+    command: ["-js", "-m", "8222", "--store_dir", "/data"]
+    volumes:
+      - ${ALGO_DATA}/nats:/data
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: unless-stopped
+    logging: *logging
+    networks: [chain]
+    environment:
+      POSTGRES_DB: algotrading_paper
+      POSTGRES_USER: algotrading
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?missing secrets/chain.env}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U algotrading -d algotrading_paper"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - ${ALGO_DATA}/postgres:/var/lib/postgresql/data
+
+  # ---------------------------------------------------------- market data
+  # One-shot: create or migrate the market SQLite schema before any reader starts.
+  market-data-init:
+    <<: *runtime
+    container_name: market-data-init
+    restart: "no"
+    command: [algotrading_historical_market_data_service, --market-data-db, /data/market/database.db, --init-only]
+    volumes:
+      - ${ALGO_DATA}/market:/data/market
+    depends_on:
+      data-init: {condition: service_completed_successfully}
+
+  market-data:
+    <<: *runtime
+    container_name: market-data
+    command: [algotrading_market_data_service, --config, /config/market_data.json]
+    volumes:
+      - ${ALGO_DATA}/market:/data/market
+      - ${ALGO_CONFIG:?run through ./algo}/market_data.json:/config/market_data.json:ro
+    depends_on:
+      nats: {condition: service_started}
+      market-data-init: {condition: service_completed_successfully}
+
+  # ------------------------------------------------------- trading chain
+  strategy:
+    <<: *runtime
+    container_name: strategy
+    command:
+      - algotrading_strategy_service
+      - --nats-url
+      - nats://nats:4222
+      - --stream
+      - ALGOTRADING_PAPER_RUNTIME
+      - --strategy-config
+      - /config/strategies/${STRATEGY_FILE:?set in chain.env}
+      - --market-data-db
+      - /data/market/database.db
+      - --market-warmup-days
+      - ${MARKET_WARMUP_DAYS:-100}
+      - --market-top-n
+      - "50"
+      - --market-data-source
+      - binance
+      - --postgres
+      - host=postgres port=5432 dbname=algotrading_paper user=algotrading password=${POSTGRES_PASSWORD}
+    volumes:
+      - ${ALGO_DATA}/market:/data/market
+      - ${ALGO_CONFIG}/strategies:/config/strategies:ro
+    depends_on:
+      nats: {condition: service_started}
+      postgres: {condition: service_healthy}
+      market-data-init: {condition: service_completed_successfully}
+
+  risk:
+    <<: *runtime
+    container_name: risk
+    command:
+      - algotrading_portfolio_risk_service
+      - --nats-url
+      - nats://nats:4222
+      - --stream
+      - ALGOTRADING_PAPER_RUNTIME
+      - --portfolio-config
+      - /config/portfolio/${PORTFOLIO_FILE:?set in chain.env}
+      - --market-data-db
+      - /data/market/database.db
+      - --market-history-buffer-days
+      - "5"
+      - --postgres
+      - host=postgres port=5432 dbname=algotrading_paper user=algotrading password=${POSTGRES_PASSWORD}
+    volumes:
+      - ${ALGO_DATA}/market:/data/market
+      - ${ALGO_CONFIG}/portfolio:/config/portfolio:ro
+    depends_on:
+      nats: {condition: service_started}
+      postgres: {condition: service_healthy}
+      market-data-init: {condition: service_completed_successfully}
+
+  planner:
+    <<: *runtime
+    container_name: planner
+    command:
+      - algotrading_order_planner_service
+      - --nats-url
+      - nats://nats:4222
+      - --stream
+      - ALGOTRADING_PAPER_RUNTIME
+      - --postgres
+      - host=postgres port=5432 dbname=algotrading_paper user=algotrading password=${POSTGRES_PASSWORD}
+    depends_on:
+      nats: {condition: service_started}
+      postgres: {condition: service_healthy}
+
+  execution:
+    <<: *runtime
+    container_name: execution
+    command:
+      - algotrading_execution_state_service
+      - --nats-url
+      - nats://nats:4222
+      - --postgres
+      - host=postgres port=5432 dbname=algotrading_paper user=algotrading password=${POSTGRES_PASSWORD}
+      - --stream
+      - ALGOTRADING_PAPER_RUNTIME
+      - --exchange-control-stream
+      - ALGOTRADING_PAPER_EXCHANGE_CONTROL
+      - --market-data-db
+      - /data/market/database.db
+      - --market-data-source
+      - binance
+      - --initial-cash
+      - ${INITIAL_CASH:?set in chain.env}
+      - --strategy
+      - 1:Pure_RSI
+    volumes:
+      - ${ALGO_DATA}/market:/data/market
+    depends_on:
+      nats: {condition: service_started}
+      postgres: {condition: service_healthy}
+      market-data-init: {condition: service_completed_successfully}
+
+  gateway:
+    <<: *runtime
+    container_name: gateway
+    command:
+      - algotrading_exchange_gateway
+      - --nats-url
+      - nats://nats:4222
+      - --stream
+      - ALGOTRADING_PAPER_RUNTIME
+      - --control-stream
+      - ALGOTRADING_PAPER_EXCHANGE_CONTROL
+      - --backend-stream
+      - ALGOTRADING_PAPER_EXCHANGE_BACKEND
+      - --mode
+      - backend
+      - --poll-timeout-ms
+      - "50"
+    depends_on:
+      nats: {condition: service_started}
+
+  # PAPER venue: virtual account and simulated fills.
+  sim-exchange:
+    <<: *runtime
+    container_name: sim-exchange
+    command:
+      - algotrading_simulated_exchange_service
+      - --nats-url
+      - nats://nats:4222
+      - --stream
+      - ALGOTRADING_PAPER_RUNTIME
+      - --backend-stream
+      - ALGOTRADING_PAPER_EXCHANGE_BACKEND
+      - --postgres
+      - host=postgres port=5432 dbname=algotrading_paper user=algotrading password=${POSTGRES_PASSWORD}
+      - --initial-cash
+      - ${INITIAL_CASH}
+      - --commission-rate
+      - ${COMMISSION_RATE:?set in chain.env}
+      - --poll-timeout-ms
+      - "50"
+    depends_on:
+      nats: {condition: service_started}
+      postgres: {condition: service_healthy}
+
+  # ------------------------------------------------------------ dashboard
+  dash-api:
+    image: ${DASH_API_IMAGE:?set in chain.env}
+    container_name: dash-api
+    restart: unless-stopped
+    logging: *logging
+    networks:
+      chain:
+        # The web image's Caddyfile proxies /api to dashboard-api:8080.
+        aliases: [dashboard-api]
+    group_add: ["10001"]
+    environment:
+      <<: *dashboard_environment
+      DASHBOARD_AUTH_ALLOW_DEMO: "false"
+      DASHBOARD_AUTH_COOKIE_SECURE: "false"
+      DASHBOARD_VIEWER_PASSWORD: ${DASHBOARD_VIEWER_PASSWORD:?missing secrets/chain.env}
+      # CPU/RAM/disk history written by chain/monitor.py (30 s rows, 7 days).
+      DASHBOARD_HOST_HISTORY_FILE: /data/telemetry/history.jsonl
+      # closed_positions.csv and closed_positions_<YEAR>.csv, rewritten every 10 minutes.
+      DASHBOARD_REPORTS_DIR: /reports
+    volumes:
+      - ${ALGO_REPORTS}:/reports
+      - ${ALGO_DATA}/market:/data/market:ro
+      - ${ALGO_DATA}/telemetry:/data/telemetry:ro
+      - ${ALGO_DATA}/dashboard/watchdog:/data/watchdog:ro
+      - ${ALGO_DATA}/dashboard/audit:/data/manual-audit
+      - ${ALGO_DATA}/dashboard/alerts:/data/alert-ack
+      - ${ALGO_DATA}/comparison:/data/comparison:ro
+    depends_on:
+      data-init: {condition: service_completed_successfully}
+
+  dash-web:
+    image: ${DASH_WEB_IMAGE:?set in chain.env}
+    container_name: dash-web
+    restart: unless-stopped
+    logging: *logging
+    networks: [chain]
+    # Loopback only; on the VPS use an SSH tunnel.
+    ports:
+      - 127.0.0.1:${DASHBOARD_PORT:-8092}:80
+    mem_limit: 96m
+    cpus: 0.25
+    pids_limit: 96
+    depends_on:
+      dash-api: {condition: service_healthy}
+
+  # Evaluates alert conditions every 15 s; writes data/dashboard/watchdog.
+  watchdog:
+    image: ${DASH_API_IMAGE}
+    container_name: watchdog
+    entrypoint: [/dashboard-watchdog]
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 10s
+    logging: *logging
+    networks: [chain]
+    group_add: ["10001"]
+    environment:
+      <<: *dashboard_environment
+      DASHBOARD_WATCHDOG_INTERVAL: 15s
+      DASHBOARD_WATCHDOG_SWEEP_TIMEOUT: 8s
+    volumes:
+      - ${ALGO_DATA}/market:/data/market:ro
+      - ${ALGO_DATA}/telemetry:/data/telemetry:ro
+      - ${ALGO_DATA}/dashboard/watchdog:/data/watchdog
+      - ${ALGO_DATA}/comparison:/data/comparison:ro
+    mem_limit: 64m
+    cpus: 0.2
+    pids_limit: 64
+    read_only: true
+    tmpfs: ["/tmp:size=16m,noexec,nosuid,nodev"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /data/watchdog/status.json"]
+      interval: 30s
+      timeout: 3s
+      start_period: 15s
+      retries: 3
+    depends_on:
+      data-init: {condition: service_completed_successfully}
+
+  # Sends watchdog alerts. NOTIFIER_SINK=TEST_FILE writes data/dashboard/notifier;
+  # TELEGRAM uses the bot settings from secrets/chain.env.
+  notifier:
+    image: ${DASH_API_IMAGE}
+    container_name: notifier
+    entrypoint: [/dashboard-alert-notifier]
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 10s
+    logging: *logging
+    networks: [chain]
+    environment:
+      DASHBOARD_ALERT_STORE_DIR: /data/watchdog
+      DASHBOARD_NOTIFIER_TEST_SINK_FILE: /data/notifier/test-sink.jsonl
+      DASHBOARD_NOTIFIER_SINK: ${NOTIFIER_SINK:-TEST_FILE}
+      DASHBOARD_TELEGRAM_BOT_TOKEN: ${DASHBOARD_TELEGRAM_BOT_TOKEN:-}
+      DASHBOARD_TELEGRAM_CHAT_ID: ${DASHBOARD_TELEGRAM_CHAT_ID:-}
+      DASHBOARD_NOTIFIER_MIN_SEVERITY: WARN
+      DASHBOARD_NOTIFIER_INTERVAL: 5s
+      DASHBOARD_NOTIFIER_COOLDOWN: 5m
+    volumes:
+      - ${ALGO_DATA}/dashboard/watchdog:/data/watchdog:ro
+      - ${ALGO_DATA}/dashboard/notifier:/data/notifier
+    mem_limit: 48m
+    cpus: 0.15
+    pids_limit: 48
+    read_only: true
+    tmpfs: ["/tmp:size=8m,noexec,nosuid,nodev"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    healthcheck:
+      # Healthy after one successful sweep without an error (store differs per sink).
+      test:
+        - CMD-SHELL
+        - >-
+          store=/data/notifier; if [ "$${DASHBOARD_NOTIFIER_SINK:-TEST_FILE}" = TELEGRAM ]; then store=/data/notifier/telegram; fi;
+          test -s "$$store/status.json" && grep -q '"lastSuccessAt"' "$$store/status.json" && ! grep -q '"lastError"' "$$store/status.json"
+      interval: 30s
+      timeout: 3s
+      start_period: 15s
+      retries: 3
+    depends_on:
+      data-init: {condition: service_completed_successfully}
+
+networks:
+  chain: {}

@@ -207,12 +207,10 @@ private:
         return hash == 0U ? 1U : hash;
     }
 
+    // Grid units -> the double MOCK reads back as the same units (single IEEE rounding).
     static double unitsToDouble(std::uint64_t units, std::size_t scale)
     {
-        long double factor = 1.0L;
-        for (std::size_t i = 0U; i < scale; ++i)
-            factor *= 10.0L;
-        return static_cast<double>(static_cast<long double>(units) / factor);
+        return MockVenue::unsignedScaledToDouble(units, scale);
     }
 
     static std::uint64_t floorUnits(double value, std::size_t scale)

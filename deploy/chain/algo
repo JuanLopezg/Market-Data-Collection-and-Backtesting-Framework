@@ -1,0 +1,320 @@
+#!/usr/bin/env bash
+# algoTrading chain launcher.
+#
+# Installed layout (ALGO_ROOT is "/" on the VPS, any folder locally):
+#   chain/    this script, compose.yml, chain.env, monitor.py, logging/
+#   config/   non-secret configuration     secrets/  credentials (0700)
+#   data/     durable state                logs/     <service>/YYYYMMDD.log
+#   reports/  generated outputs            backups/  YYYYMMDD_HHMMSS.tar.gz
+#   releases/ image archives per version
+#
+# From the repository:   deploy/chain/algo install <root>   |   deploy/chain/algo build
+# From an installation:  <root>/chain/algo help
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RECEIVER_PORT=5514
+
+usage() {
+    cat <<'EOF'
+Usage: algo <command> [service...]
+
+  up [service...]       start everything, or only the given services (and what they need)
+  down [service...]     stop everything (containers removed, data kept) or only the given services
+  restart <service...>  restart services
+  ps                    containers, log receiver and host monitor
+  logs <service> [-n N] follow today's log file of one service
+  show [service]        resolved compose configuration with secrets masked
+  backup                stop, archive data/ into backups/, start again if it was running
+  receiver start|stop   local log receiver (only where systemd does not run it)
+  monitor start|stop    local host telemetry collector (only where systemd does not run it)
+
+Repository only:
+  install <root>        create or update an installation; never overwrites config/secrets/data
+  build                 build the runtime and dashboard images used by chain.env
+  release <folder>      save the built images and the source into <folder>/<version>/
+
+Moving the older algotrading-paper stack into an installation: chain/migrate_paper.py --help
+
+Services: data-init nats postgres market-data-init market-data strategy risk planner
+          execution gateway sim-exchange dash-api dash-web watchdog notifier
+EOF
+}
+
+# ------------------------------------------------------------------ repository
+repo_root() {
+    local root
+    root="$(cd "$SCRIPT_DIR/../.." && pwd)"
+    [[ -f "$root/deploy/chain/compose.yml" && -d "$root/lib" ]] || {
+        echo "ERROR: install/build must run from the repository copy (deploy/chain/algo)" >&2; exit 1; }
+    printf '%s\n' "$root"
+}
+
+# Path of <root>/<name>; avoids "//data" when the root is "/".
+under() {
+    local root="$1" name="$2"
+    if [[ "$root" == "/" ]]; then printf '/%s\n' "$name"; else printf '%s/%s\n' "$root" "$name"; fi
+}
+
+install_chain() {
+    local root="${1:?Usage: algo install <root>}"
+    local repo
+    repo="$(repo_root)"
+    [[ "$root" == /* ]] || { echo "ERROR: use an absolute root path" >&2; exit 1; }
+    case "$root" in /mnt/*) echo "ERROR: use a Linux filesystem, not /mnt (PostgreSQL needs real ownership)" >&2; exit 1;; esac
+    root="${root%/}"; [[ -n "$root" ]] || root="/"
+
+    local chain config secrets data
+    chain="$(under "$root" chain)"; config="$(under "$root" config)"
+    secrets="$(under "$root" secrets)"; data="$(under "$root" data)"
+    mkdir -p "$chain/logging" "$chain/systemd" "$chain/tools" "$config" "$secrets" "$data/telemetry" "$data/receiver" \
+             "$(under "$root" logs)" "$(under "$root" reports)" "$(under "$root" backups)" "$(under "$root" releases)"
+    chmod 0700 "$secrets"
+
+    # Chain files always follow the repository version.
+    cp "$repo/deploy/chain/compose.yml" "$repo/deploy/chain/compose.local.yml" "$repo/deploy/chain/algo" \
+       "$repo/deploy/chain/monitor.py" "$repo/deploy/chain/comparison.py" "$repo/deploy/chain/migrate_paper.py" \
+       "$repo/deploy/chain/README.md" "$chain/"
+    find "$repo/deploy/chain/logging" -maxdepth 1 -type f -exec cp {} "$chain/logging/" \;
+    cp "$repo"/deploy/chain/systemd/*.service "$chain/systemd/"
+    # Public Kraken plan observation used by comparison.py (no account access).
+    cp "$repo/live_trading/kraken_shadow.py" "$repo/live_trading/shadow_observer.py" \
+       "$repo/live_trading/readable_log.py" "$chain/tools/"
+    chmod 0755 "$chain/algo"
+
+    # receiver: Docker sends logs to the host receiver (VPS, native Docker).
+    # local: Docker Desktop cannot reach it; monitor.py copies the container logs.
+    local log_mode=receiver
+    if docker info --format '{{.OperatingSystem}}' 2>/dev/null | grep -q "Docker Desktop"; then log_mode=local; fi
+    if [[ ! -f "$chain/chain.env" ]]; then
+        cat > "$chain/chain.env" <<'EOF'
+# Non-secret chain settings. Credentials live in <root>/secrets/chain.env.
+MODE=paper
+RUNTIME_IMAGE=algotrading-runtime:chain
+DASH_API_IMAGE=algotrading-dash-api:chain
+DASH_WEB_IMAGE=algotrading-dash-web:chain
+# Files under <root>/config/strategies and <root>/config/portfolio.
+STRATEGY_FILE=pure_rsi_quote_volume.json
+PORTFOLIO_FILE=pure_rsi_equal_weight.json
+# Dashboard display of the RSI rules; keep equal to the strategy file.
+RSI_ENTRY=80
+RSI_EXIT=70
+INITIAL_CASH=100000
+COMMISSION_RATE=0.001
+MARKET_WARMUP_DAYS=100
+QUOTE_VOLUME_FROM=
+# /data/comparison/comparison.json while the PAPER vs. fast-backtest study runs; empty hides it.
+PAPER_COMPARISON_FILE=
+DASHBOARD_PORT=8092
+# TEST_FILE writes data/dashboard/notifier; TELEGRAM needs the bot settings in secrets.
+NOTIFIER_SINK=TEST_FILE
+LOG_DEBUG=0
+EOF
+        echo "LOG_MODE=$log_mode" >> "$chain/chain.env"
+        echo "Created $chain/chain.env (LOG_MODE=$log_mode)"
+    elif ! grep -q '^LOG_MODE=' "$chain/chain.env"; then
+        echo "LOG_MODE=$log_mode" >> "$chain/chain.env"
+        echo "Added LOG_MODE=$log_mode to $chain/chain.env"
+    fi
+
+    # Configuration defaults are copied once; later edits stay in <root>/config.
+    if [[ ! -d "$config/strategies" ]]; then cp -r "$repo/config/strategies" "$config/"; echo "Created $config/strategies"; fi
+    if [[ ! -d "$config/portfolio" ]]; then cp -r "$repo/config/portfolio" "$config/"; echo "Created $config/portfolio"; fi
+    if [[ ! -f "$config/market_data.json" ]]; then
+        python3 - "$repo/deploy/live/market_data_config.json" "$config/market_data.json" <<'PY'
+import json, sys
+market = json.load(open(sys.argv[1]))
+# PAPER stream; open(T+1) prices for the simulated exchange.
+market.update(stream="ALGOTRADING_PAPER_RUNTIME", publish_paper_execution_prices=True)
+open(sys.argv[2], "w").write(json.dumps(market, indent=2) + "\n")
+PY
+        echo "Created $config/market_data.json"
+    fi
+
+    if [[ ! -f "$secrets/chain.env" ]]; then
+        (umask 077; python3 - "$secrets/chain.env" <<'PY'
+import secrets, sys
+open(sys.argv[1], "w").write(
+    "# Generated once. Never print or commit this file.\n"
+    f"POSTGRES_PASSWORD={secrets.token_hex(24)}\n"
+    f"DASHBOARD_VIEWER_PASSWORD={secrets.token_hex(12)}\n"
+    "DASHBOARD_TELEGRAM_BOT_TOKEN=\n"
+    "DASHBOARD_TELEGRAM_CHAT_ID=\n")
+PY
+        )
+        echo "Created $secrets/chain.env (dashboard viewer password is inside)"
+    fi
+    echo "Installed chain in $root. Next: $chain/algo up"
+}
+
+build_images() {
+    local repo
+    repo="$(repo_root)"
+    meson compile -C "$repo/build" -j 3 algotrading_market_data_service algotrading_strategy_service \
+        algotrading_portfolio_risk_service algotrading_order_planner_service algotrading_execution_state_service \
+        algotrading_exchange_gateway algotrading_simulated_exchange_service algotrading_historical_market_data_service \
+        algotrading_research  # fast baseline used by comparison.py
+    bash "$repo/deploy/live/build_runtime_bundle.sh" --paper
+    docker build -t algotrading-runtime:chain "$repo/deploy/paper_trading/.runtime_bundle"
+    docker build -t algotrading-dash-api:chain "$repo/dashboard/dashboard-api"
+    docker build -t algotrading-dash-web:chain --build-arg VITE_DASHBOARD_DATA_MODE=api \
+        --build-arg VITE_DASHBOARD_API_BASE_URL=/api --build-arg VITE_DASHBOARD_API_TIMEOUT_MS=8000 "$repo/dashboard"
+}
+
+# One folder per release: built images, the source they came from, checksums.
+# On the VPS: docker load -i images.tar; extract source.tar.gz; source/deploy/chain/algo install /
+make_release() {
+    local out="${1:?Usage: algo release <output folder>}"
+    local repo version folder
+    repo="$(repo_root)"
+    version="$(date -u +%Y%m%d_%H%M%S)-$(git -C "$repo" rev-parse --short HEAD 2>/dev/null || echo nogit)"
+    [[ -z "$(git -C "$repo" status --porcelain 2>/dev/null)" ]] || version="$version-dirty"
+    folder="$out/$version"
+    mkdir -p "$folder"
+    docker save -o "$folder/images.tar" algotrading-runtime:chain algotrading-dash-api:chain algotrading-dash-web:chain \
+        alpine:3.20 nats:2.10-alpine postgres:16-alpine
+    # Source without data, builds, dependencies or credentials.
+    tar -C "$repo" --exclude=.git --exclude=storage --exclude=build --exclude=node_modules --exclude=__pycache__ \
+        --exclude='.env' --exclude='*.pem' --exclude='.runtime_bundle' --exclude='handoff_code_*' \
+        -czf "$folder/source.tar.gz" .
+    (cd "$folder" && sha256sum images.tar source.tar.gz > SHA256SUMS)
+    echo "Release written: $folder"
+}
+
+# ---------------------------------------------------------------- installation
+require_installation() {
+    [[ -f "$SCRIPT_DIR/chain.env" && -f "$SCRIPT_DIR/compose.yml" ]] || {
+        echo "ERROR: not an installed chain. From the repository run: deploy/chain/algo install <root>" >&2; exit 1; }
+    ALGO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+    export ALGO_DATA ALGO_CONFIG ALGO_REPORTS
+    ALGO_DATA="$(under "$ALGO_ROOT" data)"
+    ALGO_CONFIG="$(under "$ALGO_ROOT" config)"
+    ALGO_REPORTS="$(under "$ALGO_ROOT" reports)"
+    LOGS="$(under "$ALGO_ROOT" logs)"
+    SECRETS_FILE="$(under "$ALGO_ROOT" secrets)/chain.env"
+    LOG_MODE="$(sed -n 's/^LOG_MODE=//p' "$SCRIPT_DIR/chain.env" | tail -n 1)"
+    LOG_MODE="${LOG_MODE:-receiver}"
+    [[ -r "$SECRETS_FILE" ]] || { echo "ERROR: cannot read $SECRETS_FILE (run as its owner or with sudo)" >&2; exit 1; }
+}
+
+compose() {
+    local files=(-f "$SCRIPT_DIR/compose.yml")
+    [[ "$LOG_MODE" != local ]] || files+=(-f "$SCRIPT_DIR/compose.local.yml")
+    docker compose --project-directory "$SCRIPT_DIR" --env-file "$SCRIPT_DIR/chain.env" \
+        --env-file "$SECRETS_FILE" "${files[@]}" "$@"
+}
+
+systemd_unit_active() {
+    command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet "$1" 2>/dev/null
+}
+
+receiver_listening() {
+    (: > "/dev/tcp/127.0.0.1/$RECEIVER_PORT") 2>/dev/null
+}
+
+receiver_start() {
+    if receiver_listening; then return 0; fi
+    if systemd_unit_active algotrading-logs.service; then
+        echo "ERROR: algotrading-logs.service is active but port $RECEIVER_PORT is closed" >&2; exit 1
+    fi
+    local state="$ALGO_DATA/receiver" config
+    config="$state/rsyslog.conf"
+    mkdir -p "$state" "$LOGS"
+    # Same receiver as the VPS unit, with this installation's folders.
+    sed -e "s#workDirectory=\"/data/receiver\"#workDirectory=\"$state\"#" \
+        -e "s#/chain/logging/clean_daily_logs.py#$SCRIPT_DIR/logging/clean_daily_logs.py#" \
+        -e "s#--root /logs #--root $LOGS #" \
+        "$SCRIPT_DIR/logging/rsyslog.conf" > "$config"
+    /usr/sbin/rsyslogd -N1 -f "$config" >/dev/null
+    /usr/sbin/rsyslogd -i "$state/rsyslogd.pid" -f "$config"
+    for _ in $(seq 1 50); do receiver_listening && { echo "Log receiver started ($LOGS)"; return 0; }; sleep 0.1; done
+    echo "ERROR: log receiver did not start" >&2; exit 1
+}
+
+receiver_stop() {
+    local pid_file="$ALGO_DATA/receiver/rsyslogd.pid"
+    if [[ -f "$pid_file" ]] && kill "$(cat "$pid_file")" 2>/dev/null; then
+        rm -f "$pid_file"; echo "Log receiver stopped"
+    fi
+}
+
+monitor_start() {
+    local pid_file="$ALGO_DATA/telemetry/monitor.pid"
+    if systemd_unit_active algotrading-monitor.service; then return 0; fi
+    if [[ -f "$pid_file" ]] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then return 0; fi
+    local log_capture=()
+    [[ "$LOG_MODE" != local ]] || log_capture=(--log-root "$LOGS")
+    # setsid: own session, so it survives the terminal (or WSL command) that started it.
+    setsid nohup python3 "$SCRIPT_DIR/monitor.py" --project algotrading --output "$ALGO_DATA/telemetry/host.json" \
+        --disk-path "$ALGO_ROOT" "${log_capture[@]}" > "$ALGO_DATA/telemetry/monitor.out" 2>&1 < /dev/null &
+    echo $! > "$pid_file"
+    # Wait for the first sample: confirms it runs (and lets it detach before this shell exits).
+    for _ in $(seq 1 100); do
+        [[ "$ALGO_DATA/telemetry/host.json" -nt "$pid_file" ]] && { echo "Host monitor started"; return 0; }
+        kill -0 "$(cat "$pid_file")" 2>/dev/null || break
+        sleep 0.2
+    done
+    echo "ERROR: host monitor did not start; see $ALGO_DATA/telemetry/monitor.out" >&2
+    return 1
+}
+
+monitor_stop() {
+    local pid_file="$ALGO_DATA/telemetry/monitor.pid"
+    if [[ -f "$pid_file" ]] && kill "$(cat "$pid_file")" 2>/dev/null; then
+        rm -f "$pid_file"; echo "Host monitor stopped"
+    fi
+}
+
+mask_secrets() {
+    sed -E -e 's/(password=)[^" ]+/\1********/g' \
+           -e 's/((PASSWORD|TOKEN|CHAT_ID)[A-Z_]*: *)[^ ].*/\1********/g'
+}
+
+backup() {
+    local stamp running archive
+    stamp="$(date -u +%Y%m%d_%H%M%S)"
+    archive="$(under "$ALGO_ROOT" backups)/$stamp.tar.gz"
+    running="$(compose ps -q)"
+    [[ -z "$running" ]] || compose stop
+    # PostgreSQL files belong to container users; archive from a container.
+    docker run --rm -v "$ALGO_DATA:/data:ro" -v "$(dirname "$archive"):/backups" alpine:3.20 \
+        sh -c "tar -czf /backups/$stamp.tar.gz -C /data --exclude=./telemetry --exclude=./receiver . \
+               && chown $(id -u):$(id -g) /backups/$stamp.tar.gz && chmod 0600 /backups/$stamp.tar.gz"
+    [[ -z "$running" ]] || compose start
+    echo "Backup written: $archive"
+}
+
+command="${1:-help}"; shift || true
+case "$command" in
+    install) install_chain "$@" ;;
+    build) build_images ;;
+    release) make_release "$@" ;;
+    help|-h|--help) usage ;;
+    *)
+        require_installation
+        case "$command" in
+            up)
+                [[ "$LOG_MODE" == local ]] || receiver_start
+                compose up -d "$@"
+                [[ $# -gt 0 ]] || monitor_start ;;
+            down)
+                if [[ $# -gt 0 ]]; then compose stop "$@"
+                else compose down; monitor_stop; systemd_unit_active algotrading-logs.service || receiver_stop; fi ;;
+            restart) [[ $# -gt 0 ]] || { usage; exit 1; }; compose restart "$@" ;;
+            ps)
+                compose ps -a
+                if [[ "$LOG_MODE" == local ]]; then echo "logs: local mode (host monitor copies container logs)"
+                elif receiver_listening; then echo "log receiver: listening on 127.0.0.1:$RECEIVER_PORT"; else echo "log receiver: STOPPED"; fi
+                if [[ -f "$ALGO_DATA/telemetry/monitor.pid" ]] && kill -0 "$(cat "$ALGO_DATA/telemetry/monitor.pid")" 2>/dev/null \
+                   || systemd_unit_active algotrading-monitor.service; then echo "host monitor: running"; else echo "host monitor: STOPPED"; fi ;;
+            logs)
+                service="${1:?Usage: algo logs <service> [-n N]}"; shift
+                lines=50; [[ "${1:-}" == "-n" ]] && lines="${2:?}"
+                tail -n "$lines" -F "$LOGS/$service/$(date -u +%Y%m%d).log" ;;
+            show) compose config "$@" | mask_secrets ;;
+            backup) backup ;;
+            receiver) case "${1:-}" in start) receiver_start ;; stop) receiver_stop ;; *) usage; exit 1 ;; esac ;;
+            monitor) case "${1:-}" in start) monitor_start ;; stop) monitor_stop ;; *) usage; exit 1 ;; esac ;;
+            *) usage; exit 1 ;;
+        esac ;;
+esac

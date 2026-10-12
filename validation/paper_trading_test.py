@@ -15,7 +15,7 @@ import urllib.request
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('paper_monitor', ROOT / 'deploy/paper_trading/monitor.py')
+spec = importlib.util.spec_from_file_location('paper_monitor', ROOT / 'deploy/chain/monitor.py')
 monitor = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(monitor)
 
@@ -202,7 +202,7 @@ def main():
         for table in ('strategy_market_update_checkpoint','portfolio_risk_live_decision_checkpoint','order_planner_live_notional_checkpoint'):
             assert sql(f'SELECT count(*) FROM {table} WHERE timestamp={decision_day}')=='1'
         previous=monitor.cpu_ticks();time.sleep(.25)
-        telemetry,_=monitor.sample(project,directory,monitor.SERVICES,previous)
+        telemetry,_=monitor.sample(project,directory,monitor.LEGACY_SERVICES,previous)
         (directory/'telemetry/host.json').write_text(json.dumps(telemetry))
         port=json.loads(compose('ps','--format','json','dashboard-web'))['Publishers'][0]['PublishedPort']
         cookies=http.cookiejar.CookieJar()
@@ -231,7 +231,7 @@ def main():
         (directory/'telemetry/host.json').write_text(json.dumps(telemetry));time.sleep(2.2)
         stale=json.load(client.open(base+'/api/infrastructure',timeout=15))
         assert stale['vps']['state']=='UNKNOWN' and not stale.get('telemetryObservedAt')
-        monitor.capture_logs(project,directory/'algotrading/services')
+        monitor.capture_logs(project,directory/'logs')
         compose('restart','strategy','portfolio-risk','execution-state','order-planner','exchange-gateway','simulated-exchange')
         compose('up','-d','market-data');time.sleep(8)
         after=evidence()

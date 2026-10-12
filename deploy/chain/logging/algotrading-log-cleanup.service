@@ -1,0 +1,14 @@
+[Unit]
+Description=Expire and bound algoTrading daily diagnostic logs (/logs)
+After=algotrading-logs.service
+
+[Service]
+Type=oneshot
+User=syslog
+Group=adm
+ExecStart=/usr/bin/python3 /chain/logging/clean_daily_logs.py --root /logs
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/logs

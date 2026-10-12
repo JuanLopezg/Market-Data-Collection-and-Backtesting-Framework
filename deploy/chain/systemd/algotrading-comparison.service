@@ -1,0 +1,19 @@
+[Unit]
+Description=Read-only PAPER forward comparison against CURRENT fast PureRSI
+After=docker.service algotrading-chain.service
+Wants=algotrading-chain.service
+
+[Service]
+Type=simple
+# RUNTIME_IMAGE: the packaged fast baseline binary runs from the chain runtime image.
+EnvironmentFile=/chain/chain.env
+ExecStart=/bin/sh -c 'exec /usr/bin/python3 /chain/comparison.py --image "$RUNTIME_IMAGE"'
+Restart=on-failure
+RestartSec=15
+Nice=10
+CPUQuota=40%
+MemoryMax=384M
+UMask=0022
+
+[Install]
+WantedBy=multi-user.target

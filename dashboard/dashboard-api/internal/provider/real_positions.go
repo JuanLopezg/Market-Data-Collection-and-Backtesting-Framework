@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	pgstore "control-dashboard-api/internal/integration/postgres"
 	"control-dashboard-api/internal/tradingwire"
@@ -25,6 +26,12 @@ type realPositionsData struct {
 	SourceUpdatedAt  string         `json:"sourceUpdatedAt"`
 	ValuationState   string         `json:"valuationState"`
 	SourceNote       string         `json:"sourceNote"`
+	// Position history from the persisted fills (see position_history.go).
+	ClosedPositions  []closedPositionRow `json:"closedPositions"`
+	ClosedAvailable  bool                `json:"closedAvailable"`  // whole fill history read
+	FundingAvailable bool                `json:"fundingAvailable"` // funding payments recorded
+	// Numeric valuation (set with ValuationState AVAILABLE) for other read models.
+	equityValue, grossValue float64
 }
 
 type realPosition struct {
@@ -53,6 +60,12 @@ type realPosition struct {
 	PnLAvailable            bool                   `json:"pnlAvailable"`
 	ReconciliationAvailable bool                   `json:"reconciliationAvailable"`
 	StrategyBreakdown       []realStrategyPosition `json:"strategyBreakdown"`
+	OpenedAt                string                 `json:"openedAt"`
+	FeesUSD                 float64                `json:"feesUsd"`    // fees paid by this position so far
+	FundingUSD              float64                `json:"fundingUsd"` // funding so far (+ received)
+	NetPnLUSD               float64                `json:"netPnlUsd"`  // unrealized + realized so far - fees + funding
+	FeesAvailable           bool                   `json:"feesAvailable"`
+	FundingAvailable        bool                   `json:"fundingAvailable"`
 }
 
 type realStrategyPosition struct {
@@ -66,7 +79,54 @@ func (p *Real) positions(ctx context.Context) (realPositionsData, error) {
 	if err != nil {
 		return realPositionsData{}, fmt.Errorf("read durable positions: %w", err)
 	}
-	return buildRealPositions(state), nil
+	data := buildRealPositions(state)
+	p.valuePositions(ctx, &data, state.Snapshot.AccountCash)
+	if window, err := p.postgres.TradeHistoryFills(ctx); err == nil && window.TotalRows <= int64(len(window.Rows)) {
+		applyRealPositionHistory(&data, realTradeEvents(window.Rows))
+	}
+	return data, nil
+}
+
+// PAPER/LIVE fills carry their commission; funding payments are not persisted yet,
+// so funding stays unavailable instead of showing zero.
+func realTradeEvents(fills []tradingwire.Fill) []tradeEvent {
+	events := make([]tradeEvent, 0, len(fills))
+	for _, fill := range fills {
+		events = append(events, tradeEvent{
+			Time: fill.Timestamp, Sequence: fill.FillID, Kind: tradeFill, Asset: fill.Coin,
+			Buy: fill.Side == 0, Quantity: fill.Quantity, Price: fill.Price, Fee: fill.Commission,
+		})
+	}
+	return events
+}
+
+func applyRealPositionHistory(data *realPositionsData, events []tradeEvent) {
+	closed, lots := buildPositionHistory(events)
+	data.ClosedPositions = closedPositionRows(closed)
+	data.ClosedAvailable = true
+	for index := range data.Positions {
+		position := &data.Positions[index]
+		lot := lots[position.Asset]
+		if lot == nil {
+			continue
+		}
+		position.OpenedAt = tradeTimeLabel(lot.OpenedAt)
+		position.FeesUSD = lot.Fees
+		position.FeesAvailable = true
+		if position.PnLAvailable {
+			position.NetPnLUSD = position.PnLUSD + lot.GrossPnL - lot.Fees
+		}
+	}
+}
+
+func (p *Real) ClosedPositionsReport(ctx context.Context) (ClosedPositionsReport, error) {
+	window, err := p.postgres.TradeHistoryFills(ctx)
+	if err != nil {
+		return ClosedPositionsReport{}, fmt.Errorf("read trade history: %w", err)
+	}
+	closed, _ := buildPositionHistory(realTradeEvents(window.Rows))
+	return ClosedPositionsReport{Closed: closed, Complete: window.TotalRows <= int64(len(window.Rows)),
+		Source: "trading_fills (funding not recorded)", BuiltAt: time.Now().UTC()}, nil
 }
 
 func buildRealPositions(state pgstore.RuntimeState) realPositionsData {
@@ -114,11 +174,12 @@ func buildRealPositions(state pgstore.RuntimeState) realPositionsData {
 		NetExposure:      "Not valued",
 		UnrealizedPnL:    "Not available",
 		Positions:        positions,
+		ClosedPositions:  []closedPositionRow{},
 		AccountCash:      formatUSD(state.Snapshot.AccountCash),
 		SourceMode:       "REAL",
 		SourceUpdatedAt:  state.UpdatedAt,
 		ValuationState:   "UNAVAILABLE",
-		SourceNote:       "Physical quantities and strategy virtual positions come from trading_runtime_state.snapshot. Price valuation, approved targets, PnL and exchange reconciliation are intentionally not inferred in Step 17.",
+		SourceNote:       "Quantities from trading_runtime_state.snapshot; marks are the latest completed closes; targets from the latest PortfolioRisk decision; entry/PnL from the average cost of persisted fills.",
 	}
 }
 
@@ -149,6 +210,9 @@ func formatQuantity(value float64) string {
 }
 
 func signedQuantity(value float64) string {
+	if value == 0 {
+		return "0"
+	}
 	if value > 0 {
 		return "+" + formatQuantity(value)
 	}

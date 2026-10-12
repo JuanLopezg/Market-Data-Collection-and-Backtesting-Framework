@@ -28,6 +28,8 @@ import type {
   VenueTradingRulesData,
   SymbolRegistryData,
   LedgerData,
+  HostHistoryData,
+  HostHistoryQuery,
 } from '../types/dashboard'
 
 export class ApiDashboardDataSource implements DashboardDataSource {
@@ -52,6 +54,10 @@ export class ApiDashboardDataSource implements DashboardDataSource {
   getRisk() { return this.client.get<RiskData>('/risk') }
   getMarketData() { return this.client.get<MarketDataData>('/market-data') }
   getInfrastructure() { return this.client.get<InfrastructureData>('/infrastructure') }
+  getHostHistory(query: HostHistoryQuery) {
+    const parameters = 'range' in query ? `range=${query.range}` : `from=${encodeURIComponent(query.from)}&to=${encodeURIComponent(query.to)}`
+    return this.client.get<HostHistoryData>(`/infrastructure/history?${parameters}`)
+  }
   getAlertsAudit() { return this.client.get<AlertsAuditData>('/alerts-audit') }
   acknowledgeAlert(input: AlertAcknowledgementInput, csrfToken: string) { return this.client.post<AlertAcknowledgementResult>('/alerts-audit/acknowledge', input, { 'X-CSRF-Token': csrfToken }) }
   getLiveVsExpected() { return this.client.get<LiveVsExpectedData>('/live-vs-expected') }

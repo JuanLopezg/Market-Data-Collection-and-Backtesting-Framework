@@ -40,7 +40,7 @@ export function WhyInspector({ trace, onClose }: WhyInspectorProps) {
         <Pair label="Price" value={trace.market.price}/><Pair label="Universe" value={trace.market.universe}/><Pair label="Liquidity rank" value={trace.market.liquidityRank}/><Pair label="Freshness" value={trace.market.freshness}/>
       </Block>
       <Block title="Strategy" icon={<GitBranch size={15}/>}>
-        <Pair label="RSI(7)" value={trace.strategy.rsi}/><Pair label="Signal" value={trace.strategy.signal}/><Pair label="Transition" value={trace.strategy.transition}/><Pair label="Intent" value={trace.strategy.intent}/>
+        <Pair label="Indicators" value={trace.strategy.rsi}/><Pair label="Signal" value={trace.strategy.signal}/><Pair label="Transition" value={trace.strategy.transition}/><Pair label="Intent" value={trace.strategy.intent}/>
       </Block>
       <Block title="Portfolio / Risk" icon={<Scale size={15}/>}>
         <Pair label="Raw target" value={trace.portfolio.rawTarget}/><Pair label="Vol target" value={trace.portfolio.volTarget}/><Pair label="Approved" value={trace.portfolio.approvedTarget}/>

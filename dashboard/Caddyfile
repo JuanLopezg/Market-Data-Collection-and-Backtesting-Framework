@@ -19,6 +19,10 @@
 
     @assets path /assets/*
     header @assets Cache-Control "public, max-age=31536000, immutable"
-    header /index.html Cache-Control "no-cache"
+    # `header` runs before try_files, so "/" and SPA routes (e.g. /execution) are matched
+    # here by their original path: everything outside /assets must be revalidated, or
+    # browsers keep an old index.html that points at an old bundle.
+    @app not path /assets/*
+    header @app Cache-Control "no-cache"
   }
 }

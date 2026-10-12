@@ -14,10 +14,14 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-LOGGING = ROOT / "deploy/live/logging"
+LOGGING = ROOT / "deploy/chain/logging"
 spec = importlib.util.spec_from_file_location("daily_log_cleanup", LOGGING / "clean_daily_logs.py")
 cleanup = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cleanup)
+
+
+def day_file(day):
+    return f"{day:%Y%m%d}.log"
 
 
 class DailyServiceLogsTest(unittest.TestCase):
@@ -25,43 +29,45 @@ class DailyServiceLogsTest(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(prefix="daily-service-logs-")
         self.addCleanup(self.temporary.cleanup)
         self.work = Path(self.temporary.name)
-        self.logs = self.work / "algotrading/services"
+        self.logs = self.work / "logs"
         self.logs.mkdir(parents=True)
 
     def test_retention_calendar_boundary_and_safe_scope(self):
         today = datetime.now(timezone.utc).date()
         outside = self.work / "outside"
         outside.mkdir()
-        sentinel = outside / "2000-01-01.log"
+        sentinel = outside / "20000101.log"
         sentinel.write_text("preserve outside diagnostic root")
-        for service in ("algotrading.strategy", "algotrading.postgres"):
+        for service in ("strategy", "postgres"):
             directory = self.logs / service
             directory.mkdir()
             for age in range(9):
-                (directory / f"{today - timedelta(days=age)}.log").write_text("diagnostic")
+                (directory / day_file(today - timedelta(days=age))).write_text("diagnostic")
             (directory / "trades.csv").write_text("preserve trading evidence")
             (directory / "checkpoint.json").write_text("preserve checkpoint")
-            (directory / "2000-02-30.log").write_text("invalid date, preserve")
-        (self.logs / "algotrading.link").symlink_to(outside, target_is_directory=True)
-        (self.logs / "algotrading.strategy/1999-01-01.log").symlink_to(sentinel)
+            (directory / "20000230.log").write_text("invalid date, preserve")
+            (directory / "2000-01-01.log").write_text("other naming, preserve")
+        (self.logs / "link").symlink_to(outside, target_is_directory=True)
+        (self.logs / "strategy/19990101.log").symlink_to(sentinel)
         self.assertEqual(cleanup.clean(self.logs, today), 14)
         self.assertEqual(cleanup.clean(self.logs, today), 0)
         self.assertTrue(sentinel.exists())
-        for service in ("algotrading.strategy", "algotrading.postgres"):
+        for service in ("strategy", "postgres"):
             directory = self.logs / service
             for age in range(2):
-                self.assertTrue((directory / f"{today - timedelta(days=age)}.log").exists())
+                self.assertTrue((directory / day_file(today - timedelta(days=age))).exists())
             self.assertTrue((directory / "trades.csv").exists())
             self.assertTrue((directory / "checkpoint.json").exists())
+            self.assertTrue((directory / "2000-01-01.log").exists())
         # Quiet services must also expire when the UTC day advances.
         self.assertEqual(cleanup.clean(self.logs, today + timedelta(days=1)), 2)
         with self.assertRaises(ValueError):
             cleanup.clean(self.work, today)
-        linked = self.work / "linked/algotrading"
+        linked = self.work / "linked/root"
         linked.parent.mkdir()
-        linked.symlink_to(self.logs.parent, target_is_directory=True)
+        linked.symlink_to(self.work, target_is_directory=True)
         with self.assertRaises(ValueError):
-            cleanup.clean(linked / "services", today)
+            cleanup.clean(linked / "logs", today)
 
     def start_receiver(self, date_property="timegenerated", limit_bytes=cleanup.MAX_FILE_BYTES):
         with socket.socket() as probe:
@@ -69,10 +75,11 @@ class DailyServiceLogsTest(unittest.TestCase):
             port = probe.getsockname()[1]
         state = self.work / "state"
         state.mkdir(exist_ok=True)
+        # Same rewrite as chain/algo uses for a non-/ root.
         config = (LOGGING / "rsyslog.conf").read_text().replace(
-            "/var/lib/algotrading-logs", str(state)).replace(
-            "/var/log/algotrading/services", str(self.logs)).replace('Port="5514"', f'Port="{port}"').replace(
-            "/usr/local/lib/algotrading/clean_daily_logs.py", str(LOGGING / 'clean_daily_logs.py')).replace(
+            'workDirectory="/data/receiver"', f'workDirectory="{state}"').replace(
+            "--root /logs ", f"--root {self.logs} ").replace('Port="5514"', f'Port="{port}"').replace(
+            "/chain/logging/clean_daily_logs.py", str(LOGGING / 'clean_daily_logs.py')).replace(
             '--max-bytes 52428800', f'--max-bytes {limit_bytes}')
         if date_property != "timegenerated":
             # Drive the real UTC date template across midnight without changing host time.
@@ -118,16 +125,16 @@ class DailyServiceLogsTest(unittest.TestCase):
 
     def test_receiver_appends_across_restart_recreation_and_redacts(self):
         today = datetime.now(timezone.utc).date()
-        path = self.logs / f"algotrading.market-data/{today}.log"
+        path = self.logs / "market-data" / day_file(today)
         process, port = self.start_receiver()
         try:
-            self.send(port, "algotrading.market-data", "before-restart")
+            self.send(port, "market-data", "before-restart")
             self.wait_for(path, "before-restart")
             for message in ("password=PRIVATE_FIXTURE", '"api_key":"PRIVATE_FIXTURE"',
                             "Authorization: Bearer PRIVATE_FIXTURE", "postgres://user:PRIVATE_FIXTURE@host/db",
                             "https://api.telegram.org/bot123:PRIVATE_FIXTURE/sendMessage"):
-                self.send(port, "algotrading.market-data", message)
-            self.send(port, "algotrading.market-data", "after-redaction", severity=3)
+                self.send(port, "market-data", message)
+            self.send(port, "market-data", "after-redaction", severity=3)
             text = self.wait_for(path, "after-redaction")
             self.assertEqual(path.stat().st_mode & 0o777, 0o640)
             self.assertEqual(path.parent.stat().st_mode & 0o777, 0o750)
@@ -140,13 +147,14 @@ class DailyServiceLogsTest(unittest.TestCase):
             self.assertNotIn("service=", text)
             self.assertNotIn("source_time=", text)
             self.assertNotIn("severity=", text)
-            self.send(port, "../../unsafe", "must-not-persist")
+            for unsafe in ("../../unsafe", "Upper", "dotted.name"):
+                self.send(port, unsafe, "must-not-persist")
         finally:
             self.stop(process)
         # New daemon/connection, same service name: represents a recreated container.
         process, port = self.start_receiver()
         try:
-            self.send(port, "algotrading.market-data", "after-recreation")
+            self.send(port, "market-data", "after-recreation")
             text = self.wait_for(path, "after-recreation")
             self.assertIn("before-restart", text)
         finally:
@@ -156,10 +164,10 @@ class DailyServiceLogsTest(unittest.TestCase):
     def test_utc_daily_template_splits_at_midnight(self):
         process, port = self.start_receiver(date_property="timereported")
         try:
-            self.send(port, "algotrading.strategy", "day-one", "2026-10-06T23:59:59Z")
-            self.send(port, "algotrading.strategy", "day-two", "2026-10-07T01:00:00+01:00")
-            first = self.wait_for(self.logs / "algotrading.strategy/2026-10-06.log", "day-one")
-            second = self.wait_for(self.logs / "algotrading.strategy/2026-10-07.log", "day-two")
+            self.send(port, "strategy", "day-one", "2026-10-06T23:59:59Z")
+            self.send(port, "strategy", "day-two", "2026-10-07T01:00:00+01:00")
+            first = self.wait_for(self.logs / "strategy/20261006.log", "day-one")
+            second = self.wait_for(self.logs / "strategy/20261007.log", "day-two")
             self.assertNotIn("day-two", first)
             self.assertNotIn("day-one", second)
         finally:
@@ -167,16 +175,16 @@ class DailyServiceLogsTest(unittest.TestCase):
 
     def test_receiver_trims_and_continues_in_the_same_daily_file(self):
         today = datetime.now(timezone.utc).date()
-        path = self.logs / f"algotrading.strategy/{today}.log"
+        path = self.logs / "strategy" / day_file(today)
         process, port = self.start_receiver(limit_bytes=4096)
         try:
-            self.send(port, "algotrading.strategy", "oldest-marker")
+            self.send(port, "strategy", "oldest-marker")
             self.wait_for(path, "oldest-marker")
             inode = path.stat().st_ino
             for index in range(45):
-                self.send(port, "algotrading.strategy", f"record-{index:03d}-" + "x" * 150)
+                self.send(port, "strategy", f"record-{index:03d}-" + "x" * 150)
                 self.wait_for(path, f"record-{index:03d}-")
-            self.send(port, "algotrading.strategy", "newest-marker")
+            self.send(port, "strategy", "newest-marker")
             text = self.wait_for(path, "newest-marker")
             self.assertIn("LOG-TRIM", text)
             self.assertNotIn("oldest-marker", text)
@@ -188,20 +196,20 @@ class DailyServiceLogsTest(unittest.TestCase):
             self.stop(process)
         process, port = self.start_receiver(limit_bytes=4096)
         try:
-            self.send(port, "algotrading.strategy", "after-trim-restart")
+            self.send(port, "strategy", "after-trim-restart")
             text = self.wait_for(path, "after-trim-restart")
             self.assertIn("newest-marker", text)
         finally:
             self.stop(process)
 
     def test_trim_preserves_recent_complete_lines_and_ignores_symlinks(self):
-        directory = self.logs / "algotrading.strategy"
+        directory = self.logs / "strategy"
         directory.mkdir()
-        path = directory / "2026-10-08.log"
+        path = directory / "20261008.log"
         path.write_bytes(b"old line\n" * 500 + b"latest complete line\n")
         outside = self.work / "outside.log"
         outside.write_bytes(b"outside" * 1000)
-        (directory / "2026-10-07.log").symlink_to(outside)
+        (directory / "20261007.log").symlink_to(outside)
         checkpoint = directory / "checkpoint.json"
         checkpoint.write_bytes(b"preserve" * 1000)
         self.assertEqual(cleanup.trim(self.logs, 4096), 1)
@@ -214,9 +222,9 @@ class DailyServiceLogsTest(unittest.TestCase):
             cleanup.trim(self.work, 4096)
 
     def test_large_single_record_and_unsafe_writer_paths(self):
-        header = b"2026-10-08T12:00:00Z service=algotrading.strategy "
+        header = b"2026-10-08T12:00:00Z service=strategy "
         cleanup.append_record(self.logs, header + ("large diagnostic é" * 500).encode() + b"\n", 4096)
-        path = self.logs / "algotrading.strategy/2026-10-08.log"
+        path = self.logs / "strategy/20261008.log"
         self.assertIn("oversized diagnostic record omitted", path.read_text())
         self.assertLessEqual(path.stat().st_size, 4096)
         cleanup.append_record(self.logs, header + b"next normal record\n", 4096)
@@ -227,19 +235,19 @@ class DailyServiceLogsTest(unittest.TestCase):
             cleanup.append_record(self.logs, b"2026-10-08 service=../../outside invalid service\n", 4096)
         outside = self.work / "outside"
         outside.mkdir()
-        (self.logs / "algotrading.link").symlink_to(outside, target_is_directory=True)
+        (self.logs / "link").symlink_to(outside, target_is_directory=True)
         with self.assertRaises(ValueError):
-            cleanup.append_record(self.logs, b"2026-10-08 service=algotrading.link must not escape\n", 4096)
+            cleanup.append_record(self.logs, b"2026-10-08 service=link must not escape\n", 4096)
         self.assertEqual(list(outside.iterdir()), [])
 
     def test_default_fifty_mib_cap_on_an_existing_oversized_file(self):
-        directory = self.logs / "algotrading.strategy"
+        directory = self.logs / "strategy"
         directory.mkdir()
-        path = directory / "2026-10-08.log"
+        path = directory / "20261008.log"
         with path.open("wb") as handle:
             handle.write(b"old diagnostic line\n" * 3000000)
         self.assertGreater(path.stat().st_size, cleanup.MAX_FILE_BYTES)
-        cleanup.append_record(self.logs, b"2026-10-08T12:00:00Z service=algotrading.strategy newest line\n")
+        cleanup.append_record(self.logs, b"2026-10-08T12:00:00Z service=strategy newest line\n")
         self.assertLessEqual(path.stat().st_size, cleanup.MAX_FILE_BYTES)
         self.assertTrue(path.read_bytes().endswith(b"newest line\n"))
         self.assertEqual(list(directory.iterdir()), [path])
@@ -261,6 +269,7 @@ class DailyServiceLogsTest(unittest.TestCase):
                 options = service["logging"]["options"]
                 self.assertEqual(service["logging"]["driver"], "syslog")
                 self.assertEqual(options["syslog-address"], "tcp://127.0.0.1:5514")
+                self.assertEqual(options["tag"], "{{.Name}}")
                 self.assertNotIn("max-size", options)
                 self.assertNotIn("max-file", options)
                 before = original["services"][name]

@@ -11,7 +11,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('comparison', ROOT / 'deploy/paper_trading/comparison.py')
+spec = importlib.util.spec_from_file_location('comparison', ROOT / 'deploy/chain/comparison.py')
 comparison = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(comparison)
 

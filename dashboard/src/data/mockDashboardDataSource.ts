@@ -1,6 +1,6 @@
 import type { DashboardDataSource } from './dashboardDataSource'
 import { runtimeConfig } from '../config/runtime'
-import type { AlertAcknowledgementInput, AlertAcknowledgementResult, AlertsAuditData, DashboardDiagnostics, ExecutionData, InfrastructureData, LiveVsExpectedData, ManualControlData, MarketDataData, OverviewData, PipelineData, Position, PositionsData, ReconciliationData, RiskData, ShellStatus, ProviderStatus, SafetyGateData, GlobalReadinessData, VenueFoundationData, VenuePublicData, VenueSymbolMappingData, VenueTradingRulesData, SymbolRegistryData, LedgerData } from '../types/dashboard'
+import type { AlertAcknowledgementInput, AlertAcknowledgementResult, AlertsAuditData, DashboardDiagnostics, ExecutionData, InfrastructureData, LiveVsExpectedData, ManualControlData, MarketDataData, OverviewData, PipelineData, Position, PositionsData, ReconciliationData, RiskData, ShellStatus, ProviderStatus, SafetyGateData, GlobalReadinessData, VenueFoundationData, VenuePublicData, VenueSymbolMappingData, VenueTradingRulesData, SymbolRegistryData, LedgerData, HostHistoryData, HostHistoryQuery } from '../types/dashboard'
 
 const wait = (ms = runtimeConfig.mockLatencyMs) => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -196,9 +196,10 @@ const overview: OverviewData = {
     { label: 'Total Equity', value: '$1,248,321', delta: '+2.36%', detail: '+$28,735 (7D)', trend: [7,8,8,9,9,10,11,10,12,13,12,14,15] },
     { label: 'Cash', value: '$312,448', delta: '+1.12%', detail: '+$3,461 (7D)', trend: [5,5,6,6,5,6,6,7,7,7,8,8,9] },
     { label: 'Unrealized PnL', value: '$86,242', delta: '+12.6%', detail: '+$9,612 (7D)', trend: [4,6,5,7,8,8,9,10,9,11,12,13,14] },
+    { label: 'Leverage', value: '0.30x' },
   ],
-  equityCurve: labels.map((label, i) => ({ label, equity: equity[i], benchmark: benchmark[i] })),
-  liveExpected: labels.map((label, i) => ({ label, equity: Math.round((equity[i]-690) * 0.14), benchmark: Math.round((benchmark[i]-650) * 0.12) })),
+  equityCurve: labels.map((label, i) => ({ label, equity: equity[i], balance: benchmark[i], closeLoop: i === 12 ? 'BLOCKED' : 'CLEAN' })),
+  liveExpected: labels.map((label, i) => ({ label, equity: equity[i], expected: Math.round(equity[i] * 0.97) })),
   positions,
   recentEvents: [
     { time: '14:31:52', event: 'BUY 0.50 BTC @ 37,420', source: 'Execution', severity: 'INFO' },
@@ -872,6 +873,12 @@ export const mockDashboardDataSource: DashboardDataSource = {
   async getInfrastructure() {
     await wait(90)
     return infrastructureData
+  },
+  async getHostHistory(query: HostHistoryQuery): Promise<HostHistoryData> {
+    const range = 'range' in query ? query.range : 'custom'
+    await wait(90)
+    // The mock provider has no host monitor; history stays unavailable rather than invented.
+    return { available: false, reason: 'Mock data source has no host monitor history', range, bucketSeconds: 30, stale: false, containers: [], points: [] }
   },
   async getAlertsAudit() {
     await wait(90)

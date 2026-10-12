@@ -14,14 +14,10 @@ printf '%s\n' '============================================================'
 printf '%s\n' 'One research entry point; fast/system/dashboard; --days; open-trade cutoff policy.'
 printf '\n'
 
-printf '%s\n' '[1/8] Frozen Step56A / Step57 / Step58 artifacts remain clean'
-(cd "$ROOT" && sha256sum -c docs/venue/step56a/SHA256SUMS >/dev/null) \
-  || fail 'Step56A frozen artifact changed'
-(cd "$ROOT" && sha256sum -c docs/venue/step57/SHA256SUMS >/dev/null) \
-  || fail 'Step57 frozen artifact changed'
-(cd "$ROOT" && sha256sum -c docs/venue/step58/SHA256SUMS >/dev/null) \
-  || fail 'Step58 frozen artifact changed'
-pass 'prior full-system/manual/dashboard artifacts remain untouched'
+# [1/8] used to verify the frozen Step56A/57/58 source checksums. The restructure moved
+# and changed those files, so the check could only fail; behaviour is checked below
+# (including the frozen Step56A mock-default economics in [5c]).
+printf '%s\n' '[1/8] Frozen source checksums: retired (see validation/README.md)'
 
 printf '%s\n' '[2/8] One canonical public CLI exposes three modes plus partial-day controls'
 for f in \
@@ -35,7 +31,7 @@ python3 -m py_compile "$ROOT/research/replay.py" || fail 'research/replay.py syn
 python3 "$ROOT/research/replay.py" --help >"$TMP/help.txt"
 python3 "$ROOT/research/replay.py" system --help >"$TMP/system-help.txt"
 python3 "$ROOT/research/replay.py" dashboard --help >"$TMP/dashboard-help.txt"
-grep -Fq '{fast,system,dashboard}' "$TMP/help.txt" || fail 'three canonical modes missing'
+grep -Fq '{resources,fast,system,dashboard}' "$TMP/help.txt" || fail 'canonical modes missing'
 grep -Fq -- '--days DAYS' "$TMP/system-help.txt" || fail '--days missing'
 grep -Fq -- '--pace-all' "$TMP/system-help.txt" || fail '--pace-all missing'
 grep -Fq -- '--visual-day-minutes' "$TMP/dashboard-help.txt" || fail 'dashboard pacing missing'

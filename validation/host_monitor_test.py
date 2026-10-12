@@ -9,7 +9,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-source = Path(__file__).resolve().parents[1] / 'deploy/paper_trading/monitor.py'
+source = Path(__file__).resolve().parents[1] / 'deploy/chain/monitor.py'
 spec = importlib.util.spec_from_file_location('host_monitor', source)
 monitor = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(monitor)

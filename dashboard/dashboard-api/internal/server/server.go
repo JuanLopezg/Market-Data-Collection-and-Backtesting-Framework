@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -11,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,6 +38,8 @@ type Config struct {
 	ManualAuditDir  string
 	AlertAckDir     string
 	AlertStoreDir   string
+	// history.jsonl written by deploy/chain/monitor.py; empty disables the history charts.
+	HostHistoryFile string
 }
 
 type Server struct {
@@ -129,6 +133,7 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("GET /api/auth/me", s.authRequired(http.HandlerFunc(s.me)))
 	mux.Handle("GET /api/provider-status", s.authRequired(http.HandlerFunc(s.providerStatus)))
 	mux.Handle("GET /api/diagnostics", s.authRequired(http.HandlerFunc(s.diagnostics)))
+	mux.Handle("GET /api/infrastructure/history", s.authRequired(http.HandlerFunc(s.hostHistory)))
 	mux.Handle("GET /api/safety-gate", s.authRequired(http.HandlerFunc(s.safetyGate)))
 	mux.Handle("GET /api/global-readiness", s.authRequired(http.HandlerFunc(s.globalReadiness)))
 	mux.Handle("GET /api/venue-foundation", s.authRequired(http.HandlerFunc(s.venueFoundation)))
@@ -144,6 +149,7 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("POST /api/auth/logout", s.authRequired(http.HandlerFunc(s.logout)))
 	mux.Handle("POST /api/manual-control/preview", s.authRequired(http.HandlerFunc(s.manualControlPreview)))
 	mux.Handle("POST /api/manual-control/route", s.authRequired(http.HandlerFunc(s.manualControlRoute)))
+	mux.Handle("GET /api/reports/closed-positions.csv", s.authRequired(http.HandlerFunc(s.closedPositionsCSV)))
 	mux.Handle("POST /api/alerts-audit/acknowledge", s.authRequired(http.HandlerFunc(s.acknowledgeAlert)))
 
 	routes := map[string]provider.Resource{
@@ -529,6 +535,50 @@ func newAlertAckCorrelationID() (string, error) {
 		return "", err
 	}
 	return "ack-" + hex.EncodeToString(raw[:]), nil
+}
+
+// closedPositionsCSV downloads the closed-positions report (?year=YYYY for one year).
+func (s *Server) closedPositionsCSV(w http.ResponseWriter, r *http.Request) {
+	reporter, ok := s.provider.(provider.ClosedPositionsReporter)
+	if !ok {
+		s.writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "closed-positions report is not available for this provider"})
+		return
+	}
+	year := 0
+	if value := strings.TrimSpace(r.URL.Query().Get("year")); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 2000 || parsed > 2100 {
+			s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "year must be YYYY"})
+			return
+		}
+		year = parsed
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 4*s.cfg.ResourceTimeout)
+	defer cancel()
+	report, err := reporter.ClosedPositionsReport(ctx)
+	if err != nil {
+		s.cfg.Logger.Error("closed-positions report failed", "error", err)
+		s.writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "closed-positions report unavailable"})
+		return
+	}
+	if !report.Complete {
+		s.writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "trade history is too large for one read; report incomplete"})
+		return
+	}
+	var body bytes.Buffer
+	if err := provider.WriteClosedPositionsCSV(&body, report, year); err != nil {
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "closed-positions report could not be written"})
+		return
+	}
+	name := "closed_positions.csv"
+	if year != 0 {
+		name = fmt.Sprintf("closed_positions_%d.csv", year)
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body.Bytes())
 }
 
 type manualControlRouteResponse struct {

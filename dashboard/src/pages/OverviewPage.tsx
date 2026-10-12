@@ -1,122 +1,127 @@
-import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+import { CloseLoopTimeline } from '../components/CloseLoopTimeline'
 import { DataLoadError } from '../components/DataLoadError'
-import { useDashboardResource } from '../hooks/useDashboardResource'
-import type { HealthState, OverviewData, PositionAlignmentState, ReconciliationState } from '../types/dashboard'
-import { chartRanges, LineChart } from '../components/LineChart'
-import type { ChartRange } from '../components/LineChart'
+import { DAILY_PRESETS, DEFAULT_DAILY_RANGE, LineChart, chartDate, dailyWindow, displayAmount, usd } from '../components/LineChart'
 import { Panel } from '../components/Panel'
-import { StatCard } from '../components/StatCard'
 import { StatePill } from '../components/StatePill'
+import { TimeRangePicker } from '../components/TimeRangePicker'
+import type { TimeRange } from '../components/TimeRangePicker'
+import { useDashboardResource } from '../hooks/useDashboardResource'
+import type { OperationalAlert, Position, Severity } from '../types/dashboard'
 
-function readinessClass(state: HealthState) {
-  if (state === 'READY') return 'good'
-  if (state === 'PAUSED') return 'bad'
-  return 'warn'
+// Overview: account figures, balance/equity with the daily close loop, live equity against
+// the fast backtest, open positions and the most important active alert. Units travel with
+// the numbers; no explanatory captions.
+
+const BALANCE = { key: 'balance', label: 'Balance', color: 'var(--series-1)' }   // blue
+const EQUITY = { key: 'equity', label: 'Equity', color: 'var(--series-2)' }      // orange
+const EXPECTED = { key: 'expected', label: 'Expected', color: 'var(--series-neutral)' }
+
+const SEVERITY_RANK: Record<Severity, number> = { CRITICAL: 0, WARN: 1, INFO: 2 }
+
+function signedUsd(value: number) {
+  return `${value >= 0 ? '+' : '-'}${usd(Math.abs(value))}`
 }
 
-function reconciliationCopy(state: ReconciliationState) {
-  if (state === 'CLEAN') return 'Current retained exchange evidence agrees with durable local state.'
-  if (state === 'BLOCKED') return 'A current reconciliation mismatch requires operational attention.'
-  if (state === 'DRIFT') return 'A non-blocking mismatch is present.'
-  return 'Closed-loop proof is pending or exchange evidence is not current enough.'
+// PnL cards are green when >= 0 and red when negative. Leverage follows a fixed scale:
+// green up to 1.5x, orange up to 2.5x, red above. Other cards stay neutral.
+function statTone(label: string, value: string) {
+  const amount = Number(value.replace(/[$,x\s]/g, ''))
+  if (!Number.isFinite(amount) || !/\d/.test(value)) return ''
+  if (/pnl/i.test(label)) return amount < 0 ? 'negative' : 'positive'
+  if (/leverage/i.test(label)) return amount <= 1.5 ? 'positive' : amount <= 2.5 ? 'leverage--elevated' : 'negative'
+  return ''
 }
 
-function eventTone(severity: string) {
-  if (severity === 'CRITICAL') return 'critical'
-  if (severity === 'WARN') return 'warn'
-  return 'info'
+function notional(position: Position) {
+  if (position.valuationAvailable === false || !Number.isFinite(position.currentPrice) || position.currentPrice <= 0) return '—'
+  return usd(Math.abs(position.quantity * position.currentPrice))
 }
 
-function pnlClass(available?: boolean, value?: number) {
-  if (!available) return ''
-  return (value ?? 0) < 0 ? 'negative' : 'positive'
+const pnlKnown = (position: Position) => position.pnlAvailable !== false && Number.isFinite(position.pnlUsd)
+
+// Most severe first, then most recent.
+function orderAlerts(alerts: OperationalAlert[]) {
+  return alerts
+    .filter(alert => alert.status === 'ACTIVE')
+    .sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || b.timestamp.localeCompare(a.timestamp))
+}
+
+function AlertsPanel() {
+  const { data } = useDashboardResource('getAlertsAudit')
+  const alerts = orderAlerts(data?.alerts ?? [])
+  const [top] = alerts
+  const tone = top?.severity === 'CRITICAL' ? 'negative' : top?.severity === 'WARN' ? 'warning' : 'info'
+  return <Panel title="Alerts" right={<Link className="text-link" to="/alerts-audit">{alerts.length > 1 ? `+${alerts.length - 1} more →` : 'Details →'}</Link>}>
+    {top
+      ? <div className="overview-alert">
+          <strong className={tone}>{top.severity}</strong>
+          <div><span>{top.title}</span><small>{top.service} · {top.timestamp}</small></div>
+        </div>
+      : <div className="empty-cell">No active alerts</div>}
+  </Panel>
 }
 
 export function OverviewPage() {
-  const [range, setRange] = useState<ChartRange>('ALL')
   const { data, error, retry } = useDashboardResource('getOverview')
+  // One time range for every chart on the page: presets, From/To or a drag-zoom on any chart.
+  const [range, setRange] = useState<TimeRange>(DEFAULT_DAILY_RANGE)
+  const days = useMemo(() => [...(data?.equityCurve ?? []), ...(data?.liveExpected ?? [])]
+    .map(point => chartDate(point.label)).filter(Number.isFinite), [data])
+  const closeLoop = useMemo(() => (data?.equityCurve ?? [])
+    .map(point => ({ time: chartDate(point.label), clean: point.closeLoop ? point.closeLoop === 'CLEAN' : null }))
+    .filter(row => Number.isFinite(row.time)).sort((a, b) => a.time - b.time), [data])
   if (error) return <DataLoadError title="Overview unavailable" error={error} onRetry={retry}/>
   if (!data) return <div className="page-loading">Loading overview…</div>
 
-  const isReal = data.sourceMode === 'REAL'
-  const readiness: HealthState = data.readiness ?? 'READY'
-  const reconciliation: ReconciliationState = data.reconciliationStatus ?? 'CLEAN'
-  const equityAvailable = data.equityAvailable ?? data.equityCurve.length > 0
-  const liveExpectedAvailable = data.liveExpectedAvailable ?? data.liveExpected.length > 0
-  const checks = data.checks ?? [
-    { label: 'Exchange vs Local', state: 'ALIGNED' as PositionAlignmentState, detail: 'Mock reconciliation state.' },
-    { label: 'Positions', state: 'ALIGNED' as PositionAlignmentState, detail: 'Mock position state.' },
-    { label: 'Balances', state: 'ALIGNED' as PositionAlignmentState, detail: 'Mock balance state.' },
-  ]
+  const hasCloseLoop = closeLoop.some(row => row.clean !== null)
+  const visible = days.length ? dailyWindow(range, Math.min(...days), Math.max(...days)) : { from: 0, to: 1 }
+  const shared = { ...visible, onSelectRange: (from: number, to: number) => setRange({ kind: 'custom', from, to }),
+    onReset: () => setRange(DEFAULT_DAILY_RANGE) }
 
   return <>
     <div className="page-heading">
-      <div>
-        <h1>Overview</h1>
-        <p>{isReal ? 'Verified operational snapshot from canonical read-only sources.' : 'Portfolio performance, system health and trading activity at a glance.'}</p>
-      </div>
-      <div className="overview-range">
-        {isReal && <div className="overview-cycle"><span>REAL DATA</span><strong>{data.canonicalCycle || 'Current snapshot'}</strong></div>}
-        <div className="range" role="group" aria-label="Chart timeframe">{chartRanges.map(value => <button key={value} className={range === value ? 'active' : ''} aria-pressed={range === value} onClick={() => setRange(value)}>{value}</button>)}</div>
-        <small className="muted">Charts only · window ends at each series' latest observation</small>
-      </div>
+      <h1>Overview</h1>
+      <TimeRangePicker presets={DAILY_PRESETS} value={range} onChange={setRange} precision="date"/>
     </div>
 
-    {isReal && <div className="real-source-banner">
-      <strong>STEP 23 · REAL OVERVIEW</strong>
-      <span>{data.sourceNote}</span>
-      {data.sourceUpdatedAt && <small>Durable runtime persisted {data.sourceUpdatedAt}</small>}
-    </div>}
-
-    {data.sourceWarnings && data.sourceWarnings.length > 0 && <div className="callout callout--warn overview-warning-list">
-      <strong>Partial source degradation</strong>
-      {data.sourceWarnings.map((warning, index) => <span key={index}>{warning}</span>)}
-    </div>}
-
-    <section className="stats-grid">
-      {data.stats.map(s => <StatCard key={s.label} metric={s}/>)}
-      <div className={`stat-card readiness readiness--${readinessClass(readiness)}`}>
-        <div>
-          <div className="stat-card__label">System Readiness</div>
-          <div className={`stat-card__value status-text status-text--${readinessClass(readiness)}`}>{readiness}</div>
-          <div className="stat-card__sub">{data.readinessDetail ?? 'All systems operational'}</div>
-        </div>
-        <div className={`readiness-bars readiness-bars--${readinessClass(readiness)}`}>{Array.from({length:6}).map((_,i)=><span key={i}/>)}</div>
-      </div>
+    <section className="overview-stats">
+      {data.stats.map(stat => <div className="overview-stat" key={stat.label}><span>{stat.label}</span><strong className={statTone(stat.label, stat.value)}>{displayAmount(stat.value)}</strong></div>)}
     </section>
 
     <section className="grid-2-1">
-      <Panel title="Equity Curve" right={<span className="muted">{equityAvailable ? 'Source-provided history · USD' : 'Canonical ledger required'}</span>}>
-        {equityAvailable && data.equityCurve.length > 0
-          ? <LineChart key={range} data={data.equityCurve} range={range}/>
-          : <div className="overview-unavailable"><strong>Not available yet</strong><span>No canonical ledger / marked-equity history is wired, so Step 23 does not invent an equity curve.</span></div>}
+      <Panel title="Equity Curve">
+        {data.equityCurve.length > 0
+          ? <LineChart data={data.equityCurve} lines={[BALANCE, EQUITY]} shared={shared}/>
+          : <div className="overview-unavailable"><strong>No history yet</strong></div>}
       </Panel>
-      <Panel title="Live vs Expected Behaviour" right={<Link className="text-link" to="/live-vs-expected">Details →</Link>}>
-        {liveExpectedAvailable && data.liveExpected.length > 0
-          ? <LineChart key={range} data={data.liveExpected} range={range} compact/>
-          : <div className="overview-unavailable overview-unavailable--compact"><strong>Baseline not wired yet</strong><span>Historical baseline comparison is reserved for the Live vs Expected step.</span></div>}
+      <Panel title="Live vs Expected" right={<Link className="text-link" to="/live-vs-expected">Details →</Link>}>
+        {data.liveExpected.length > 0
+          ? <LineChart data={data.liveExpected} lines={[EXPECTED, EQUITY]} compact shared={shared}/>
+          : <div className="overview-unavailable overview-unavailable--compact"><strong>No comparison yet</strong></div>}
       </Panel>
     </section>
 
-    <section className="grid-bottom">
-      <Panel title="Active Positions" right={<Link className="text-link" to="/positions">View all positions →</Link>}>
-        <div className="table-wrap"><table><thead><tr><th>Asset</th><th>Side</th><th>Qty</th><th>Entry</th><th>Mark</th><th>PnL</th><th>Status</th></tr></thead><tbody>
+    {hasCloseLoop && <Panel title="Close loop" className="close-loop-panel">
+      <CloseLoopTimeline times={closeLoop.map(row => row.time)} clean={closeLoop.map(row => row.clean)} {...shared}/>
+    </Panel>}
+
+    <section className="overview-bottom">
+      <Panel title="Active Positions" right={<Link className="text-link" to="/positions">View all →</Link>}>
+        <div className="table-wrap"><table><thead><tr><th>Asset</th><th>Side</th><th>Notional</th><th>PnL</th><th>Status</th></tr></thead><tbody>
           {data.positions.length === 0
-            ? <tr><td colSpan={7} className="empty-cell">No non-zero physical positions in the durable runtime snapshot.</td></tr>
-            : data.positions.map(p=><tr key={p.asset}><td><strong>{p.asset}</strong></td><td className={p.side==='Short'?'negative':'positive'}>{p.side}</td><td>{p.quantityLabel}</td><td>{p.entryPriceLabel}</td><td>{p.currentPriceLabel}</td><td className={pnlClass(p.pnlAvailable, p.pnlUsd)}>{p.pnlUsdLabel}</td><td><StatePill state={p.status}/></td></tr>)}
+            ? <tr><td colSpan={5} className="empty-cell">No open positions</td></tr>
+            : data.positions.map(position => <tr key={position.asset}>
+                <td><strong>{position.asset}</strong></td>
+                <td className={position.side === 'Short' ? 'negative' : 'positive'}>{position.side}</td>
+                <td>{notional(position)}</td>
+                <td className={pnlKnown(position) ? (position.pnlUsd < 0 ? 'negative' : 'positive') : ''}>{pnlKnown(position) ? signedUsd(position.pnlUsd) : '—'}</td>
+                <td><StatePill state={position.status}/></td>
+              </tr>)}
         </tbody></table></div>
       </Panel>
-      <Panel title="Reconciliation / Closed Loop" right={<Link className="text-link" to="/reconciliation">Details →</Link>}>
-        <div className="reconciliation">
-          <div className={`overview-recon overview-recon--${reconciliation.toLowerCase()}`}><div><span>Closed Loop Status</span><strong>{reconciliation}</strong><small>{reconciliationCopy(reconciliation)}</small></div></div>
-          {checks.map(check=><div className="recon-row overview-check" key={check.label}><div><span>{check.label}</span><small>{check.detail}</small></div><StatePill state={check.state}/></div>)}
-          {isReal && <div className="info-box">Read-only evidence only.<small>The dashboard does not publish reconciliation or trading commands.</small></div>}
-        </div>
-      </Panel>
-      <Panel title={isReal ? 'Recent Canonical Observations' : 'Recent Events'} right={<Link className="text-link" to="/alerts-audit">Alerts & Audit →</Link>}>
-        <div className="events">{data.recentEvents.map((e,i)=><div className="event overview-event" key={`${e.time}-${i}`}><span className={`event-dot ${eventTone(e.severity)}`}/><time>{e.time}</time><span className="event__text">{e.event}</span><span className="event__source">{e.source}</span><strong className={e.severity==='CRITICAL'?'negative':e.severity==='WARN'?'warning':'info'}>{e.severity}</strong></div>)}</div>
-      </Panel>
+      <AlertsPanel/>
     </section>
   </>
 }

@@ -17,8 +17,17 @@ rolling input baseline excludes pre-cutover cycles and requires six observations
 Pipeline adds optional `evidenceState` (`OBSERVED`, `PARTIAL`, `PENDING`) and
 `emptyReason`. A missing first decision returns a structured pending response;
 database/decoding/timestamp failures remain errors. Signals can be `UNKNOWN` when
-no explicit entry exists. Missing target entries mean HOLD, not zero/FLAT. Replay
-rows describe retained observations and omit service end-to-end proof.
+no explicit entry exists. Missing target entries mean HOLD, not zero/FLAT. Rows add
+optional `decisionLabel` (ENTER, RESIZE, EXIT, HOLD), `targetLabel` (approved USD,
+"—" on HOLD), `inUniverse`, `signalValue` (aggregated signal in [-1, +1], strategies
+weighted by capital share) and `strategies` (per-strategy capital, share, signal,
+indicator, sized/approved weight and decision); the response adds optional `summary` cards. Replay states
+with a `pipeline` block (latest close decision: liquidity rank, RSI, signal, sized/capped/
+approved weights, rebalance action, target, current position, planned orders) give the
+full lineage (`evidenceState` OBSERVED); older replay states describe retained
+observations only. Replay rows never carry service end-to-end proof. PAPER rows take
+sized/approved weights and the action from the same-cycle risk evaluation; RSI and
+liquidity rank are not persisted there and show "—".
 
 Risk adds optional `evidenceKind` (`DURABLE_DECISION`, `REPLAY_SNAPSHOT`, `PENDING`),
 `decisionDetail` and `policies`. Policy fields expose persisted strategy allocation,
@@ -55,16 +64,16 @@ All following endpoints use GET and require a valid session.
 | Endpoint | Read model |
 | --- | --- |
 | `/api/shell-status` | Global observed source/data/trading status with blockers and warnings. |
-| `/api/overview` | Runtime account/fill aggregates and timestamped canonical valuation. |
+| `/api/overview` | Runtime account/fill aggregates and timestamped canonical valuation. Stats: Total Equity, Cash, (Unrealized PnL), Leverage (gross position value / equity). `equityCurve[]`: `{label, equity, balance?, closeLoop?}` (balance = equity minus open-position PnL; closeLoop = that day's reconciliation state). `liveExpected[]`: `{label, equity, expected?}` (fast backtest; PAPER from the daily comparison, replay from `expected_equity.csv`). |
 | `/api/positions` | Durable quantities/orders/targets and explicit valuation provenance. |
-| `/api/reconciliation` | Local runtime state compared with retained exchange evidence. |
+| `/api/reconciliation` | Our books compared with the exchange, per asset: `rows[]` `{asset, localQty, exchangeQty, deltaQty (exchange - ours), pendingQty (signed open-order remainder), status}`, `openOrders[]`, `issues[]`, overall `status`. PAPER/LIVE: durable runtime state vs the latest retained exchange snapshot (PENDING when that snapshot is older). Simulation: the reconciler's local ledger (sum of fill position deltas) vs the MOCK account; overall verdict and issues from the C++ reconciler. |
 | `/api/pipeline` | Cycle-aligned Strategy -> Risk -> Planner -> Execution lineage/proof. |
-| `/api/execution` | Current durable orders and bounded fills. |
-| `/api/risk` | Approved decision and exact persisted signals/account inputs. |
+| `/api/execution` | Current durable orders and bounded fills; optional `slippageHistory` (`{label, bps, fills}` per day, notional-weighted, positive = adverse) when the expected price is known. |
+| `/api/risk` | Approved decision and exact persisted signals/account inputs; optional page view `summary` (cards with `tone`), `history` (`{label, leverage?, drawdown}`), `strategyLimits` and `exposures`. |
 | `/api/market-data` | Canonical ranking/OHLCV, indicator reconstruction and aligned strategy signals. |
 | `/api/infrastructure` | Bounded PostgreSQL/NATS/file diagnostics; optional fresh host telemetry adds CPU/RAM/disk, container health and `telemetryObservedAt`. `processRunning` is liveness, not `ready`; stale/missing measurements stay unknown. |
-| `/api/alerts-audit` | Current derived alerts, watchdog lifecycle, audit and acknowledgement evidence. |
-| `/api/live-vs-expected` | Versioned market/strategy-input anomaly projection with deferred coverage explicit. |
+| `/api/alerts-audit` | Current derived alerts, watchdog lifecycle, audit and acknowledgement evidence. Simulation: notices for route safety, reconciliation, leverage (>1.5x warn, >2.5x critical), drawdown (<-10% warn, <-25% critical), rejected orders and manual-target state, each with the date the condition started; never stops trading. |
+| `/api/live-vs-expected` | `paperComparison` (equity vs fast-backtest expected equity per day, and PAPER positions vs expected) is what the page shows; the anomaly projection fields remain for compatibility. |
 | `/api/manual-control` | Current capabilities/reference target and preview information. |
 
 Additional authenticated GET diagnostics:
@@ -72,6 +81,7 @@ Additional authenticated GET diagnostics:
 | Endpoint | Meaning |
 | --- | --- |
 | `/api/diagnostics` | API resource/timeout/read diagnostics. |
+| `/api/infrastructure/history?range=1h\|6h\|24h\|7d` or `?from=…&to=…` (RFC 3339, last seven days) | Host CPU (% of host capacity), RAM (MiB) and disk (GiB) over time with per-container CPU/RAM, read from `history.jsonl` of `deploy/chain/monitor.py` (`DASHBOARD_HOST_HISTORY_FILE`). Averaged into at most 720 buckets; absent values stay absent; `stale` when the newest row is older than two minutes; `available: false` with a reason when not configured. |
 | `/api/source-status` | Bounded real source reachability; independent of process liveness. |
 | `/api/runtime-state-summary` | Read-only runtime snapshot summary. |
 | `/api/integration-catalog` | Source ownership/planning metadata; some labels retain historical integration stages. |
@@ -100,6 +110,33 @@ evaluates admission and appends an isolated durable operator-intent audit.
 It always reports `submitted=false` and `routeEnabled=false`.
 An admission/audit success is not an order submission. Private authentication, manual
 risk transformation, trading-control delivery and real order lifecycle remain deferred.
+
+Replay simulation provider only (`DASHBOARD_DATA_PROVIDER=simulation`):
+
+- `preview` accepts `asset,weight_pct` (also `;` + decimal comma and a UTF-8 BOM, as
+  exported by Excel). `CASH` is optional (the remainder stays in cash, negative when
+  levered), weights must respect the portfolio-risk limits published by the replay
+  (`maxGrossPct`, `maxAssetPct`; rejected, never clipped) and every asset must be in
+  `routableAssets`. `previewRows[].action` is BUY/SELL/CLOSE/HOLD; held assets missing
+  from the file are shown as CLOSE.
+- `route` re-validates the CSV, requires the previewed `requestHash` and writes a
+  `REPLAY_MANUAL_V1` request (`action=SET`, `target=ASSET,FRACTION`) atomically into
+  `<simulation dir>/requests`. Status `QUEUED` means queued, not executed: the replay
+  executes the newest request at its next price (open for overnight requests, close for
+  daytime ones); the end-of-day decision then returns to the strategy targets.
+- `GET /api/manual-control` adds `acceptingRequests`, `maxGrossPct`, `maxAssetPct` and
+  `requests[{id, stage, detail, orders, filled}]` (newest first; stage QUEUED, EXECUTED,
+  AT_EXCHANGE, FILLED, RESYNCED or FAILED).
+- The replay appends `result` (EXECUTED/REJECTED/SUPERSEDED), `detail`, `replay_date` and
+  `orders=<first>-<last>` to each request and moves it to `<simulation dir>/processed`;
+  `/api/alerts-audit` lists those as the audit log.
+
+`GET /api/reports/closed-positions.csv[?year=YYYY]` (any authenticated role) downloads
+closed positions: asset, side, opened_at, closed_at, quantity, entry_price, exit_price,
+cost_basis, proceeds, gross_pnl, fees, funding, net_pnl (USD; year = UTC close year).
+503 when the trade history does not fit one read. `/api/positions` adds
+`closedPositions[]`, `closedAvailable`, `fundingAvailable` and per open position
+`openedAt`, `feesUsd`, `fundingUsd`, `netPnlUsd`, `feesAvailable`, `fundingAvailable`.
 
 `POST /api/alerts-audit/acknowledge` requires OPERATOR and CSRF, with JSON:
 

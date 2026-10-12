@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -35,6 +36,10 @@ using namespace MockVenue;
 using namespace VenueContracts::V1;
 
 namespace {
+
+// Daily equity points kept in the dashboard state (display only, not economics).
+// Large enough for the whole 2020-2025 history (~2100 days) with room to spare.
+constexpr std::size_t MAX_DASHBOARD_EQUITY_POINTS = 4000;
 
 struct Args {
     std::filesystem::path csv;
@@ -74,9 +79,98 @@ struct DayData {
     ExecutionReferencePrices open_prices;
 };
 
+// One dashboard point per replayed day (display only; never feeds trading).
 struct EquityPoint {
     std::string label;
     double equity = 0.0;
+    double balance = 0.0;          // equity without open-position PnL
+    double gross = 0.0;            // sum of |position value| (leverage = gross / equity)
+    std::string close_loop;        // reconciliation state that day: CLEAN, PENDING, BLOCKED
+};
+
+// One strategy's view of one asset: its signal, its own indicator and its risk evaluation.
+// Weights are fractions of that strategy's capital.
+struct PipelineStrategyLine {
+    StrategyID strategy_id = 0U;
+    std::string name;
+    double capital = 0.0;           // strategy reference capital (USD)
+    double share = 0.0;             // capital / total capital of all strategies
+    double signal = 0.0;            // [-1, +1]
+    std::string detail;             // strategy-specific indicator, e.g. "RSI(7) 84.2 · #3 in universe"
+    std::string rule;               // its entry/exit rule, e.g. "Enter RSI(7) > 80, exit < 70"
+    double sized_weight = 0.0;      // sizer output
+    double capped_weight = 0.0;     // after the per-asset cap
+    double approved_weight = 0.0;   // after the gross scale
+    double max_asset = 0.0;
+    double max_gross = 0.0;
+    double gross_after_asset_cap = 0.0;
+    double gross_scale = 1.0;
+    std::string sizer;
+    std::string action = "HOLD";    // rebalance policy: HOLD, FLAT or TARGET
+};
+
+// One asset of the latest close decision, stage by stage (display only; never feeds trading).
+// Account-level figures combine the strategies by capital share.
+struct PipelineAsset {
+    std::string asset;
+    double close = 0.0;
+    double liquidity = std::numeric_limits<double>::quiet_NaN();   // SMA(volume, 25)
+    unsigned int liquidity_rank = 0U;                               // 0 = not rankable
+    bool in_universe = false;                                       // inside the liquidity top N
+    std::vector<PipelineStrategyLine> strategies;
+    double signal = 0.0;            // aggregated: sum of share * strategy signal, in [-1, +1]
+    double sized_weight = 0.0;      // sum of share * strategy weight (fraction of total capital)
+    double capped_weight = 0.0;
+    double approved_weight = 0.0;
+    std::string action = "HOLD";    // combined rebalance action: HOLD, FLAT or TARGET
+    bool has_target = false;        // HOLD emits no new target
+    double target_usd = 0.0;
+    double current_qty = 0.0;       // strategy position at decision time
+    double current_usd = 0.0;
+    std::vector<PlannedNotionalOrder> orders;
+};
+
+struct PipelineView {
+    bool available = false;
+    std::string date;
+    Timestamp decision_timestamp = 0U;
+    double total_capital = 0.0;     // sum of the strategies' reference capital
+    double approved_gross = 0.0;    // sum of share * strategy approved gross
+    std::size_t strategy_count = 0U;
+    std::size_t observed_assets = 0U;
+    std::size_t universe_size = 0U;
+    std::size_t active_signals = 0U;
+    std::size_t cancel_orders = 0U;
+    std::vector<PipelineAsset> assets;
+};
+
+// Operator manual rebalance (Manual Control page). dashboard-api queues confirmed
+// requests as files in <dashboard state dir>/requests. The replay executes the newest one
+// at the next price it has (the open for overnight requests, the close for daytime
+// ones); the end-of-day decision then re-syncs the account to the strategy targets.
+struct ManualControlView {
+    bool accepting = false;                  // replay running and picking up requests
+    double max_gross_leverage = 0.0;         // risk limits a manual target must respect
+    double max_asset_weight = 0.0;
+    bool resync_pending = false;             // manual positions held until the next close
+    std::string last_executed;               // "<date> open|close"
+    std::map<std::string, double> weights;   // last executed target, fraction of equity
+    std::string last_request_id;
+    std::string last_actor;
+    std::string last_status;                 // EXECUTED, REJECTED or SUPERSEDED
+    std::string last_detail;
+    std::string last_order_ids;              // "first-last" local order ids, empty if none
+};
+
+// What the dashboard keeps of the latest close decision and the manual target.
+struct DashboardDecision {
+    std::map<std::string, double> targets;   // approved exposure per asset (USD)
+    PipelineView pipeline;
+    ManualControlView manual;
+    // ReplayRuntime::routeSafe(): venue/recovery faults block new orders. Unlike
+    // canRouteNewSubmit() it does not require a reconciliation after the latest event,
+    // because the runtime reconciles right before every submit.
+    bool route_safe = true;
 };
 
 std::vector<std::string> splitCsv(const std::string& line)
@@ -354,26 +448,34 @@ std::map<std::string,DayData> loadDays(
     return days;
 }
 
+// Pure RSI replay configuration. The dashboard pipeline view reads the same values.
+const IndicatorSpec LIQUIDITY_SPEC{IndicatorKind::SMA,PriceField::Volume,25U,0U};
+const IndicatorSpec RSI_SPEC{IndicatorKind::RSI,PriceField::Close,7U,0U};
+constexpr unsigned int LIQUIDITY_TOP_N = 20U;
+constexpr unsigned int MAX_ACTIVE_SIGNALS = 10U;
+constexpr double RSI_ENTRY = 80.0;
+constexpr double RSI_EXIT = 70.0;
+
 StrategySignalEngine makeStrategyEngine()
 {
     StrategySignalPortfolio strategies;
     strategies.emplace_back(
         1U,
         std::make_unique<StrategyPureRSI>(
-            10U,
+            MAX_ACTIVE_SIGNALS,
             std::make_unique<TopNLiquidityUniverse>(
-                IndicatorSpec{IndicatorKind::SMA,PriceField::Volume,25U,0U},
-                20U,
+                LIQUIDITY_SPEC,
+                LIQUIDITY_TOP_N,
                 true,
                 true),
             std::make_unique<IndicatorRanker>(
-                IndicatorSpec{IndicatorKind::RSI,PriceField::Close,7U,0U},
+                RSI_SPEC,
                 true,
                 true),
             1000000U,
-            7U,
-            80.0,
-            70.0));
+            RSI_SPEC.length,
+            RSI_ENTRY,
+            RSI_EXIT));
     return StrategySignalEngine(std::move(strategies));
 }
 
@@ -388,6 +490,184 @@ PortfolioRiskEngine makeRiskEngine()
         RiskConstraints(1.50,1.50),
         std::make_unique<EntryExitOnlyRebalancePolicy>());
     return PortfolioRiskEngine(std::move(configs));
+}
+
+const char* rebalanceActionText(RebalanceAction action)
+{
+    switch (action) {
+    case RebalanceAction::Hold: return "HOLD";
+    case RebalanceAction::Flat: return "FLAT";
+    case RebalanceAction::TargetWeight: return "TARGET";
+    }
+    return "UNKNOWN";
+}
+
+// Dashboard Pipeline view of the decision just taken at close(T). Per asset it keeps each
+// strategy's signal, own indicator and risk evaluation, plus the account-level combination
+// by capital share, the DecisionBatch target and the pending plan. Universe membership and
+// ranks come from the same selector/ranker classes the strategy uses. Display only:
+// nothing here feeds back into trading.
+PipelineView dashboardPipeline(
+    const ReplayRuntime& replay,
+    const StrategySignalEngine& strategy,
+    const MarketSliceSnapshot& slice,
+    const std::string& date)
+{
+    PipelineView view;
+    if (!replay.hasPendingPlan() || !replay.lastSignalBatch() || !replay.lastDecisionBatch() ||
+        replay.lastRiskEvaluations().empty())
+        return view;
+
+    const Timestamp ts = slice.timestamp;
+    const auto& indicators = strategy.indicators();
+    const auto& evaluations = replay.lastRiskEvaluations();
+    const auto& plan = replay.pendingPlan();
+
+    view.available = true;
+    view.date = date;
+    view.decision_timestamp = ts;
+    view.cancel_orders = plan.cancel_order_ids.size();
+    view.strategy_count = evaluations.size();
+    for (const auto& evaluation : evaluations)
+        view.total_capital += evaluation.reference_capital;
+    // Capital share of each strategy: how much its signal and weights count in the account.
+    auto share = [&](const PortfolioRiskEvaluation& evaluation) {
+        return view.total_capital > 0.0 ? evaluation.reference_capital / view.total_capital
+                                        : 1.0 / static_cast<double>(evaluations.size());
+    };
+    for (const auto& evaluation : evaluations)
+        view.approved_gross += share(evaluation) *
+            evaluation.constraints.gross_after_asset_cap * evaluation.constraints.gross_scale;
+
+    CoinBarMap bars;
+    for (const auto& b : slice.bars) {
+        BarData bar;
+        bar.open = b.bar.open;
+        bar.high = b.bar.high;
+        bar.low = b.bar.low;
+        bar.close = b.bar.close;
+        bar.volume = b.bar.volume;
+        bars[b.coin] = bar;
+    }
+    view.observed_assets = bars.size();
+
+    std::map<std::string, unsigned int> liquidity_rank;
+    for (const auto& ranked : IndicatorRanker(LIQUIDITY_SPEC, true, true).rank(bars, ts, indicators))
+        liquidity_rank[ranked.coin] = ranked.rank;
+    const CoinBarMap universe =
+        TopNLiquidityUniverse(LIQUIDITY_SPEC, LIQUIDITY_TOP_N, true, true).select(bars, ts, indicators);
+    std::map<std::string, unsigned int> rsi_rank;
+    for (const auto& ranked : IndicatorRanker(RSI_SPEC, true, true).rank(universe, ts, indicators))
+        rsi_rank[ranked.coin] = ranked.rank;
+    view.universe_size = universe.size();
+
+    std::map<StrategyID, const StrategySignalIntent*> intents;
+    std::set<std::string> signalled;
+    for (const auto& intent : replay.lastSignalBatch()->strategies) {
+        intents[intent.strategy_id] = &intent;
+        for (const auto& [coin, value] : intent.signals)
+            if (std::abs(value) > 1e-12) {
+                signalled.insert(coin);
+                ++view.active_signals;
+            }
+    }
+
+    std::map<std::string, double> current;
+    for (const auto& [strategy_id, positions] : replay.strategyPositions())
+        for (const auto& [coin, quantity] : positions.values())
+            current[coin] += quantity;
+
+    std::map<std::string, double> targets;
+    for (const auto& intent : replay.lastDecisionBatch()->strategies)
+        for (const auto& [coin, usd] : intent.target_notional_usd)
+            targets[coin] += usd;
+
+    std::map<std::string, std::vector<PlannedNotionalOrder>> orders;
+    for (const auto& order : plan.submit_orders)
+        orders[order.coin].push_back(order);
+
+    // Rows: the universe plus anything with a signal, a position, a decision or an order.
+    std::set<std::string> names;
+    for (const auto& [coin, bar] : universe) names.insert(coin);
+    names.insert(signalled.begin(), signalled.end());
+    for (const auto& [coin, quantity] : current) if (quantity != 0.0) names.insert(coin);
+    for (const auto& evaluation : evaluations)
+        for (const auto& [coin, decision] : evaluation.rebalance_decisions)
+            if (decision.action != RebalanceAction::Hold) names.insert(coin);
+    for (const auto& [coin, list] : orders) names.insert(coin);
+
+    for (const auto& coin : names) {
+        PipelineAsset row;
+        row.asset = coin;
+        const auto bar = bars.find(coin);
+        row.close = bar == bars.end() ? 0.0 : bar->second.close;
+        if (indicators.has(coin, ts, LIQUIDITY_SPEC))
+            row.liquidity = indicators.value(coin, ts, LIQUIDITY_SPEC);
+        if (const auto it = liquidity_rank.find(coin); it != liquidity_rank.end()) row.liquidity_rank = it->second;
+        row.in_universe = universe.count(coin) > 0U;
+
+        bool any_target = false, any_flat = false;
+        for (const auto& evaluation : evaluations) {
+            PipelineStrategyLine line;
+            line.strategy_id = evaluation.strategy_id;
+            line.name = evaluation.strategy_name;
+            line.capital = evaluation.reference_capital;
+            line.share = share(evaluation);
+            if (const auto it = intents.find(evaluation.strategy_id); it != intents.end()) {
+                const auto signal = it->second->signals.find(coin);
+                line.signal = signal == it->second->signals.end() ? 0.0 : signal->second;
+            }
+            // Strategy-specific indicator; only Pure RSI exists today.
+            if (line.name == "Pure_RSI") {
+                std::ostringstream detail;
+                detail << "RSI(" << RSI_SPEC.length << ") ";
+                if (indicators.has(coin, ts, RSI_SPEC))
+                    detail << std::fixed << std::setprecision(1) << indicators.value(coin, ts, RSI_SPEC);
+                else
+                    detail << "n/a";
+                if (const auto it = rsi_rank.find(coin); it != rsi_rank.end())
+                    detail << " · #" << it->second << " by RSI in its universe";
+                else
+                    detail << " · outside its universe";
+                line.detail = detail.str();
+                std::ostringstream rule;
+                rule << "Top " << LIQUIDITY_TOP_N << " by SMA(volume, " << LIQUIDITY_SPEC.length
+                     << "), enter RSI(" << RSI_SPEC.length << ") > " << RSI_ENTRY
+                     << ", exit < " << RSI_EXIT << ", max " << MAX_ACTIVE_SIGNALS << " signals";
+                line.rule = rule.str();
+            }
+            line.sizer = portfolioSizerKindName(evaluation.sizer_kind);
+            line.max_asset = evaluation.max_asset_weight;
+            line.max_gross = evaluation.max_gross_leverage;
+            line.gross_after_asset_cap = evaluation.constraints.gross_after_asset_cap;
+            line.gross_scale = evaluation.constraints.gross_scale;
+            if (evaluation.sizing_available) {
+                line.sized_weight = evaluation.sized_weights.get(coin);
+                line.capped_weight = evaluation.constraints.asset_capped_weights.get(coin);
+                line.approved_weight = evaluation.approved_weights.get(coin);
+            }
+            if (const auto it = evaluation.rebalance_decisions.find(coin); it != evaluation.rebalance_decisions.end())
+                line.action = rebalanceActionText(it->second.action);
+            any_target = any_target || line.action == "TARGET";
+            any_flat = any_flat || line.action == "FLAT";
+
+            row.signal += line.share * line.signal;
+            row.sized_weight += line.share * line.sized_weight;
+            row.capped_weight += line.share * line.capped_weight;
+            row.approved_weight += line.share * line.approved_weight;
+            row.strategies.push_back(std::move(line));
+        }
+        row.action = any_target ? "TARGET" : any_flat ? "FLAT" : "HOLD";
+        if (const auto it = targets.find(coin); it != targets.end()) {
+            row.has_target = true;
+            row.target_usd = it->second;
+        }
+        row.current_qty = current[coin];
+        row.current_usd = row.current_qty * row.close;
+        if (const auto it = orders.find(coin); it != orders.end()) row.orders = it->second;
+        view.assets.push_back(std::move(row));
+    }
+    return view;
 }
 
 std::string reconciliationState(ReconciliationState state)
@@ -690,12 +970,7 @@ double quantityUnitsToDouble(const std::string& asset, std::int64_t units)
     const auto* rules = entry == nullptr ? nullptr : rulesForExact(*entry);
     if (rules == nullptr) return 0.0;
 
-    long double factor = 1.0L;
-    for (std::size_t i = 0; i < rules->size_scale; ++i)
-        factor *= 10.0L;
-
-    return static_cast<double>(
-        static_cast<long double>(units) / factor);
+    return signedScaledToDouble(units, rules->size_scale);
 }
 
 double moneyUnitsToDouble(std::int64_t units)
@@ -709,6 +984,91 @@ double moneyUnitsToDoubleU(std::uint64_t units)
         static_cast<double>(kMockMoneyFactor);
 }
 
+// JSON number, or null when the value is not available (NaN).
+std::string jsonNumber(double value)
+{
+    if (!std::isfinite(value))
+        return "null";
+    std::ostringstream out;
+    out << std::setprecision(15) << value;
+    return out.str();
+}
+
+std::string pipelineJson(const PipelineView& view)
+{
+    if (!view.available)
+        return "null";
+    std::ostringstream out;
+    out << std::setprecision(15);
+    out << "{\"date\":\"" << jsonEscape(view.date)
+        << "\",\"decisionTimestamp\":" << view.decision_timestamp
+        << ",\"liquidityLength\":" << LIQUIDITY_SPEC.length
+        << ",\"liquidityTopN\":" << LIQUIDITY_TOP_N
+        << ",\"totalCapital\":" << view.total_capital
+        << ",\"approvedGross\":" << view.approved_gross
+        << ",\"strategyCount\":" << view.strategy_count
+        << ",\"observedAssets\":" << view.observed_assets
+        << ",\"universeSize\":" << view.universe_size
+        << ",\"activeSignals\":" << view.active_signals
+        << ",\"cancelOrders\":" << view.cancel_orders
+        << ",\"assets\":[";
+    for (std::size_t i = 0; i < view.assets.size(); ++i) {
+        const auto& a = view.assets[i];
+        if (i) out << ',';
+        out << "{\"asset\":\"" << jsonEscape(a.asset)
+            << "\",\"close\":" << a.close
+            << ",\"liquidity\":" << jsonNumber(a.liquidity)
+            << ",\"liquidityRank\":" << a.liquidity_rank
+            << ",\"inUniverse\":" << (a.in_universe ? "true" : "false")
+            << ",\"strategies\":[";
+        for (std::size_t j = 0; j < a.strategies.size(); ++j) {
+            const auto& s = a.strategies[j];
+            if (j) out << ',';
+            out << "{\"strategyId\":" << s.strategy_id
+                << ",\"name\":\"" << jsonEscape(s.name)
+                << "\",\"capital\":" << s.capital
+                << ",\"share\":" << s.share
+                << ",\"signal\":" << s.signal
+                << ",\"detail\":\"" << jsonEscape(s.detail)
+                << "\",\"rule\":\"" << jsonEscape(s.rule)
+                << "\",\"sizer\":\"" << jsonEscape(s.sizer)
+                << "\",\"sizedWeight\":" << s.sized_weight
+                << ",\"cappedWeight\":" << s.capped_weight
+                << ",\"approvedWeight\":" << s.approved_weight
+                << ",\"maxAsset\":" << s.max_asset
+                << ",\"maxGross\":" << s.max_gross
+                << ",\"grossAfterAssetCap\":" << s.gross_after_asset_cap
+                << ",\"grossScale\":" << s.gross_scale
+                << ",\"action\":\"" << s.action
+                << "\"}";
+        }
+        out << "]"
+            << ",\"signal\":" << a.signal
+            << ",\"sizedWeight\":" << a.sized_weight
+            << ",\"cappedWeight\":" << a.capped_weight
+            << ",\"approvedWeight\":" << a.approved_weight
+            << ",\"action\":\"" << a.action
+            << "\",\"targetUsd\":" << (a.has_target ? jsonNumber(a.target_usd) : "null")
+            << ",\"currentQty\":" << a.current_qty
+            << ",\"currentUsd\":" << a.current_usd
+            << ",\"orders\":[";
+        for (std::size_t j = 0; j < a.orders.size(); ++j) {
+            const auto& o = a.orders[j];
+            if (j) out << ',';
+            out << "{\"orderId\":\"" << o.order_id
+                << "\",\"side\":\"" << (o.side == OrderSide::Buy ? "BUY" : "SELL")
+                << "\",\"notionalUsd\":" << o.notional_usd
+                << ",\"deltaUsd\":" << o.delta_notional_usd
+                << ",\"pendingUsd\":" << o.pending_notional_usd
+                << ",\"referenceClose\":" << o.reference_close
+                << "}";
+        }
+        out << "]}";
+    }
+    out << "]}";
+    return out.str();
+}
+
 std::string dashboardStateJson(
     MockExchange& adapter,
     const Args& args,
@@ -720,6 +1080,7 @@ std::string dashboardStateJson(
     int rows_processed,
     const std::vector<MarketBarSnapshot>& market,
     const std::vector<EquityPoint>& equity_history,
+    const DashboardDecision& decision,
     std::uint64_t generation)
 {
     const auto account =
@@ -771,7 +1132,7 @@ std::string dashboardStateJson(
     out << "\"environment\":\"MOCK\",\n";
     out << "\"replaySpeed\":" << args.speed << ",\n";
     out << "\"routeSafe\":"
-        << (adapter.canRouteNewSubmit() ? "true" : "false") << ",\n";
+        << (decision.route_safe ? "true" : "false") << ",\n";
 
     out << "\"reconciliation\":{\"state\":\""
         << reconciliationState(report.state)
@@ -903,9 +1264,25 @@ std::string dashboardStateJson(
         out << "{\"label\":\""
             << jsonEscape(equity_history[i].label)
             << "\",\"equity\":" << equity_history[i].equity
-            << "}";
+            << ",\"balance\":" << equity_history[i].balance
+            << ",\"gross\":" << equity_history[i].gross
+            << ",\"closeLoop\":\"" << equity_history[i].close_loop
+            << "\"}";
     }
     out << "],\n";
+
+    // Latest approved target exposure per asset (USD) from the last close decision.
+    out << "\"targets\":[";
+    bool first_target = true;
+    for (const auto& [asset, usd] : decision.targets) {
+        if (!first_target) out << ',';
+        first_target = false;
+        out << "{\"asset\":\"" << jsonEscape(asset) << "\",\"usd\":" << usd << "}";
+    }
+    out << "],\n";
+
+    // Stage-by-stage lineage of the latest close decision (Pipeline page).
+    out << "\"pipeline\":" << pipelineJson(decision.pipeline) << ",\n";
 
     out << "\"ledger\":{\"valid\":"
         << (local.ledger.valid ? "true" : "false")
@@ -943,20 +1320,40 @@ std::string dashboardStateJson(
     }
     out << "]},\n";
 
+    // Assets a manual target may use now: priced in this phase and explicitly MOCK-routable.
     out << "\"routableAssets\":[";
-    for (std::size_t i = 0; i < sorted_market.size(); ++i) {
-        if (i) out << ',';
-        out << "\"" << jsonEscape(sorted_market[i].coin) << "\"";
+    bool first_routable = true;
+    for (const auto& bar : sorted_market) {
+        const auto* entry = findByCanonicalAssetExact(bar.coin);
+        const auto* rules = entry == nullptr ? nullptr : rulesForExact(*entry);
+        if (entry == nullptr || !entry->enabled || rules == nullptr || !rules->valid())
+            continue;
+        if (!first_routable) out << ',';
+        first_routable = false;
+        out << "\"" << jsonEscape(bar.coin) << "\"";
     }
     out << "],\n";
 
-    out << "\"manual\":{\"ready\":false,"
-           "\"blocker\":\"RESEARCH_REPLAY_READ_ONLY\","
-           "\"decisionTimestamp\":0,"
-           "\"executionTimestamp\":0,"
-           "\"lastCorrelationId\":\"\","
-           "\"lastStatus\":\"DISABLED\","
-           "\"lastDetail\":\"canonical research replay does not accept manual commands\"},\n";
+    const ManualControlView& manual = decision.manual;
+    out << "\"manual\":{\"ready\":" << (manual.accepting ? "true" : "false")
+        << ",\"blocker\":\"" << (manual.accepting ? "" : "REPLAY_NOT_RUNNING")
+        << "\",\"maxGrossLeverage\":" << jsonNumber(manual.max_gross_leverage)
+        << ",\"maxAssetWeight\":" << jsonNumber(manual.max_asset_weight)
+        << ",\"resyncPending\":" << (manual.resync_pending ? "true" : "false")
+        << ",\"lastExecuted\":\"" << jsonEscape(manual.last_executed)
+        << "\",\"lastOrderIds\":\"" << jsonEscape(manual.last_order_ids)
+        << "\",\"weights\":[";
+    bool first_weight = true;
+    for (const auto& [asset, weight] : manual.weights) {
+        if (!first_weight) out << ',';
+        first_weight = false;
+        out << "{\"asset\":\"" << jsonEscape(asset) << "\",\"weight\":" << jsonNumber(weight) << "}";
+    }
+    out << "],\"decisionTimestamp\":0,\"executionTimestamp\":0"
+        << ",\"lastCorrelationId\":\"" << jsonEscape(manual.last_request_id)
+        << "\",\"lastActor\":\"" << jsonEscape(manual.last_actor)
+        << "\",\"lastStatus\":\"" << jsonEscape(manual.last_status)
+        << "\",\"lastDetail\":\"" << jsonEscape(manual.last_detail) << "\"},\n";
 
     out << "\"economicFingerprint\":\""
         << jsonEscape(
@@ -974,6 +1371,29 @@ std::string dashboardStateJson(
     return out.str();
 }
 
+// Day point for the dashboard charts: equity, balance (equity minus unrealized PnL),
+// gross position value (for leverage) and whether local and venue state reconcile
+// (the "close loop") at that time.
+EquityPoint dashboardDayPoint(MockExchange& adapter, const std::string& date, Timestamp ts)
+{
+    const auto account =
+        adapter.chaos().runtime().account().accountSnapshot(ts);
+    double unrealized = 0.0;
+    double gross = 0.0;
+    for (const auto& position : account.positions) {
+        unrealized += position.unrealized_pnl;
+        gross += std::abs(position.signed_quantity * position.mark_price);
+    }
+
+    MockReconciliation ledger_builder(
+        adapter.chaos().runtime().account().config().fee_ppm);
+    const auto report = ledger_builder.compare(
+        ledger_builder.buildLocalExpected(adapter.chaos().runtime().stream()),
+        adapter.chaos().runtime().stateSnapshot(ts, std::numeric_limits<std::size_t>::max()));
+
+    return {date, account.equity, account.equity - unrealized, gross, reconciliationState(report.state)};
+}
+
 void emitDashboardState(
     MockExchange& adapter,
     const Args& args,
@@ -985,16 +1405,15 @@ void emitDashboardState(
     int rows_processed,
     const std::vector<MarketBarSnapshot>& market,
     std::vector<EquityPoint>& history,
+    const DashboardDecision& decision,
     std::uint64_t& generation,
     bool append_equity)
 {
     ++generation;
 
     if (append_equity) {
-        const auto account =
-            adapter.chaos().runtime().account().accountSnapshot(ts);
-        history.push_back({date, account.equity});
-        if (history.size() > 80U)
+        history.push_back(dashboardDayPoint(adapter, date, ts));
+        if (history.size() > MAX_DASHBOARD_EQUITY_POINTS)
             history.erase(history.begin());
     }
 
@@ -1003,7 +1422,7 @@ void emitDashboardState(
         dashboardStateJson(
             adapter, args, phase, date, ts,
             day_index, day_count, rows_processed,
-            market, history, generation));
+            market, history, decision, generation));
 
     LG_DEBUG("Dashboard state {} published: phase {}, date {}", generation, phase, date);
     LG_DEBUG("Dashboard state {} timestamp {}", generation, ts);
@@ -1011,6 +1430,180 @@ void emitDashboardState(
     if (args.ui_delay_ms > 0)
         std::this_thread::sleep_for(
             std::chrono::milliseconds(args.ui_delay_ms));
+}
+
+// One confirmed Manual Control request, written by dashboard-api:
+//   REPLAY_MANUAL_V1
+//   request_id=... / actor=... / request_hash=... / action=SET
+//   target=ASSET,FRACTION   (one line per asset; the rest stays in cash)
+struct ManualRequest {
+    std::string request_id;
+    std::string actor;
+    std::string request_hash;
+    std::map<std::string, double> weights;
+};
+
+ManualRequest readManualRequest(const std::filesystem::path& path)
+{
+    std::ifstream in(path);
+    if (!in)
+        throw std::runtime_error("unable to open manual request");
+    std::string line;
+    if (!std::getline(in, line) || line != "REPLAY_MANUAL_V1")
+        throw std::runtime_error("unsupported manual request header");
+
+    ManualRequest request;
+    std::string action;
+    while (std::getline(in, line)) {
+        if (line.empty())
+            continue;
+        const auto eq = line.find('=');
+        if (eq == std::string::npos)
+            throw std::runtime_error("malformed manual request line");
+        const std::string key = line.substr(0, eq);
+        const std::string value = line.substr(eq + 1);
+        if (key == "request_id") request.request_id = value;
+        else if (key == "actor") request.actor = value;
+        else if (key == "request_hash") request.request_hash = value;
+        else if (key == "action") action = value;
+        else if (key == "target") {
+            const auto comma = value.find(',');
+            if (comma == std::string::npos)
+                throw std::runtime_error("malformed manual target line");
+            const std::string asset = value.substr(0, comma);
+            if (!request.weights.emplace(asset, std::stod(value.substr(comma + 1))).second)
+                throw std::runtime_error("duplicate manual target asset " + asset);
+        } else
+            throw std::runtime_error("unknown manual request field " + key);
+    }
+    if (request.request_id.empty())
+        throw std::runtime_error("manual request has no request_id");
+    if (action != "SET")
+        throw std::runtime_error("manual request action must be SET");
+    return request;
+}
+
+// Record the outcome in the request file and move it to processed/ (the audit log).
+void finishManualRequest(
+    const std::filesystem::path& path,
+    const std::filesystem::path& processed_dir,
+    const ManualControlView& view,
+    const std::string& date)
+{
+    {
+        std::ofstream outcome(path, std::ios::app);
+        outcome << "result=" << view.last_status << "\n"
+                << "detail=" << view.last_detail << "\n"
+                << "replay_date=" << date << "\n"
+                << "orders=" << view.last_order_ids << "\n";
+    }
+    std::filesystem::rename(path, processed_dir / path.filename());
+}
+
+// Execute the newest queued manual request at `execution_timestamp` and `prices`
+// (the open of `day` for requests that arrived overnight, a point before its close for
+// requests that arrived during the day). Older queued requests are superseded: only
+// the operator's latest portfolio matters. Returns true when orders were routed, so
+// the caller matches them at the same prices.
+bool executeManualRequests(
+    const std::filesystem::path& state_dir,
+    const DayData& day,
+    const std::string& moment,                 // "open" or "close", for the record
+    Timestamp execution_timestamp,
+    const ExecutionReferencePrices& prices,
+    ReplayRuntime& replay,
+    ManualControlView& view)
+{
+    const auto requests_dir = state_dir / "requests";
+    const auto processed_dir = state_dir / "processed";
+    if (!std::filesystem::exists(requests_dir))
+        return false;
+
+    std::vector<std::pair<std::filesystem::file_time_type, std::filesystem::path>> files;
+    for (const auto& entry : std::filesystem::directory_iterator(requests_dir))
+        if (entry.is_regular_file() && entry.path().extension() == ".request")
+            files.emplace_back(entry.last_write_time(), entry.path());
+    if (files.empty())
+        return false;
+    std::sort(files.begin(), files.end());
+    std::filesystem::create_directories(processed_dir);
+
+    for (std::size_t i = 0; i + 1 < files.size(); ++i) {
+        view.last_request_id = files[i].second.stem().string();
+        view.last_status = "SUPERSEDED";
+        view.last_detail = "A newer manual request replaced it before execution";
+        view.last_order_ids.clear();
+        finishManualRequest(files[i].second, processed_dir, view, day.date);
+    }
+
+    const auto& path = files.back().second;
+    ManualRequest request;
+    std::string rejection;
+    ReplayRuntime::ManualRebalanceResult result;
+    const OrderID first_order = replay.nextOrderId();
+    try {
+        request = readManualRequest(path);
+        for (const auto& [asset, weight] : request.weights) {
+            (void)weight;
+            const auto* entry = findByCanonicalAssetExact(asset);
+            const auto* rules = entry == nullptr ? nullptr : rulesForExact(*entry);
+            if (entry == nullptr || !entry->enabled || rules == nullptr || !rules->valid())
+                throw std::runtime_error(asset + " has no explicit MOCK route");
+        }
+        result = replay.rebalanceToManualTarget(request.weights, execution_timestamp, prices);
+    } catch (const std::exception& error) {
+        rejection = error.what();
+    }
+
+    view.last_request_id = request.request_id.empty() ? path.stem().string() : request.request_id;
+    view.last_actor = request.actor;
+    view.last_order_ids.clear();
+    if (!rejection.empty()) {
+        view.last_status = "REJECTED";
+        view.last_detail = rejection;
+        LG_WARN("Manual request {} rejected: {}", view.last_request_id, rejection);
+    } else {
+        view.weights = request.weights;
+        view.resync_pending = replay.targetResyncPending();
+        view.last_executed = day.date + " " + moment;
+        view.last_status = "EXECUTED";
+        view.last_detail = std::to_string(result.submits) + " orders at the " + day.date + " " + moment +
+            (result.discarded_strategy_plan ? " (replaced the pending strategy plan)" : "") +
+            "; strategies re-sync at the " + day.date + " close";
+        if (result.submits > 0U)
+            view.last_order_ids = std::to_string(first_order) + "-" + std::to_string(replay.nextOrderId() - 1U);
+        LG_INFO("Manual request {} by {} executed at the {} {}: {} orders",
+                request.request_id, request.actor, day.date, moment, result.submits);
+    }
+    finishManualRequest(path, processed_dir, view, day.date);
+    return rejection.empty() && result.submits > 0U;
+}
+
+// Fill manual orders at exactly `prices` (one flat synthetic bar per asset at
+// `timestamp`); daily data has no intraday path, so these are the execution prices.
+void matchManualAtPrices(
+    MockExchange& adapter,
+    const DayData& day,
+    Timestamp timestamp,
+    const ExecutionReferencePrices& prices)
+{
+    for (const auto& value : day.slice.bars) {
+        if (!prices.contains(value.coin))
+            continue;
+        MarketBarObservation observation;
+        observation.canonical_asset = value.coin;
+        observation.event_time = timestamp;
+        const double price = prices.get(value.coin);
+        observation.bar.open = price;
+        observation.bar.high = price;
+        observation.bar.low = price;
+        observation.bar.close = price;
+        observation.bar.volume = value.bar.volume;
+        const auto result = adapter.processMarketBar(observation);
+        if (result.status == MockVenue::ChaosStatus::VenueUnavailable ||
+            result.status == MockVenue::ChaosStatus::OutOfOrderRejected)
+            throw std::runtime_error("manual rebalance matching was rejected");
+    }
 }
 
 bool inRange(
@@ -1095,6 +1688,10 @@ int main(int argc, char** argv)
             std::filesystem::remove(
                 args.dashboard_state_dir / "state.json.tmp",
                 ignored);
+            // Manual requests belong to one run; never apply a previous run's queue.
+            std::filesystem::remove_all(args.dashboard_state_dir / "requests", ignored);
+            std::filesystem::remove_all(args.dashboard_state_dir / "processed", ignored);
+            std::filesystem::create_directories(args.dashboard_state_dir / "requests");
         }
 
         MockExchange adapter(
@@ -1114,6 +1711,15 @@ int main(int argc, char** argv)
 
         std::unique_ptr<TimeHandler> release_clock;
         std::vector<EquityPoint> equity_history;
+        // Dashboard only: the latest close decision (kept until the next one).
+        DashboardDecision dashboard_decision;
+        if (args.mode == "dashboard") {
+            replay.enableDecisionDiagnostics();
+            dashboard_decision.manual.accepting = true;
+            const auto limits = replay.manualLimits();
+            dashboard_decision.manual.max_gross_leverage = limits.max_gross_leverage;
+            dashboard_decision.manual.max_asset_weight = limits.max_asset_weight;
+        }
         std::uint64_t generation = 0U;
         int day_index = 0;
         int rows_processed = 0;
@@ -1190,13 +1796,9 @@ int main(int argc, char** argv)
                         args.visual_start,
                         args.visual_end)) {
                     ++scratch_generation;
-                    const auto scratch_account =
-                        scratch_adapter.chaos().runtime().
-                            account().accountSnapshot(
-                                scratch_day.close_timestamp);
-                    scratch_equity_history.push_back(
-                        {scratch_day.date, scratch_account.equity});
-                    if (scratch_equity_history.size() > 80U)
+                    scratch_equity_history.push_back(dashboardDayPoint(
+                        scratch_adapter, scratch_day.date, scratch_day.close_timestamp));
+                    if (scratch_equity_history.size() > MAX_DASHBOARD_EQUITY_POINTS)
                         scratch_equity_history.erase(
                             scratch_equity_history.begin());
                 }
@@ -1268,9 +1870,22 @@ int main(int argc, char** argv)
                 release_clock->sleepUntil(
                     day.open_time);
 
-            replay.onExecutionOpen(
-                day.open_timestamp,
-                day.open_prices);
+            // A manual request that arrived overnight replaces the pending strategy plan
+            // and executes at this open instead.
+            const bool manual_at_open =
+                args.mode == "dashboard" &&
+                executeManualRequests(
+                    args.dashboard_state_dir,
+                    day,
+                    "open",
+                    day.open_timestamp,
+                    day.open_prices,
+                    replay,
+                    dashboard_decision.manual);
+            if (!manual_at_open)
+                replay.onExecutionOpen(
+                    day.open_timestamp,
+                    day.open_prices);
 
             if (args.profile == "realtest-parity")
                 matchRealTestParityAtExecutionOpen(
@@ -1282,6 +1897,7 @@ int main(int argc, char** argv)
                     day.date,
                     args.visual_start,
                     args.visual_end)) {
+                dashboard_decision.route_safe = replay.routeSafe();
                 emitDashboardState(
                     adapter,
                     args,
@@ -1293,6 +1909,7 @@ int main(int argc, char** argv)
                     rows_processed,
                     openPhaseBars(day),
                     equity_history,
+                    dashboard_decision,
                     generation,
                     false);
             }
@@ -1301,7 +1918,32 @@ int main(int argc, char** argv)
                 release_clock->sleepUntil(
                     day.close_time);
 
+            // A manual request that arrived during the day executes at the first price
+            // after it, the close, just before the end-of-day decision (which then
+            // re-syncs to the strategy targets for the next open).
+            if (args.mode == "dashboard") {
+                ExecutionReferencePrices closes;
+                for (const auto& bar : day.slice.bars)
+                    closes.set(bar.coin, bar.bar.close);
+                const Timestamp manual_timestamp = day.close_timestamp - 4U; // YYYYMMDD5: between open and close
+                if (executeManualRequests(
+                        args.dashboard_state_dir,
+                        day,
+                        "close",
+                        manual_timestamp,
+                        closes,
+                        replay,
+                        dashboard_decision.manual))
+                    matchManualAtPrices(adapter, day, manual_timestamp, closes);
+            }
+
             replay.onClosedSlice(day.slice);
+            dashboard_decision.manual.resync_pending = replay.targetResyncPending();
+            if (args.mode == "dashboard" && replay.hasPendingPlan()) {
+                const auto& exposures = replay.pendingPlan().global_target.values();
+                dashboard_decision.targets = std::map<std::string, double>(exposures.begin(), exposures.end());
+                dashboard_decision.pipeline = dashboardPipeline(replay, strategy, day.slice, day.date);
+            }
             rows_processed +=
                 static_cast<int>(
                     day.slice.bars.size());
@@ -1311,6 +1953,7 @@ int main(int argc, char** argv)
                     day.date,
                     args.visual_start,
                     args.visual_end)) {
+                dashboard_decision.route_safe = replay.routeSafe();
                 emitDashboardState(
                     adapter,
                     args,
@@ -1322,6 +1965,7 @@ int main(int argc, char** argv)
                     rows_processed,
                     day.slice.bars,
                     equity_history,
+                    dashboard_decision,
                     generation,
                     true);
             }
@@ -1426,6 +2070,9 @@ int main(int argc, char** argv)
             !evidence.full_run_fingerprint.empty();
 
         if (args.mode == "dashboard") {
+            // The replay stops here: no further manual requests are applied.
+            dashboard_decision.manual.accepting = false;
+            dashboard_decision.route_safe = replay.routeSafe();
             emitDashboardState(
                 adapter,
                 args,
@@ -1437,6 +2084,7 @@ int main(int argc, char** argv)
                 rows_processed,
                 last.slice.bars,
                 equity_history,
+                dashboard_decision,
                 generation,
                 false);
         }

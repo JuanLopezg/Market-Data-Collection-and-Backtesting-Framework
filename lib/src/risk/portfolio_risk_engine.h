@@ -81,6 +81,8 @@ public:
         std::vector<PortfolioRiskEvaluation>* evaluations = nullptr
     );
 
+    const std::vector<PortfolioRiskStrategyConfig>& strategies() const { return strategies_; }
+
     Timestamp lastTimestamp() const { return last_timestamp_; }
     void restoreLastTimestamp(Timestamp timestamp);
 };

@@ -1,0 +1,18 @@
+[Unit]
+Description=algoTrading chain (all containers in /chain/compose.yml)
+After=docker.service algotrading-logs.service
+Requires=docker.service
+Wants=algotrading-logs.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/chain
+# "down" removes containers only; everything durable is under /data.
+ExecStart=/chain/algo up
+ExecStop=/chain/algo down
+TimeoutStartSec=300
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

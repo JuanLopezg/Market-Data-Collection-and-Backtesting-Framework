@@ -3,6 +3,9 @@
 
 #include "recovery.h"
 
+#include <iomanip>
+#include <sstream>
+
 // Implementation for durable MOCK snapshots, user-stream backfill and recovery.
 //
 // The header exposes the recovery contract and state surfaces. Persistence, replay,
@@ -410,9 +413,17 @@ void MockRecovery::wireHandlers()
                         "conflicting canonical fill during Step53");
                 }
                 if (result ==
-                    FillApplyResult::InvalidRejected)
-                    throw std::runtime_error(
-                        "matcher emitted fill rejected by Step52 account");
+                    FillApplyResult::InvalidRejected) {
+                    const auto& fill = std::get<Fill>(event);
+                    std::ostringstream detail;
+                    detail << std::setprecision(17)
+                           << "matcher emitted fill rejected by Step52 account: "
+                           << fill.instrument.market.canonical_asset
+                           << " order " << fill.local_order_id
+                           << " quantity " << fill.quantity
+                           << " price " << fill.price;
+                    throw std::runtime_error(detail.str());
+                }
                 return;
             }
             capture(event);

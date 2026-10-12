@@ -108,14 +108,27 @@ void ReplayRuntime::onClosedSlice(const MarketSliceSnapshot& slice)
 
     const ::AccountSnapshot risk_account = portfolioRiskAccountView(slice.timestamp);
 
-    const DecisionBatch decisions = portfolio_risk_.onSignals(
+    // Risk evaluations are observation-only; the re-sync after a manual rebalance needs
+    // the approved weights, so they are collected then too.
+    const bool collect_evaluations = collect_decision_diagnostics_ || resync_targets_after_manual_;
+    const DecisionBatch approved = portfolio_risk_.onSignals(
             signals,
             rolling_market_.marketData(),
-            risk_account);
-
-    ++evidence_.decision_batches;
+            risk_account,
+            collect_evaluations ? &last_risk_evaluations_ : nullptr);
 
     const ExecutionReferencePrices closes = rolling_market_.closePrices(slice.timestamp);
+
+    // First close after a manual rebalance: bring every strategy back to its targets.
+    const DecisionBatch decisions = resync_targets_after_manual_
+        ? resyncToApprovedTargets(approved, last_risk_evaluations_, closes)
+        : approved;
+    resync_targets_after_manual_ = false;
+
+    if (collect_decision_diagnostics_)
+        last_decision_batch_ = decisions;
+
+    ++evidence_.decision_batches;
 
     ++planning_revision_;
     if (planning_revision_ == 0U)
@@ -227,6 +240,211 @@ bool ReplayRuntime::routeSafe() const
            mock_adapter_.chaos().runtime().recoverySafe();
 }
 
+void ReplayRuntime::enableDecisionDiagnostics()
+{
+    collect_decision_diagnostics_ = true;
+}
+
+const std::optional<StrategyIntentBatch>& ReplayRuntime::lastSignalBatch() const
+{
+    return last_signal_batch_;
+}
+
+const std::optional<DecisionBatch>& ReplayRuntime::lastDecisionBatch() const
+{
+    return last_decision_batch_;
+}
+
+const std::vector<PortfolioRiskEvaluation>& ReplayRuntime::lastRiskEvaluations() const
+{
+    return last_risk_evaluations_;
+}
+
+// A manual weight applies to every strategy (each on its own reference capital), so it
+// must respect every strategy's risk constraints: the account limits are the minimum.
+ReplayRuntime::ManualLimits ReplayRuntime::manualLimits() const
+{
+    ManualLimits limits;
+    bool first = true;
+    for (const auto& strategy : portfolio_risk_.strategies()) {
+        const double gross = strategy.risk_constraints.maxGrossLeverage();
+        const double asset = strategy.risk_constraints.maxAssetWeight();
+        limits.max_gross_leverage = first ? gross : std::min(limits.max_gross_leverage, gross);
+        limits.max_asset_weight = first ? asset : std::min(limits.max_asset_weight, asset);
+        first = false;
+    }
+    return limits;
+}
+
+namespace {
+
+// Per-strategy decisions that move holdings to `weights` of the reference capital:
+// TARGET for every positive weight, FLAT for held assets without one. Held assets with
+// no price are left untouched (HOLD).
+void setTargetDecisions(
+    StrategyDecisionIntent& intent,
+    const std::map<Coin, double>& weights,
+    const VirtualPositionState* held,
+    const ExecutionReferencePrices& prices)
+{
+    intent.decisions.clear();
+    intent.target_notional_usd.clear();
+    std::map<Coin, double> assets = weights;
+    if (held != nullptr)
+        for (const auto& [asset, quantity] : held->values())
+            if (quantity != 0.0)
+                assets.emplace(asset, 0.0);
+
+    for (const auto& [asset, weight] : assets) {
+        if (!prices.contains(asset))
+            continue;
+        if (weight > 0.0) {
+            intent.decisions.emplace(asset, RebalanceDecision::targetWeight(weight));
+            intent.target_notional_usd.emplace(asset, intent.reference_capital * weight);
+        } else {
+            intent.decisions.emplace(asset, RebalanceDecision::flat());
+            intent.target_notional_usd.emplace(asset, 0.0);
+        }
+    }
+}
+
+} // namespace
+
+ReplayRuntime::ManualRebalanceResult ReplayRuntime::rebalanceToManualTarget(
+    const std::map<Coin, double>& weights,
+    Timestamp execution_timestamp,
+    const ExecutionReferencePrices& prices)
+{
+    if (execution_timestamp == 0U ||
+        execution_timestamp <= last_execution_timestamp_ ||
+        execution_timestamp <= last_closed_timestamp_)
+        throw std::logic_error("Manual rebalance must follow the latest open and close");
+
+    const ManualLimits limits = manualLimits();
+    double gross = 0.0;
+    for (const auto& [asset, weight] : weights) {
+        if (asset.empty() || !std::isfinite(weight) || weight < 0.0)
+            throw std::invalid_argument("Manual weight must be finite and non-negative: " + asset);
+        if (weight > limits.max_asset_weight + 1e-9)
+            throw std::invalid_argument("Manual weight of " + asset + " exceeds the risk asset limit");
+        if (!prices.contains(asset))
+            throw std::invalid_argument("Manual target has no price for " + asset);
+        gross += weight;
+    }
+    if (gross > limits.max_gross_leverage + 1e-9)
+        throw std::invalid_argument("Manual target exceeds the risk gross-leverage limit");
+
+    // Account equity at the execution prices (same account view as portfolio risk).
+    double equity = 0.0;
+    if (resolve_realtest_target_at_execution_open_) {
+        equity = parity_cash_;
+        for (const auto& [strategy_id, positions] : strategy_positions_) {
+            (void)strategy_id;
+            for (const auto& [asset, quantity] : positions.values()) {
+                if (quantity == 0.0)
+                    continue;
+                if (!prices.contains(asset))
+                    throw std::invalid_argument("Manual rebalance has no price for held " + asset);
+                equity += quantity * prices.get(asset);
+            }
+        }
+    } else {
+        equity = mock_adapter_.chaos().runtime().account().accountSnapshot(execution_timestamp).equity;
+    }
+    if (!std::isfinite(equity) || equity <= 0.0)
+        throw std::invalid_argument("Manual rebalance requires positive account equity");
+
+    // Checked before anything changes, so a rejected request leaves no trace.
+    const auto reconciliation = mock_adapter_.reconcile(execution_timestamp);
+    if (!reconciliation.clean() || !mock_adapter_.canRouteNewSubmit())
+        throw std::invalid_argument("Manual rebalance blocked: reconciliation is not clean");
+
+    ManualRebalanceResult result;
+    if (pending_plan_) {
+        pending_plan_.reset();
+        pending_decision_timestamp_ = 0U;
+        result.discarded_strategy_plan = true;
+    }
+
+    DecisionBatch batch;
+    batch.decision_timestamp = execution_timestamp;
+    for (const auto& strategy : portfolio_risk_.strategies()) {
+        StrategyDecisionIntent intent;
+        intent.strategy_id = strategy.strategy_id;
+        intent.decision_timestamp = execution_timestamp;
+        intent.reference_capital = equity * strategy.allocation_weight;
+        const auto held = strategy_positions_.find(strategy.strategy_id);
+        setTargetDecisions(intent, weights, held == strategy_positions_.end() ? nullptr : &held->second, prices);
+        batch.strategies.push_back(std::move(intent));
+    }
+
+    ++planning_revision_;
+    if (planning_revision_ == 0U)
+        ++planning_revision_;
+    const NotionalOrderPlannerResult plan = order_planner_.createPlan(
+        strategy_ids_,
+        strategy_positions_,
+        planning_order_manager_,
+        execution_timestamp,
+        planning_revision_,
+        prices,
+        batch,
+        next_order_id_);
+    next_order_id_ = plan.next_order_id;
+    result.submits = plan.submit_orders.size();
+    result.cancels = plan.cancel_order_ids.size();
+
+    // Same venue path as a scheduled open; evidence counters stay strategy-cycle only.
+    if (!plan.cancel_order_ids.empty())
+        routeCancelBatch(plan, execution_timestamp);
+    if (!plan.submit_orders.empty()) {
+        // Cancels add venue events; like a scheduled open, submit only on a fresh clean view.
+        const auto fresh = plan.cancel_order_ids.empty()
+            ? reconciliation
+            : mock_adapter_.reconcile(execution_timestamp);
+        if (!fresh.clean() || !mock_adapter_.canRouteNewSubmit()) {
+            route_safe_ = false;
+            rejectPlannedSubmitsLocally(plan, execution_timestamp, "MANUAL_RECONCILIATION_GATE_BLOCKED");
+        } else {
+            routeSubmitBatch(plan, execution_timestamp, prices);
+        }
+    }
+
+    last_execution_timestamp_ = execution_timestamp;
+    resync_targets_after_manual_ = true;
+    return result;
+}
+
+bool ReplayRuntime::targetResyncPending() const
+{
+    return resync_targets_after_manual_;
+}
+
+// Strategy decisions with every non-HOLD kept, and HOLD positions moved to the
+// risk-approved weight. Used once after a manual rebalance so the account returns to
+// the strategy targets at the end-of-day decision. A strategy without an evaluation
+// (sizing unavailable) keeps its normal decisions.
+DecisionBatch ReplayRuntime::resyncToApprovedTargets(
+    const DecisionBatch& approved,
+    const std::vector<PortfolioRiskEvaluation>& evaluations,
+    const ExecutionReferencePrices& closes) const
+{
+    DecisionBatch resync = approved;
+    for (StrategyDecisionIntent& intent : resync.strategies) {
+        const auto evaluation = std::find_if(evaluations.begin(), evaluations.end(),
+            [&](const PortfolioRiskEvaluation& value) { return value.strategy_id == intent.strategy_id; });
+        if (evaluation == evaluations.end() || !evaluation->sizing_available)
+            continue;
+        std::map<Coin, double> weights;
+        for (const auto& [asset, weight] : evaluation->approved_weights.values())
+            if (weight > 0.0)
+                weights.emplace(asset, weight);
+        const auto held = strategy_positions_.find(intent.strategy_id);
+        setTargetDecisions(intent, weights, held == strategy_positions_.end() ? nullptr : &held->second, closes);
+    }
+    return resync;
+}
+
 ReplayEvidence ReplayRuntime::finalizeEvidence(Timestamp snapshot_time)
 {
     const auto reconciliation = mock_adapter_.reconcile(snapshot_time);
@@ -288,6 +506,8 @@ ReplayResumeState ReplayRuntime::snapshotResumeState() const
             "Replay resume checkpoint requires no fill waiting at the execution edge");
     if (!last_signal_batch_.has_value() || last_closed_timestamp_ == 0U)
         throw std::logic_error("Replay resume checkpoint requires at least one completed close");
+    if (resync_targets_after_manual_)
+        throw std::logic_error("Replay resume checkpoint does not carry a pending manual re-sync");
 
     ReplayResumeState state;
     state.rolling_market = rolling_market_;
@@ -355,13 +575,10 @@ std::uint64_t ReplayRuntime::fillIdHash(const std::string& native_fill_id)
     return hash == 0U ? 1U : hash;
 }
 
+// Grid units -> the double MOCK reads back as the same units (single IEEE rounding).
 double ReplayRuntime::unitsToDouble(std::uint64_t units, std::size_t scale)
 {
-    long double factor = 1.0L;
-    for (std::size_t i = 0U; i < scale; ++i)
-        factor *= 10.0L;
-
-    return static_cast<double>(static_cast<long double>(units) / factor);
+    return MockVenue::unsignedScaledToDouble(units, scale);
 }
 
 // Preserve the historical double division path used by exact decimal prices.
