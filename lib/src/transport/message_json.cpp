@@ -47,7 +47,7 @@ json executionOrderToJson(const ExecutionOrder& order)
 {
     if (order.entry_stop_price != 0.0 || order.protective_stop_price != 0.0 || order.parent_order_id != 0)
         throw std::invalid_argument("Service wire contract does not support stop entries");
-    return {
+    json result = {
         {"order_id", order.order_id},
         {"strategy_id", order.strategy_id},
         {"created_at", order.created_at},
@@ -56,6 +56,9 @@ json executionOrderToJson(const ExecutionOrder& order)
         {"side", static_cast<int>(order.side)},
         {"quantity", order.quantity}
     };
+    if (order.reference_price > 0.0)
+        result["reference_price"] = order.reference_price;
+    return result;
 }
 
 
@@ -63,7 +66,7 @@ ExecutionOrder executionOrderFromJson(const json& value)
 {
     if (value.value("entry_stop_price", 0.0) != 0.0 || value.value("protective_stop_price", 0.0) != 0.0 || value.value("parent_order_id", OrderID{0}) != 0)
         throw std::invalid_argument("Service wire contract does not support stop entries");
-    return ExecutionOrder(
+    ExecutionOrder order(
         value.at("order_id").get<OrderID>(),
         value.at("strategy_id").get<StrategyID>(),
         value.at("created_at").get<Timestamp>(),
@@ -72,6 +75,8 @@ ExecutionOrder executionOrderFromJson(const json& value)
         static_cast<OrderSide>(value.at("side").get<int>()),
         value.at("quantity").get<double>()
     );
+    order.reference_price = value.value("reference_price", 0.0);
+    return order;
 }
 
 

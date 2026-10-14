@@ -157,6 +157,8 @@ QuantityOrderPlannerResult QuantityOrderPlanner::createPlan(
         result.next_order_id
     );
     for (auto& order : result.execution_plan.orders_to_submit) {
+        if (prices.contains(order.coin))
+            order.reference_price = prices.get(order.coin);
         for (const auto& [id, tracked] : orderManager.orders()) {
             if (tracked.request.parent_order_id != 0 && tracked.isOpen() && !tracked.cancel_requested &&
                 tracked.request.strategy_id == order.strategy_id && tracked.request.coin == order.coin)

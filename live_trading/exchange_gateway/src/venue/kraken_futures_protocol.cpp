@@ -266,6 +266,7 @@ int KrakenFuturesProtocol::cost(Endpoint endpoint) const
     switch (endpoint) {
         case Endpoint::Permissions:    return 1; // Not listed in the budget table; counted conservatively.
         case Endpoint::Instruments:    return 0; // Public.
+        case Endpoint::Tickers:        return 0; // Public.
         case Endpoint::Accounts:       return 2;
         case Endpoint::Positions:      return 2;
         case Endpoint::OpenOrders:     return 2;
@@ -446,6 +447,35 @@ std::vector<Market> KrakenFuturesProtocol::parseMarkets(const HttpResponse& resp
     if (markets.empty())
         throw ProtocolError(endpoint + ": no Multi-M perpetuals listed");
     return markets;
+}
+
+
+HttpRequest KrakenFuturesProtocol::tickersRequest()
+{
+    HttpRequest request;
+    request.method = "GET";
+    request.url = host_ + API_PREFIX + API_PATH + "tickers";
+    request.endpoint = "tickers";
+    request.headers = {{"Accept", "application/json"}};
+    return request;
+}
+
+
+std::map<std::string, double> KrakenFuturesProtocol::parseMarkPrices(const HttpResponse& response) const
+{
+    const std::string endpoint = "tickers";
+    const Json body = successBody(response, endpoint);
+    std::map<std::string, double> prices;
+    for (const Json& ticker : rows(body, "tickers", endpoint)) {
+        const std::string symbol = optionalText(ticker, "symbol");
+        // Suspended contracts and rows without a mark price are left out: no price, no order.
+        if (symbol.rfind("PF_", 0) != 0 || ticker.value("suspended", false) || !ticker.contains("markPrice"))
+            continue;
+        const double mark = number(ticker, "markPrice", endpoint);
+        if (mark > 0.0)
+            prices[symbol] = mark;
+    }
+    return prices;
 }
 
 

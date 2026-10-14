@@ -54,6 +54,20 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual([e['transition'] for e in self.events()], ['OPENED', 'RESOLVED', 'OPENED'])
         self.assertEqual(len({e['eventId'] for e in self.events()}), 3)
 
+    def test_retention_prunes_old_samples_but_keeps_alerts_and_days(self):
+        self.monitor.close()
+        self.monitor = AccountAlertMonitor(self.directory, RELATIVE_POLICY, scope=FIXTURE_SCOPE, retention_days=2)
+        self.observe()
+        self.clock += 3 * 86400  # three days later
+        self.observe()
+        samples = self.monitor.db.execute('SELECT count(*) FROM samples').fetchone()[0]
+        days = self.monitor.db.execute('SELECT count(*) FROM portfolio_days').fetchone()[0]
+        self.assertEqual(samples, 1)  # the three-day-old raw sample is gone
+        self.assertEqual(days, 2)     # per-day portfolio snapshots stay
+        self.assertEqual(len(self.events()), 1)  # the active warning is not re-sent
+        with self.assertRaises(ValueError):
+            AccountAlertMonitor(self.directory, RELATIVE_POLICY, scope=FIXTURE_SCOPE, retention_days=1)
+
     def test_restart_keeps_active_warning_without_duplicate(self):
         self.observe()
         self.monitor.close()
@@ -167,7 +181,7 @@ class MonitorTests(unittest.TestCase):
         self.monitor.observe(bundle, self.clock, market)
         self.assertEqual(self.events()[-1]['transition'], 'RESOLVED')
 
-    @unittest.skipUnless(os.environ.get('KRAKEN_MONITOR_DOCKER_TEST') == '1', 'optional local Go notifier contract acceptance')
+    @unittest.skipUnless(os.environ.get('KRAKEN_MONITOR_DOCKER_TEST') == '1', 'optional Go notifier contract acceptance (image: KRAKEN_MONITOR_DOCKER_IMAGE, default the chain dash-api image)')
     def test_existing_notifier_contract_and_restart(self):
         # TEST_FILE only, network disabled and no credential file passed to Docker.
         with tempfile.TemporaryDirectory(dir=ROOT / 'storage', prefix='kraken-alert-contract-') as location:
@@ -193,7 +207,8 @@ class MonitorTests(unittest.TestCase):
                     '-e', 'DASHBOARD_NOTIFIER_SINK=TEST_FILE',
                     '-e', 'DASHBOARD_ALERT_STORE_DIR=/source',
                     '-e', 'DASHBOARD_NOTIFIER_INTERVAL=1s',
-                    '--entrypoint', '/dashboard-alert-notifier', 'algotrading-telegram-api')
+                    '--entrypoint', '/dashboard-alert-notifier',
+                    os.environ.get('KRAKEN_MONITOR_DOCKER_IMAGE', 'algotrading-dash-api:chain'))
                 wait_delivered(1)
                 docker('restart', name)
                 wait_delivered(1)

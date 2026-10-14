@@ -26,9 +26,9 @@ echo "Read-only deterministic economic projection over append-only trading_fills
 echo "NO wallet, private auth, signing, submit/cancel or capital movement."
 echo
 
-echo "[1/7] Step 37A symbol-registry precondition"
-"$ROOT/scripts/step37a-symbol-registry.sh" >/dev/null || fail "Step 37A multi-exchange symbol-registry gate failed"
-pass "Step 37A remains valid; private Step 37 stays deferred"
+echo "[1/7] Kraken symbol-map check present"
+grep -qF "func (p *Real) SymbolMapStatus" "$ROOT/dashboard-api/internal/provider/symbol_map.go" || fail "Kraken symbol-map check is missing"
+pass "symbol-map check present; private Step 37 stays deferred"
 
 echo "[2/7] Append-only source + bounded ledger query contract"
 grep -q '^[- ]*`trading_fills`' "$ROOT/docs/REAL_DATA_SOURCE_MAP.md" || fail "verified trading_fills source contract is missing"

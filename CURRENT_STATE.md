@@ -1,6 +1,222 @@
 # Current state
 
-Last synchronized: 2026-10-12. Current source and test output take precedence.
+Last synchronized: 2026-10-13. Current source and test output take precedence.
+
+## VPS PAPER switched to volatility targeting (2026-10-13, 21:27-21:31 UTC)
+
+User request: vol targeting instead of equal weight. Strategy unchanged
+(`pure_rsi_paper_activity.json`, RSI 50/40); portfolio now `pure_rsi_vol_target.json`
+(20% target volatility, 5-day covariance, 365 periods, threshold rebalance 2%, 1.5x limits).
+
+- **Correction:** I had told the user the risk service would accept a new portfolio file.
+  It does not: its PostgreSQL checkpoint is bound to the config text and a change stops it.
+  New option `--adopt-portfolio-config yes|no` (compose: `RISK_ADOPT_PORTFOLIO_CONFIG`,
+  default no) replaces the stored identity once, with an ALERT; earlier decisions keep their
+  sizing. Runbook in deploy/chain/README.md "Changing the portfolio sizer".
+- **Comparison:** `research/src/common/paper_baseline.cpp` now builds the sizer/rebalance
+  exactly like the risk service (equal weight or volatility target, entry/exit-only or
+  threshold), gives the volatility sizer the preceding closes (lookback + 1 + 5 days, as the
+  risk service loads them) and can start from a seeded PAPER state (`start`: cash, positions,
+  strategy signals/weights/virtual positions). `deploy/chain/comparison.py` reads
+  `STRATEGY_FILE`/`PORTFOLIO_FILE`, archives the previous study on a configuration change and
+  seeds the new one, keeping the earlier rows in comparison.json. It also had a latent bug:
+  after any chain restart the snapshot lists `orders`/`processed_fill_ids` come back in another
+  order, which it took as a changed account, so it had been stuck since today's restarts;
+  lists are now compared sorted. `validation/paper_comparison_test.py`: 6 tests pass.
+- Validation: build OK; 12 component tests; step59 PASS with the accepted fingerprint.
+- **VPS:** release `/releases/20261013_212613-94df131-dirty` (comparison.py updated in place
+  afterwards with the two fixes), backup `/backups/20261013_212743.tar.gz` and
+  `/backups/chain.env.before-voltarget`; adopted with `RISK_ADOPT_PORTFOLIO_CONFIG=yes`
+  (risk log: ALERT "Portfolio config changed on purpose", "config pure_rsi_vol_target.json,
+  11 days of market history"), then back to `no` and risk restarted. Comparison archived the
+  equal-weight study in `data/comparison/archive-27cf6e6266b2/`, new study seeded at decision
+  2026-10-12 with 4 earlier rows; profile "PureRSI(7): entry > 50, exit < 40 · vol target
+  20% · virtual USD". 13 containers up, no ERROR, account unchanged (45,535.43 USD, 5
+  positions). Expected transient WARN until the 00:00 UTC decision: the dashboard Risk read
+  model rejects the 2026-10-12 diagnostics because they carry the previous configuration
+  identity. At the next close vol targeting resizes the open positions (threshold 2%).
+- **Cleanup:** VPS keeps releases `193943` (rollback) and `212613`, backups (old stack
+  archive, latest chain backup, chain.env before the switch), only the 6 chain images (390 MB
+  dangling layers pruned), 47 GB free. Local: 70 obsolete images (old step/profile/paper/
+  activity builds), all unused Docker volumes (named `algotrading-paper_*`/`dashboard_*`
+  archived first in `storage/backups/local_docker_volumes_20261013.tar.gz`), unused networks,
+  build cache older than 24 h and three older local releases removed.
+
+## VPS: old stack removed, current work deployed (2026-10-13, 19:30-19:46 UTC)
+
+User-authorized (roadmap step 8 plus deploying the new work).
+
+- **Backup first:** `/backups/old_paper_stack_20261013.tar.gz` (186 MB, root-only, tar
+  verified) holds every old Docker volume, `/opt/algotrading`, `/etc/algotrading`,
+  `/var/log/algotrading` and the old `/home/ubuntu` scripts. The migration report
+  (`/reports/migration-20261013_153532.json`) had already confirmed that everything the
+  chain uses was copied with equal checksums.
+- **Removed:** 63 stopped `algotrading-paper*` containers (4 projects), 30 named + 9
+  orphan anonymous volumes, 11 old images (paper/activity/before-quote-volume, golang build
+  images), `/opt/algotrading`, `/var/log/algotrading`, `/etc/algotrading`, old files in
+  `/home/ubuntu`, the units `algotrading-paper`, `-paper-comparison`, `-paper-monitor` and the
+  failed transient `algotrading-quote-clean/-final`, and release `20261013_153218`. Free
+  disk 44 -> 47 GB. Kept: chain containers/volumes/images, apparmor `rsyslog.d/algotrading`
+  (used by the chain receiver), releases `164959` (rollback) and `193943` (current).
+- **Deployed:** release `/releases/20261013_193943-94df131-dirty`. `algo release` now packs
+  the working tree for a dirty release (tracked + new non-ignored files; checked: no `.env`,
+  no `storage/`), so the installed chain files match the images. `algo install`, all units
+  copied, `algotrading-kraken` enabled (inactive: no key file), chain backup
+  `/backups/20261013_194143.tar.gz`, `algo up`.
+- **Checked after restart:** 13 containers up; no ERROR/ALERT line in any service; execution
+  transition errors still 600 (all from the afternoon migration); sim-exchange snapshot
+  unchanged (45,535.43 USD, 5 positions, 0 open orders); the 30 Hyperliquid registry alerts
+  resolved by themselves.
+- **Live finding fixed the same evening:** the first real symbol-map check raised a CRITICAL
+  wrong-scale alert for ARCUSDT. ARC is the same token on both venues (Binance mark 0.0332,
+  Kraken 0.0330) but fell ~45% today, and the dashboard compares yesterday's close with the
+  current mark. The dashboard tolerance is now 5x (scale errors are >= 1000x); the gateway
+  keeps 1.5x (prices minutes apart). New test with the ARC numbers. Only the dash-api image was
+  rebuilt (`dash-api-symbolmap-tolerance.tar` in the release folder, checksum verified) and
+  dash-api/watchdog/notifier recreated; the alert resolved. Active alerts now: 10 INFO (top-50
+  assets Kraken does not list), no WARN/CRITICAL.
+- Pending: first daily cycle at 00:00 UTC 2026-10-14 (now with vol targeting, see above); Kraken monitor waits for
+  `/secrets/kraken_readonly.env`.
+
+## Kraken account monitor and Telegram in the chain (2026-10-13, local)
+
+The warning-only Kraken account monitor (`live_trading/kraken_account_monitor.py`, read-only
+key, 30 s polls, warnings + 09:00 UTC daily portfolio) ran only on the PC with a
+self-started notifier container. It is now part of the chain:
+
+- `deploy/chain/systemd/algotrading-kraken.service`: host python3 runs the monitor from
+  `/chain/tools` with `--credentials /secrets/kraken_readonly.env`, policy
+  `/config/kraken_account_policy.json` (installed once from
+  `config/venues/kraken_futures/account_policy.json`: USD 50 / 10% / 0), state
+  `/data/kraken_account`, `--retention-days 3`. `ConditionPathExists` keeps it off until
+  the key file exists.
+- `compose.yml` service `kraken-notifier` (profile `kraken`, chain dash-api image,
+  `/dashboard-alert-notifier`): reads `/data/kraken_account`, sends INFO and above to
+  Telegram (`KRAKEN_NOTIFIER_SINK`, default TELEGRAM), own receipt store
+  `data/dashboard/kraken-notifier`, bridge network only. Enabled with
+  `COMPOSE_PROFILES=kraken` in chain.env (checked: without it the service is absent).
+- Monitor: new `--credentials`, `--state-root`, `--retention-days` (0 = keep all, the local
+  default, so local history is untouched). Pruning deletes only raw samples, hourly; alert
+  state/events and per-day portfolio snapshots stay.
+- `algo install` copies the three monitor scripts; `algo ps` reports the monitor state.
+- Tests: `kraken_account_monitor_test.py` 14 pass, including a new retention test and the
+  Docker notifier contract now run against `algotrading-dash-api:chain`
+  (`KRAKEN_MONITOR_DOCKER_TEST=1`); account, portfolio and shadow tests pass.
+
+Not on the VPS: it needs the read-only key file and Telegram settings there and the
+user's authorization (runbook in deploy/chain/README.md).
+
+## Pipeline cycle check redone; RAM and disk in percent (2026-10-13)
+
+- The Pipeline "Cycle Proof" panel only appears with real data (PAPER on the VPS), so the
+  earlier redesign never saw it. Its styles were in `src/styles.css`, which nothing
+  imported, so values ran together ("5/50 cancel request(s)" = "5/5" + "0 cancel
+  request(s)") next to internal table names. It is now "Last Cycle Check · <day>": one
+  line of counts ("5 order(s) planned · 5 at the exchange · 5 filled") and one chip per
+  stage (Market Data > Strategy > Risk > Planning > Orders > Fills > Reconciliation) with
+  the evidence in the tooltip and listed only for stages that are not aligned. The
+  dashboard's own "Dashboard Projection" stage is left out. `src/styles.css` (dead) was
+  deleted. Checked with a mock-mode screenshot.
+- Infrastructure RAM and disk charts show percent of the host total (the total stays in
+  the panel title); RAM "By container" is each container's share of host RAM. Compiles;
+  not yet seen with real host history.
+
+Not deployed to the VPS.
+
+## Binance -> Kraken symbol map with price checks (2026-10-13)
+
+The user asked for an alert whenever the program cannot match a strategy symbol to the
+exchange, including scaled contracts (Binance 1000PEPEUSDT = 1000 PEPE, Kraken PF_PEPEUSD
+= 1 PEPE). The old Hyperliquid TESTNET symbol registry (dashboard only, unused by the
+gateway, broken on the VPS because no Hyperliquid URL is configured) produced 30 alerts
+that meant nothing for PAPER or Kraken; it has been removed.
+
+- **One table:** `config/venues/kraken_futures/symbol_map.json`, 161 of 523 Binance
+  perpetuals, all 20 current universe assets, five scaled (PEPE, SHIB, BONK, FLOKI x1000,
+  MOG x1,000,000). Built by `tools/kraken_symbol_map.py` from public instruments plus a
+  same-moment mark-price ratio check (5%); no rejections on 2026-10-13.
+- **Gateway:** `venue/symbol_map.*` replaces the hard-coded `SCALED_ASSETS` list
+  (`--symbol-map` is required in venue mode). New order-time guard: venue USD value
+  (venue units x Kraken mark from public tickers, cached 60 s) must be within 1.5x of
+  source quantity x `ExecutionOrder.reference_price`, which the planner now sets from
+  its sizing price (optional in the order JSON). Otherwise `NOTIONAL_MISMATCH` + ALERT;
+  no price, `NO_REFERENCE_PRICE`. `algotrading_venue_adapter_test`: 85 checks pass,
+  including a wrong-scale table and file validation.
+- **kraken_shadow.py** reads the same table (`NOT_IN_SYMBOL_MAP`);
+  `validation/kraken_shadow_test.py` 14 tests pass.
+- **Dashboard:** `/api/symbol-map` and a new Symbol Mapping page. Every minute it compares
+  the latest Binance close with the Kraken mark for the universe and the top-50 ranking.
+  An unmapped symbol is `MISSING_FROM_TABLE` when Kraken lists a same-named contract (or
+  without its 1000/1000000/1M prefix) whose price confirms the scale: the table is out of
+  date and must be rebuilt (a hint only; the gateway trades only the reviewed table).
+  Alerts: `SYMBOL_MAP_SCALE_MISMATCH` (CRITICAL), `SYMBOL_MAP_SIGNAL_NOT_TRADEABLE`
+  (CRITICAL), `SYMBOL_MAP_STRATEGY_NOT_TRADEABLE` (WARN), `SYMBOL_MAP_TABLE_OUT_OF_DATE`
+  (WARN, top-50 asset Kraken lists but the table lacks), `SYMBOL_MAP_RANKING_NOT_TRADEABLE`
+  (INFO, top-50 asset Kraken does not list; about a dozen permanently, so not a warning),
+  `SYMBOL_MAP_UNAVAILABLE` (WARN).
+  Global readiness has a non-blocking `symbol-map` requirement; Manual Control (real
+  provider) uses the map instead of the registry. Go tests pass; the page was checked with
+  a mock-mode screenshot.
+- **Chain:** `algo install` copies the table to `<root>/chain/config/venues/kraken_futures/`;
+  dash-api and watchdog mount it as `/config/symbol_map.json`.
+- step59 PASS with the accepted fingerprint; 12 component tests pass.
+
+Not deployed to the VPS. Remaining 7b items are in docs/ROADMAP.md.
+
+## Overview shows several alerts (2026-10-13)
+
+The Overview Alerts panel is now a table (Severity, What happened, Area) with the most
+severe and then most recent active alerts. It shows as many rows as the Active Positions
+table, at least 3, with the same 40px row height, so both panels are about the same size.
+The rest are behind "+N more →" and the full detail is in the row tooltip. Checked with a
+Playwright screenshot against the mock API. Not yet deployed to the VPS.
+
+## VPS migrated from the old PAPER stack to the chain layout (2026-10-13)
+
+Authorized by the user after committing (94df131). Release
+`/releases/20261013_153218-94df131-dirty` (images.tar 240 MB, source.tar.gz from
+`git archive HEAD`, SHA256SUMS verified on the VPS; "dirty" = `algo release` itself now
+packs `git archive HEAD` instead of a working-tree tar that would carry ~1.8 GB of ignored
+data). At 15:34 UTC: images loaded, `algo install /`, old units `algotrading-paper`,
+`-monitor`, `-comparison` stopped and disabled (containers and volumes kept as fallback),
+`migrate_paper.py --apply`: every volume copied with equal checksums (PostgreSQL 63 MB,
+NATS, market SQLite, watchdog/audit/alerts/notifier), comparison (22 files) and Kraken
+public study (27 files) copied, 50/40 settings in chain.env; PostgreSQL 15 fills / 5
+positions. Log receiver/cleanup and chain/monitor/comparison units installed and enabled.
+
+Verified after `algo up`: 13 containers up (dash-api/web/notifier/watchdog/postgres
+healthy), `/logs/<service>/20261013.log` filled by the receiver, strategy and risk restored
+their 2026-10-12 checkpoints, sim-exchange restored cash 45,535.43 USD with 5 positions and
+0 open orders, dashboard on 127.0.0.1:8092 (same SSH tunnel), comparison history (4 days)
+kept, `/reports/closed_positions*.csv` written from the migrated fills.
+Startup note: the chain creates its JetStream consumers anew, so execution-state re-read 30
+old order updates (e.g. ACCEPTED for FILLED orders); each was refused 20 times (max_deliver)
+= 600 "Invalid order status transition" errors in 2 s, then dropped; durable state comes
+from PostgreSQL and duplicate fills are deduplicated. Strategy/risk/planner keep their
+first stale messages pending until the next UTC day.
+Root cause and fix (local, not yet deployed): the runtime image ships nats.c 3.2, where a
+durable consumer created implicitly by `js_PullSubscribe` is deleted when the subscription
+is destroyed at shutdown (the code assumed >= 3.4). Every clean service stop deleted its
+consumers, so every restart recreated them and re-delivered the retained stream (the old
+VPS NATS volume had empty `obs/` folders after its stop). `JetStreamBus::subscribe` now
+creates missing durables with `js_AddConsumer` and always binds explicitly, so nats.c
+never owns or deletes them; checked against a real NATS 2.10 (old: consumer gone after
+destroy; new: kept and re-bound). Defence in depth: `OrderManager::onOrderUpdate` returns
+false for a stale echo (a non-terminal status the order has passed, e.g. ACCEPTED after
+FILLED), `ExecutionEngine::processExchangeEvent` passes it up and execution-state acks it
+with a DEBUG line; other invalid transitions (FILLED then REJECTED) still throw. New
+`validation/order_manager_stale_update_test.cpp` (in mock_component_tests.sh). Results:
+12/12 component tests, step59 PASS `94fdf8d8…`, transport_persistence_integration_test PASS,
+all chain services build.
+Deployed on the VPS the same day at the user's request (release
+`/releases/20261013_164959-94df131-dirty`, images only, 16:51 UTC). First restart: the old
+code deleted the consumers one last time; the replay was silent (0 new transition errors,
+duplicate submits ignored by sim-exchange, cash 45,535.43 USD / 5 positions unchanged).
+Second restart: 18 consumers before and after, none recreated, 0 duplicate submits,
+0 new errors, 13 containers up.
+Pending: check the first chain daily cycle after 00:00 UTC 2026-10-14; after some accepted
+days delete the old stack leftovers (README "After some accepted days"); move the Kraken
+account monitor/Telegram into the chain.
 
 ## PureRSI 80/70 with 20% volatility target on Binance perpetuals, 2025 to date (2026-10-12)
 

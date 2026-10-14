@@ -22,21 +22,14 @@
 // venue name; it only uses the normalized types below.
 namespace Venue {
 
-// ------------------------------------------------------------- source symbols
-// The strategy universe uses Binance USDT perpetual names. Some Binance contracts are
-// scaled (1000PEPEUSDT trades 1000 PEPE per unit). This mapping is venue-neutral.
-struct SourceAsset {
-    std::string asset;       // Underlying asset, e.g. "BTC" or "PEPE".
-    double unit_scale = 1.0; // Underlying units per source unit (1000 for 1000PEPEUSDT).
-};
-
-SourceAsset sourceAssetForCoin(const Coin& coin);
-Coin coinForSourceAsset(const std::string& asset);
+// Source symbols (BTCUSDT, 1000PEPEUSDT) become venue symbols and units through the explicit
+// SymbolMap (symbol_map.h); protocols only speak venue symbols.
 
 // ------------------------------------------------------------- normalized data
 enum class Endpoint {
     Permissions,
     Instruments,
+    Tickers,
     Accounts,
     Positions,
     OpenOrders,
@@ -49,7 +42,7 @@ enum class Endpoint {
 const char* endpointName(Endpoint endpoint);
 
 struct Market {
-    std::string asset;        // Underlying asset in source naming, e.g. "BTC".
+    std::string asset;        // Underlying asset, e.g. "BTC" (Kraken's XBT).
     std::string symbol;       // Venue symbol, e.g. "PF_XBTUSD".
     bool trading = false;     // Listed, not expired and not suspended.
     double quantity_step = 0; // Smallest order size increment in underlying units.
@@ -150,6 +143,10 @@ public:
 
     virtual HttpRequest instrumentsRequest() = 0;
     virtual std::vector<Market> parseMarkets(const HttpResponse& response) const = 0;
+
+    // Current mark prices by venue symbol, in USD per venue unit.
+    virtual HttpRequest tickersRequest() = 0;
+    virtual std::map<std::string, double> parseMarkPrices(const HttpResponse& response) const = 0;
 
     virtual HttpRequest submitRequest(const OrderRequest& order) = 0;
     virtual SubmitResult parseSubmit(const HttpResponse& response) const = 0;

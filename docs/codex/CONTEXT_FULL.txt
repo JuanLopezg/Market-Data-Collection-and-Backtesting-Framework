@@ -211,6 +211,10 @@ individually authorized small real-money tests; see live_trading/exchange_gatewa
 Dashboard (2026-10-11): shared components/TimeSeriesChart.tsx + TimeRangePicker.tsx, Grafana style (lines,
 presets or From/To, drag-select zoom, double-click reset) used by the Overview equity chart and Infrastructure CPU/RAM/disk history charts with a
 per-container breakdown; data from chain/monitor.py history.jsonl via GET /api/infrastructure/history.
+VPS (2026-10-13): migrated to the chain layout (root /, /chain/algo, systemd units
+algotrading-chain/-monitor/-comparison/-logs) with the PAPER 50/40 history copied by
+migrate_paper.py; old algotrading-paper units disabled, their volumes kept. First chain
+daily cycle (00:00 UTC 2026-10-14) still to be checked. Dashboard via the same SSH tunnel.
 Dashboard (2026-10-12): every page reviewed, Reconciliation last (ours vs exchange per
 asset; the simulation compares the reconciler ledger with the MOCK account). Manual Control (replay
 simulation only) executes a CSV target at the next available price, with limits from the
@@ -218,12 +222,15 @@ portfolio-risk config (rejected, never clipped), and the next close re-syncs to 
 strategy targets. Positions has active/closed tables with fees, funding and net PnL;
 dash-api writes closed_positions.csv and closed_positions_<YEAR>.csv to <root>/reports for
 the yearly tax report. Alerts stay notices only. See CURRENT_STATE.md top entries.
-Recorded for later (ROADMAP 7b): contract units differ between venues (Binance
-1000PEPEUSDT = 1000 PEPE per unit, Kraken PF_PEPEUSD = 1 PEPE); a wrong conversion
-sends orders 1000x too small or too large. Today a hard-coded SCALED_ASSETS list in
-live_trading/exchange_gateway/src/venue/venue_protocol.cpp handles it; it must be
-derived/checked from instrument data, fail closed and be tested end to end before real
-orders on scaled assets.
+Contract units between venues (ROADMAP 7b, mostly done 2026-10-13): Binance
+1000PEPEUSDT = 1000 PEPE per unit, Kraken PF_PEPEUSD = 1 PEPE. One table,
+config/venues/kraken_futures/symbol_map.json (built by tools/kraken_symbol_map.py from
+public names and a same-moment price-ratio check), is read by the exchange gateway
+(venue/symbol_map.*, --symbol-map), kraken_shadow.py and the dashboard. The gateway
+rejects unmapped symbols and any order whose venue USD value differs >1.5x from
+quantity x ExecutionOrder.reference_price (set by the planner). The dashboard Symbol
+Mapping page compares Binance closes with Kraken mark prices every minute and raises
+SYMBOL_MAP_* alerts. The old Hyperliquid symbol registry (/api/symbol-registry) is gone.
 Dashboards are out of scope. Next roadmap item: one configurable runtime root/readable
 paths. Daily host retention remains two files (today/yesterday), 50 MiB each.
 This planning update does not authorize another VPS rollout or private orders.

@@ -1,4 +1,4 @@
-import { Activity, Bell, Boxes, ChartLine, CircleDollarSign, Gauge, Home, LogOut, Network, Shield, SlidersHorizontal, UserRound, Waypoints } from 'lucide-react'
+import { Activity, ArrowLeftRight, Bell, Boxes, ChartLine, CircleDollarSign, Gauge, Home, LogOut, Network, Shield, SlidersHorizontal, UserRound, Waypoints } from 'lucide-react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import { runtimeConfig } from '../config/runtime'
 import { useDashboardResource } from '../hooks/useDashboardResource'
@@ -12,6 +12,7 @@ const nav = [
   ['Execution', '/execution', Activity],
   ['Risk', '/risk', Shield],
   ['Market Data', '/market-data', ChartLine],
+  ['Symbol Mapping', '/symbol-mapping', ArrowLeftRight],
   ['Infrastructure', '/infrastructure', Network],
   ['Manual Control', '/manual-control', SlidersHorizontal],
   ['Alerts & Audit', '/alerts-audit', Bell],

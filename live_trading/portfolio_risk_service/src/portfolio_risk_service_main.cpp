@@ -65,6 +65,7 @@ struct Options {
     std::filesystem::path market_data_db = "storage/databases/database.db";
     unsigned int market_history_buffer_days = 5;
     std::string postgres;
+    bool adopt_portfolio_config = false; // Accept a deliberately changed portfolio config once.
 };
 
 void printUsage()
@@ -77,6 +78,8 @@ void printUsage()
         << "  --market-data-db PATH              canonical SQLite market database\n"
         << "  --market-history-buffer-days N     extra calendar-day buffer for VolTarget, default 5\n"
         << "  --postgres CONNECTION_STRING\n"
+        << "  --adopt-portfolio-config yes|no    accept a changed portfolio config for the existing\n"
+        << "                                     checkpoint (default no: a change stops the service)\n"
         << "  Business time is provided by TimeHandler; technical polling remains real-time.\n";
 }
 
@@ -107,6 +110,11 @@ Options parseOptions(int argc, char** argv)
                 std::stoul(requireValue("--market-history-buffer-days")));
         } else if (arg == "--postgres") {
             options.postgres = requireValue("--postgres");
+        } else if (arg == "--adopt-portfolio-config") {
+            const std::string value = requireValue("--adopt-portfolio-config");
+            if (value != "yes" && value != "no")
+                throw std::invalid_argument("--adopt-portfolio-config must be yes or no");
+            options.adopt_portfolio_config = value == "yes";
         } else {
             throw std::invalid_argument("Unknown option: " + arg);
         }
@@ -293,7 +301,11 @@ private:
         return static_cast<Timestamp>(parsed);
     }
 
-    void ensureSchema(const std::string& identity)
+    // The checkpoint is bound to the portfolio configuration it was made with. A different
+    // configuration stops the service, unless adoptNewConfig is set: then the stored identity
+    // is replaced once (with an ALERT) and later decisions use the new sizing. Earlier
+    // decisions and account checkpoints stay as they were; nothing is recomputed.
+    void ensureSchema(const std::string& identity, bool adoptNewConfig)
     {
         exec(
             "CREATE TABLE IF NOT EXISTS portfolio_risk_service_metadata ("
@@ -329,9 +341,21 @@ private:
             {STATE_KEY}, PGRES_TUPLES_OK);
         if (PQntuples(metadata.get()) != 1)
             throw std::runtime_error("Portfolio-risk LIVE checkpoint metadata row is missing");
-        if (std::string(PQgetvalue(metadata.get(), 0, 0)) != identity)
+        if (std::string(PQgetvalue(metadata.get(), 0, 0)) == identity) {
+            if (adoptNewConfig)
+                LG_INFO("Portfolio config adoption requested, but the checkpoint already uses this configuration");
+            return;
+        }
+        if (!adoptNewConfig)
             throw std::runtime_error(
-                "Persisted portfolio-risk LIVE checkpoint belongs to a different portfolio/config identity");
+                "Persisted portfolio-risk LIVE checkpoint belongs to a different portfolio/config identity "
+                "(to switch on purpose, start once with --adopt-portfolio-config yes)");
+
+        execParams(
+            "UPDATE portfolio_risk_service_metadata SET portfolio_config=$2 WHERE state_key=$1",
+            {STATE_KEY, identity}, PGRES_COMMAND_OK);
+        LG_ALERT("Portfolio config changed on purpose: the risk checkpoint now uses the new configuration; "
+                 "earlier decisions keep their previous sizing");
     }
 
 public:
@@ -348,7 +372,7 @@ public:
         std::string risk_diagnostics_payload;
     };
 
-    PortfolioRiskCheckpointStore(const std::string& connectionString, const std::string& identity)
+    PortfolioRiskCheckpointStore(const std::string& connectionString, const std::string& identity, bool adoptNewConfig)
     {
         connection_ = PQconnectdb(connectionString.c_str());
         if (connection_ == nullptr || PQstatus(connection_) != CONNECTION_OK) {
@@ -356,7 +380,7 @@ public:
             if (connection_) { PQfinish(connection_); connection_ = nullptr; }
             throw std::runtime_error("Cannot connect portfolio-risk checkpoint store to PostgreSQL: " + error);
         }
-        ensureSchema(identity);
+        ensureSchema(identity, adoptNewConfig);
     }
 
     ~PortfolioRiskCheckpointStore() { if (connection_) PQfinish(connection_); }
@@ -867,7 +891,8 @@ public:
 
         checkpoint_store_ = std::make_unique<PortfolioRiskCheckpointStore>(
             options_.postgres,
-            configuration_identity_);
+            configuration_identity_,
+            options_.adopt_portfolio_config);
         recoverFromCheckpoint();
 
         account_subscription_ = bus_.subscribe(

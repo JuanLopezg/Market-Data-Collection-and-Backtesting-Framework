@@ -26,7 +26,7 @@ import type {
   VenuePublicData,
   VenueSymbolMappingData,
   VenueTradingRulesData,
-  SymbolRegistryData,
+  SymbolMapData,
   LedgerData,
   HostHistoryData,
   HostHistoryQuery,
@@ -43,7 +43,7 @@ export class ApiDashboardDataSource implements DashboardDataSource {
   getVenuePublic() { return this.client.get<VenuePublicData>('/venue-public') }
   getVenueSymbolMapping() { return this.client.get<VenueSymbolMappingData>('/venue-symbol-map') }
   getVenueTradingRules() { return this.client.get<VenueTradingRulesData>('/venue-rules') }
-  getSymbolRegistry() { return this.client.get<SymbolRegistryData>('/symbol-registry') }
+  getSymbolMap() { return this.client.get<SymbolMapData>('/symbol-map') }
   getLedger() { return this.client.get<LedgerData>('/ledger') }
   getShellStatus() { return this.client.get<ShellStatus>('/shell-status') }
   getOverview() { return this.client.get<OverviewData>('/overview') }

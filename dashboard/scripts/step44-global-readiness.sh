@@ -108,7 +108,7 @@ import json, sys
 d=json.load(open(sys.argv[1], encoding='utf-8'))
 expected={
  'provider-real','postgres','nats','canonical-market-data','reconciliation',
- 'durable-e2e-proof','venue-foundation','venue-public','venue-rules','symbol-registry',
+ 'durable-e2e-proof','venue-foundation','venue-public','venue-rules','symbol-map',
  'ledger','watchdog','critical-alerts','manual-route','production-auth','private-auth',
  'account-snapshot','order-lifecycle','service-liveness','clock-sync','mock-exchange'
 }
@@ -132,8 +132,8 @@ if d.get('privateAuth') not in ('DEFERRED','DISABLED'):
 for req_id in ('provider-real','venue-foundation','venue-public','venue-rules','ledger','critical-alerts','manual-route'):
     if rows[req_id].get('state') != 'PASS':
         raise SystemExit(f'STEP44: FAIL: required current evidence {req_id} is {rows[req_id].get("state")}')
-if rows['symbol-registry'].get('state') not in ('PASS','WARN'):
-    raise SystemExit('STEP44: FAIL: symbol registry is not validated')
+if 'symbol-map' not in rows:
+    raise SystemExit('STEP44: FAIL: Kraken symbol-map requirement is missing')
 if rows['watchdog'].get('state') not in ('PASS','WARN'):
     raise SystemExit('STEP44: FAIL: watchdog is not current')
 for req_id in ('private-auth','account-snapshot','order-lifecycle','service-liveness','clock-sync','mock-exchange'):

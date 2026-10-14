@@ -49,6 +49,9 @@ public:
     HttpRequest instrumentsRequest() override;
     std::vector<Market> parseMarkets(const HttpResponse& response) const override;
 
+    HttpRequest tickersRequest() override;
+    std::map<std::string, double> parseMarkPrices(const HttpResponse& response) const override;
+
     HttpRequest submitRequest(const OrderRequest& order) override;
     SubmitResult parseSubmit(const HttpResponse& response) const override;
 

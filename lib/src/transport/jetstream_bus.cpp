@@ -117,7 +117,8 @@ struct JetStreamBus::Impl {
     ~Impl()
     {
         // Destroying the local binding (without Unsubscribe/Drain) preserves durable
-        // consumers on nats.c >= 3.4, which is the minimum version used by this project.
+        // consumers: subscribe() always binds to a consumer created through the
+        // management API, which nats.c (including 3.2 in the runtime image) never deletes.
         for (auto& [id, entry] : subscriptions) {
             (void)id;
             if (entry.subscription)
@@ -329,7 +330,6 @@ MessageBus::SubscriptionID JetStreamBus::subscribe(
         &errorCode
     );
 
-    bool bindExisting = false;
     if (infoStatus == NATS_OK) {
         if (consumerInfo == nullptr || consumerInfo->Config == nullptr) {
             jsConsumerInfo_Destroy(consumerInfo);
@@ -407,48 +407,53 @@ MessageBus::SubscriptionID JetStreamBus::subscribe(
         // allows an empty subject for that case and then skips the subject/filter
         // comparison while preserving the existing server-side consumer.
         subscribeOptions.Consumer = options.durable_name.c_str();
-        bindExisting = true;
     }
     else if (infoStatus != NATS_NOT_FOUND) {
         jsConsumerInfo_Destroy(consumerInfo);
         checkNats(infoStatus, "Failed to query JetStream durable consumer");
     }
+    else {
+        // Create the durable through the JetStream management API, then bind to it
+        // like an existing one. A consumer created implicitly by js_PullSubscribe is
+        // owned by the library, and nats.c < 3.4 (the runtime image ships 3.2) deletes
+        // it when the subscription is destroyed at shutdown: every restart then
+        // recreated the consumer and re-delivered the whole retained stream.
+        jsConsumerConfig consumerConfig;
+        checkNats(jsConsumerConfig_Init(&consumerConfig), "Failed to initialize JetStream consumer config");
+        consumerConfig.Durable = options.durable_name.c_str();
+        consumerConfig.FilterSubject = options.subject.c_str();
+        consumerConfig.AckPolicy = js_AckExplicit;
+        consumerConfig.AckWait = options.ack_wait_ms * 1000000LL;
+        consumerConfig.MaxDeliver = options.max_deliver;
+        consumerConfig.MaxAckPending = options.max_ack_pending;
 
+        jsConsumerInfo* created = nullptr;
+        errorCode = static_cast<jsErrCode>(0);
+        const natsStatus addStatus = js_AddConsumer(
+            &created, impl_->jetstream, options.stream.c_str(), &consumerConfig, nullptr, &errorCode);
+        jsConsumerInfo_Destroy(created);
+        // Another instance may have created it in between; binding below still applies.
+        if (addStatus != NATS_OK && errorCode != JSConsumerNameExistErr && errorCode != JSConsumerExistingActiveErr)
+            checkNatsJs(addStatus, errorCode, "Failed to create JetStream durable consumer");
+
+        subscribeOptions.Consumer = options.durable_name.c_str();
+    }
+
+    // The durable exists now (found or created above): always an explicit bind, so the
+    // library never owns, and never deletes, the server-side consumer.
     natsSubscription* subscription = nullptr;
     errorCode = static_cast<jsErrCode>(0);
-
-    natsStatus status = NATS_OK;
-    if (bindExisting) {
-        status = js_PullSubscribe(
-            &subscription,
-            impl_->jetstream,
-            "",
-            options.durable_name.c_str(),
-            nullptr,
-            &subscribeOptions,
-            &errorCode
-        );
-        if (status != NATS_OK)
-            checkNatsJs(status, errorCode, "Failed to bind existing JetStream durable pull subscription");
-    }
-    else {
-        subscribeOptions.Config.AckPolicy = js_AckExplicit;
-        subscribeOptions.Config.AckWait = options.ack_wait_ms * 1000000LL;
-        subscribeOptions.Config.MaxDeliver = options.max_deliver;
-        subscribeOptions.Config.MaxAckPending = options.max_ack_pending;
-
-        status = js_PullSubscribe(
-            &subscription,
-            impl_->jetstream,
-            options.subject.c_str(),
-            options.durable_name.c_str(),
-            nullptr,
-            &subscribeOptions,
-            &errorCode
-        );
-        if (status != NATS_OK)
-            checkNatsJs(status, errorCode, "Failed to create JetStream durable pull subscription");
-    }
+    const natsStatus status = js_PullSubscribe(
+        &subscription,
+        impl_->jetstream,
+        "",
+        options.durable_name.c_str(),
+        nullptr,
+        &subscribeOptions,
+        &errorCode
+    );
+    if (status != NATS_OK)
+        checkNatsJs(status, errorCode, "Failed to bind JetStream durable pull subscription");
 
     const SubscriptionID id = impl_->next_subscription_id++;
     impl_->subscriptions.emplace(

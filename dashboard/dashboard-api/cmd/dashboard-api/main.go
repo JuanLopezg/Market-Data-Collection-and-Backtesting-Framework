@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	krakenpublic "control-dashboard-api/internal/integration/kraken"
 	"control-dashboard-api/internal/provider"
 	"control-dashboard-api/internal/server"
 )
@@ -241,6 +242,8 @@ func configuredProvider() (provider.Provider, error) {
 			ExchangeGatewayMode:    gatewayMode,
 			VenuePublicInfoURL:     venuePublicInfoURL,
 			VenuePublicTimeout:     venuePublicTimeout,
+			SymbolMapFile:          strings.TrimSpace(os.Getenv("DASHBOARD_SYMBOL_MAP_FILE")),
+			KrakenTickersURL:       krakenpublic.TickersURL,
 			AlertStoreDir:          strings.TrimSpace(envOr("DASHBOARD_ALERT_STORE_DIR", "/data/watchdog")),
 			ManualAuditDir:         strings.TrimSpace(os.Getenv("DASHBOARD_MANUAL_AUDIT_DIR")),
 			AlertAckDir:            strings.TrimSpace(os.Getenv("DASHBOARD_ALERT_ACK_DIR")),

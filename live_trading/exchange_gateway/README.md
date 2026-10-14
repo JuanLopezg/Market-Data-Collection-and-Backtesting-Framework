@@ -77,6 +77,13 @@ it in `createVenueAdapter()`.
   or `BELOW_MINIMUM_QUANTITY`. No other product or venue is substituted.
 - Quantities are rounded **down** to the venue step, so never more than requested.
   The fill quantities, not the requested quantity, drive accounting.
+- Source symbols reach the venue only through the explicit symbol map (below). A symbol
+  without an entry is rejected with `MARKET_UNAVAILABLE`; names are never guessed.
+- Before an order is journaled, its USD value at the venue (venue quantity x current
+  venue mark price) must be within 1.5x of the planned value (source quantity x the
+  planner's `reference_price`). Otherwise it is rejected with `NOTIONAL_MISMATCH` and an
+  ALERT; an order without a planning price is rejected with `NO_REFERENCE_PRICE`. A
+  wrong unit scale (1000x) can therefore never reach the venue.
 
 Order states in the journal: `PREPARED`, `SENDING`, `OPEN`, `UNKNOWN`, `FILLED`,
 `CANCELLED` (also partial fills whose remainder ended), `REJECTED`. Only `OPEN`
@@ -93,6 +100,7 @@ test with small, individually authorized real-money orders).
 | --- | --- | --- |
 | Key permissions | `GET /api/auth/v1/api-keys/v3/check` | refuse transfer/withdraw |
 | Markets | `GET /derivatives/api/v3/instruments` (public) | `PF_` flexible perpetuals, quote USD, `tradfi` excluded; `XBT` = BTC; `contractSize` must be 1; step = 10^-`contractValueTradePrecision` |
+| Mark prices | `GET /derivatives/api/v3/tickers` (public) | `markPrice` per `PF_` symbol for the USD value check; cached 60 s |
 | Submit | `POST /derivatives/api/v3/sendorder` | `orderType=mkt` (IOC with 1% price protection), `symbol`, `side`, `size`, `cliOrdId` |
 | Cancel | `POST /derivatives/api/v3/cancelorder` | by `cliOrdId`; `cancelled` / `filled` / `notFound` |
 | Open orders | `GET /derivatives/api/v3/openorders` | evidence for `UNKNOWN` orders |
@@ -109,15 +117,37 @@ endpoints (read-only probe below).
 Client order ids: `algo-<account namespace>-<order id>` (Kraken allows 100 characters).
 Change the namespace whenever the execution state is reset, so old ids cannot be reused.
 
-Scaled Binance contracts (`1000PEPEUSDT`, `1000000MOGUSDT`, ...) are converted to
-underlying units (x1000, x1,000,000) for Kraken and back for fills; quantity x price
-stays the same USD notional. The alias list is shared with `kraken_shadow.py`.
-Pending (docs/ROADMAP.md 7b): the list is maintained by hand. A new Binance `1000X`
-listing missing from it maps to asset `1000X`, which Kraken does not list, so it is
-skipped rather than mis-sized; the risk is a wrong entry, or a venue that itself lists a
-scaled name, giving orders 1000x too small or too large. Derive or check the scale from
-instrument data, skip explicitly on doubt, guard the USD notional before submission and
-test end to end before real orders on scaled assets.
+### Symbol map (Binance -> Kraken)
+
+`config/venues/kraken_futures/symbol_map.json` is the one table that turns strategy
+symbols into Kraken contracts. The gateway (`venue/symbol_map.*`, `--symbol-map`),
+`live_trading/kraken_shadow.py` and the dashboard (Symbol Mapping page) all read it:
+
+```json
+{"source": "1000PEPEUSDT", "asset": "PEPE", "venue_symbol": "PF_PEPEUSD", "venue_units_per_source_unit": 1000}
+```
+
+venue quantity = source quantity x scale; venue price = source price / scale; the USD
+value is unchanged. Fills and snapshot positions are converted back to source units.
+
+The table is built, never edited by hand, with
+`python3 tools/kraken_symbol_map.py --output config/venues/kraken_futures/symbol_map.json`.
+It maps a Binance USDT perpetual only when Kraken lists a tradeable `PF_` contract with
+`contractSize` 1 whose name is the Binance base, or the base without an explicit
+`1000`/`1000000`/`1M` prefix, **and** the Binance/Kraken mark-price ratio is within 5% of
+that scale. Other digits are never stripped (`1INCH`). Review its printed rejections and
+the git diff before committing. Three checks keep it honest afterwards:
+
+1. the gateway's USD value check on every order (above);
+2. the dashboard compares Binance closes with Kraken mark prices for the strategy universe
+   and top-50 ranking every minute: a wrong scale is a CRITICAL alert, a strategy asset
+   Kraken cannot trade a WARN (CRITICAL while its signal is active), a top-50 asset that
+   Kraken lists but the table lacks a WARN (rebuild the table), and a top-50 asset Kraken
+   does not list an INFO;
+3. at market reload the gateway logs mapped contracts Kraken no longer lists.
+
+Pending (docs/ROADMAP.md 7b): MOCK/replay quantities in their own units are exact only up
+to about 10 million units (double precision).
 
 Rate budget: 500 units per 10 s; sendorder/cancelorder 10, reads 2, dead man's switch 25.
 
@@ -135,15 +165,17 @@ Rate budget: 500 units per 10 s; sendorder/cancelorder 10, reads 2, dead man's s
 ## Run and test
 
 ```bash
-# Offline: recorded responses only (72 checks).
+# Offline: recorded responses only (85 checks).
 build/live_trading/exchange_gateway/src/algotrading_venue_adapter_test
 
 # Real, read-only: GET only through GetOnlyTransport; prints counts, never credentials.
-build/live_trading/exchange_gateway/src/algotrading_venue_adapter_test --live-read-only <credentials file>
+build/live_trading/exchange_gateway/src/algotrading_venue_adapter_test --live-read-only <credentials file> \
+  config/venues/kraken_futures/symbol_map.json
 
 # Gateway in venue mode (read-only unless --order-submission enabled is given):
 algotrading_exchange_gateway --mode venue --venue kraken-futures \
-  --credentials-file /secrets/kraken.env --venue-journal /data/venue/kraken.sqlite \
+  --credentials-file /secrets/kraken.env --symbol-map /config/symbol_map.json \
+  --venue-journal /data/venue/kraken.sqlite \
   --account-namespace k20261011 --nats-url nats://nats:4222 --stream ... --control-stream ...
 ```
 

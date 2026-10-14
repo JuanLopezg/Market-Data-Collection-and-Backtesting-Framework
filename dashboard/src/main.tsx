@@ -15,6 +15,7 @@ import { PipelinePage } from './pages/PipelinePage'
 import { PositionsPage } from './pages/PositionsPage'
 import { ReconciliationPage } from './pages/ReconciliationPage'
 import { RiskPage } from './pages/RiskPage'
+import { SymbolMappingPage } from './pages/SymbolMappingPage'
 import { AuthProvider } from './providers/AuthProvider'
 import { DashboardDataSourceProvider } from './providers/DashboardDataSourceProvider'
 import './styles/global.css'
@@ -34,6 +35,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="execution" element={<ExecutionPage />} />
               <Route path="risk" element={<RiskPage />} />
               <Route path="market-data" element={<MarketDataPage />} />
+              <Route path="symbol-mapping" element={<SymbolMappingPage />} />
               <Route path="infrastructure" element={<InfrastructurePage />} />
               <Route path="manual-control" element={<ManualControlPage />} />
               <Route path="alerts-audit" element={<AlertsAuditPage />} />

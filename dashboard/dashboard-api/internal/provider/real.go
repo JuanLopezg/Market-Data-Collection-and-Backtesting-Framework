@@ -9,6 +9,7 @@ import (
 	"time"
 
 	hldiag "control-dashboard-api/internal/integration/hyperliquid"
+	krakenpublic "control-dashboard-api/internal/integration/kraken"
 	natsdiag "control-dashboard-api/internal/integration/nats"
 	pgstore "control-dashboard-api/internal/integration/postgres"
 	sourceprobe "control-dashboard-api/internal/integration/probe"
@@ -40,6 +41,9 @@ type RealConfig struct {
 	ExchangeGatewayMode    string
 	VenuePublicInfoURL     string
 	VenuePublicTimeout     time.Duration
+	// Binance -> Kraken symbol table and the public Kraken tickers it is checked against.
+	SymbolMapFile    string
+	KrakenTickersURL string
 	// Deferred Step 37 compatibility fields.
 	// Step 37A does not require or consume private credentials, but keeping the
 	// public account/agent addresses in the config shape makes cumulative
@@ -61,6 +65,7 @@ type Real struct {
 	subscriber  *natsdiag.SubjectSubscriber
 	marketData  *sqlitemarket.Reader
 	venuePublic *hldiag.PublicClient
+	kraken      *krakenpublic.PublicClient
 
 	// Step 44.5: several dashboard read models depend on the same relatively
 	// expensive canonical SQLite/PostgreSQL snapshots. A single readiness HTTP
@@ -71,6 +76,7 @@ type Real struct {
 	marketCache readModelMarketCache
 	infraCache  readModelInfraCache
 	alertsCache readModelAlertsCache
+	symbolCache symbolMapCache
 }
 
 type readModelMarketCache struct {
@@ -122,6 +128,7 @@ func NewReal(cfg RealConfig) *Real {
 			Timeout:            maxDuration(cfg.ProbeTimeout, 2*time.Second),
 		}),
 		venuePublic: hldiag.NewPublicClient(cfg.VenuePublicInfoURL, cfg.VenuePublicTimeout),
+		kraken:      krakenpublic.NewPublicClient(cfg.KrakenTickersURL, 5*time.Second),
 	}
 }
 

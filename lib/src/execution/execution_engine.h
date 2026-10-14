@@ -90,7 +90,9 @@ public:
 
     // Process exactly one externally-delivered exchange event. Distributed runtimes use
     // this method so a durable transport ACK can happen only after persistence succeeds.
-    void processExchangeEvent(
+    // Returns false only for a stale order-status echo that changed nothing
+    // (OrderManager::onOrderUpdate); the caller may acknowledge it.
+    bool processExchangeEvent(
         const ExchangeEvent& event,
         const PersistCallback& persist
     );

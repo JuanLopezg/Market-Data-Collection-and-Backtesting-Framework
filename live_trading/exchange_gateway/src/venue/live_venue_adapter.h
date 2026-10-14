@@ -6,6 +6,7 @@
 #include <string>
 
 #include "exchange_gateway_adapter.h"
+#include "symbol_map.h"
 #include "venue_journal.h"
 #include "venue_protocol.h"
 
@@ -21,6 +22,10 @@
 //   (open orders, fills); it is never resent automatically;
 // - fills are de-duplicated by venue fill id and get a stable local FillID;
 // - unavailable markets are rejected with a reason; no other product is substituted;
+// - source symbols and units go through the explicit SymbolMap only;
+// - before an order is journaled its USD value at the venue (venue quantity x venue mark
+//   price) must agree with the planned value (source quantity x reference price), so a
+//   wrong unit scale cannot send an order 1000 times too large or too small;
 // - technical time (polling, rate budget) never becomes business time.
 namespace Venue {
 
@@ -33,6 +38,8 @@ struct LiveVenueOptions {
     std::string account_namespace;                 // Short tag in client order ids, e.g. "a1".
     long long working_poll_interval_ms = 2000;     // Fill/open-order checks while orders work.
     long long market_refresh_interval_ms = 3600000;
+    long long mark_price_max_age_ms = 60000;       // Venue prices older than this are fetched again.
+    double max_notional_ratio = 1.5;               // Venue/planned USD value allowed in [1/x, x].
     long long settle_after_ms = 15000;             // Absent from open orders this long: remainder ended.
     long long unknown_alert_after_ms = 120000;     // UNKNOWN this long: ALERT for the operator.
     int dead_mans_switch_seconds = 0;              // 0: not armed.
@@ -47,6 +54,7 @@ public:
         VenueProtocol& protocol,
         HttpTransport& transport,
         VenueJournal& journal,
+        SymbolMap symbolMap,
         BusinessDay businessDay,
         UnixMsClock nowMs,
         LiveVenueOptions options
@@ -78,15 +86,17 @@ private:
     VenueProtocol& protocol_;
     HttpTransport& transport_;
     VenueJournal& journal_;
+    SymbolMap symbol_map_;
     BusinessDay business_day_;
     UnixMsClock now_ms_;
     LiveVenueOptions options_;
     ExchangeGatewayHandlers handlers_;
     RateLimiter rate_limiter_;
 
-    std::map<std::string, Market> markets_by_asset_;
-    std::map<std::string, std::string> asset_by_symbol_;
+    std::map<std::string, Market> markets_by_symbol_;
     long long markets_loaded_at_ms_ = 0;
+    std::map<std::string, double> mark_prices_;  // By venue symbol, USD per venue unit.
+    long long mark_prices_loaded_at_ms_ = 0;
 
     long long started_at_ms_ = 0; // Fills before this are history, not unexplained new trades.
     bool recovered_ = false;
@@ -99,6 +109,7 @@ private:
     HttpResponse send(const HttpRequest& request, Endpoint endpoint);
     void loadMarkets();
     void loadMarketsIfDue();
+    void loadMarkPricesIfDue();
 
     void rejectLocally(JournalOrder order, const std::string& reason);
     void recoverInterruptedSends();

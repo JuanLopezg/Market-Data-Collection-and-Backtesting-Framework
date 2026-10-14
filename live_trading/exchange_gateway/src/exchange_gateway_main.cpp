@@ -115,6 +115,7 @@ struct Options {
     std::string venue = "kraken-futures";
     std::string venue_host = "https://futures.kraken.com";
     std::string credentials_file;
+    std::string symbol_map;
     std::string venue_journal;
     std::string account_namespace;
     bool order_submission_enabled = false;
@@ -152,6 +153,8 @@ Options parseOptions(int argc, char** argv)
             options.venue_host = requireValue("--venue-host");
         else if (arg == "--credentials-file")
             options.credentials_file = requireValue("--credentials-file");
+        else if (arg == "--symbol-map")
+            options.symbol_map = requireValue("--symbol-map");
         else if (arg == "--venue-journal")
             options.venue_journal = requireValue("--venue-journal");
         else if (arg == "--account-namespace")
@@ -177,6 +180,7 @@ Options parseOptions(int argc, char** argv)
                 << "  --venue kraken-futures\n"
                 << "  --venue-host URL (default https://futures.kraken.com)\n"
                 << "  --credentials-file PATH (KRAKEN_API_KEY / KRAKEN_API_SECRET)\n"
+                << "  --symbol-map PATH (config/venues/kraken_futures/symbol_map.json)\n"
                 << "  --venue-journal PATH (SQLite)\n"
                 << "  --account-namespace NAME (part of client order ids; change it after any state reset)\n"
                 << "  --order-submission disabled|enabled (default disabled: GET requests only)\n"
@@ -195,8 +199,10 @@ Options parseOptions(int argc, char** argv)
     if (options.mode == GatewayMode::Venue) {
         if (options.venue != "kraken-futures")
             throw std::invalid_argument("--venue must be kraken-futures");
-        if (options.credentials_file.empty() || options.venue_journal.empty() || options.account_namespace.empty())
-            throw std::invalid_argument("Venue mode needs --credentials-file, --venue-journal and --account-namespace");
+        if (options.credentials_file.empty() || options.symbol_map.empty() || options.venue_journal.empty() ||
+            options.account_namespace.empty())
+            throw std::invalid_argument(
+                "Venue mode needs --credentials-file, --symbol-map, --venue-journal and --account-namespace");
         if (options.dead_mans_switch_seconds < 0)
             throw std::invalid_argument("--dead-mans-switch-seconds cannot be negative");
     }
@@ -500,6 +506,7 @@ private:
             *venue_protocol_,
             venue_transport_ ? *venue_transport_ : *venue_http_,
             *venue_journal_,
+            Venue::SymbolMap::load(options_.symbol_map, venue_protocol_->name()),
             [this] { return currentBusinessUtcDate(time_handler_); }, // Business time.
             Venue::technicalUnixMs,                                   // Technical time only.
             venueOptions);

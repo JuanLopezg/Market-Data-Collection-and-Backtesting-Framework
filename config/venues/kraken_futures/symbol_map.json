@@ -1,0 +1,976 @@
+{
+  "schema_version": 1,
+  "venue": "kraken-futures",
+  "source": "binance-usdt-perpetual",
+  "generated_by": "tools/kraken_symbol_map.py",
+  "generated_at": "2026-10-13T17:31:09Z",
+  "note": "Explicit Binance -> Kraken Futures mapping. A source symbol missing here is not tradeable on Kraken. venue_units_per_source_unit converts quantities (venue = source x scale) and prices (venue = source / scale).",
+  "symbols": [
+    {
+      "source": "1000000MOGUSDT",
+      "asset": "MOG",
+      "venue_symbol": "PF_MOGUSD",
+      "venue_units_per_source_unit": 1000000
+    },
+    {
+      "source": "1000BONKUSDT",
+      "asset": "BONK",
+      "venue_symbol": "PF_BONKUSD",
+      "venue_units_per_source_unit": 1000
+    },
+    {
+      "source": "1000FLOKIUSDT",
+      "asset": "FLOKI",
+      "venue_symbol": "PF_FLOKIUSD",
+      "venue_units_per_source_unit": 1000
+    },
+    {
+      "source": "1000PEPEUSDT",
+      "asset": "PEPE",
+      "venue_symbol": "PF_PEPEUSD",
+      "venue_units_per_source_unit": 1000
+    },
+    {
+      "source": "1000SHIBUSDT",
+      "asset": "SHIB",
+      "venue_symbol": "PF_SHIBUSD",
+      "venue_units_per_source_unit": 1000
+    },
+    {
+      "source": "1INCHUSDT",
+      "asset": "1INCH",
+      "venue_symbol": "PF_1INCHUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "AAVEUSDT",
+      "asset": "AAVE",
+      "venue_symbol": "PF_AAVEUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ACEUSDT",
+      "asset": "ACE",
+      "venue_symbol": "PF_ACEUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ADAUSDT",
+      "asset": "ADA",
+      "venue_symbol": "PF_ADAUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "AGLDUSDT",
+      "asset": "AGLD",
+      "venue_symbol": "PF_AGLDUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ALGOUSDT",
+      "asset": "ALGO",
+      "venue_symbol": "PF_ALGOUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ALICEUSDT",
+      "asset": "ALICE",
+      "venue_symbol": "PF_ALICEUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "APEUSDT",
+      "asset": "APE",
+      "venue_symbol": "PF_APEUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "APTUSDT",
+      "asset": "APT",
+      "venue_symbol": "PF_APTUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ARBUSDT",
+      "asset": "ARB",
+      "venue_symbol": "PF_ARBUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ARCUSDT",
+      "asset": "ARC",
+      "venue_symbol": "PF_ARCUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ASTERUSDT",
+      "asset": "ASTER",
+      "venue_symbol": "PF_ASTERUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ATOMUSDT",
+      "asset": "ATOM",
+      "venue_symbol": "PF_ATOMUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "AVAXUSDT",
+      "asset": "AVAX",
+      "venue_symbol": "PF_AVAXUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "AXSUSDT",
+      "asset": "AXS",
+      "venue_symbol": "PF_AXSUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "BATUSDT",
+      "asset": "BAT",
+      "venue_symbol": "PF_BATUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "BBUSDT",
+      "asset": "BB",
+      "venue_symbol": "PF_BBUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "BCHUSDT",
+      "asset": "BCH",
+      "venue_symbol": "PF_BCHUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "BICOUSDT",
+      "asset": "BICO",
+      "venue_symbol": "PF_BICOUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "BIOUSDT",
+      "asset": "BIO",
+      "venue_symbol": "PF_BIOUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "BNBUSDT",
+      "asset": "BNB",
+      "venue_symbol": "PF_BNBUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "BOMEUSDT",
+      "asset": "BOME",
+      "venue_symbol": "PF_BOMEUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "BRETTUSDT",
+      "asset": "BRETT",
+      "venue_symbol": "PF_BRETTUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "BTCUSDT",
+      "asset": "BTC",
+      "venue_symbol": "PF_XBTUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "C98USDT",
+      "asset": "C98",
+      "venue_symbol": "PF_C98USD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "CAKEUSDT",
+      "asset": "CAKE",
+      "venue_symbol": "PF_CAKEUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "CATIUSDT",
+      "asset": "CATI",
+      "venue_symbol": "PF_CATIUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "CFGUSDT",
+      "asset": "CFG",
+      "venue_symbol": "PF_CFGUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "CFXUSDT",
+      "asset": "CFX",
+      "venue_symbol": "PF_CFXUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "CHILLGUYUSDT",
+      "asset": "CHILLGUY",
+      "venue_symbol": "PF_CHILLGUYUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "CHZUSDT",
+      "asset": "CHZ",
+      "venue_symbol": "PF_CHZUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "COMPUSDT",
+      "asset": "COMP",
+      "venue_symbol": "PF_COMPUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "COOKIEUSDT",
+      "asset": "COOKIE",
+      "venue_symbol": "PF_COOKIEUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "CRVUSDT",
+      "asset": "CRV",
+      "venue_symbol": "PF_CRVUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "CTSIUSDT",
+      "asset": "CTSI",
+      "venue_symbol": "PF_CTSIUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "CVXUSDT",
+      "asset": "CVX",
+      "venue_symbol": "PF_CVXUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "DASHUSDT",
+      "asset": "DASH",
+      "venue_symbol": "PF_DASHUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "DEXEUSDT",
+      "asset": "DEXE",
+      "venue_symbol": "PF_DEXEUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "DOGEUSDT",
+      "asset": "DOGE",
+      "venue_symbol": "PF_DOGEUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "DOTUSDT",
+      "asset": "DOT",
+      "venue_symbol": "PF_DOTUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "DYDXUSDT",
+      "asset": "DYDX",
+      "venue_symbol": "PF_DYDXUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "EGLDUSDT",
+      "asset": "EGLD",
+      "venue_symbol": "PF_EGLDUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "EIGENUSDT",
+      "asset": "EIGEN",
+      "venue_symbol": "PF_EIGENUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ENAUSDT",
+      "asset": "ENA",
+      "venue_symbol": "PF_ENAUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ENSUSDT",
+      "asset": "ENS",
+      "venue_symbol": "PF_ENSUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ETCUSDT",
+      "asset": "ETC",
+      "venue_symbol": "PF_ETCUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ETHFIUSDT",
+      "asset": "ETHFI",
+      "venue_symbol": "PF_ETHFIUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ETHUSDT",
+      "asset": "ETH",
+      "venue_symbol": "PF_ETHUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "FARTCOINUSDT",
+      "asset": "FARTCOIN",
+      "venue_symbol": "PF_FARTCOINUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "FETUSDT",
+      "asset": "FET",
+      "venue_symbol": "PF_FETUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "FILUSDT",
+      "asset": "FIL",
+      "venue_symbol": "PF_FILUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "FLOWUSDT",
+      "asset": "FLOW",
+      "venue_symbol": "PF_FLOWUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "GALAUSDT",
+      "asset": "GALA",
+      "venue_symbol": "PF_GALAUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "GOATUSDT",
+      "asset": "GOAT",
+      "venue_symbol": "PF_GOATUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "GPSUSDT",
+      "asset": "GPS",
+      "venue_symbol": "PF_GPSUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "GRASSUSDT",
+      "asset": "GRASS",
+      "venue_symbol": "PF_GRASSUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "GRTUSDT",
+      "asset": "GRT",
+      "venue_symbol": "PF_GRTUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "HBARUSDT",
+      "asset": "HBAR",
+      "venue_symbol": "PF_HBARUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "HYPEUSDT",
+      "asset": "HYPE",
+      "venue_symbol": "PF_HYPEUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ICPUSDT",
+      "asset": "ICP",
+      "venue_symbol": "PF_ICPUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "IMXUSDT",
+      "asset": "IMX",
+      "venue_symbol": "PF_IMXUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "INJUSDT",
+      "asset": "INJ",
+      "venue_symbol": "PF_INJUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "IOTXUSDT",
+      "asset": "IOTX",
+      "venue_symbol": "PF_IOTXUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "JASMYUSDT",
+      "asset": "JASMY",
+      "venue_symbol": "PF_JASMYUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "JTOUSDT",
+      "asset": "JTO",
+      "venue_symbol": "PF_JTOUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "JUPUSDT",
+      "asset": "JUP",
+      "venue_symbol": "PF_JUPUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "KAIAUSDT",
+      "asset": "KAIA",
+      "venue_symbol": "PF_KAIAUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "KAITOUSDT",
+      "asset": "KAITO",
+      "venue_symbol": "PF_KAITOUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "KASUSDT",
+      "asset": "KAS",
+      "venue_symbol": "PF_KASUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "KAVAUSDT",
+      "asset": "KAVA",
+      "venue_symbol": "PF_KAVAUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "LDOUSDT",
+      "asset": "LDO",
+      "venue_symbol": "PF_LDOUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "LINKUSDT",
+      "asset": "LINK",
+      "venue_symbol": "PF_LINKUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "LPTUSDT",
+      "asset": "LPT",
+      "venue_symbol": "PF_LPTUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "LQTYUSDT",
+      "asset": "LQTY",
+      "venue_symbol": "PF_LQTYUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "LTCUSDT",
+      "asset": "LTC",
+      "venue_symbol": "PF_LTCUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "LUNA2USDT",
+      "asset": "LUNA2",
+      "venue_symbol": "PF_LUNA2USD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "MANAUSDT",
+      "asset": "MANA",
+      "venue_symbol": "PF_MANAUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "MELANIAUSDT",
+      "asset": "MELANIA",
+      "venue_symbol": "PF_MELANIAUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "MEWUSDT",
+      "asset": "MEW",
+      "venue_symbol": "PF_MEWUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "MONUSDT",
+      "asset": "MON",
+      "venue_symbol": "PF_MONUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "MOODENGUSDT",
+      "asset": "MOODENG",
+      "venue_symbol": "PF_MOODENGUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "MORPHOUSDT",
+      "asset": "MORPHO",
+      "venue_symbol": "PF_MORPHOUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "MOVRUSDT",
+      "asset": "MOVR",
+      "venue_symbol": "PF_MOVRUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "MUBARAKUSDT",
+      "asset": "MUBARAK",
+      "venue_symbol": "PF_MUBARAKUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "NEARUSDT",
+      "asset": "NEAR",
+      "venue_symbol": "PF_NEARUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "NEIROUSDT",
+      "asset": "NEIRO",
+      "venue_symbol": "PF_NEIROUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "NIGHTUSDT",
+      "asset": "NIGHT",
+      "venue_symbol": "PF_NIGHTUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "NOTUSDT",
+      "asset": "NOT",
+      "venue_symbol": "PF_NOTUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ONDOUSDT",
+      "asset": "ONDO",
+      "venue_symbol": "PF_ONDOUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ONTUSDT",
+      "asset": "ONT",
+      "venue_symbol": "PF_ONTUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "OPENUSDT",
+      "asset": "OPEN",
+      "venue_symbol": "PF_OPENUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "OPNUSDT",
+      "asset": "OPN",
+      "venue_symbol": "PF_OPNUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "OPUSDT",
+      "asset": "OP",
+      "venue_symbol": "PF_OPUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ORDIUSDT",
+      "asset": "ORDI",
+      "venue_symbol": "PF_ORDIUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "PAXGUSDT",
+      "asset": "PAXG",
+      "venue_symbol": "PF_PAXGUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "PENDLEUSDT",
+      "asset": "PENDLE",
+      "venue_symbol": "PF_PENDLEUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "PENGUUSDT",
+      "asset": "PENGU",
+      "venue_symbol": "PF_PENGUUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "PEOPLEUSDT",
+      "asset": "PEOPLE",
+      "venue_symbol": "PF_PEOPLEUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "PIXELUSDT",
+      "asset": "PIXEL",
+      "venue_symbol": "PF_PIXELUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "PNUTUSDT",
+      "asset": "PNUT",
+      "venue_symbol": "PF_PNUTUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "POLUSDT",
+      "asset": "POL",
+      "venue_symbol": "PF_POLUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "PONSUSDT",
+      "asset": "PONS",
+      "venue_symbol": "PF_PONSUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "POPCATUSDT",
+      "asset": "POPCAT",
+      "venue_symbol": "PF_POPCATUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "PORTALUSDT",
+      "asset": "PORTAL",
+      "venue_symbol": "PF_PORTALUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "PUMPUSDT",
+      "asset": "PUMP",
+      "venue_symbol": "PF_PUMPUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "PYTHUSDT",
+      "asset": "PYTH",
+      "venue_symbol": "PF_PYTHUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "QNTUSDT",
+      "asset": "QNT",
+      "venue_symbol": "PF_QNTUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "QTUMUSDT",
+      "asset": "QTUM",
+      "venue_symbol": "PF_QTUMUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "RENDERUSDT",
+      "asset": "RENDER",
+      "venue_symbol": "PF_RENDERUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "RIVERUSDT",
+      "asset": "RIVER",
+      "venue_symbol": "PF_RIVERUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ROSEUSDT",
+      "asset": "ROSE",
+      "venue_symbol": "PF_ROSEUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "RSRUSDT",
+      "asset": "RSR",
+      "venue_symbol": "PF_RSRUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "RUNEUSDT",
+      "asset": "RUNE",
+      "venue_symbol": "PF_RUNEUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "SAGAUSDT",
+      "asset": "SAGA",
+      "venue_symbol": "PF_SAGAUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "SANDUSDT",
+      "asset": "SAND",
+      "venue_symbol": "PF_SANDUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "SEIUSDT",
+      "asset": "SEI",
+      "venue_symbol": "PF_SEIUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "SNXUSDT",
+      "asset": "SNX",
+      "venue_symbol": "PF_SNXUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "SOLUSDT",
+      "asset": "SOL",
+      "venue_symbol": "PF_SOLUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "SOONUSDT",
+      "asset": "SOON",
+      "venue_symbol": "PF_SOONUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "SPKUSDT",
+      "asset": "SPK",
+      "venue_symbol": "PF_SPKUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "SPXUSDT",
+      "asset": "SPX",
+      "venue_symbol": "PF_SPXUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "SSVUSDT",
+      "asset": "SSV",
+      "venue_symbol": "PF_SSVUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "STRKUSDT",
+      "asset": "STRK",
+      "venue_symbol": "PF_STRKUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "STXUSDT",
+      "asset": "STX",
+      "venue_symbol": "PF_STXUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "SUIUSDT",
+      "asset": "SUI",
+      "venue_symbol": "PF_SUIUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "SUPERUSDT",
+      "asset": "SUPER",
+      "venue_symbol": "PF_SUPERUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "SUSHIUSDT",
+      "asset": "SUSHI",
+      "venue_symbol": "PF_SUSHIUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "SYNUSDT",
+      "asset": "SYN",
+      "venue_symbol": "PF_SYNUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "SYRUPUSDT",
+      "asset": "SYRUP",
+      "venue_symbol": "PF_SYRUPUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "TAOUSDT",
+      "asset": "TAO",
+      "venue_symbol": "PF_TAOUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "TIAUSDT",
+      "asset": "TIA",
+      "venue_symbol": "PF_TIAUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "TLMUSDT",
+      "asset": "TLM",
+      "venue_symbol": "PF_TLMUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "TRBUSDT",
+      "asset": "TRB",
+      "venue_symbol": "PF_TRBUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "TRUMPUSDT",
+      "asset": "TRUMP",
+      "venue_symbol": "PF_TRUMPUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "TRXUSDT",
+      "asset": "TRX",
+      "venue_symbol": "PF_TRXUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "TURBOUSDT",
+      "asset": "TURBO",
+      "venue_symbol": "PF_TURBOUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "UNIUSDT",
+      "asset": "UNI",
+      "venue_symbol": "PF_UNIUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "USDCUSDT",
+      "asset": "USDC",
+      "venue_symbol": "PF_USDCUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "USUALUSDT",
+      "asset": "USUAL",
+      "venue_symbol": "PF_USUALUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "VIRTUALUSDT",
+      "asset": "VIRTUAL",
+      "venue_symbol": "PF_VIRTUALUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "WIFUSDT",
+      "asset": "WIF",
+      "venue_symbol": "PF_WIFUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "WLDUSDT",
+      "asset": "WLD",
+      "venue_symbol": "PF_WLDUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "WLFIUSDT",
+      "asset": "WLFI",
+      "venue_symbol": "PF_WLFIUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "WUSDT",
+      "asset": "W",
+      "venue_symbol": "PF_WUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "XAUTUSDT",
+      "asset": "XAUT",
+      "venue_symbol": "PF_XAUTUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "XLMUSDT",
+      "asset": "XLM",
+      "venue_symbol": "PF_XLMUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "XMRUSDT",
+      "asset": "XMR",
+      "venue_symbol": "PF_XMRUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "XPLUSDT",
+      "asset": "XPL",
+      "venue_symbol": "PF_XPLUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "XRPUSDT",
+      "asset": "XRP",
+      "venue_symbol": "PF_XRPUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "XTZUSDT",
+      "asset": "XTZ",
+      "venue_symbol": "PF_XTZUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "YFIUSDT",
+      "asset": "YFI",
+      "venue_symbol": "PF_YFIUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ZBTUSDT",
+      "asset": "ZBT",
+      "venue_symbol": "PF_ZBTUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ZECUSDT",
+      "asset": "ZEC",
+      "venue_symbol": "PF_ZECUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ZENUSDT",
+      "asset": "ZEN",
+      "venue_symbol": "PF_ZENUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ZKUSDT",
+      "asset": "ZK",
+      "venue_symbol": "PF_ZKUSD",
+      "venue_units_per_source_unit": 1
+    },
+    {
+      "source": "ZROUSDT",
+      "asset": "ZRO",
+      "venue_symbol": "PF_ZROUSD",
+      "venue_units_per_source_unit": 1
+    }
+  ]
+}

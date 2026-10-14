@@ -76,6 +76,8 @@ class KrakenTest(unittest.TestCase):
 
     def test_missing_market_skips_but_failed_catalogue_is_unavailable(self):
         result = kraken.assess_kraken(plan(self.now, 'NOTLISTEDUSDT'), self.snapshot, self.now)
+        self.assertEqual(result['orders'][0]['reason'], 'NOT_IN_SYMBOL_MAP')
+        result = kraken.assess_kraken(plan(self.now, 'ETHUSDT'), self.snapshot, self.now)
         self.assertEqual(result['orders'][0]['reason'], 'MULTI_M_PERPETUAL_UNAVAILABLE')
         with self.assertRaises(ValueError):
             kraken.normalize(self.instruments, {**self.tickers, 'tickers': []}, self.now, 'live')
@@ -127,7 +129,15 @@ class KrakenTest(unittest.TestCase):
         row = kraken.assess_kraken(plan(self.now, '1000PEPEUSDT'), snapshot, self.now)['orders'][0]
         self.assertEqual(Decimal(row['hypothetical_quantity_at_current_mark']), Decimal('1000000000'))
         self.assertEqual(row['quantity_step'], '1000')
-        self.assertEqual(kraken.source_asset('1INCHUSDT'), '1INCH')
+        # Names are never guessed: PEPEUSDT is not a Binance symbol, so it has no entry.
+        row = kraken.assess_kraken(plan(self.now, 'PEPEUSDT'), snapshot, self.now)['orders'][0]
+        self.assertEqual(row['reason'], 'NOT_IN_SYMBOL_MAP')
+
+    def test_symbol_map_is_the_gateway_table(self):
+        symbol_map = kraken.load_symbol_map()
+        self.assertEqual(symbol_map['1000PEPEUSDT']['venue_symbol'], 'PF_PEPEUSD')
+        self.assertEqual(symbol_map['1000PEPEUSDT']['venue_units_per_source_unit'], 1000)
+        self.assertEqual(symbol_map['BTCUSDT']['venue_symbol'], 'PF_XBTUSD')
 
     def test_btc_is_discounted_collateral_not_spendable_usd_or_a_fee(self):
         input_value = scenario()

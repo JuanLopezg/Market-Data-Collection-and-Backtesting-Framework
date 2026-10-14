@@ -11,7 +11,7 @@ const streamResourceName: Partial<Record<ResourceKey, string>> = {
   getDiagnostics: 'diagnostics',
   getSafetyGate: 'safety-gate',
   getGlobalReadiness: 'global-readiness',
-  getSymbolRegistry: 'symbol-registry',
+  getSymbolMap: 'market-data',
   getLedger: 'execution',
   getShellStatus: 'shell-status',
   getOverview: 'overview',

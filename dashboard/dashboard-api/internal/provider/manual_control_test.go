@@ -114,13 +114,12 @@ func TestManualExecutionConstraintsRequireExplicitRoutableRegistryAndRules(t *te
 	if !result.ValidationPassed {
 		t.Fatalf("base validation failed: %+v", result.ValidationIssues)
 	}
-	registry := SymbolRegistryStatus{
-		Validated:              true,
-		RegistryVersion:        "test-registry",
-		RegistryArtifactSHA256: "abc",
-		Rows: []SymbolRegistryRow{
-			{Internal: "BTCUSDT", RuntimeState: "ROUTABLE_PUBLICLY_VALIDATED", RoutingPolicy: "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"},
-			{Internal: "ETHUSDT", RuntimeState: "ROUTABLE_PUBLICLY_VALIDATED", RoutingPolicy: "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"},
+	symbolMap := SymbolMapStatus{
+		Status:    "OK",
+		CheckedAt: "2026-09-26T00:00:00Z",
+		Rows: []SymbolMapRow{
+			{Source: "BTCUSDT", State: symbolMapStateOK},
+			{Source: "ETHUSDT", State: symbolMapStateOK},
 		},
 	}
 	rules := VenueTradingRulesStatus{
@@ -131,9 +130,9 @@ func TestManualExecutionConstraintsRequireExplicitRoutableRegistryAndRules(t *te
 			{Internal: "ETHUSDT", State: "VALID", MinOrderNotionalUSD: 10},
 		},
 	}
-	applyManualExecutionConstraints(&result, registry, rules)
+	applyManualExecutionConstraints(&result, symbolMap, rules)
 	if !result.ValidationPassed || !result.ExchangeConstraintsValidated {
-		t.Fatalf("explicit routable registry/rules should validate execution constraints: %+v", result)
+		t.Fatalf("verified symbol mapping and rules should validate execution constraints: %+v", result)
 	}
 
 	blocked, _ := buildManualPreviewWithPairs(
@@ -141,12 +140,12 @@ func TestManualExecutionConstraintsRequireExplicitRoutableRegistryAndRules(t *te
 		[]string{"BTCUSDT", "ETHUSDT"},
 		ManualControlPreviewRequest{CSV: "asset,weight_pct\nBTCUSDT,60\nCASH,40\n"},
 	)
-	blockedRegistry := registry
-	blockedRegistry.Rows = []SymbolRegistryRow{
-		{Internal: "BTCUSDT", RuntimeState: "ROUTABLE_PUBLICLY_VALIDATED", RoutingPolicy: "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID"},
-		{Internal: "ETHUSDT", RuntimeState: "BLOCKED_EXPLICIT", RoutingPolicy: "DENY"},
+	blockedMap := symbolMap
+	blockedMap.Rows = []SymbolMapRow{
+		{Source: "BTCUSDT", State: symbolMapStateOK},
+		{Source: "ETHUSDT", State: symbolMapStateNotMapped},
 	}
-	applyManualExecutionConstraints(&blocked, blockedRegistry, rules)
+	applyManualExecutionConstraints(&blocked, blockedMap, rules)
 	if blocked.ValidationPassed || blocked.ExchangeConstraintsValidated {
 		t.Fatalf("non-routable omitted-current sell must fail closed: %+v", blocked)
 	}

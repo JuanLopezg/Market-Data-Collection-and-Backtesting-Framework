@@ -1,0 +1,28 @@
+[Unit]
+Description=Read-only Kraken account monitor (warnings and daily portfolio for Telegram)
+After=network-online.target
+Wants=network-online.target
+# Only with a read-only key in place; see deploy/chain/README.md "Kraken account monitor".
+ConditionPathExists=/secrets/kraken_readonly.env
+
+[Service]
+Type=simple
+# Reads the account every 30 s with a key that cannot trade or withdraw. Writes
+# /data/kraken_account (events.jsonl, status.json, SQLite journal, 3 days of raw
+# samples); the kraken-notifier container sends its events to Telegram.
+# Warning-only: it never places, cancels or closes anything.
+ExecStart=/usr/bin/python3 /chain/tools/kraken_account_monitor.py \
+    --credentials /secrets/kraken_readonly.env \
+    --policy /config/kraken_account_policy.json \
+    --state-root /data/kraken_account --output /data/kraken_account \
+    --interval 30 --summary-hour-utc 9 --retention-days 3
+Restart=on-failure
+RestartSec=30
+Nice=10
+CPUQuota=20%
+MemoryMax=256M
+# Files readable by the kraken-notifier container (uid 70); /data itself is not shared.
+UMask=0022
+
+[Install]
+WantedBy=multi-user.target

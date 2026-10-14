@@ -55,6 +55,21 @@ private:
         return false;
     }
 
+    // Position in the lifecycle; every terminal status is the last stage.
+    static int lifecycleStage(ExecutionOrderStatus status)
+    {
+        switch (status) {
+        case ExecutionOrderStatus::Created:         return 0;
+        case ExecutionOrderStatus::Submitted:       return 1;
+        case ExecutionOrderStatus::Accepted:        return 2;
+        case ExecutionOrderStatus::PartiallyFilled: return 3;
+        case ExecutionOrderStatus::Filled:
+        case ExecutionOrderStatus::Canceled:
+        case ExecutionOrderStatus::Rejected:        return 4;
+        }
+        return 4;
+    }
+
     TrackedOrder& require(OrderID orderId)
     {
         const auto it = orders_.find(orderId);
@@ -129,11 +144,19 @@ public:
         order.updated_at = timestamp;
     }
 
-    void onOrderUpdate(const OrderUpdate& update)
+    // Returns false for a stale echo: a non-terminal status the order has already
+    // passed (ACCEPTED after FILLED, say), as a redelivered or replayed exchange event
+    // brings it. It changes nothing. Any other disallowed transition (FILLED then
+    // REJECTED) is a contradiction and still throws.
+    bool onOrderUpdate(const OrderUpdate& update)
     {
         TrackedOrder& order = require(update.order_id);
-        if (!transitionAllowed(order.status, update.status))
+        if (!transitionAllowed(order.status, update.status)) {
+            if (!isTerminalExecutionOrderStatus(update.status) &&
+                lifecycleStage(update.status) < lifecycleStage(order.status))
+                return false;
             throw std::logic_error("Invalid order status transition");
+        }
 
         order.status = update.status;
         order.updated_at = update.timestamp;
@@ -142,6 +165,7 @@ public:
             order.exchange_order_id = update.exchange_order_id;
         if (!update.message.empty())
             order.last_message = update.message;
+        return true;
     }
 
     bool onFill(const Fill& fill)

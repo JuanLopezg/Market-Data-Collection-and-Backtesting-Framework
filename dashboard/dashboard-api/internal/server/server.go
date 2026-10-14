@@ -140,7 +140,7 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("GET /api/venue-public", s.authRequired(http.HandlerFunc(s.venuePublic)))
 	mux.Handle("GET /api/venue-symbol-map", s.authRequired(http.HandlerFunc(s.venueSymbolMap)))
 	mux.Handle("GET /api/venue-rules", s.authRequired(http.HandlerFunc(s.venueRules)))
-	mux.Handle("GET /api/symbol-registry", s.authRequired(http.HandlerFunc(s.symbolRegistry)))
+	mux.Handle("GET /api/symbol-map", s.authRequired(http.HandlerFunc(s.symbolMap)))
 	mux.Handle("GET /api/ledger", s.authRequired(http.HandlerFunc(s.ledger)))
 	mux.Handle("GET /api/stream", s.authRequired(http.HandlerFunc(s.stream)))
 	mux.Handle("GET /api/integration-catalog", s.authRequired(http.HandlerFunc(s.integrationCatalog)))
@@ -858,17 +858,17 @@ func (s *Server) venueRules(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, reader.VenueTradingRulesStatus(ctx))
 }
 
-func (s *Server) symbolRegistry(w http.ResponseWriter, r *http.Request) {
+func (s *Server) symbolMap(w http.ResponseWriter, r *http.Request) {
 	reader, ok := s.provider.(interface {
-		SymbolRegistryStatus(context.Context) provider.SymbolRegistryStatus
+		SymbolMapStatus(context.Context) provider.SymbolMapStatus
 	})
 	if !ok {
-		s.writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "symbol registry is not implemented by this provider"})
+		s.writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "symbol map is not implemented by this provider"})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.ResourceTimeout)
 	defer cancel()
-	s.writeJSON(w, http.StatusOK, reader.SymbolRegistryStatus(ctx))
+	s.writeJSON(w, http.StatusOK, reader.SymbolMapStatus(ctx))
 }
 
 func (s *Server) ledger(w http.ResponseWriter, r *http.Request) {

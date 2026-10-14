@@ -3,6 +3,12 @@
 
 Runs from the repository (deploy/chain/comparison.py, older algotrading-paper stack)
 or from an installed chain (<root>/chain/comparison.py, short container names).
+The strategy and portfolio files come from STRATEGY_FILE / PORTFOLIO_FILE (chain.env).
+
+When that configuration changes, the study so far is moved to archive-<fingerprint>/
+and a new one starts from the PAPER account and strategy state at that moment (the
+fast baseline is seeded with it instead of the initial cash). The comparison rows
+already shown stay in comparison.json, each compared under the configuration of its day.
 """
 import argparse
 from datetime import datetime, timezone
@@ -21,10 +27,9 @@ IN_REPOSITORY = HERE.parent.name == 'deploy'
 # Repository root, or the installation root ("/" on the VPS).
 ROOT = HERE.parents[1] if IN_REPOSITORY else HERE.parent
 CONFIG = ROOT / 'config'
-STRATEGY_FILE = 'strategies/pure_rsi_paper_activity.json'
-PORTFOLIO_FILE = 'portfolio/pure_rsi_equal_weight.json'
-PROFILE = CONFIG / STRATEGY_FILE
-PORTFOLIO = CONFIG / PORTFOLIO_FILE
+PROFILE = CONFIG / 'strategies' / os.environ.get('STRATEGY_FILE', 'pure_rsi_paper_activity.json')
+PORTFOLIO = CONFIG / 'portfolio' / os.environ.get('PORTFOLIO_FILE', 'pure_rsi_equal_weight.json')
+STUDY_FILES = ('study.json', 'manifest.json', 'fast.json', 'comparison.json', 'producer-input.json')
 # Public Kraken plan observation tool (install copies it to chain/tools).
 SHADOW_TOOL = (ROOT / 'live_trading' if IN_REPOSITORY else HERE / 'tools') / 'kraken_shadow.py'
 NOTE =('Live means PAPER with virtual USD and simulated fills, not private Kraken. '
@@ -64,6 +69,22 @@ def query(postgres_container):
                              'algotrading', '-d', 'algotrading_paper', '-v', 'ON_ERROR_STOP=1', '-c', sql))
 
 
+def normalized(live):
+    """The account snapshot with its unordered lists sorted.
+
+    After a restart the execution service writes orders and processed fill ids in another
+    order; the content is the same, so it must not look like a changed account.
+    """
+    if not live:
+        return live
+    result = dict(live)
+    if 'orders' in live:
+        result['orders'] = sorted(live['orders'], key=lambda order: order['order_id'])
+    if 'processed_fill_ids' in live:
+        result['processed_fill_ids'] = sorted(live['processed_fill_ids'])
+    return result
+
+
 def mark_equity(cash, positions, prices):
     return cash + sum(quantity * prices[asset] for asset, quantity in positions.items() if abs(quantity) > 1e-12)
 
@@ -94,6 +115,37 @@ def compare(cycles, baseline):
     return rows, positions
 
 
+def profile_label():
+    """E.g. 'PureRSI(7): entry > 50, exit < 40 · vol target 20% · virtual USD'."""
+    strategy = json.loads(PROFILE.read_text())['strategies'][0]
+    sizer = json.loads(PORTFOLIO.read_text())['strategies'][0]['sizer']
+    parameters = strategy['parameters']
+    sizing = (f"vol target {sizer['target_volatility']:.0%}" if sizer['type'] == 'volatility_target'
+              else f"{sizer['weight_per_full_signal']:.0%} per signal")
+    return (f"PureRSI({parameters['rsi_length']}): entry > {parameters['rsi_entry']:g}, "
+            f"exit < {parameters['rsi_exit']:g} · {sizing} · virtual USD")
+
+
+def restart_study(output, study, identity, live):
+    """Archive the study of the previous configuration; seed a new one with the current state."""
+    cycles = study['cycles']
+    if not cycles or normalized(cycles[-1]['live']) != live:
+        raise ValueError('Configuration changed after an uncaptured cycle; the new study needs the last captured state')
+    comparison = output / 'comparison.json'
+    previous_rows = json.loads(comparison.read_text())['rows'] if comparison.exists() else []
+    archive = output / ('archive-' + study['fingerprint'][:12])
+    archive.mkdir(exist_ok=False)
+    for path in [output / name for name in STUDY_FILES] + sorted(output.glob('market-*.sqlite*')) + sorted(output.glob('kraken-*.json')):
+        if path.exists():
+            path.replace(archive / path.name)
+    last = cycles[-1]
+    restarted = {'fingerprint': identity, 'previousRows': previous_rows, 'cycles': [],
+                 'seed': {'decision_date': last['decision_date'], 'execution_date': last['execution_date'], 'live': live}}
+    write_json(output / 'study.json', restarted)
+    print('Configuration changed: previous study archived in ' + archive.name + '; new study seeded', flush=True)
+    return restarted
+
+
 def collect(containers, output, shadow, binary, image=None):
     postgres_container, market_container = containers
     observed = query(postgres_container)
@@ -102,7 +154,7 @@ def collect(containers, output, shadow, binary, image=None):
         raise ValueError('Observed strategy profile does not match the baseline')
     if decoder.raw_decode(observed['riskIdentity'])[0] != json.loads(PORTFOLIO.read_text()):
         raise ValueError('Observed portfolio profile does not match the baseline')
-    live, plan, intent = observed['snapshot'], observed['plan'], observed['intent']
+    live, plan, intent = normalized(observed['snapshot']), observed['plan'], observed['intent']
     if not live or not plan or not intent:
         raise ValueError('Waiting for durable strategy/plan/account evidence')
     decision, execution = plan['decision_timestamp'], live['last_execution_timestamp']
@@ -124,10 +176,12 @@ def collect(containers, output, shadow, binary, image=None):
         json.dumps([observed['initialCash'], observed['commissionRate'], 100]).encode()).hexdigest()
     study = json.loads(journal.read_text()) if journal.exists() else {'fingerprint': identity, 'cycles': []}
     if study['fingerprint'] != identity:
-        raise ValueError('Study configuration changed; use a separate output directory')
+        study = restart_study(output, study, identity, live)
     cycles = study['cycles']
-    if not cycles or decision > cycles[-1]['decision_date']:
-        if cycles and decision != cycles[-1]['execution_date']:
+    seed = study.get('seed')
+    last = cycles[-1] if cycles else seed
+    if last is None or decision > last['decision_date']:
+        if last and decision != last['execution_date']:
             raise ValueError('A forward daily observation is missing; do not invent intervening history')
         mounts = json.loads(docker('inspect', '--format', '{{json .Mounts}}', market_container))
         source = next(Path(row['Source']) / 'database.db' for row in mounts if row['Destination'] == '/data/market')
@@ -135,17 +189,28 @@ def collect(containers, output, shadow, binary, image=None):
         with sqlite3.connect(source.as_uri() + '?mode=ro', uri=True) as reader, sqlite3.connect(frozen) as writer:
             reader.backup(writer)
         # Reject a crossing-cycle capture rather than attach market evidence to the wrong account.
-        if query(postgres_container)['snapshot'] != live:
+        if normalized(query(postgres_container)['snapshot']) != live:
             raise ValueError('Account changed during capture; retry')
         signals = next(row['signals'] for row in intent['strategies'] if row['strategy_id'] == 1)
         cycles.append({'decision_date': decision, 'execution_date': execution, 'database': str(frozen),
                        'open_prices': prices, 'live': live, 'signals': signals, 'plan': plan})
         write_json(journal, study)
-    elif decision != cycles[-1]['decision_date'] or live != cycles[-1]['live']:
+    elif decision != last['decision_date'] or live != normalized(last['live']):
         raise ValueError('Previously captured account cycle changed; retained evidence preserved')
+    previous_rows = study.get('previousRows', [])
+    if not cycles:
+        # Seeded study before its first cycle: keep showing the earlier rows.
+        write_json(output / 'comparison.json', {'contractVersion': 'paper-comparison-v1', 'status': 'OBSERVING',
+            'checkedAt': datetime.now(timezone.utc).isoformat(), 'profile': profile_label(), 'fingerprint': identity,
+            'note': NOTE + ' Configuration changed; waiting for its first daily cycle.',
+            'rows': previous_rows, 'positions': []})
+        return
     manifest = {'strategy_config': str(PROFILE), 'portfolio_config': str(PORTFOLIO),
                 'initial_cash': observed['initialCash'], 'commission_rate': observed['commissionRate'],
                 'warmup_days': 100, 'cycles': cycles, 'output': str(output / 'fast.json')}
+    if seed:
+        manifest['start'] = {'cash': seed['live']['account_cash'], 'positions': seed['live']['account_positions'],
+                             'strategies': seed['live']['strategies']}
     write_json(output / 'manifest.json', manifest)
     env = dict(os.environ, ALGOTRADING_PAPER_BASELINE_MANIFEST=str(output / 'manifest.json'))
     fast_output = output / 'fast.json'
@@ -180,8 +245,8 @@ def collect(containers, output, shadow, binary, image=None):
         except (subprocess.SubprocessError, OSError, ValueError):
             shadow_note = ' Kraken public plan observation: unavailable; retrying, no private orders.'
     write_json(output / 'comparison.json', {'contractVersion': 'paper-comparison-v1', 'status': 'OBSERVING',
-        'checkedAt': datetime.now(timezone.utc).isoformat(), 'profile': 'PureRSI(7): entry > 50, exit < 40 · virtual USD',
-        'fingerprint': identity, 'note': NOTE + shadow_note, 'rows': rows, 'positions': positions})
+        'checkedAt': datetime.now(timezone.utc).isoformat(), 'profile': profile_label(),
+        'fingerprint': identity, 'note': NOTE + shadow_note, 'rows': previous_rows + rows, 'positions': positions})
 
 
 def main():

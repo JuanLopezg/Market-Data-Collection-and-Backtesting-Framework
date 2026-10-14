@@ -128,10 +128,17 @@ class AccountAlertMonitor:
     """Own one account/policy journal and persist transitions across process restarts."""
 
     def __init__(self, directory, policy, environment='live', scope=PRIVATE_SCOPE,
-                 account_name='Kraken', summary_hour_utc=None, decline_fraction='0.10', gross_limit='5'):
+                 account_name='Kraken', summary_hour_utc=None, decline_fraction='0.10', gross_limit='5',
+                 retention_days=None):
         self.decline_fraction, self.gross_limit = number(decline_fraction), number(gross_limit)
         if not 0 < self.decline_fraction <= 1 or self.gross_limit <= 0:
             raise ValueError('Invalid account warning thresholds')
+        if retention_days is not None and retention_days < 2:
+            raise ValueError('Keep at least two days of account samples')
+        # Raw account samples (one every poll) older than this are deleted. Alert state,
+        # alert events and the per-day portfolio snapshots are small and kept.
+        self.retention_seconds = retention_days * 86400 if retention_days else None
+        self.last_prune = 0.0
         self.unavailable_checks = []
         self.directory = Path(directory)
         self.journal = AccountJournal(self.directory, scope, environment, policy)
@@ -186,8 +193,17 @@ class AccountAlertMonitor:
                 if summary:
                     self.db.execute('INSERT INTO alert_events(payload) VALUES (?)', (json.dumps(summary),))
         self.unavailable_checks = sorted(unavailable)
+        self.prune(timestamp)
         self.publish(now)
         return result
+
+    def prune(self, observed_at):
+        """Delete raw samples beyond the retention window, at most once an hour."""
+        if not self.retention_seconds or observed_at - self.last_prune < 3600:
+            return
+        with self.db:
+            self.db.execute('DELETE FROM samples WHERE observed_at < ?', (observed_at - self.retention_seconds,))
+        self.last_prune = observed_at
 
     def publish(self, now, error=''):
         # Publish history before heartbeat. A failed/stale read never emits recovery.
@@ -222,7 +238,8 @@ class AccountAlertMonitor:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--once', action='store_true')
-    parser.add_argument('--telegram', action='store_true', help='Start/reuse the existing local Go Telegram notifier')
+    parser.add_argument('--telegram', action='store_true',
+                        help='Local PC only: start/reuse a Go Telegram notifier container (the chain runs its own)')
     parser.add_argument('--environment', choices=('live', 'demo'), default='live')
     parser.add_argument('--interval', type=float, default=30)
     parser.add_argument('--account-name', default='Kraken')
@@ -230,13 +247,21 @@ def main():
     parser.add_argument('--daily-equity-drop-fraction', default='0.10')
     parser.add_argument('--gross-exposure-warning', default='5')
     parser.add_argument('--policy', type=Path, default=ROOT / 'storage/kraken_shadow/account-policy.json')
+    parser.add_argument('--credentials', type=Path, default=ROOT / 'storage/kraken_shadow/.env',
+                        help='File with KRAKEN_API_KEY and KRAKEN_API_SECRET (read-only key); read internally, never shown')
+    parser.add_argument('--state-root', type=Path, default=ROOT / 'storage/kraken_shadow',
+                        help='Folder that must contain --output (an installed chain uses <root>/data/kraken_account)')
     parser.add_argument('--output', type=Path, default=ROOT / 'storage/kraken_shadow/account-alerts')
+    parser.add_argument('--retention-days', type=int, default=0,
+                        help='Days of raw account samples to keep; 0 keeps all (the chain uses 3)')
     args = parser.parse_args()
     if not 0 <= args.summary_hour_utc <= 23 or not args.account_name.strip() or len(args.account_name) > 64 or any(ord(c) < 32 for c in args.account_name):
         parser.error('Use a single-line account name and a summary UTC hour from 0 to 23')
     directory = args.output.resolve()
-    if not directory.is_relative_to((ROOT / 'storage/kraken_shadow').resolve()) or not 10 <= args.interval <= 60:
-        parser.error('Use ignored Kraken storage and a polling interval between 10 and 60 seconds')
+    if not directory.is_relative_to(args.state_root.resolve()) or not 10 <= args.interval <= 60:
+        parser.error('Keep the output under --state-root and use a polling interval between 10 and 60 seconds')
+    if args.retention_days and args.retention_days < 2:
+        parser.error('Keep at least two days of account samples (the daily summary compares with yesterday)')
     directory.mkdir(parents=True, exist_ok=True)
     lock = (directory / 'monitor.lock').open('a')
     try:
@@ -250,10 +275,11 @@ def main():
     monitor = None
     try:
         policy = json.loads(args.policy.read_text(encoding='utf-8'))
-        reader = reader_from_credentials(ROOT / 'storage/kraken_shadow/.env', args.environment)
+        reader = reader_from_credentials(args.credentials, args.environment)
         monitor = AccountAlertMonitor(directory, policy, args.environment,
             account_name=args.account_name.strip(), summary_hour_utc=args.summary_hour_utc,
-            decline_fraction=args.daily_equity_drop_fraction, gross_limit=args.gross_exposure_warning)
+            decline_fraction=args.daily_equity_drop_fraction, gross_limit=args.gross_exposure_warning,
+            retention_days=args.retention_days or None)
         public_reader = KrakenPublicReader(args.environment, directory / 'public-prices')
         atomic_text(directory / 'monitor.pid', str(os.getpid()) + '\n')
         notifier_started = False

@@ -108,12 +108,74 @@ sudo systemctl daemon-reload && sudo systemctl enable --now algotrading-logs.ser
 sudo /chain/algo up
 ```
 
-This replaces the previous `deploy/paper_trading` + `deploy/live/logging` installation
-under `/opt/algotrading`, which the running VPS still uses until it is redeployed.
+This replaced the previous `deploy/paper_trading` + `deploy/live/logging` installation
+under `/opt/algotrading` (removed from the VPS on 2026-10-13).
 
 Chain units (`chain/systemd/`): `algotrading-chain.service` runs `algo up`/`algo down`,
 `algotrading-monitor.service` writes `data/telemetry`, `algotrading-comparison.service`
-runs the PAPER vs. fast-backtest study (only while `PAPER_COMPARISON_FILE` is set).
+runs the PAPER vs. fast-backtest study (only while `PAPER_COMPARISON_FILE` is set),
+`algotrading-kraken.service` runs the Kraken account monitor (below).
+
+## Changing the portfolio sizer of a running chain
+
+The risk checkpoint is bound to the portfolio file it was made with; a different file
+stops `risk` ("belongs to a different portfolio/config identity"). To switch on purpose
+(for example equal weight -> `pure_rsi_vol_target.json`), away from 00:00 UTC:
+
+```bash
+sudo /chain/algo backup
+# chain.env: PORTFOLIO_FILE=pure_rsi_vol_target.json and RISK_ADOPT_PORTFOLIO_CONFIG=yes
+sudo /chain/algo up                      # risk logs one ALERT "Portfolio config changed on purpose"
+# chain.env: RISK_ADOPT_PORTFOLIO_CONFIG=no
+sudo /chain/algo up                      # risk restarts with the adopted configuration
+sudo systemctl restart algotrading-comparison
+```
+
+Earlier decisions keep their sizing; the next daily decision uses the new one (with vol
+targeting, open positions are resized when their weight is off by more than 2 points).
+`comparison.py` reads `STRATEGY_FILE`/`PORTFOLIO_FILE`, archives the previous study in
+`data/comparison/archive-<fingerprint>/` and seeds the fast baseline with the PAPER account
+and strategy state at the switch; the rows already shown remain in the chart.
+
+## Kraken account monitor and Telegram
+
+Warning-only watch of the real Kraken account, independent of PAPER trading:
+
+```text
+algotrading-kraken.service (host, python3)          kraken-notifier (container, profile "kraken")
+  every 30 s, read-only key:                          reads data/kraken_account
+  balances, margin, positions  -> data/kraken_account -> Telegram
+  warnings + daily portfolio      events.jsonl, status.json, SQLite journal
+```
+
+- Warnings (each sent once, with a "resolved" message when it clears): equity below the
+  minimum, USD available below the reserve, initial/maintenance margin, equity down >= 10%
+  versus yesterday, gross exposure above 5x. Thresholds: `config/kraken_account_policy.json`
+  (installed once from `config/venues/kraken_futures/account_policy.json`).
+- One daily portfolio message at 09:00 UTC (balance, equity, positions in USD).
+- It never places, cancels or closes anything. Raw samples are kept 3 days; alert history
+  and per-day portfolio snapshots stay. A failed read never reports a recovery.
+- The key must be a Kraken Derivatives key with **General API: Read Only** and
+  **Withdrawal API: No Access**; the monitor refuses keys that can trade or move funds.
+
+Enable it on the VPS (only when authorized; the key file is created by you, never shown):
+
+```bash
+# 1. Read-only key: exactly KRAKEN_API_KEY=... and KRAKEN_API_SECRET=...
+sudo install -m 0600 /dev/null /secrets/kraken_readonly.env && sudo nano /secrets/kraken_readonly.env
+# 2. Telegram bot settings in /secrets/chain.env (DASHBOARD_TELEGRAM_BOT_TOKEN, DASHBOARD_TELEGRAM_CHAT_ID)
+# 3. chain.env: COMPOSE_PROFILES=kraken   (KRAKEN_NOTIFIER_SINK=TEST_FILE to try without Telegram)
+sudo cp /chain/systemd/algotrading-kraken.service /etc/systemd/system/ && sudo systemctl daemon-reload
+sudo systemctl enable --now algotrading-kraken
+sudo /chain/algo up
+sudo /chain/algo ps        # "kraken account monitor: running", kraken-notifier Up
+cat /data/kraken_account/status.json   # lastSuccessAt every ~30 s, no lastError
+```
+
+Changing the thresholds binds a new journal: stop the unit, move `data/kraken_account`
+aside, edit the policy and start again (the old history stays in the moved folder).
+Stop: `systemctl disable --now algotrading-kraken` and remove `kraken` from
+`COMPOSE_PROFILES`.
 
 ## Releases
 
@@ -172,7 +234,17 @@ positions as before; `logs/<service>/` fills; `data/comparison/comparison.json` 
 Rollback: `systemctl disable --now algotrading-chain algotrading-monitor algotrading-comparison`,
 then enable and start the three old units again; their volumes were never touched.
 
-After some accepted days: delete the old containers and volumes (`algotrading-paper*`
-and the three older hashed projects), `/opt/algotrading`, `/var/log/algotrading`,
-`/etc/algotrading`, the old archives in `/home/ubuntu` and the two failed
-`algotrading-quote-*` units. Keep one backup in `/backups` first.
+Done on 2026-10-13: the old containers, volumes and images (`algotrading-paper*`, the three
+older hashed projects, golang build images), `/opt/algotrading`, `/var/log/algotrading`,
+`/etc/algotrading`, the old files in `/home/ubuntu`, the three `algotrading-paper*` units and
+the two failed `algotrading-quote-*` units were removed. Everything removed except image
+tarballs is in `/backups/old_paper_stack_20261013.tar.gz` (root only, includes the old
+`/etc/algotrading` settings): Docker volumes under `var/lib/docker/volumes/`, plus `opt/`,
+`etc/`, `var/log/` and `home/ubuntu/`.
+
+## Dirty releases
+
+`algo release` packs `git archive HEAD` for a clean tree. With uncommitted changes the
+version ends in `-dirty` and `source.tar.gz` is the working tree instead: tracked files plus
+new files git does not ignore (never ignored data or credentials), so the installed chain
+files match the images.

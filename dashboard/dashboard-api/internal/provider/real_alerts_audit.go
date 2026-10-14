@@ -120,7 +120,7 @@ func (p *Real) loadAlertsAudit(ctx context.Context) realAlertsAuditData {
 		marketErr error
 		risk      realRiskData
 		riskErr   error
-		registry  SymbolRegistryStatus
+		symbolMap SymbolMapStatus
 		ledger    LedgerStatus
 	)
 
@@ -133,13 +133,13 @@ func (p *Real) loadAlertsAudit(ctx context.Context) realAlertsAuditData {
 	go func() { defer wg.Done(); execution, execErr = p.execution(ctx) }()
 	go func() { defer wg.Done(); market, marketErr = p.marketDataResource(ctx) }()
 	go func() { defer wg.Done(); risk, riskErr = p.risk(ctx) }()
-	go func() { defer wg.Done(); registry = p.SymbolRegistryStatus(ctx) }()
+	go func() { defer wg.Done(); symbolMap = p.SymbolMapStatus(ctx) }()
 	go func() { defer wg.Done(); ledger = p.LedgerStatus(ctx) }()
 	wg.Wait()
 
 	result := buildRealAlertsAudit(infra, recon, reconErr, execution, execErr, market, marketErr, risk, riskErr)
 	result = mergeLedgerAlerts(result, ledger)
-	result = mergeSymbolRegistryAlerts(result, registry)
+	result = mergeSymbolMapAlerts(result, symbolMap)
 	result = mergeDurableAlertHistory(result, p.cfg.AlertStoreDir, time.Now().UTC())
 	result = mergeAlertAcknowledgements(result, p.cfg.AlertAckDir)
 	return mergeManualAuditHistory(result, p.cfg.ManualAuditDir)
@@ -406,65 +406,26 @@ func alertSeverityRank(value string) int {
 	}
 }
 
-func isSymbolRegistryDependencyReadFailure(detail string) bool {
-	detail = strings.TrimSpace(detail)
-	return strings.HasPrefix(detail, "canonical market-data ranking unavailable:") ||
-		strings.HasPrefix(detail, "current strategy universe unavailable:") ||
-		strings.HasPrefix(detail, "current Hyperliquid TESTNET metadata unavailable:")
-}
-
-func mergeSymbolRegistryAlerts(result realAlertsAuditData, registry SymbolRegistryStatus) realAlertsAuditData {
-	timestamp := registry.CheckedAt
-	if strings.TrimSpace(timestamp) == "" {
+// Symbol-map alarms (symbol_map.go). Each alert id is per asset and event, so the durable
+// alert history follows one problem from opened to resolved. An unreadable table or
+// unavailable Kraken prices is a warning: nothing is routed to Kraken yet.
+func mergeSymbolMapAlerts(result realAlertsAuditData, status SymbolMapStatus) realAlertsAuditData {
+	timestamp := status.CheckedAt
+	if strings.TrimSpace(timestamp) == "" || timestamp == "mock" {
 		timestamp = result.SourceUpdatedAt
 	}
-	if registry.Status == "BLOCKED" || (!registry.Validated && registry.Status != "MOCK_ONLY") {
-		detail := registry.Error
-		if detail == "" {
-			detail = registry.Note
-		}
-
-		// Step 37A is an observability/readiness layer while order routing is still
-		// explicitly disabled. A temporary inability to refresh one of its external
-		// read-only dependencies must not create a circular precondition where the
-		// new registry alert blocks Step 32 -> Step 36 before Step 37A can validate
-		// itself. Keep the registry fail-closed (Validated=false, Status=BLOCKED),
-		// but expose dependency-read failures as WARN until routing is enabled.
-		// Actual registry/artifact/manifest contradictions and the explicit CRITICAL
-		// drift/unregistered alarms below remain CRITICAL.
-		severity := "CRITICAL"
-		if registry.OrderRouting == "DISABLED" && isSymbolRegistryDependencyReadFailure(registry.Error) {
-			severity = "WARN"
-		}
+	if status.Status == "UNAVAILABLE" && status.CheckedAt != "mock" {
 		result.Alerts = append(result.Alerts, realOperationalAlert{
-			ID: "derived-symbol-registry-blocked", Timestamp: timestamp, Severity: severity, Status: "ACTIVE",
-			Service: "SymbolRegistry", EventType: "SYMBOL_REGISTRY_BLOCKED", Title: "Multi-exchange symbol registry validation is blocked",
-			Detail: detail, LinkedContext: "Open Infrastructure",
+			ID: "derived-symbol-map-unavailable", Timestamp: timestamp, Severity: "WARN", Status: "ACTIVE",
+			Service: "SymbolMap", EventType: "SYMBOL_MAP_UNAVAILABLE", Title: "Kraken symbol mapping cannot be checked",
+			Detail: status.Error, LinkedContext: "Open Symbol Mapping",
 		})
 	}
-	for i, alarm := range registry.Alarms {
-		severity := alarm.Severity
-		if severity != "CRITICAL" && severity != "WARN" && severity != "INFO" {
-			severity = "WARN"
-		}
+	for _, alarm := range status.Alarms {
 		result.Alerts = append(result.Alerts, realOperationalAlert{
-			ID:        fmt.Sprintf("derived-symbol-registry-%03d-%s", i, strings.ToLower(strings.ReplaceAll(alarm.EventType, "_", "-"))),
-			Timestamp: timestamp, Severity: severity, Status: "ACTIVE", Service: "SymbolRegistry", Asset: alarm.Asset,
-			EventType: alarm.EventType, Title: alarm.Title, Detail: alarm.Detail, LinkedContext: "Open Infrastructure",
-		})
-	}
-	if registry.RegistryVersion != "" {
-		result.Audit = append(result.Audit, realAuditRecord{
-			ID: "evidence-symbol-registry-latest", Timestamp: timestamp, Actor: "system", ActorType: "SYSTEM",
-			Action: "SYMBOL_REGISTRY_OBSERVED", Target: registry.RegistryVersion,
-			Result: func() string {
-				if registry.Validated {
-					return "SUCCESS"
-				}
-				return "REJECTED"
-			}(),
-			RequestHash: registry.RegistryArtifactSHA256,
-			Detail:      fmt.Sprintf("Multi-exchange symbol registry observed: entries=%d, current ranking=%d/%d registered, current strategy routable=%d/%d, status=%s. This is derived evidence, not a durable audit ledger row.", registry.RegistryEntryCount, registry.CurrentRankingRegisteredCount, registry.CurrentRankingCount, registry.CurrentStrategyRoutableCount, registry.CurrentStrategyCount, registry.Status),
+			ID:        "derived-symbol-map-" + strings.ToLower(strings.ReplaceAll(alarm.EventType, "_", "-")) + "-" + strings.ToLower(alarm.Asset),
+			Timestamp: timestamp, Severity: alarm.Severity, Status: "ACTIVE", Service: "SymbolMap", Asset: alarm.Asset,
+			EventType: alarm.EventType, Title: alarm.Title, Detail: alarm.Detail, LinkedContext: "Open Symbol Mapping",
 		})
 	}
 
@@ -485,9 +446,6 @@ func mergeSymbolRegistryAlerts(result realAlertsAuditData, registry SymbolRegist
 	sort.SliceStable(result.Alerts, func(i, j int) bool {
 		return alertSeverityRank(result.Alerts[i].Severity) > alertSeverityRank(result.Alerts[j].Severity)
 	})
-	if registry.RegistryVersion != "" {
-		result.SourceNote += " Step 37A also derives live symbol-registry drift/coverage alerts from the versioned registry, current canonical market ranking/strategy universe and public Hyperliquid TESTNET metadata; these alerts are still not append-only persisted until the dedicated alert store is implemented."
-	}
 	return result
 }
 

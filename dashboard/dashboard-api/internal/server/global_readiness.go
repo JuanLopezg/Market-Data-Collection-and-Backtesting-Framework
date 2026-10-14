@@ -133,8 +133,8 @@ type globalReadinessInputs struct {
 	VenuePublicOK  bool
 	VenueRules     provider.VenueTradingRulesStatus
 	VenueRulesOK   bool
-	Registry       provider.SymbolRegistryStatus
-	RegistryOK     bool
+	SymbolMap      provider.SymbolMapStatus
+	SymbolMapOK    bool
 	Ledger         provider.LedgerStatus
 	LedgerOK       bool
 	DemoAuth       bool
@@ -204,10 +204,10 @@ func (s *Server) globalReadiness(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 	if reader, ok := s.provider.(interface {
-		SymbolRegistryStatus(context.Context) provider.SymbolRegistryStatus
+		SymbolMapStatus(context.Context) provider.SymbolMapStatus
 	}); ok {
 		wg.Add(1)
-		go func() { defer wg.Done(); inputs.Registry = reader.SymbolRegistryStatus(ctx); inputs.RegistryOK = true }()
+		go func() { defer wg.Done(); inputs.SymbolMap = reader.SymbolMapStatus(ctx); inputs.SymbolMapOK = true }()
 	}
 	if reader, ok := s.provider.(interface {
 		LedgerStatus(context.Context) provider.LedgerStatus
@@ -343,23 +343,18 @@ func buildGlobalReadiness(in globalReadinessInputs) globalReadinessResponse {
 		add("venue-rules", "Public venue trading rules", "PASS", true, []string{"DASHBOARD", "PRIVATE_TESTNET", "LIVE"}, "/api/venue-rules", fmt.Sprintf("Validated rules %d/%d supported mappings; order routing remains disabled.", in.VenueRules.ValidatedRuleCount, in.VenueRules.SupportedMappingCount))
 	}
 
-	if !in.RegistryOK || !in.Registry.Validated {
-		detail := "Symbol-registry provider unavailable."
-		if in.RegistryOK {
-			detail = in.Registry.Error
-			if strings.TrimSpace(detail) == "" {
-				detail = in.Registry.Note
-			}
-		}
-		add("symbol-registry", "Multi-exchange symbol registry", "BLOCKED", true, []string{"DASHBOARD", "PRIVATE_TESTNET", "LIVE", "REPLAY_MOCK"}, "/api/symbol-registry", detail)
-	} else {
-		state := "PASS"
-		detail := fmt.Sprintf("Registry %s classifies ranking %d/%d and strategy %d/%d; routable=%d/%d.", in.Registry.RegistryVersion, in.Registry.CurrentRankingRegisteredCount, in.Registry.CurrentRankingCount, in.Registry.CurrentStrategyRegisteredCount, in.Registry.CurrentStrategyCount, in.Registry.CurrentStrategyRoutableCount, in.Registry.CurrentStrategyCount)
-		if !in.Registry.ExecutionCoverageComplete {
-			state = "WARN"
-			detail += " Coverage is intentionally partial; unsupported/venue-absent assets remain non-routable."
-		}
-		add("symbol-registry", "Multi-exchange symbol registry", state, true, []string{"DASHBOARD", "PRIVATE_TESTNET", "LIVE", "REPLAY_MOCK"}, "/api/symbol-registry", detail)
+	symbolMapFor := []string{"PRIVATE_TESTNET", "LIVE"}
+	switch {
+	case !in.SymbolMapOK:
+		add("symbol-map", "Kraken symbol mapping", "BLOCKED", false, symbolMapFor, "/api/symbol-map", "Symbol-map provider unavailable.")
+	case in.SymbolMap.Status == "OK":
+		add("symbol-map", "Kraken symbol mapping", "PASS", false, symbolMapFor, "/api/symbol-map", fmt.Sprintf("%d/%d strategy assets tradeable on Kraken; every unit scale agrees with prices.", in.SymbolMap.StrategyMapped, in.SymbolMap.StrategyAssets))
+	case in.SymbolMap.Status == "WARN":
+		add("symbol-map", "Kraken symbol mapping", "WARN", false, symbolMapFor, "/api/symbol-map", fmt.Sprintf("%d/%d strategy assets tradeable on Kraken; the others would be skipped.", in.SymbolMap.StrategyMapped, in.SymbolMap.StrategyAssets))
+	case in.SymbolMap.Status == "UNAVAILABLE":
+		add("symbol-map", "Kraken symbol mapping", "WARN", false, symbolMapFor, "/api/symbol-map", in.SymbolMap.Error)
+	default:
+		add("symbol-map", "Kraken symbol mapping", "BLOCKED", false, symbolMapFor, "/api/symbol-map", "A unit scale disagrees with prices, or an active signal cannot be traded on Kraken.")
 	}
 
 	if !in.LedgerOK || !in.Ledger.Validated || !in.Ledger.FoundationReady {
@@ -453,7 +448,7 @@ func buildGlobalReadiness(in globalReadinessInputs) globalReadinessResponse {
 
 	expectedIDs := []string{
 		"provider-real", "postgres", "nats", "canonical-market-data", "reconciliation",
-		"durable-e2e-proof", "venue-foundation", "venue-public", "venue-rules", "symbol-registry",
+		"durable-e2e-proof", "venue-foundation", "venue-public", "venue-rules", "symbol-map",
 		"ledger", "watchdog", "critical-alerts", "manual-route", "production-auth", "private-auth",
 		"account-snapshot", "order-lifecycle", "service-liveness", "clock-sync", "mock-exchange",
 	}
@@ -585,7 +580,7 @@ func globalReadinessRetryable(req globalReadinessRequirement) bool {
 		return false
 	}
 	switch req.ID {
-	case "postgres", "nats", "canonical-market-data", "durable-e2e-proof", "venue-public", "venue-rules", "symbol-registry", "ledger", "manual-route":
+	case "postgres", "nats", "canonical-market-data", "durable-e2e-proof", "venue-public", "venue-rules", "ledger", "manual-route":
 	default:
 		return false
 	}

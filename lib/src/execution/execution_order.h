@@ -37,6 +37,10 @@ struct ExecutionOrder {
     // Research short-entry bracket. The child covers only the actual filled units.
     double protective_stop_price = 0.0;
     OrderID parent_order_id = 0;
+    // Price (USD per source unit) the planner sized this order with; 0 when unknown. A
+    // real-venue adapter compares it with the venue price to check the order's USD value
+    // after unit conversion (e.g. 1000PEPEUSDT -> PEPE). Not used by matching.
+    double reference_price = 0.0;
 
     ExecutionOrder() = default;
 

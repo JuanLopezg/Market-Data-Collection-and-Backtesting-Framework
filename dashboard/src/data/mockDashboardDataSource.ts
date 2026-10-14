@@ -1,6 +1,6 @@
 import type { DashboardDataSource } from './dashboardDataSource'
 import { runtimeConfig } from '../config/runtime'
-import type { AlertAcknowledgementInput, AlertAcknowledgementResult, AlertsAuditData, DashboardDiagnostics, ExecutionData, InfrastructureData, LiveVsExpectedData, ManualControlData, MarketDataData, OverviewData, PipelineData, Position, PositionsData, ReconciliationData, RiskData, ShellStatus, ProviderStatus, SafetyGateData, GlobalReadinessData, VenueFoundationData, VenuePublicData, VenueSymbolMappingData, VenueTradingRulesData, SymbolRegistryData, LedgerData, HostHistoryData, HostHistoryQuery } from '../types/dashboard'
+import type { AlertAcknowledgementInput, AlertAcknowledgementResult, AlertsAuditData, DashboardDiagnostics, ExecutionData, InfrastructureData, LiveVsExpectedData, ManualControlData, MarketDataData, OverviewData, PipelineData, Position, PositionsData, ReconciliationData, RiskData, ShellStatus, ProviderStatus, SafetyGateData, GlobalReadinessData, VenueFoundationData, VenuePublicData, VenueSymbolMappingData, VenueTradingRulesData, SymbolMapData, LedgerData, HostHistoryData, HostHistoryQuery } from '../types/dashboard'
 
 const wait = (ms = runtimeConfig.mockLatencyMs) => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -81,14 +81,23 @@ const venueTradingRulesData: VenueTradingRulesData = {
 }
 
 
-const symbolRegistryData: SymbolRegistryData = {
-  status: 'MOCK_ONLY', validated: false, registryVersion: 'mock', registryArtifactSha256: '', policy: 'EXPLICIT_ONLY',
-  marketDataSource: 'BINANCE', executionVenue: 'HYPERLIQUID', executionEnvironment: 'TESTNET', registryEntryCount: 0,
-  currentRankingCount: 0, currentRankingRegisteredCount: 0, currentStrategyCount: 0, currentStrategyRegisteredCount: 0,
-  currentStrategyRoutableCount: 0, currentStrategyNonRoutableCount: 0, executionCoverageComplete: false,
-  unregisteredRankingSymbols: [], unregisteredStrategySymbols: [], venueAbsentStrategySymbols: [], explicitBlockedStrategySymbols: [],
-  mappingDivergences: [], alarms: [], rows: [], metadataLatencyMs: 0, checkedAt: 'mock', privateAuth: 'DEFERRED', orderRouting: 'DISABLED',
-  readOnly: true, note: 'Mock mode cannot validate the real multi-exchange symbol registry.',
+const symbolMapData: SymbolMapData = {
+  status: 'WARN', venue: 'kraken-futures', tableGeneratedAt: '2026-10-13T17:31:09Z', tableEntries: 161,
+  strategyAssets: 4, strategyMapped: 3, checkedAt: '2026-10-13T18:00:00Z',
+  rows: [
+    { source: 'BTCUSDT', asset: 'BTC', venueSymbol: 'PF_XBTUSD', scale: 1, sourcePrice: 62000, venuePrice: 61850, priceRatio: 1.0024,
+      inStrategy: true, activeSignal: true, inRanking: true, state: 'OK', detail: '1 BTCUSDT = 1 BTC on PF_XBTUSD.' },
+    { source: '1000PEPEUSDT', asset: 'PEPE', venueSymbol: 'PF_PEPEUSD', scale: 1000, sourcePrice: 0.0102, venuePrice: 0.0000101, priceRatio: 1009.9,
+      inStrategy: true, activeSignal: false, inRanking: true, state: 'OK', detail: '1 1000PEPEUSDT = 1000 PEPE on PF_PEPEUSD.' },
+    { source: 'SOLUSDT', asset: 'SOL', venueSymbol: 'PF_SOLUSD', scale: 1, sourcePrice: 180.2, venuePrice: 179.9, priceRatio: 1.0017,
+      inStrategy: true, activeSignal: false, inRanking: true, state: 'OK', detail: '1 SOLUSDT = 1 SOL on PF_SOLUSD.' },
+    { source: 'ARCUSDT', inStrategy: true, activeSignal: false, inRanking: true, state: 'NOT_ON_VENUE',
+      detail: 'Kraken lists no perpetual for this asset, so the symbol table has no entry.' },
+    { source: 'CTUSDT', inStrategy: false, activeSignal: false, inRanking: true, state: 'NOT_ON_VENUE',
+      detail: 'Kraken lists no perpetual for this asset, so the symbol table has no entry.' },
+  ],
+  alarms: [{ severity: 'WARN', eventType: 'SYMBOL_MAP_STRATEGY_NOT_TRADEABLE', asset: 'ARCUSDT', title: 'Strategy asset not tradeable on Kraken',
+    detail: 'Kraken lists no perpetual for this asset, so the symbol table has no entry. A signal on it would not be executed.' }],
 }
 
 const ledgerData: LedgerData = {
@@ -248,6 +257,21 @@ const reconciliationData: ReconciliationData = {
 
 
 const pipelineData: PipelineData = {
+  proof: {
+    status: 'ALIGNED', completion: 'FULL_CHAIN', cycleTimestamp: '2026-10-12', correlationId: 'market-data-updated:20261012',
+    submitOrders: 5, cancelOrders: 0, matchedOrders: 5, matchedFills: 5, orderIds: [], fillIds: ['1', '2', '3', '4', '5'],
+    sourceNote: 'mock',
+    steps: [
+      { id: 'market', label: 'Market Data', state: 'ALIGNED', evidence: 'Market data is aligned to 2026-10-12.', source: 'mock' },
+      { id: 'strategy', label: 'Strategy', state: 'ALIGNED', evidence: '5 active signals.', source: 'mock' },
+      { id: 'risk', label: 'Risk / Approved Target', state: 'ALIGNED', evidence: 'Approved targets for 5 assets.', source: 'mock' },
+      { id: 'planning', label: 'Order Planning', state: 'ALIGNED', evidence: '5 submit orders, 0 cancels.', source: 'mock' },
+      { id: 'orders', label: 'Execution Order', state: 'ALIGNED', evidence: 'All 5 orders FILLED.', source: 'mock' },
+      { id: 'fills', label: 'Persisted Fill', state: 'ALIGNED', evidence: '5 fill rows.', source: 'mock' },
+      { id: 'recon', label: 'Reconciliation', state: 'PENDING', evidence: 'Waiting for a newer exchange snapshot.', source: 'mock' },
+      { id: 'dashboard', label: 'Dashboard Projection', state: 'ALIGNED', evidence: 'Read-only projection.', source: 'mock' },
+    ],
+  },
   cycleLabel: 'Decision cycle · 2026-09-23 / 14:30 UTC',
   latestDecision: '14:30:00 UTC',
   universeSize: 20,
@@ -830,9 +854,9 @@ export const mockDashboardDataSource: DashboardDataSource = {
     await wait(40)
     return venueTradingRulesData
   },
-  async getSymbolRegistry() {
+  async getSymbolMap() {
     await wait(40)
-    return symbolRegistryData
+    return symbolMapData
   },
   async getLedger() {
     await wait(40)

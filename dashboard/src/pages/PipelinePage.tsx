@@ -6,7 +6,7 @@ import { WhyInspector } from '../components/WhyInspector'
 import { DataLoadError } from '../components/DataLoadError'
 import { displayAmount } from '../components/LineChart'
 import { useDashboardResource } from '../hooks/useDashboardResource'
-import type { PipelineAssetRow, PipelineData, PipelineStageState } from '../types/dashboard'
+import type { EndToEndProof, PipelineAssetRow, PipelineData, PipelineStageState } from '../types/dashboard'
 
 // Pipeline: the latest close decision asset by asset. The matrix shows the aggregated
 // signal (-1..+1, strategies weighted by capital share) and what followed from it. Click a
@@ -86,6 +86,45 @@ function orderRows(rows: PipelineAssetRow[]) {
   return [...rows].sort((a, b) => changed(a) - changed(b) || rank(a) - rank(b) || a.asset.localeCompare(b.asset))
 }
 
+// Last cycle check (real data only): did the latest close travel the whole chain, from
+// market data to fills and reconciliation? One line of counts and one chip per stage; the
+// evidence text is in each chip's tooltip and listed only for stages that are not aligned.
+// The "Dashboard Projection" stage describes the dashboard itself and is left out.
+const CYCLE_STAGE_LABEL: Record<string, string> = {
+  'Risk / Approved Target': 'Risk',
+  'Order Planning': 'Planning',
+  'Execution Order': 'Orders',
+  'Persisted Fill': 'Fills',
+}
+
+const STAGE_DOT: Record<string, string> = { ALIGNED: 'dot--good', BLOCKED: 'dot--bad' }
+
+function cycleSummary(proof: EndToEndProof) {
+  if (proof.submitOrders === 0) return proof.cancelOrders ? `No new orders · ${proof.cancelOrders} cancel request(s)` : 'No orders this cycle'
+  const parts = [`${proof.submitOrders} order(s) planned`, `${proof.matchedOrders} at the exchange`, `${proof.matchedFills} filled`]
+  if (proof.cancelOrders) parts.push(`${proof.cancelOrders} cancel request(s)`)
+  return parts.join(' · ')
+}
+
+function CycleCheck({ proof }: { proof: EndToEndProof }) {
+  const stages = proof.steps.filter(step => step.label !== 'Dashboard Projection')
+  const open = stages.filter(step => step.state !== 'ALIGNED')
+  return <Panel title={`Last Cycle Check · ${proof.cycleTimestamp}`} right={<StatePill state={proof.status}/>} className="pipeline-proof">
+    <p className="cycle-check__summary">{cycleSummary(proof)}</p>
+    <div className="cycle-check__chain">
+      {stages.map((step, index) => <Fragment key={step.id}>
+        {index > 0 && <ChevronRight size={14} className="muted"/>}
+        <span className="cycle-check__stage" title={step.evidence}>
+          <span className={`dot ${STAGE_DOT[step.state] ?? 'dot--warn'}`}/>{CYCLE_STAGE_LABEL[step.label] ?? step.label}
+        </span>
+      </Fragment>)}
+    </div>
+    {open.length > 0 && <ul className="cycle-check__open">
+      {open.map(step => <li key={step.id}><strong>{CYCLE_STAGE_LABEL[step.label] ?? step.label}:</strong> {step.evidence}</li>)}
+    </ul>}
+  </Panel>
+}
+
 function summaryOf(data: PipelineData) {
   if (data.summary?.length) return data.summary
   return [
@@ -140,22 +179,7 @@ export function PipelinePage() {
       </tbody></table></div>
     </Panel>
 
-    {data.proof && <Panel title="Cycle Proof" right={<StatePill state={data.proof.status}/>} className="pipeline-proof">
-      <div className="e2e-proof-head">
-        <div><span>Cycle</span><strong>{data.proof.cycleTimestamp}</strong><small>{data.proof.completion.replace(/_/g, ' ')}</small></div>
-        <div><span>Correlation</span><strong>{data.proof.correlationId}</strong></div>
-        <div><span>Orders</span><strong>{data.proof.matchedOrders}/{data.proof.submitOrders}</strong><small>{data.proof.cancelOrders} cancel request(s)</small></div>
-        <div><span>Fill coverage</span><strong>{data.proof.matchedFills}/{data.proof.submitOrders}</strong><small>{data.proof.fillIds.length} fill row(s)</small></div>
-      </div>
-      <div className="e2e-proof-grid">
-        {data.proof.steps.map((step, index) => <div className="e2e-proof-step" key={step.id}>
-          <div className="e2e-proof-step__top"><span>{index + 1}</span><StatePill state={step.state}/></div>
-          <strong>{step.label}</strong>
-          <p>{step.evidence}</p>
-          <small>{step.source}</small>
-        </div>)}
-      </div>
-    </Panel>}
+    {data.proof && <CycleCheck proof={data.proof}/>}
 
     {selectedTrace && <><div className="inspector-backdrop" onClick={() => setSelectedCycle(null)}/><WhyInspector trace={selectedTrace} onClose={() => setSelectedCycle(null)}/></>}
   </>

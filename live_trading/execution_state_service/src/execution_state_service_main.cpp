@@ -912,16 +912,23 @@ private:
     {
         try {
             const OrderUpdateEvent value = MessageJson::decodeOrderUpdateEvent(message.payload);
+            const bool applied = engine_.processExchangeEvent(
+                ExchangeEvent{value.update},
+                [this](const std::optional<Fill>& fill) { persist(fill); }
+            );
+            if (!applied) {
+                // A redelivered/replayed update for a status this order has already passed.
+                LG_DEBUG("Ignored stale update: order {} already past {} ({})",
+                         value.update.order_id, executionOrderStatusName(value.update.status),
+                         FormatDayKey(value.update.timestamp));
+                return DurableMessageDisposition::Ack;
+            }
             LG_INFO("Order {} is now {} ({}){}",
                     value.update.order_id,
                     executionOrderStatusName(value.update.status),
                     FormatDayKey(value.update.timestamp),
                     value.update.message.empty() ? std::string{} : " - " + value.update.message);
             LG_DEBUG("Order {} exchange order id {}", value.update.order_id, value.update.exchange_order_id);
-            engine_.processExchangeEvent(
-                ExchangeEvent{value.update},
-                [this](const std::optional<Fill>& fill) { persist(fill); }
-            );
             maybePublishExecutionCycleComplete();
             return DurableMessageDisposition::Ack;
         }

@@ -59,6 +59,7 @@ TESTS=(
     "step55_fault_chaos_rate_limit_test.cpp c++17"
     "step56_full_system_replay_runtime_test.cpp c++20"
     "step57_manual_control_mock_pipeline_test.cpp c++20"
+    "order_manager_stale_update_test.cpp c++20"
 )
 
 echo "Building ${#SOURCES[@]} library sources once"

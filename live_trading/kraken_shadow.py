@@ -159,18 +159,19 @@ class KrakenPublicReader:
         return normalize(instruments, tickers, time.time(), self.environment)
 
 
-def source_asset(coin):
-    if not coin.endswith('USDT') or len(coin) <= 4:
-        raise ValueError('Explicit Binance USDT source symbol required')
-    base = coin[:-4]
-    # Unit scaling is relevant to the source close, not to USD monetary intent.
-    aliases = {'1000PEPE': 'PEPE', '1000SHIB': 'SHIB', '1000BONK': 'BONK',
-               '1000FLOKI': 'FLOKI', '1000LUNC': 'LUNC', '1000DOGS': 'DOGS',
-               '1000SATS': 'SATS', '1000CHEEMS': 'CHEEMS', '1000000MOG': 'MOG'}
-    return aliases.get(base, base)
+SYMBOL_MAP_FILE = ROOT / 'config/venues/kraken_futures/symbol_map.json'
 
 
-def assess_kraken(plan, snapshot, now):
+def load_symbol_map(path=SYMBOL_MAP_FILE):
+    """Binance source symbol -> Kraken entry, from the table the exchange gateway uses."""
+    document = json.loads(Path(path).read_text(encoding='utf-8'))
+    if document.get('schema_version') != 1 or document.get('venue') != 'kraken-futures':
+        raise ValueError('Not a kraken-futures symbol map')
+    return {row['source']: row for row in document['symbols']}
+
+
+def assess_kraken(plan, snapshot, now, symbol_map=None):
+    symbol_map = load_symbol_map() if symbol_map is None else symbol_map
     validate_plan(plan, now)
     if snapshot.get('venue') != 'KRAKEN_MULTI_M' or snapshot.get('complete') is not True:
         raise ValueError('Incomplete or wrong-source Kraken snapshot')
@@ -179,12 +180,17 @@ def assess_kraken(plan, snapshot, now):
         fresh(timestamp, now)
     observations = []
     for order in plan['submit_orders']:
-        base = source_asset(order['coin'])
-        row = {'economic_order_id': order['economic_order_id'], 'coin': order['coin'], 'asset': base,
+        mapping = symbol_map.get(order['coin'])
+        row = {'economic_order_id': order['economic_order_id'], 'coin': order['coin'],
+               'asset': mapping['asset'] if mapping else None,
                'side': 'BUY' if order['side'] == 0 else 'SELL', 'notional_usd': order['notional_usd'],
-               'source_reference_close': order['reference_close'], 'submitted': False,
-               'state': 'SKIPPED', 'reason': 'MULTI_M_PERPETUAL_UNAVAILABLE', 'account_admission': 'UNVERIFIED'}
-        market = snapshot['markets'].get(base)
+               'source_reference_close': order['reference_close'], 'submitted': False, 'state': 'SKIPPED',
+               'reason': 'MULTI_M_PERPETUAL_UNAVAILABLE' if mapping else 'NOT_IN_SYMBOL_MAP',
+               'account_admission': 'UNVERIFIED'}
+        market = snapshot['markets'].get(mapping['asset']) if mapping else None
+        if market is not None and market['symbol'] != mapping['venue_symbol']:
+            row['reason'] = 'SYMBOL_MAP_DISAGREES_WITH_CATALOGUE'
+            market = None
         if market is not None:
             row['kraken_symbol'] = market['symbol']
             if not market['trading']:

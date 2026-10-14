@@ -39,7 +39,7 @@ func baselineReadinessInputs(now time.Time) globalReadinessInputs {
 		FoundationOK:   true,
 		VenuePublicOK:  true,
 		VenueRulesOK:   true,
-		RegistryOK:     true,
+		SymbolMapOK:    true,
 		LedgerOK:       true,
 	}
 	in.Infra.Postgres.State = "HEALTHY"
@@ -72,14 +72,9 @@ func baselineReadinessInputs(now time.Time) globalReadinessInputs {
 	in.VenueRules.Validated = true
 	in.VenueRules.ValidatedRuleCount = 10
 	in.VenueRules.SupportedMappingCount = 10
-	in.Registry.Validated = true
-	in.Registry.RegistryVersion = "test-registry"
-	in.Registry.CurrentRankingCount = 50
-	in.Registry.CurrentRankingRegisteredCount = 50
-	in.Registry.CurrentStrategyCount = 20
-	in.Registry.CurrentStrategyRegisteredCount = 20
-	in.Registry.CurrentStrategyRoutableCount = 10
-	in.Registry.ExecutionCoverageComplete = false
+	in.SymbolMap.Status = "OK"
+	in.SymbolMap.StrategyAssets = 20
+	in.SymbolMap.StrategyMapped = 20
 	in.Ledger.Validated = true
 	in.Ledger.FoundationReady = true
 	in.Ledger.TotalFillRows = 0
@@ -152,19 +147,23 @@ func TestGlobalReadinessMarksOnlyKnownTransientReadBlockersRetryable(t *testing.
 		t.Fatalf("expected only retryable current blockers, got blocking=%d retryable=%d", got.BlockingCount, got.RetryableBlockingCount)
 	}
 
-	in = baselineReadinessInputs(now)
-	in.Registry.Validated = false
-	in.Registry.Error = "registry mapping divergence detected"
-	got = buildGlobalReadiness(in)
-	if got.RetryableBlockingCount != 0 {
-		t.Fatalf("semantic registry divergence must not be retryable: %+v", got)
+}
+
+func TestGlobalReadinessSymbolMapProblemWarnsWhileNothingRoutesToKraken(t *testing.T) {
+	now := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	in := baselineReadinessInputs(now)
+	in.SymbolMap.Status = "BLOCKED"
+	got := buildGlobalReadiness(in)
+	if got.BlockingCount != 0 || !got.SafeToContinueDashboard || got.WarningCount == 0 {
+		t.Fatalf("a symbol-map problem is a warning until Kraken trading starts: %+v", got)
 	}
 }
+
 func TestGlobalReadinessTreatsSQLiteBusyAsRetryableReadBlocker(t *testing.T) {
 	now := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
 	in := baselineReadinessInputs(now)
-	in.Registry.Validated = false
-	in.Registry.Error = "canonical strategy universe unavailable: read-only SQLite query failed: database is locked (5)"
+	in.VenueRules.Validated = false
+	in.VenueRules.Error = "canonical strategy universe unavailable: read-only SQLite query failed: database is locked (5)"
 
 	got := buildGlobalReadiness(in)
 	if got.BlockingCount == 0 || got.RetryableBlockingCount == 0 {
@@ -222,15 +221,13 @@ func TestGlobalReadinessAllObservedTransientStep44BlockersRemainFailClosedButRet
 	in.Shell.DataState = "BLOCKED"
 	in.Shell.DataDetail = "Canonical market-data diagnostics are unavailable: read canonical market-data SQLite window: SQLite query timed out after 2s"
 	in.ManualErr = errors.New("read manual-control reference checkpoint: PostgreSQL query timed out after 2s")
-	in.Registry.Validated = false
-	in.Registry.Error = "canonical market-data ranking unavailable: SQLite query timed out after 2s"
 	in.VenueRules.Validated = false
 	in.VenueRules.Error = "canonical strategy universe unavailable: read canonical market-data SQLite window: SQLite query timed out after 2s"
 	in.Infra.NATS.State = "CRITICAL"
 	in.Infra.NATS.AckHealthLabel = "NATS TCP probe failed: dial tcp 172.18.0.4:4222: connection refused"
 
 	got := buildGlobalReadiness(in)
-	if got.BlockingCount != 5 || got.RetryableBlockingCount != 5 {
+	if got.BlockingCount != 4 || got.RetryableBlockingCount != 4 {
 		t.Fatalf("observed transient Step44 blockers should all remain fail-closed but retryable: blocking=%d retryable=%d blockers=%v", got.BlockingCount, got.RetryableBlockingCount, got.Blockers)
 	}
 	if got.SafeToContinueDashboard || got.Status != "BLOCKED" {
@@ -298,7 +295,7 @@ func TestGlobalReadinessDoesNotRetryMixedCriticalAlerts(t *testing.T) {
 	}
 }
 
-func TestGlobalReadinessUserSnapshotFiveTransientBlockersAreAllRetryable(t *testing.T) {
+func TestGlobalReadinessUserSnapshotTransientBlockersAreAllRetryable(t *testing.T) {
 	now := time.Date(2026, 9, 26, 13, 47, 25, 0, time.UTC)
 	in := baselineReadinessInputs(now)
 	in.Shell.DataState = "BLOCKED"
@@ -306,8 +303,6 @@ func TestGlobalReadinessUserSnapshotFiveTransientBlockersAreAllRetryable(t *test
 	in.PipelineErr = errors.New("read durable pipeline checkpoint: read-only PostgreSQL query failed: psql: timeout expired")
 	in.VenueRules.Validated = false
 	in.VenueRules.Error = "canonical strategy universe unavailable: read canonical market-data SQLite window: SQLite query timed out after 2s"
-	in.Registry.Validated = false
-	in.Registry.Error = "canonical market-data ranking unavailable: SQLite query timed out after 2s"
 	in.Alerts.ActiveCritical = 1
 	in.Alerts.Alerts = []readinessOperationalAlert{{
 		Severity: "CRITICAL", Status: "ACTIVE", Service: "NATS", EventType: "SOURCE_CRITICAL",
@@ -315,7 +310,7 @@ func TestGlobalReadinessUserSnapshotFiveTransientBlockersAreAllRetryable(t *test
 	}}
 
 	got := buildGlobalReadiness(in)
-	if got.BlockingCount != 5 || got.RetryableBlockingCount != 5 || got.SafeToContinueDashboard {
-		t.Fatalf("expected exact fail-closed 5/5 retryable snapshot, got blocking=%d retryable=%d safe=%v %+v", got.BlockingCount, got.RetryableBlockingCount, got.SafeToContinueDashboard, got)
+	if got.BlockingCount != 4 || got.RetryableBlockingCount != 4 || got.SafeToContinueDashboard {
+		t.Fatalf("expected exact fail-closed 4/4 retryable snapshot, got blocking=%d retryable=%d safe=%v %+v", got.BlockingCount, got.RetryableBlockingCount, got.SafeToContinueDashboard, got)
 	}
 }

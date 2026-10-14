@@ -278,8 +278,11 @@ Heartbeat freshness gates the notifier. Existing durable notifier decisions/rece
 handle restarts; ambiguous network delivery is not an exactly-once guarantee.
 Ctrl+C stops the foreground observer; stop its named Docker notifier separately
 if desired. The notifier cannot deliver from an expired heartbeat. This is a local
-monitor: the PC/WSL/Docker and network must remain running. It is not installed on
-the VPS and does not start the observer automatically after a PC reboot. Observation
+monitor: the PC/WSL/Docker and network must remain running. The installed chain runs
+it permanently instead (`algotrading-kraken.service` + `kraken-notifier`, see
+deploy/chain/README.md "Kraken account monitor and Telegram", with `--credentials`,
+`--state-root` and `--retention-days 3`). Locally it does not start the observer
+automatically after a PC reboot. Observation
 history grows with polling; plan retention before installing a permanent service.
 These alerts do not stop entries, close positions or sell BTC.
 

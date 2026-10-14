@@ -727,38 +727,38 @@ func TestVenueRulesRequiresAuthenticationAndIsReadOnly(t *testing.T) {
 	}
 }
 
-func TestSymbolRegistryRequiresAuthenticationAndIsReadOnly(t *testing.T) {
+func TestSymbolMapRequiresAuthenticationAndIsReadOnly(t *testing.T) {
 	api := newTestServer(t)
 
-	unauthenticated := httptest.NewRequest(http.MethodGet, "/api/symbol-registry", nil)
+	unauthenticated := httptest.NewRequest(http.MethodGet, "/api/symbol-map", nil)
 	unauthenticatedResponse := httptest.NewRecorder()
 	api.Handler().ServeHTTP(unauthenticatedResponse, unauthenticated)
 	if unauthenticatedResponse.Code != http.StatusUnauthorized {
-		t.Fatalf("unauthenticated symbol-registry status = %d, want 401", unauthenticatedResponse.Code)
+		t.Fatalf("unauthenticated symbol-map status = %d, want 401", unauthenticatedResponse.Code)
 	}
 
 	cookie, _ := loginAs(t, api, "viewer", "viewer-pass")
-	request := httptest.NewRequest(http.MethodGet, "/api/symbol-registry", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/symbol-map", nil)
 	request.AddCookie(cookie)
 	response := httptest.NewRecorder()
 	api.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
-		t.Fatalf("symbol-registry status = %d, want 200; body=%s", response.Code, response.Body.String())
+		t.Fatalf("symbol-map status = %d, want 200; body=%s", response.Code, response.Body.String())
 	}
-	var body provider.SymbolRegistryStatus
+	var body provider.SymbolMapStatus
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
-		t.Fatalf("invalid symbol-registry JSON: %v", err)
+		t.Fatalf("invalid symbol-map JSON: %v", err)
 	}
-	if body.Status != "MOCK_ONLY" || body.Validated || body.OrderRouting != "DISABLED" || body.PrivateAuth != "DEFERRED" || !body.ReadOnly {
-		t.Fatalf("unexpected mock symbol-registry boundary: %+v", body)
+	if body.Status != "UNAVAILABLE" || body.Venue != "kraken-futures" || len(body.Rows) != 0 {
+		t.Fatalf("unexpected mock symbol map: %+v", body)
 	}
 
-	post := httptest.NewRequest(http.MethodPost, "/api/symbol-registry", nil)
+	post := httptest.NewRequest(http.MethodPost, "/api/symbol-map", nil)
 	post.AddCookie(cookie)
 	postResponse := httptest.NewRecorder()
 	api.Handler().ServeHTTP(postResponse, post)
 	if postResponse.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("POST symbol-registry status = %d, want 405", postResponse.Code)
+		t.Fatalf("POST symbol-map status = %d, want 405", postResponse.Code)
 	}
 }
 

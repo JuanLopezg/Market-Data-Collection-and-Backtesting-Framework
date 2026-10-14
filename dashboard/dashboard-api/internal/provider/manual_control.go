@@ -74,8 +74,7 @@ type ManualControlData struct {
 	RoutingContractMode          string                  `json:"routingContractMode"`
 	ExecutionBoundary            string                  `json:"executionBoundary"`
 	ExchangeConstraintsValidated bool                    `json:"exchangeConstraintsValidated"`
-	RegistryVersion              string                  `json:"registryVersion,omitempty"`
-	RegistryArtifactSHA256       string                  `json:"registryArtifactSha256,omitempty"`
+	SymbolMapCheckedAt           string                  `json:"symbolMapCheckedAt,omitempty"`
 	VenueRulesCheckedAt          string                  `json:"venueRulesCheckedAt,omitempty"`
 	TradingControlSink           string                  `json:"tradingControlSink"`
 	PrivateAuth                  string                  `json:"privateAuth"`
@@ -224,14 +223,14 @@ func (p *Real) PreviewManualControl(ctx context.Context, req ManualControlPrevie
 		result.RequestHash = "sha256:" + fmt.Sprintf("%x", digest[:])
 	}
 
-	// Step 46 additionally validates that every non-CASH target delta has an
-	// explicit current execution mapping and a valid public venue-rule row.
+	// Step 46 additionally validates that every non-CASH target delta has a
+	// verified Kraken symbol mapping and a valid public venue-rule row.
 	// This is admission evidence only: exact executable quantities remain the
 	// responsibility of the normal OrderPlanner pipeline.
 	if result.ValidationPassed {
-		registry := p.SymbolRegistryStatus(ctx)
+		symbolMap := p.SymbolMapStatus(ctx)
 		rules := p.VenueTradingRulesStatus(ctx)
-		applyManualExecutionConstraints(&result, registry, rules)
+		applyManualExecutionConstraints(&result, symbolMap, rules)
 	} else {
 		result.RouteBlockers = append(result.RouteBlockers, "PREVIEW_VALIDATION_FAILED")
 	}
@@ -406,17 +405,16 @@ func buildManualPreviewWithPairs(checkpoint pgstore.PipelineCheckpoint, pairs []
 	return result, requested
 }
 
-func applyManualExecutionConstraints(result *ManualControlData, registry SymbolRegistryStatus, rules VenueTradingRulesStatus) {
+func applyManualExecutionConstraints(result *ManualControlData, symbolMap SymbolMapStatus, rules VenueTradingRulesStatus) {
 	if result == nil || !result.ValidationPassed {
 		return
 	}
-	result.RegistryVersion = registry.RegistryVersion
-	result.RegistryArtifactSHA256 = registry.RegistryArtifactSHA256
+	result.SymbolMapCheckedAt = symbolMap.CheckedAt
 	result.VenueRulesCheckedAt = rules.CheckedAt
 
-	registryByAsset := make(map[string]SymbolRegistryRow, len(registry.Rows))
-	for _, row := range registry.Rows {
-		registryByAsset[row.Internal] = row
+	mappingByAsset := make(map[string]SymbolMapRow, len(symbolMap.Rows))
+	for _, row := range symbolMap.Rows {
+		mappingByAsset[row.Source] = row
 	}
 	rulesByAsset := make(map[string]VenueTradingRuleRow, len(rules.Rows))
 	for _, row := range rules.Rows {
@@ -424,10 +422,10 @@ func applyManualExecutionConstraints(result *ManualControlData, registry SymbolR
 	}
 
 	valid := true
-	if !registry.Validated {
+	if symbolMap.Status == "UNAVAILABLE" || symbolMap.Status == "BLOCKED" {
 		valid = false
-		result.ValidationIssues = append(result.ValidationIssues, ManualValidationIssue{Severity: "ERROR", Field: "execution registry", Message: "The current explicit multi-exchange symbol registry is not validated; manual routing admission fails closed."})
-		result.RouteBlockers = append(result.RouteBlockers, "SYMBOL_REGISTRY_NOT_VALIDATED")
+		result.ValidationIssues = append(result.ValidationIssues, ManualValidationIssue{Severity: "ERROR", Field: "symbol mapping", Message: "The Kraken symbol mapping is not verified against current prices; manual routing admission fails closed."})
+		result.RouteBlockers = append(result.RouteBlockers, "SYMBOL_MAP_NOT_VERIFIED")
 	}
 	if !rules.Validated {
 		valid = false
@@ -441,10 +439,10 @@ func applyManualExecutionConstraints(result *ManualControlData, registry SymbolR
 			continue
 		}
 		checked++
-		registryRow, ok := registryByAsset[order.Asset]
-		if !ok || registryRow.RuntimeState != "ROUTABLE_PUBLICLY_VALIDATED" || registryRow.RoutingPolicy != "ALLOW_IF_VENUE_PRESENT_AND_RULES_VALID" {
+		mapping, ok := mappingByAsset[order.Asset]
+		if !ok || mapping.State != symbolMapStateOK {
 			valid = false
-			result.ValidationIssues = append(result.ValidationIssues, ManualValidationIssue{Severity: "ERROR", Field: order.Asset + " execution", Message: "Target delta has no currently routable explicit execution mapping; no heuristic symbol conversion is allowed."})
+			result.ValidationIssues = append(result.ValidationIssues, ManualValidationIssue{Severity: "ERROR", Field: order.Asset + " execution", Message: "Target delta has no verified Kraken symbol mapping; no heuristic symbol conversion is allowed."})
 			result.RouteBlockers = append(result.RouteBlockers, "ASSET_NOT_ROUTABLE:"+order.Asset)
 			continue
 		}

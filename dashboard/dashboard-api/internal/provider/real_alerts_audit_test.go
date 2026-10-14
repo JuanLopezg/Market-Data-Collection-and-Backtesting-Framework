@@ -89,63 +89,6 @@ func TestBuildRealAlertsAuditTurnsReadFailuresIntoVisibleWarnings(t *testing.T) 
 	}
 }
 
-func TestMergeSymbolRegistryAlertsDependencyReadFailureIsWarningWhileRoutingDisabled(t *testing.T) {
-	base := realAlertsAuditData{}
-	registry := SymbolRegistryStatus{
-		Status:       "BLOCKED",
-		Validated:    false,
-		CheckedAt:    "2026-09-26T08:34:26Z",
-		OrderRouting: "DISABLED",
-		Error:        "current Hyperliquid TESTNET metadata unavailable: temporary network failure",
-	}
-	got := mergeSymbolRegistryAlerts(base, registry)
-	if got.ActiveCritical != 0 {
-		t.Fatalf("transient read-only registry dependency must not create a Step32 critical loop, got critical=%d", got.ActiveCritical)
-	}
-	if got.ActiveWarnings != 1 {
-		t.Fatalf("expected exactly one warning, got warnings=%d", got.ActiveWarnings)
-	}
-	if len(got.Alerts) != 1 || got.Alerts[0].Severity != "WARN" || got.Alerts[0].EventType != "SYMBOL_REGISTRY_BLOCKED" {
-		t.Fatalf("unexpected alert: %+v", got.Alerts)
-	}
-}
-
-func TestMergeSymbolRegistryAlertsArtifactFailureRemainsCritical(t *testing.T) {
-	base := realAlertsAuditData{}
-	registry := SymbolRegistryStatus{
-		Status:       "BLOCKED",
-		Validated:    false,
-		CheckedAt:    "2026-09-26T08:34:26Z",
-		OrderRouting: "DISABLED",
-		Error:        "decode symbol registry: invalid character",
-	}
-	got := mergeSymbolRegistryAlerts(base, registry)
-	if got.ActiveCritical != 1 {
-		t.Fatalf("registry artifact failure must remain critical, got critical=%d", got.ActiveCritical)
-	}
-}
-
-func TestMergeSymbolRegistryAlertsUnregisteredAssetRemainsCritical(t *testing.T) {
-	base := realAlertsAuditData{}
-	registry := SymbolRegistryStatus{
-		Status:       "VALIDATED_WITH_WARNINGS",
-		Validated:    true,
-		CheckedAt:    "2026-09-26T08:34:26Z",
-		OrderRouting: "DISABLED",
-		Alarms: []SymbolRegistryAlarm{{
-			Severity:  "CRITICAL",
-			EventType: "SYMBOL_UNREGISTERED_STRATEGY",
-			Asset:     "NEWCOINUSDT",
-			Title:     "Strategy selected an unregistered symbol",
-			Detail:    "must remain non-routable",
-		}},
-	}
-	got := mergeSymbolRegistryAlerts(base, registry)
-	if got.ActiveCritical != 1 {
-		t.Fatalf("unregistered strategy symbol must remain critical, got critical=%d", got.ActiveCritical)
-	}
-}
-
 func TestMergeLedgerAlertsIntegrityFailureIsCritical(t *testing.T) {
 	base := realAlertsAuditData{}
 	ledger := LedgerStatus{Status: "BLOCKED", Validated: false, CheckedAt: "2026-09-26T10:00:00Z", OrderRouting: "DISABLED", Error: "fill_id uniqueness violation: rows=2 distinct=1"}

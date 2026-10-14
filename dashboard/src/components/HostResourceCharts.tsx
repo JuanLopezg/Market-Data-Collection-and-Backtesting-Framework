@@ -9,6 +9,8 @@ import type { TimeRange } from './TimeRangePicker'
 
 // Host CPU / RAM / disk over time, Grafana style: one line per chart (host total) and, for
 // CPU and RAM, "By container" shows one colored line per container in the same chart.
+// All three are percentages: RAM and disk of the host's total (shown in the panel title),
+// a container's RAM of the host's total RAM.
 // Time range: presets ending now, an explicit From/To, or a drag-selection on any chart.
 
 const PRESETS: { value: HostHistoryRange; label: string; title: string; ms: number }[] = [
@@ -137,16 +139,20 @@ export function HostResourceCharts() {
     const times = points.map(point => Date.parse(point.t))
     const pick = (field: 'cpuPct' | 'ramUsedMiB' | 'ramTotalMiB' | 'diskUsedGiB' | 'diskTotalGiB') => points.map(point => point[field])
     const latest = (values: (number | null)[]) => [...values].reverse().find(value => value !== null) ?? null
+    const percent = (used: number | null, total: number | null) => used !== null && total ? 100 * used / total : null
+    // Container RAM as a share of the host RAM at the same observation.
+    const containerRamPct = (point: HostHistoryPoint) => Object.fromEntries(Object.entries(point.containerRamMiB)
+      .flatMap(([name, used]) => point.ramTotalMiB ? [[name, 100 * used / point.ramTotalMiB]] : []))
     return {
       times,
       maxGapMs: Math.max(data.bucketSeconds * 1000 * 3.5, 90_000),
       cpu: [{ key: 'cpu', label: 'Host CPU', color: 'var(--series-1)', values: pick('cpuPct') }],
-      ram: [{ key: 'ram', label: 'Used RAM', color: 'var(--series-1)', values: pick('ramUsedMiB') }],
-      disk: [{ key: 'disk', label: 'Used disk', color: 'var(--series-1)', values: pick('diskUsedGiB') }],
+      ram: [{ key: 'ram', label: 'Used RAM', color: 'var(--series-1)', values: points.map(point => percent(point.ramUsedMiB, point.ramTotalMiB)) }],
+      disk: [{ key: 'disk', label: 'Used disk', color: 'var(--series-1)', values: points.map(point => percent(point.diskUsedGiB, point.diskTotalGiB)) }],
       ramTotal: latest(pick('ramTotalMiB')),
       diskTotal: latest(pick('diskTotalGiB')),
       cpuByContainer: containerLines(points, data.containers, point => point.containerCpuPct),
-      ramByContainer: containerLines(points, data.containers, point => point.containerRamMiB),
+      ramByContainer: containerLines(points, data.containers, containerRamPct),
     }
   }, [data])
 
@@ -170,9 +176,9 @@ export function HostResourceCharts() {
       <ResourceChart title="CPU" subtitle="" times={view.times} maxGapMs={view.maxGapMs}
         overall={view.cpu} formatValue={formatPct} byContainer={view.cpuByContainer} {...shared} {...splitProps('CPU')}/>
       <ResourceChart title="RAM" subtitle={view.ramTotal !== null ? `${formatMiB(view.ramTotal)} installed` : ''}
-        times={view.times} maxGapMs={view.maxGapMs} overall={view.ram} formatValue={formatMiB} byContainer={view.ramByContainer} {...shared} {...splitProps('RAM')}/>
+        times={view.times} maxGapMs={view.maxGapMs} overall={view.ram} formatValue={formatPct} byContainer={view.ramByContainer} {...shared} {...splitProps('RAM')}/>
       <ResourceChart title="Disk" subtitle={view.diskTotal !== null ? `${formatGiB(view.diskTotal)} capacity` : ''}
-        times={view.times} maxGapMs={view.maxGapMs} overall={view.disk} formatValue={formatGiB}
+        times={view.times} maxGapMs={view.maxGapMs} overall={view.disk} formatValue={formatPct}
         {...shared} {...splitProps('Disk')}/>
     </>}
   </div>

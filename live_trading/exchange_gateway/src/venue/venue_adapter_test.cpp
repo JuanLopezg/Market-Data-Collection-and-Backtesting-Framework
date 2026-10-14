@@ -59,7 +59,26 @@ const std::string INSTRUMENTS = R"({"result":"success","serverTime":"2026-10-12T
  {"symbol":"FI_XBTUSD_261225","type":"futures_inverse","base":"XBT","quote":"USD","tradeable":true,"isExpired":false,
   "contractSize":1,"contractValueTradePrecision":0,"tickSize":0.5}]})";
 
-const std::string PLACED = R"({"result":"success","serverTime":"2026-10-12T00:00:06.000Z",
+const std::string TICKERS = R"({"result":"success","serverTime":"2026-10-12T00:00:01.000Z","tickers":[
+ {"symbol":"PF_XBTUSD","markPrice":62000.0,"suspended":false,"tag":"perpetual"},
+ {"symbol":"PF_ETHUSD","markPrice":2500.0,"suspended":false,"tag":"perpetual"},
+ {"symbol":"PF_PEPEUSD","markPrice":0.00001,"suspended":false,"tag":"perpetual"},
+ {"symbol":"PF_HALTUSD","markPrice":3.0,"suspended":true,"tag":"perpetual"},
+ {"symbol":"FI_XBTUSD_261225","markPrice":62500.0,"suspended":false,"tag":"month"}]})";
+
+// Planning prices in source units: 1000PEPEUSDT is 1000 PEPE, so 1000 x the PEPE price.
+const std::map<Coin, double> REFERENCE_PRICES = {
+    {"BTCUSDT", 62000.0}, {"ETHUSDT", 2500.0}, {"1000PEPEUSDT", 0.01}, {"OLDUSDT", 1.0}, {"XYZUSDT", 1.0}};
+
+SymbolMap testSymbolMap(double pepeScale = 1000.0)
+{
+    return SymbolMap("kraken-futures", {{"BTCUSDT", "BTC", "PF_XBTUSD", 1.0},
+                                        {"ETHUSDT", "ETH", "PF_ETHUSD", 1.0},
+                                        {"1000PEPEUSDT", "PEPE", "PF_PEPEUSD", pepeScale},
+                                        {"OLDUSDT", "OLD", "PF_OLDUSD", 1.0}});
+}
+
+const std::string PLACED =R"({"result":"success","serverTime":"2026-10-12T00:00:06.000Z",
  "sendStatus":{"order_id":"11111111-1111-1111-1111-111111111111","status":"placed","receivedTime":"2026-10-12T00:00:06.000Z",
  "orderEvents":[],"cliOrdId":"algo-t1-7"}})";
 
@@ -118,6 +137,7 @@ struct Events {
 // One adapter over a fresh (or reused) journal, with test-controlled clocks.
 struct Harness {
     std::string journal_path;
+    SymbolMap symbol_map;
     ScriptedTransport transport;
     KrakenFuturesProtocol protocol{"https://futures.kraken.com", CREDENTIALS};
     long long now = 1791763200000; // 2026-10-12 00:00:00 UTC
@@ -126,12 +146,14 @@ struct Harness {
     std::unique_ptr<VenueJournal> journal;
     std::unique_ptr<LiveVenueAdapter> adapter;
 
-    explicit Harness(const std::string& name, bool enabled = true, bool fresh = true)
-        : journal_path((std::filesystem::temp_directory_path() / ("venue-test-" + name + ".sqlite")).string())
+    explicit Harness(const std::string& name, bool enabled = true, bool fresh = true, SymbolMap map = testSymbolMap())
+        : journal_path((std::filesystem::temp_directory_path() / ("venue-test-" + name + ".sqlite")).string()),
+          symbol_map(std::move(map))
     {
         if (fresh)
             removeJournal();
         transport.responses["instruments"] = {ok(INSTRUMENTS)};
+        transport.responses["tickers"] = {ok(TICKERS)};
         open(enabled);
     }
 
@@ -148,16 +170,19 @@ struct Harness {
         LiveVenueOptions options;
         options.order_submission_enabled = enabled;
         options.account_namespace = "t1";
-        adapter = std::make_unique<LiveVenueAdapter>(protocol, transport, *journal,
+        adapter = std::make_unique<LiveVenueAdapter>(protocol, transport, *journal, symbol_map,
             [this] { return today; }, [this] { return now; }, options);
         adapter->setHandlers(events.handlers());
     }
 
-    void submit(OrderID id, const Coin& coin, OrderSide side, double quantity, Timestamp activeFrom = TODAY)
+    // referencePrice < 0: the planning price from REFERENCE_PRICES.
+    void submit(OrderID id, const Coin& coin, OrderSide side, double quantity, Timestamp activeFrom = TODAY,
+                double referencePrice = -1.0)
     {
         SubmitOrderCommand command;
         command.metadata.message_id = "submit-" + std::to_string(id);
         command.order = ExecutionOrder(id, 1, activeFrom - 1, activeFrom, coin, side, quantity);
+        command.order.reference_price = referencePrice >= 0.0 ? referencePrice : REFERENCE_PRICES.at(coin);
         adapter->submitOrder(command);
     }
 
@@ -232,8 +257,62 @@ void testMarketCatalogue()
     CHECK(byAsset["BTC"].symbol == "PF_XBTUSD" && byAsset["BTC"].trading && near(byAsset["BTC"].quantity_step, 0.0001));
     CHECK(byAsset["PEPE"].trading && near(byAsset["PEPE"].quantity_step, 1.0));
     CHECK(!byAsset["OLD"].trading && byAsset["OLD"].unavailable_reason == "expired");
-    CHECK(sourceAssetForCoin("1000PEPEUSDT").asset == "PEPE" && near(sourceAssetForCoin("1000PEPEUSDT").unit_scale, 1000));
-    CHECK(coinForSourceAsset("PEPE") == "1000PEPEUSDT" && coinForSourceAsset("BTC") == "BTCUSDT");
+
+    const auto marks = protocol.parseMarkPrices(ok(TICKERS));
+    CHECK(marks.size() == 3); // suspended and non-PF rows left out
+    CHECK(near(marks.at("PF_XBTUSD"), 62000.0) && near(marks.at("PF_PEPEUSD"), 0.00001));
+}
+
+void testSymbolMapFile()
+{
+    const auto path = std::filesystem::temp_directory_path() / "venue-test-symbol-map.json";
+    const auto write = [&](const std::string& venue, const std::string& symbols) {
+        std::ofstream(path) << R"({"schema_version":1,"venue":")" << venue << R"(","symbols":[)" << symbols << "]}";
+    };
+    const std::string btc = R"({"source":"BTCUSDT","asset":"BTC","venue_symbol":"PF_XBTUSD","venue_units_per_source_unit":1})";
+    const std::string pepe = R"({"source":"1000PEPEUSDT","asset":"PEPE","venue_symbol":"PF_PEPEUSD","venue_units_per_source_unit":1000})";
+
+    write("kraken-futures", btc + "," + pepe);
+    const SymbolMap map = SymbolMap::load(path.string(), "kraken-futures");
+    CHECK(map.entries().size() == 2);
+    CHECK(map.bySource("1000PEPEUSDT") != nullptr && near(map.bySource("1000PEPEUSDT")->venue_units_per_source_unit, 1000));
+    CHECK(map.byVenueSymbol("PF_XBTUSD") != nullptr && map.byVenueSymbol("PF_XBTUSD")->source == "BTCUSDT");
+    CHECK(map.bySource("PEPEUSDT") == nullptr); // no guessing from names
+
+    const auto refused = [&](const std::string& venue, const std::string& symbols) {
+        write(venue, symbols);
+        try { SymbolMap::load(path.string(), "kraken-futures"); } catch (const std::exception&) { return true; }
+        return false;
+    };
+    CHECK(refused("hyperliquid", btc));                                  // another venue's table
+    CHECK(refused("kraken-futures", btc + "," + btc));                   // source listed twice
+    CHECK(refused("kraken-futures", btc + R"(,{"source":"XBTUSDT","asset":"BTC","venue_symbol":"PF_XBTUSD","venue_units_per_source_unit":1})"));
+    CHECK(refused("kraken-futures", R"({"source":"BTCUSDT","asset":"BTC","venue_symbol":"PF_XBTUSD","venue_units_per_source_unit":0})"));
+    CHECK(refused("kraken-futures", R"({"source":"BTCUSDT","venue_symbol":"PF_XBTUSD","venue_units_per_source_unit":1})"));
+    std::filesystem::remove(path);
+}
+
+void testNotionalCheckCatchesWrongScale()
+{
+    // A map that forgot the x1000 of 1000PEPEUSDT: 5 units would become 5 PEPE ($0.00005)
+    // instead of 5000 PEPE ($0.05). The order never reaches the venue.
+    Harness h("wrong-scale", true, true, testSymbolMap(1.0));
+    h.submit(8, "1000PEPEUSDT", OrderSide::Sell, 5.0);
+    h.submit(9, "BTCUSDT", OrderSide::Buy, 0.0012, TODAY, 0.0); // no planning price
+    h.poll();
+    CHECK(h.transport.count("sendorder") == 0);
+    CHECK(h.events.updates.size() == 2);
+    if (h.events.updates.size() == 2) {
+        CHECK(h.events.updates[0].update.message.rfind("NOTIONAL_MISMATCH", 0) == 0);
+        CHECK(h.events.updates[1].update.message.rfind("NO_REFERENCE_PRICE", 0) == 0);
+    }
+
+    // The correct scale passes, and a normal price move (+20%) is not a mismatch.
+    Harness right("right-scale");
+    right.transport.responses["sendorder"] = {ok(PLACED)};
+    right.submit(8, "1000PEPEUSDT", OrderSide::Sell, 5.0, TODAY, 0.012);
+    right.poll();
+    CHECK(right.transport.count("sendorder") == 1);
 }
 
 void testDisabledSubmissionNeverPosts()
@@ -305,7 +384,7 @@ void testScaledSourceCoin()
 void testLocalRejectionsDoNotReachVenue()
 {
     Harness h("local-rejections");
-    h.submit(9, "XYZUSDT", OrderSide::Buy, 1.0);     // no Kraken perpetual
+    h.submit(9, "XYZUSDT", OrderSide::Buy, 1.0);     // not in the symbol map
     h.submit(10, "BTCUSDT", OrderSide::Buy, 0.00001); // below 0.0001 step
     h.submit(11, "OLDUSDT", OrderSide::Buy, 1.0);     // expired
     h.poll();
@@ -496,7 +575,7 @@ void testPermissions()
 
 // Optional real check with a read-only key: GET requests only (GetOnlyTransport), no
 // orders. Prints counts and parse results, never balances, identifiers or credentials.
-int liveReadOnlyProbe(const std::string& credentialsFile)
+int liveReadOnlyProbe(const std::string& credentialsFile, const std::string& symbolMapFile)
 {
     KrakenFuturesProtocol protocol("https://futures.kraken.com", loadKrakenCredentials(credentialsFile));
     CurlHttpTransport http(10000, 4 * 1024 * 1024);
@@ -508,7 +587,8 @@ int liveReadOnlyProbe(const std::string& credentialsFile)
 
     LiveVenueOptions options;
     options.account_namespace = "probe";
-    LiveVenueAdapter adapter(protocol, transport, journal, [] { return TODAY; },
+    LiveVenueAdapter adapter(protocol, transport, journal, SymbolMap::load(symbolMapFile, protocol.name()),
+        [] { return TODAY; },
         [] { return static_cast<long long>(std::time(nullptr)) * 1000; }, options);
     Events events;
     adapter.setHandlers(events.handlers());
@@ -532,9 +612,9 @@ int liveReadOnlyProbe(const std::string& credentialsFile)
 
 int main(int argc, char** argv)
 {
-    if (argc == 3 && std::string(argv[1]) == "--live-read-only") {
+    if (argc == 4 && std::string(argv[1]) == "--live-read-only") {
         try {
-            return liveReadOnlyProbe(argv[2]);
+            return liveReadOnlyProbe(argv[2], argv[3]);
         }
         catch (const std::exception& error) {
             std::cerr << "LIVE-READ-ONLY-PROBE: FAILED: " << error.what() << "\n";
@@ -548,7 +628,9 @@ int main(int argc, char** argv)
     const std::vector<std::pair<const char*, std::function<void()>>> tests = {
         {"signing matches the reference implementation", testSigningMatchesReference},
         {"credential file parsing", testCredentialFile},
-        {"market catalogue and source symbols", testMarketCatalogue},
+        {"market catalogue and mark prices", testMarketCatalogue},
+        {"symbol map file", testSymbolMapFile},
+        {"notional check catches a wrong scale", testNotionalCheckCatchesWrongScale},
         {"disabled submission never posts", testDisabledSubmissionNeverPosts},
         {"accepted, filled and restart without duplicates", testAcceptedFilledAndRestartWithoutDuplicates},
         {"scaled source coin", testScaledSourceCoin},

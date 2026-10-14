@@ -1,4 +1,4 @@
-import type { AlertAcknowledgementInput, AlertAcknowledgementResult, AlertsAuditData, DashboardDiagnostics, ExecutionData, InfrastructureData, LiveVsExpectedData, ManualControlData, ManualControlPreviewInput, ManualControlRouteInput, ManualControlRouteResult, MarketDataData, OverviewData, PipelineData, PositionsData, ReconciliationData, RiskData, ShellStatus, ProviderStatus, SafetyGateData, GlobalReadinessData, VenueFoundationData, VenuePublicData, VenueSymbolMappingData, VenueTradingRulesData, SymbolRegistryData, LedgerData, HostHistoryData, HostHistoryQuery } from '../types/dashboard'
+import type { AlertAcknowledgementInput, AlertAcknowledgementResult, AlertsAuditData, DashboardDiagnostics, ExecutionData, InfrastructureData, LiveVsExpectedData, ManualControlData, ManualControlPreviewInput, ManualControlRouteInput, ManualControlRouteResult, MarketDataData, OverviewData, PipelineData, PositionsData, ReconciliationData, RiskData, ShellStatus, ProviderStatus, SafetyGateData, GlobalReadinessData, VenueFoundationData, VenuePublicData, VenueSymbolMappingData, VenueTradingRulesData, SymbolMapData, LedgerData, HostHistoryData, HostHistoryQuery } from '../types/dashboard'
 
 export interface DashboardDataSource {
   getProviderStatus(): Promise<ProviderStatus>
@@ -9,7 +9,7 @@ export interface DashboardDataSource {
   getVenuePublic(): Promise<VenuePublicData>
   getVenueSymbolMapping(): Promise<VenueSymbolMappingData>
   getVenueTradingRules(): Promise<VenueTradingRulesData>
-  getSymbolRegistry(): Promise<SymbolRegistryData>
+  getSymbolMap(): Promise<SymbolMapData>
   getLedger(): Promise<LedgerData>
   getShellStatus(): Promise<ShellStatus>
   getOverview(): Promise<OverviewData>

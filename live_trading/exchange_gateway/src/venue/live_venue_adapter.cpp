@@ -84,6 +84,7 @@ LiveVenueAdapter::LiveVenueAdapter(
     VenueProtocol& protocol,
     HttpTransport& transport,
     VenueJournal& journal,
+    SymbolMap symbolMap,
     BusinessDay businessDay,
     UnixMsClock nowMs,
     LiveVenueOptions options
@@ -91,6 +92,7 @@ LiveVenueAdapter::LiveVenueAdapter(
     : protocol_(protocol),
       transport_(transport),
       journal_(journal),
+      symbol_map_(std::move(symbolMap)),
       business_day_(std::move(businessDay)),
       now_ms_(std::move(nowMs)),
       options_(std::move(options)),
@@ -99,13 +101,18 @@ LiveVenueAdapter::LiveVenueAdapter(
     if (options_.account_namespace.empty())
         throw std::invalid_argument("Venue account namespace is required");
     if (options_.working_poll_interval_ms <= 0 || options_.settle_after_ms <= 0 ||
-        options_.market_refresh_interval_ms <= 0 || options_.unknown_alert_after_ms <= 0)
+        options_.market_refresh_interval_ms <= 0 || options_.unknown_alert_after_ms <= 0 ||
+        options_.mark_price_max_age_ms <= 0)
         throw std::invalid_argument("Venue adapter intervals must be positive");
+    if (!(options_.max_notional_ratio > 1.0))
+        throw std::invalid_argument("Venue adapter max notional ratio must be above 1");
+    if (symbol_map_.venue() != protocol_.name())
+        throw std::invalid_argument("Symbol map is for " + symbol_map_.venue() + ", not " + protocol_.name());
     started_at_ms_ = now_ms_();
 
-    LG_INFO("{} adapter ready: order submission {}, account namespace {}",
+    LG_INFO("{} adapter ready: order submission {}, account namespace {}, {} mapped symbols",
             protocol_.name(), options_.order_submission_enabled ? "ENABLED" : "disabled (read-only)",
-            options_.account_namespace);
+            options_.account_namespace, symbol_map_.entries().size());
     LG_WARN("{} fills carry no commission; fills are published with commission 0 until cost accounting is added",
             protocol_.name());
 }
@@ -144,16 +151,32 @@ HttpResponse LiveVenueAdapter::send(const HttpRequest& request, Endpoint endpoin
 void LiveVenueAdapter::loadMarkets()
 {
     const std::vector<Market> markets = protocol_.parseMarkets(send(protocol_.instrumentsRequest(), Endpoint::Instruments));
-    markets_by_asset_.clear();
-    asset_by_symbol_.clear();
+    markets_by_symbol_.clear();
     int trading = 0;
     for (const Market& market : markets) {
-        markets_by_asset_[market.asset] = market;
-        asset_by_symbol_[market.symbol] = market.asset;
+        markets_by_symbol_[market.symbol] = market;
         trading += market.trading ? 1 : 0;
     }
     markets_loaded_at_ms_ = now_ms_();
     LG_INFO("Loaded {} {} markets ({} trading)", markets.size(), protocol_.name(), trading);
+
+    // A mapped contract the venue no longer lists is rejected at order time; say so now.
+    std::string missing;
+    for (const SymbolMapping& mapping : symbol_map_.entries()) {
+        if (markets_by_symbol_.find(mapping.venue_symbol) == markets_by_symbol_.end())
+            missing += (missing.empty() ? "" : ", ") + mapping.venue_symbol;
+    }
+    if (!missing.empty())
+        LG_WARN("Symbol map contracts not listed by {}: {}", protocol_.name(), missing);
+}
+
+
+void LiveVenueAdapter::loadMarkPricesIfDue()
+{
+    if (mark_prices_loaded_at_ms_ != 0 && now_ms_() - mark_prices_loaded_at_ms_ < options_.mark_price_max_age_ms)
+        return;
+    mark_prices_ = protocol_.parseMarkPrices(send(protocol_.tickersRequest(), Endpoint::Tickers));
+    mark_prices_loaded_at_ms_ = now_ms_();
 }
 
 
@@ -201,19 +224,16 @@ void LiveVenueAdapter::submitOrder(const SubmitOrderCommand& command)
         return;
     }
 
-    SourceAsset source;
-    try {
-        source = sourceAssetForCoin(request.coin);
-    }
-    catch (const std::invalid_argument&) {
-        rejectLocally(order, "MARKET_UNAVAILABLE: not a Binance USDT source symbol");
+    const SymbolMapping* mapping = symbol_map_.bySource(request.coin);
+    if (mapping == nullptr) {
+        rejectLocally(order, "MARKET_UNAVAILABLE: " + request.coin + " is not in the " + protocol_.name() + " symbol map");
         return;
     }
 
     loadMarketsIfDue();
-    const auto found = markets_by_asset_.find(source.asset);
-    if (found == markets_by_asset_.end()) {
-        rejectLocally(order, "MARKET_UNAVAILABLE: no " + protocol_.name() + " perpetual for " + source.asset);
+    const auto found = markets_by_symbol_.find(mapping->venue_symbol);
+    if (found == markets_by_symbol_.end()) {
+        rejectLocally(order, "MARKET_UNAVAILABLE: " + protocol_.name() + " does not list " + mapping->venue_symbol);
         return;
     }
     const Market& market = found->second;
@@ -222,22 +242,48 @@ void LiveVenueAdapter::submitOrder(const SubmitOrderCommand& command)
         return;
     }
 
-    // Underlying units, rounded down to the venue step: never more than requested.
-    const double underlying = request.quantity * source.unit_scale;
-    const double rounded = roundDownToStep(underlying, market.quantity_step);
+    // Venue units, rounded down to the venue step: never more than requested.
+    const double venueUnits = request.quantity * mapping->venue_units_per_source_unit;
+    const double rounded = roundDownToStep(venueUnits, market.quantity_step);
     order.symbol = market.symbol;
-    order.unit_scale = source.unit_scale;
+    order.unit_scale = mapping->venue_units_per_source_unit;
     order.venue_quantity = rounded;
     if (rounded + QUANTITY_EPSILON < market.quantity_step) {
-        rejectLocally(order, "BELOW_MINIMUM_QUANTITY: " + FormatQuantity(underlying) + " " + source.asset +
+        rejectLocally(order, "BELOW_MINIMUM_QUANTITY: " + FormatQuantity(venueUnits) + " " + mapping->asset +
                              " is below the venue step " + FormatQuantity(market.quantity_step));
         return;
     }
 
+    // The USD value must survive the unit conversion. Planned: source units x the price the
+    // planner used. At the venue: venue units x the current venue mark price. A wrong scale
+    // in the symbol map makes these differ by its factor (1000 for 1000PEPEUSDT).
+    if (!std::isfinite(request.reference_price) || request.reference_price <= 0.0) {
+        rejectLocally(order, "NO_REFERENCE_PRICE: the order carries no planning price to check its USD value");
+        return;
+    }
+    loadMarkPricesIfDue();
+    const auto mark = mark_prices_.find(market.symbol);
+    if (mark == mark_prices_.end()) {
+        rejectLocally(order, "NO_VENUE_PRICE: " + protocol_.name() + " reports no mark price for " + market.symbol);
+        return;
+    }
+    const double plannedUsd = request.quantity * request.reference_price;
+    const double venueUsd = venueUnits * mark->second;
+    const double ratio = venueUsd / plannedUsd;
+    if (ratio > options_.max_notional_ratio || ratio < 1.0 / options_.max_notional_ratio) {
+        LG_ALERT("Order {} for {} would be worth {} at {} but was planned at {} ({:.4g}x); check the symbol map scale "
+                 "for {} -> {} (x{})", order.local_order_id, request.coin, FormatUsd(venueUsd), protocol_.name(),
+                 FormatUsd(plannedUsd), ratio, request.coin, market.symbol, FormatQuantity(mapping->venue_units_per_source_unit));
+        rejectLocally(order, "NOTIONAL_MISMATCH: " + FormatUsd(venueUsd) + " at the venue vs " + FormatUsd(plannedUsd) +
+                             " planned");
+        return;
+    }
+
     journal_.insertOrder(order);
-    LG_INFO("Journaled order {}: {} {} {} on {} (requested {} {}), active from {}",
-            order.local_order_id, sideName(order.side), FormatQuantity(order.venue_quantity), source.asset,
-            order.symbol, FormatQuantity(order.source_quantity), order.coin, FormatDayKey(order.active_from));
+    LG_INFO("Journaled order {}: {} {} {} on {} (requested {} {}, about {}), active from {}",
+            order.local_order_id, sideName(order.side), FormatQuantity(order.venue_quantity), mapping->asset,
+            order.symbol, FormatQuantity(order.source_quantity), order.coin, FormatUsd(venueUsd),
+            FormatDayKey(order.active_from));
     LG_DEBUG("Order {} client order id {}", order.local_order_id, order.client_order_id);
 }
 
@@ -273,22 +319,20 @@ void LiveVenueAdapter::cancelOrder(const CancelOrderCommand& command)
 
 void LiveVenueAdapter::requestSnapshot(const ExchangeSnapshotRequest& request)
 {
-    loadMarketsIfDue();
     const HttpResponse accounts = send(protocol_.accountsRequest(), Endpoint::Accounts);
     const HttpResponse positions = send(protocol_.positionsRequest(), Endpoint::Positions);
     const HttpResponse openOrders = send(protocol_.openOrdersRequest(), Endpoint::OpenOrders);
     const AccountState account = protocol_.parseAccount(accounts, positions);
 
     // Positions are reported in source units under the source coin name. A venue symbol
-    // outside the catalogue keeps its own name, so the drift stays visible.
+    // outside the symbol map keeps its own name, so the drift stays visible.
     auto coinAndScale = [this](const std::string& symbol) -> std::pair<Coin, double> {
-        const auto asset = asset_by_symbol_.find(symbol);
-        if (asset == asset_by_symbol_.end()) {
-            LG_WARN("Venue symbol {} is not in the loaded catalogue; reported under its venue name", symbol);
+        const SymbolMapping* mapping = symbol_map_.byVenueSymbol(symbol);
+        if (mapping == nullptr) {
+            LG_WARN("Venue symbol {} is not in the symbol map; reported under its venue name", symbol);
             return {symbol, 1.0};
         }
-        const Coin coin = coinForSourceAsset(asset->second);
-        return {coin, sourceAssetForCoin(coin).unit_scale};
+        return {mapping->source, mapping->venue_units_per_source_unit};
     };
 
     ExchangeSnapshotEvent event;

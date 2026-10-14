@@ -77,9 +77,15 @@ install_chain() {
        "$repo/deploy/chain/README.md" "$chain/"
     find "$repo/deploy/chain/logging" -maxdepth 1 -type f -exec cp {} "$chain/logging/" \;
     cp "$repo"/deploy/chain/systemd/*.service "$chain/systemd/"
-    # Public Kraken plan observation used by comparison.py (no account access).
+    # Public Kraken plan observation used by comparison.py (no account access), and the
+    # read-only Kraken account monitor run by algotrading-kraken.service.
     cp "$repo/live_trading/kraken_shadow.py" "$repo/live_trading/shadow_observer.py" \
-       "$repo/live_trading/readable_log.py" "$chain/tools/"
+       "$repo/live_trading/readable_log.py" "$repo/live_trading/kraken_account.py" \
+       "$repo/live_trading/kraken_account_monitor.py" "$repo/live_trading/kraken_portfolio_summary.py" "$chain/tools/"
+    # Binance -> Kraken symbol table, release-owned like the files above. Same relative path
+    # as in the repository, so tools/kraken_shadow.py finds it in both places.
+    mkdir -p "$chain/config/venues/kraken_futures"
+    cp "$repo/config/venues/kraken_futures/symbol_map.json" "$chain/config/venues/kraken_futures/"
     chmod 0755 "$chain/algo"
 
     # receiver: Docker sends logs to the host receiver (VPS, native Docker).
@@ -96,6 +102,8 @@ DASH_WEB_IMAGE=algotrading-dash-web:chain
 # Files under <root>/config/strategies and <root>/config/portfolio.
 STRATEGY_FILE=pure_rsi_quote_volume.json
 PORTFOLIO_FILE=pure_rsi_equal_weight.json
+# yes only for the one start after changing PORTFOLIO_FILE on a running chain (README).
+RISK_ADOPT_PORTFOLIO_CONFIG=no
 # Dashboard display of the RSI rules; keep equal to the strategy file.
 RSI_ENTRY=80
 RSI_EXIT=70
@@ -108,6 +116,10 @@ PAPER_COMPARISON_FILE=
 DASHBOARD_PORT=8092
 # TEST_FILE writes data/dashboard/notifier; TELEGRAM needs the bot settings in secrets.
 NOTIFIER_SINK=TEST_FILE
+# "kraken" starts kraken-notifier (Telegram for the read-only Kraken account monitor,
+# host unit algotrading-kraken.service). Needs secrets/kraken_readonly.env and the bot settings.
+COMPOSE_PROFILES=
+KRAKEN_NOTIFIER_SINK=TELEGRAM
 LOG_DEBUG=0
 EOF
         echo "LOG_MODE=$log_mode" >> "$chain/chain.env"
@@ -120,6 +132,12 @@ EOF
     # Configuration defaults are copied once; later edits stay in <root>/config.
     if [[ ! -d "$config/strategies" ]]; then cp -r "$repo/config/strategies" "$config/"; echo "Created $config/strategies"; fi
     if [[ ! -d "$config/portfolio" ]]; then cp -r "$repo/config/portfolio" "$config/"; echo "Created $config/portfolio"; fi
+    # Kraken account warning thresholds. The monitor's journal is bound to them: after an
+    # edit, move data/kraken_account aside (see README) so earlier observations are kept.
+    if [[ ! -f "$config/kraken_account_policy.json" ]]; then
+        cp "$repo/config/venues/kraken_futures/account_policy.json" "$config/kraken_account_policy.json"
+        echo "Created $config/kraken_account_policy.json"
+    fi
     if [[ ! -f "$config/market_data.json" ]]; then
         python3 - "$repo/deploy/live/market_data_config.json" "$config/market_data.json" <<'PY'
 import json, sys
@@ -173,10 +191,16 @@ make_release() {
     mkdir -p "$folder"
     docker save -o "$folder/images.tar" algotrading-runtime:chain algotrading-dash-api:chain algotrading-dash-web:chain \
         alpine:3.20 nats:2.10-alpine postgres:16-alpine
-    # Source without data, builds, dependencies or credentials.
-    tar -C "$repo" --exclude=.git --exclude=storage --exclude=build --exclude=node_modules --exclude=__pycache__ \
-        --exclude='.env' --exclude='*.pem' --exclude='.runtime_bundle' --exclude='handoff_code_*' \
-        -czf "$folder/source.tar.gz" .
+    # Source = the committed tree (HEAD), or for a dirty release the working tree: tracked
+    # files plus new files git does not ignore. Never ignored data, builds or credentials
+    # (a plain tar of the folder packed ~1.8 GB of ignored data and replay runs).
+    if [[ "$version" == *-dirty ]]; then
+        (cd "$repo" && git ls-files -z --cached --others --exclude-standard \
+            | while IFS= read -r -d '' path; do [[ -f "$path" ]] && printf '%s\0' "$path"; done \
+            | tar --null -T - -czf "$folder/source.tar.gz")
+    else
+        git -C "$repo" archive --format=tar.gz -o "$folder/source.tar.gz" HEAD
+    fi
     (cd "$folder" && sha256sum images.tar source.tar.gz > SHA256SUMS)
     echo "Release written: $folder"
 }
@@ -306,7 +330,10 @@ case "$command" in
                 if [[ "$LOG_MODE" == local ]]; then echo "logs: local mode (host monitor copies container logs)"
                 elif receiver_listening; then echo "log receiver: listening on 127.0.0.1:$RECEIVER_PORT"; else echo "log receiver: STOPPED"; fi
                 if [[ -f "$ALGO_DATA/telemetry/monitor.pid" ]] && kill -0 "$(cat "$ALGO_DATA/telemetry/monitor.pid")" 2>/dev/null \
-                   || systemd_unit_active algotrading-monitor.service; then echo "host monitor: running"; else echo "host monitor: STOPPED"; fi ;;
+                   || systemd_unit_active algotrading-monitor.service; then echo "host monitor: running"; else echo "host monitor: STOPPED"; fi
+                if systemd_unit_active algotrading-kraken.service; then echo "kraken account monitor: running"
+                elif [[ -f "$(under "$ALGO_ROOT" secrets)/kraken_readonly.env" ]]; then echo "kraken account monitor: STOPPED"
+                else echo "kraken account monitor: not configured (no secrets/kraken_readonly.env)"; fi ;;
             logs)
                 service="${1:?Usage: algo logs <service> [-n N]}"; shift
                 lines=50; [[ "${1:-}" == "-n" ]] && lines="${2:?}"

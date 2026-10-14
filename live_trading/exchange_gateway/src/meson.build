@@ -3,6 +3,7 @@ venue_sources = files(
     'venue/http_transport.cpp',
     'venue/kraken_futures_protocol.cpp',
     'venue/live_venue_adapter.cpp',
+    'venue/symbol_map.cpp',
     'venue/venue_journal.cpp',
     'venue/venue_protocol.cpp',
 )

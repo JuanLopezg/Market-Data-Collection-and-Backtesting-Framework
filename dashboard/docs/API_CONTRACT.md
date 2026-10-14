@@ -91,7 +91,7 @@ Additional authenticated GET diagnostics:
 | `/api/venue-public` | Public-only Hyperliquid TESTNET metadata/connectivity status. |
 | `/api/venue-symbol-map` | Explicit canonical-to-venue symbol mapping. |
 | `/api/venue-rules` | Public precision/minimum/rule validation. |
-| `/api/symbol-registry` | Multi-venue registry and drift diagnostics. |
+| `/api/symbol-map` | Binance -> Kraken symbol table checked against current prices (Symbol Mapping page; alerts `SYMBOL_MAP_*`). |
 | `/api/ledger` | Deterministic fill-derived economic projection, not durable cost-basis/PnL. |
 | `/api/stream` | Authenticated SSE invalidations and heartbeat. |
 

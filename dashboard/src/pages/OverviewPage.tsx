@@ -11,7 +11,7 @@ import { useDashboardResource } from '../hooks/useDashboardResource'
 import type { OperationalAlert, Position, Severity } from '../types/dashboard'
 
 // Overview: account figures, balance/equity with the daily close loop, live equity against
-// the fast backtest, open positions and the most important active alert. Units travel with
+// the fast backtest, open positions and the most severe active alerts. Units travel with
 // the numbers; no explanatory captions.
 
 const BALANCE = { key: 'balance', label: 'Balance', color: 'var(--series-1)' }   // blue
@@ -48,18 +48,25 @@ function orderAlerts(alerts: OperationalAlert[]) {
     .sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || b.timestamp.localeCompare(a.timestamp))
 }
 
-function AlertsPanel() {
+const severityTone = (severity: Severity) => severity === 'CRITICAL' ? 'negative' : severity === 'WARN' ? 'warning' : 'info'
+
+// Shows as many alerts as the positions table has rows (at least 3), in the same table
+// layout, so both panels take roughly the same height.
+function AlertsPanel({ rows }: { rows: number }) {
   const { data } = useDashboardResource('getAlertsAudit')
   const alerts = orderAlerts(data?.alerts ?? [])
-  const [top] = alerts
-  const tone = top?.severity === 'CRITICAL' ? 'negative' : top?.severity === 'WARN' ? 'warning' : 'info'
-  return <Panel title="Alerts" right={<Link className="text-link" to="/alerts-audit">{alerts.length > 1 ? `+${alerts.length - 1} more →` : 'Details →'}</Link>}>
-    {top
-      ? <div className="overview-alert">
-          <strong className={tone}>{top.severity}</strong>
-          <div><span>{top.title}</span><small>{top.service} · {top.timestamp}</small></div>
-        </div>
-      : <div className="empty-cell">No active alerts</div>}
+  const shown = alerts.slice(0, Math.max(3, rows))
+  const hidden = alerts.length - shown.length
+  return <Panel title="Alerts" right={<Link className="text-link" to="/alerts-audit">{hidden > 0 ? `+${hidden} more →` : 'Details →'}</Link>}>
+    <div className="table-wrap"><table><thead><tr><th>Severity</th><th>What happened</th><th>Area</th></tr></thead><tbody>
+      {shown.length === 0
+        ? <tr><td colSpan={3} className="empty-cell">No active alerts</td></tr>
+        : shown.map(alert => <tr key={alert.id} title={alert.detail}>
+            <td><strong className={severityTone(alert.severity)}>{alert.severity}</strong></td>
+            <td className="overview-alert-title">{alert.title}{alert.asset ? ` · ${alert.asset}` : ''}</td>
+            <td>{alert.service}</td>
+          </tr>)}
+    </tbody></table></div>
   </Panel>
 }
 
@@ -121,7 +128,7 @@ export function OverviewPage() {
               </tr>)}
         </tbody></table></div>
       </Panel>
-      <AlertsPanel/>
+      <AlertsPanel rows={data.positions.length}/>
     </section>
   </>
 }

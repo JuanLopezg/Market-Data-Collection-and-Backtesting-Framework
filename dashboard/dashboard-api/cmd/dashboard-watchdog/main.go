@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"control-dashboard-api/internal/alertstore"
+	krakenpublic "control-dashboard-api/internal/integration/kraken"
 	"control-dashboard-api/internal/provider"
 )
 
@@ -153,6 +154,8 @@ func configuredRealProvider() (*provider.Real, error) {
 		ExchangeGatewayMode:    gateway,
 		VenuePublicInfoURL:     publicURL,
 		VenuePublicTimeout:     publicTimeout,
+		SymbolMapFile:          strings.TrimSpace(os.Getenv("DASHBOARD_SYMBOL_MAP_FILE")),
+		KrakenTickersURL:       krakenpublic.TickersURL,
 		// Intentionally omit AlertStoreDir: the watchdog derives current alerts
 		// from canonical sources and must not feed its own durable history back
 		// into the sweep input.

@@ -119,13 +119,14 @@ void ExecutionEngine::applyFill(const Fill& fill, const PersistCallback& persist
 
 
 // Process one exchange lifecycle event and persist before returning
-void ExecutionEngine::processExchangeEvent(
+bool ExecutionEngine::processExchangeEvent(
     const ExchangeEvent& event,
     const PersistCallback& persist
 )
 {
     if (const auto* update = std::get_if<OrderUpdate>(&event)) {
-        order_manager_.onOrderUpdate(*update);
+        if (!order_manager_.onOrderUpdate(*update))
+            return false; // Stale echo of a status the order has passed; nothing changed.
         persist(std::nullopt);
         const TrackedOrder parent = *order_manager_.find(update->order_id);
         if (parent.request.parent_order_id == 0 && parent.request.protective_stop_price > 0.0 &&
@@ -135,7 +136,7 @@ void ExecutionEngine::processExchangeEvent(
             for (const auto& [id, order] : order_manager_.orders()) {
                 (void)id;
                 if (order.request.parent_order_id == parent.request.order_id)
-                    return;
+                    return true;
             }
             ExecutionOrder cover(next_order_id_++, parent.request.strategy_id,
                 update->timestamp, update->timestamp, parent.request.coin,
@@ -148,11 +149,12 @@ void ExecutionEngine::processExchangeEvent(
             order_manager_.markSubmitted(cover.order_id, update->timestamp);
             persist(std::nullopt);
         }
-        return;
+        return true;
     }
 
     if (const auto* fill = std::get_if<Fill>(&event))
         applyFill(*fill, persist);
+    return true;
 }
 
 

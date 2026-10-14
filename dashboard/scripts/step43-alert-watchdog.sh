@@ -62,12 +62,12 @@ if grep -REn 'PRIVATE_KEY|mnemonic|seed phrase|/exchange|submit.*order|cancel.*o
 fi
 pass "watchdog is a separate no-port process and writes only its dedicated observability volume"
 
-echo "[4/8] Alert derivation includes registry + ledger integrity without trading mutation"
-grep -q 'mergeSymbolRegistryAlerts' "$ROOT/dashboard-api/internal/provider/real_alerts_audit.go" || fail "symbol-registry alert integration missing"
+echo "[4/8] Alert derivation includes symbol map + ledger integrity without trading mutation"
+grep -q 'mergeSymbolMapAlerts' "$ROOT/dashboard-api/internal/provider/real_alerts_audit.go" || fail "symbol-map alert integration missing"
 grep -q 'mergeLedgerAlerts' "$ROOT/dashboard-api/internal/provider/real_alerts_audit.go" || fail "ledger integrity alert integration missing"
 grep -q 'LEDGER_INTEGRITY_BLOCKED' "$ROOT/dashboard-api/internal/provider/real_alerts_audit.go" || fail "critical ledger integrity alarm missing"
-grep -q 'SYMBOL_REGISTRY_BLOCKED' "$ROOT/dashboard-api/internal/provider/real_alerts_audit.go" || fail "symbol registry alarm missing"
-pass "symbol registry and ledger integrity feed the common alert projection"
+grep -q 'SYMBOL_MAP_UNAVAILABLE' "$ROOT/dashboard-api/internal/provider/real_alerts_audit.go" || fail "symbol map alarm missing"
+pass "symbol map and ledger integrity feed the common alert projection"
 
 echo "[5/8] Authenticated watchdog heartbeat + durable history"
 LOGIN_JSON=$(json_login_body)

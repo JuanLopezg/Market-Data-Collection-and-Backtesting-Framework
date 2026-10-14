@@ -216,7 +216,7 @@ export interface VenueTradingRulesData {
 }
 
 
-export interface SymbolRegistryAlarm {
+export interface SymbolMapAlarm {
   severity: Severity
   eventType: string
   asset?: string
@@ -224,53 +224,35 @@ export interface SymbolRegistryAlarm {
   detail: string
 }
 
-export interface SymbolRegistryRow {
-  internal: string
-  marketDataVenue: string
-  marketDataSymbol: string
-  executionVenue: string
-  executionEnvironment: string
-  executionSymbol: string
-  registryState: string
-  runtimeState: string
-  routingPolicy: string
-  reason?: string
-  inCurrentRanking: boolean
-  inCurrentStrategy: boolean
-  venuePresent: boolean
+// One Binance symbol checked against the Kraken symbol table and current prices.
+export type SymbolMapState = 'OK' | 'NOT_ON_VENUE' | 'MISSING_FROM_TABLE' | 'NOT_LISTED' | 'SUSPENDED' | 'NO_PRICE' | 'SCALE_MISMATCH'
+
+export interface SymbolMapRow {
+  source: string
+  asset?: string
+  venueSymbol?: string
+  scale?: number        // Venue units per source unit (1000 for 1000PEPEUSDT).
+  sourcePrice?: number  // Latest Binance daily close.
+  venuePrice?: number   // Current Kraken mark price.
+  priceRatio?: number   // sourcePrice / venuePrice; about equal to scale when correct.
+  inStrategy: boolean
+  activeSignal: boolean
+  inRanking: boolean
+  state: SymbolMapState
+  detail: string
 }
 
-export interface SymbolRegistryData {
-  status: string
-  validated: boolean
-  registryVersion: string
-  registryArtifactSha256: string
-  policy: string
-  marketDataSource: string
-  executionVenue: string
-  executionEnvironment: string
-  registryEntryCount: number
-  currentRankingCount: number
-  currentRankingRegisteredCount: number
-  currentStrategyCount: number
-  currentStrategyRegisteredCount: number
-  currentStrategyRoutableCount: number
-  currentStrategyNonRoutableCount: number
-  executionCoverageComplete: boolean
-  unregisteredRankingSymbols: string[]
-  unregisteredStrategySymbols: string[]
-  venueAbsentStrategySymbols: string[]
-  explicitBlockedStrategySymbols: string[]
-  mappingDivergences: string[]
-  alarms: SymbolRegistryAlarm[]
-  rows: SymbolRegistryRow[]
-  metadataLatencyMs: number
+export interface SymbolMapData {
+  status: 'OK' | 'WARN' | 'BLOCKED' | 'UNAVAILABLE'
+  venue: string
+  tableGeneratedAt?: string
+  tableEntries: number
+  strategyAssets: number
+  strategyMapped: number
   checkedAt: string
-  privateAuth: string
-  orderRouting: string
-  readOnly: boolean
   error?: string
-  note: string
+  rows: SymbolMapRow[]
+  alarms: SymbolMapAlarm[]
 }
 
 export interface LedgerEntry {
@@ -1282,8 +1264,7 @@ export interface ManualControlData {
   routingContractMode?: string
   executionBoundary?: string
   exchangeConstraintsValidated?: boolean
-  registryVersion?: string
-  registryArtifactSha256?: string
+  symbolMapCheckedAt?: string
   venueRulesCheckedAt?: string
   tradingControlSink?: string
   privateAuth?: string
