@@ -23,6 +23,7 @@ using Json = nlohmann::json;
 const std::string API_PREFIX = "/derivatives";
 const std::string API_PATH = "/api/v3/";
 const std::string PERMISSIONS_PATH = "/api/auth/v1/api-keys/v3/check";
+const std::string ACCOUNT_LOG_PATH = "/api/history/v2/account-log";
 const std::string CLIENT_ID_PREFIX = "algo-";
 
 // ------------------------------------------------------------------ encoding
@@ -274,6 +275,9 @@ int KrakenFuturesProtocol::cost(Endpoint endpoint) const
         case Endpoint::SendOrder:      return 10;
         case Endpoint::CancelOrder:    return 10;
         case Endpoint::DeadMansSwitch: return 25;
+        // History API: its own limits, not listed in the derivatives budget table;
+        // counted conservatively and polled every few minutes only. UNCONFIRMED.
+        case Endpoint::AccountLog:     return 10;
     }
     return 25;
 }
@@ -641,7 +645,13 @@ AccountState KrakenFuturesProtocol::parseAccount(const HttpResponse& accounts, c
     for (const auto& [code, row] : currencies.items()) {
         if (upper(code) == "USD")
             state.usd_balance = number(row, "quantity", "accounts");
+        else
+            // "collateral": the currency's USD value after Kraken's haircut (1% for BTC), the
+            // amount Kraken itself counts as margin.
+            state.collateral_usd += number(row, "collateral", "accounts");
     }
+    if (state.collateral_usd < 0.0)
+        throw ProtocolError("accounts: negative non-USD collateral");
 
     const Json open = successBody(positions, "openpositions");
     for (const Json& row : rows(open, "openPositions", "openpositions")) {
@@ -649,9 +659,88 @@ AccountState KrakenFuturesProtocol::parseAccount(const HttpResponse& accounts, c
         if (direction != "long" && direction != "short")
             throw ProtocolError("openpositions: unknown side");
         const double size = number(row, "size", "openpositions");
-        state.positions.push_back({text(row, "symbol", "openpositions"), direction == "long" ? size : -size});
+        // "price": the position's average entry price (UNCONFIRMED until the first real position).
+        state.positions.push_back({text(row, "symbol", "openpositions"), direction == "long" ? size : -size,
+                                   number(row, "price", "openpositions")});
     }
     return state;
+}
+
+
+HttpRequest KrakenFuturesProtocol::accountLogRequest()
+{
+    // History API (outside /derivatives): GET with a query string, signed with the query as
+    // postData and no nonce, like the other GETs. The newest 500 entries; the adapter keeps
+    // the ids it has seen. UNCONFIRMED until the first read with a real key.
+    const std::string query = "count=500";
+    HttpRequest request;
+    request.method = "GET";
+    request.url = host_ + ACCOUNT_LOG_PATH + "?" + query;
+    request.endpoint = "account-log";
+    request.headers = {{"APIKey", credentials_.api_key},
+                       {"Authent", authent(credentials_.api_secret, query, "", ACCOUNT_LOG_PATH)},
+                       {"Accept", "application/json"}};
+    return request;
+}
+
+
+AccountLog KrakenFuturesProtocol::parseAccountLog(const HttpResponse& response) const
+{
+    const std::string endpoint = "account-log";
+    const Json body = parseBody(response, endpoint);
+    AccountLog log;
+    for (const Json& row : rows(body, "logs", endpoint)) {
+        const Json& idField = field(row, "id", endpoint);
+        if (!idField.is_number_integer())
+            throw ProtocolError(endpoint + ": field id is not an integer");
+        const std::string id = std::to_string(idField.get<long long>());
+        const std::string info = text(row, "info", endpoint);
+        const auto [timeMs, day] = utcTime(text(row, "date", endpoint), endpoint);
+
+        const auto optionalNumber = [&](const char* name) -> double {
+            return row.contains(name) && !row.at(name).is_null() ? number(row, name, endpoint) : 0.0;
+        };
+        const double fee = optionalNumber("fee");                    // Paid, positive.
+        const double funding = optionalNumber("realized_funding");   // Balance change. UNCONFIRMED sign.
+        const std::string currency = upper(optionalText(row, "asset"));
+        const bool usd = currency.empty() || currency == "USD";
+        const std::string wallet = optionalText(row, "margin_account");
+
+        if (fee != 0.0 || funding != 0.0) {
+            if (!usd) {
+                log.unaccounted.push_back(info + " in " + currency);
+                continue;
+            }
+            if (fee != 0.0)
+                log.entries.push_back({id + ":fee", VenueCostKind::Fee, day, timeMs, optionalText(row, "contract"),
+                                       optionalText(row, "execution"), -fee});
+            if (funding != 0.0)
+                log.entries.push_back({id + ":funding", VenueCostKind::Funding, day, timeMs,
+                                       optionalText(row, "contract"), {}, funding});
+            continue;
+        }
+        // A trade's PnL follows from the fills; nothing else to book.
+        if (info == "futures trade" || info == "funding rate change")
+            continue;
+        if (!usd || (!wallet.empty() && wallet != "flex")) {
+            log.not_cash.push_back(info + (usd ? " in wallet " + wallet : " in " + currency));
+            continue;
+        }
+
+        // Other USD changes of the Multi-M wallet: the change of its USD balance. Kinds are
+        // recognised by words in "info" (UNCONFIRMED: Kraken does not list them).
+        const double change = optionalNumber("new_balance") - optionalNumber("old_balance");
+        if (change == 0.0)
+            continue;
+        const auto mentions = [&](const char* word) { return info.find(word) != std::string::npos; };
+        if (mentions("interest"))
+            log.entries.push_back({id + ":interest", VenueCostKind::Interest, day, timeMs, {}, {}, change});
+        else if (mentions("transfer") || mentions("conversion"))
+            log.entries.push_back({id + ":flow", VenueCostKind::CapitalFlow, day, timeMs, {}, {}, change});
+        else
+            log.unaccounted.push_back(info);
+    }
+    return log;
 }
 
 

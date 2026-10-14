@@ -18,6 +18,7 @@ inline constexpr const char* SUBMIT_ORDER = "execution.command.submit.v1";
 inline constexpr const char* CANCEL_ORDER = "execution.command.cancel.v1";
 inline constexpr const char* ORDER_UPDATE = "execution.event.order_update.v1";
 inline constexpr const char* FILL = "execution.event.fill.v1";
+inline constexpr const char* VENUE_COST = "execution.event.venue_cost.v1";
 inline constexpr const char* EXECUTION_EVENT_FILTER = "execution.event.>";
 inline constexpr const char* ACCOUNT_SNAPSHOT = "execution.account.snapshot.v1";
 inline constexpr const char* EXECUTION_CYCLE_COMPLETE = "execution.cycle.complete.v1";
@@ -51,6 +52,7 @@ inline std::vector<std::string> tradingRuntimeSubjects()
         CANCEL_ORDER,
         ORDER_UPDATE,
         FILL,
+        VENUE_COST,
         ACCOUNT_SNAPSHOT,
         EXECUTION_CYCLE_COMPLETE,
         EXCHANGE_SNAPSHOT,

@@ -12,10 +12,16 @@
 #include <cstdlib>
 #include <chrono>
 #include <cmath>
+#include <ctime>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <limits>
+#include <map>
+#include <memory>
 #include <optional>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -24,7 +30,13 @@
 #include <utility>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "account.h"
+#include "binance_prices.h"
+#include "manual_requests.h"
+#include "planning/notional_order_planner.h"
+#include "target_decisions.h"
 #include "canonical_market_data_reader.h"
 #include "message_json.h"
 #include "market_messages.h"
@@ -102,7 +114,99 @@ struct Options {
     std::string market_data_source = "binance";
     double initial_cash = 100000.0;
     std::vector<ExecutionStrategyDescriptor> strategies;
+    // Re-check the exchange on the wall-clock schedule below, besides the startup check.
+    // Off by default so replays and tests keep their exact message sequence.
+    bool periodic_reconciliation = false;
+    // Manual Control (off when manual_dir is empty): request folder shared with the
+    // dashboard, the portfolio config whose risk limits and allocations apply, and the
+    // Binance futures API used for the current prices.
+    std::string manual_dir;
+    std::string portfolio_config;
+    std::string price_url = "https://fapi.binance.com";
+    // Cash difference accepted by reconciliation. The simulated exchange matches to the
+    // cent's millionth; a real venue rounds balances and entry prices (chain LIVE: 0.50).
+    double cash_tolerance_usd = 1e-6;
 };
+
+
+// Periodic reconciliation times (UTC, wall clock): every hour from 01:00 to 23:00, plus
+// 23:50 so the state is verified shortly before the 00:00 daily cycle. 00:00 itself is
+// skipped because orders are in flight then; the 23:50 result already gates that cycle.
+std::chrono::system_clock::time_point nextReconciliationAfter(std::chrono::system_clock::time_point now)
+{
+    using namespace std::chrono;
+    const auto day = floor<days>(now);
+    std::vector<system_clock::time_point> slots;
+    for (int hour = 1; hour <= 23; ++hour)
+        slots.push_back(day + hours(hour));
+    slots.push_back(day + hours(23) + minutes(50));
+    std::sort(slots.begin(), slots.end());
+    for (const auto slot : slots)
+        if (slot > now)
+            return slot;
+    return day + days(1) + hours(1);
+}
+
+
+// Manual Control limits from the portfolio-risk config. A manual weight applies to every
+// strategy (each on its own share of equity), so the account limits are the strictest
+// strategy's, as in the replay. A request above them is rejected, never clipped.
+struct ManualRiskConfig {
+    std::unordered_map<StrategyID, double> allocation;
+    double max_gross_leverage = 0.0;
+    double max_asset_weight = 0.0;
+};
+
+ManualRiskConfig loadManualRiskConfig(
+    const std::string& path,
+    const std::vector<ExecutionStrategyDescriptor>& strategies)
+{
+    std::ifstream input(path);
+    if (!input)
+        throw std::runtime_error("Cannot open portfolio config: " + path);
+    const nlohmann::json root = nlohmann::json::parse(input);
+
+    ManualRiskConfig config;
+    bool first = true;
+    for (const auto& strategy : root.at("strategies")) {
+        const auto id = static_cast<StrategyID>(strategy.at("id").get<unsigned long>());
+        const double allocation = strategy.at("allocation_weight").get<double>();
+        const double gross = strategy.at("risk").at("max_gross_leverage").get<double>();
+        const double asset = strategy.at("risk").at("max_asset_weight").get<double>();
+        if (!std::isfinite(allocation) || allocation < 0.0 || !std::isfinite(gross) || gross <= 0.0 ||
+            !std::isfinite(asset) || asset <= 0.0)
+            throw std::invalid_argument("Invalid allocation or risk limits in " + path);
+        config.allocation[id] = allocation;
+        config.max_gross_leverage = first ? gross : std::min(config.max_gross_leverage, gross);
+        config.max_asset_weight = first ? asset : std::min(config.max_asset_weight, asset);
+        first = false;
+    }
+    for (const auto& strategy : strategies)
+        if (!config.allocation.contains(strategy.strategy_id))
+            throw std::invalid_argument("Portfolio config has no strategy " + std::to_string(strategy.strategy_id));
+    return config;
+}
+
+
+// No manual orders from 23:45 to 00:15 UTC: the daily cycle reconciles, decides and sends
+// its orders then.
+bool inDailyCycleWindow(std::chrono::system_clock::time_point now)
+{
+    using namespace std::chrono;
+    const auto sinceMidnight = duration_cast<minutes>(now - floor<days>(now));
+    return sinceMidnight >= hours(23) + minutes(45) || sinceMidnight < minutes(15);
+}
+
+// "2026-10-14T12:00:00Z" -> time point; nothing when the text has another shape.
+std::optional<std::chrono::system_clock::time_point> parseUtcSeconds(const std::string& text)
+{
+    std::tm utc{};
+    std::istringstream input(text);
+    input >> std::get_time(&utc, "%Y-%m-%dT%H:%M:%SZ");
+    if (input.fail())
+        return std::nullopt;
+    return std::chrono::system_clock::from_time_t(timegm(&utc));
+}
 
 
 ExecutionStrategyDescriptor parseStrategy(const std::string& value)
@@ -150,6 +254,16 @@ Options parseOptions(int argc, char** argv)
             options.initial_cash = std::stod(requireValue("--initial-cash"));
         else if (arg == "--strategy")
             options.strategies.push_back(parseStrategy(requireValue("--strategy")));
+        else if (arg == "--periodic-reconciliation")
+            options.periodic_reconciliation = true;
+        else if (arg == "--manual-dir")
+            options.manual_dir = requireValue("--manual-dir");
+        else if (arg == "--portfolio-config")
+            options.portfolio_config = requireValue("--portfolio-config");
+        else if (arg == "--price-url")
+            options.price_url = requireValue("--price-url");
+        else if (arg == "--cash-tolerance-usd")
+            options.cash_tolerance_usd = std::stod(requireValue("--cash-tolerance-usd"));
         else if (arg == "--help") {
             std::cout
                 << "Usage: algotrading_execution_state_service [options]\n"
@@ -160,12 +274,23 @@ Options parseOptions(int argc, char** argv)
                 << "  --market-data-db PATH\n"
                 << "  --market-data-source NAME   expected MarketDataUpdated source, default binance\n"
                 << "  --initial-cash VALUE\n"
-                << "  --strategy ID:NAME   (repeat for each configured strategy)\n";
+                << "  --strategy ID:NAME   (repeat for each configured strategy)\n"
+                << "  --periodic-reconciliation   also reconcile hourly 01:00-23:00 UTC and at 23:50\n"
+                << "  --manual-dir PATH           enable Manual Control with this request folder\n"
+                << "  --portfolio-config PATH     risk limits/allocations for Manual Control\n"
+                << "  --price-url URL             Binance futures API for current prices\n"
+                << "  --cash-tolerance-usd VALUE  cash difference accepted by reconciliation, default 1e-6\n";
             std::exit(0);
         }
         else
             throw std::invalid_argument("Unknown option: " + arg);
     }
+
+    if (!std::isfinite(options.cash_tolerance_usd) || options.cash_tolerance_usd < 0.0 ||
+        options.cash_tolerance_usd > 100.0)
+        throw std::invalid_argument("--cash-tolerance-usd must be between 0 and 100");
+    if (!options.manual_dir.empty() && options.portfolio_config.empty())
+        throw std::invalid_argument("--manual-dir needs --portfolio-config (risk limits)");
 
     if (options.strategies.empty())
         throw std::invalid_argument("At least one --strategy ID:NAME is required");
@@ -207,6 +332,8 @@ private:
     MessageExchange exchange_;
     ExecutionEngine engine_;
     Reconciler reconciler_;
+    // Account-level cost basis / realized PnL / fees / funding (see PositionLedger).
+    PositionLedger ledger_;
 
     struct ActiveExecutionCycle {
         Timestamp decision_timestamp = 0;
@@ -218,6 +345,15 @@ private:
     std::optional<ActiveExecutionCycle> active_execution_cycle_;
     Timestamp last_decision_timestamp_ = 0;
     bool reconciled_ = false;
+    // Latest venue collateral after haircut (Kraken BTC) from the exchange snapshots; part
+    // of the sizing equity (user decision 2026-10-14). Always 0 with the simulated exchange.
+    double venue_collateral_usd_ = 0.0;
+    std::optional<std::chrono::system_clock::time_point> next_reconciliation_at_;
+    // Manual Control (empty when --manual-dir is not given or its setup failed).
+    std::unique_ptr<ManualRequestFolder> manual_folder_;
+    std::optional<ManualRiskConfig> manual_risk_;
+    std::unique_ptr<BinanceLastPrices> price_source_;
+
     bool chaos_nak_fill_after_persist_once_ =
         envFlag("ALGOTRADING_CHAOS_NAK_FILL_AFTER_PERSIST_ONCE");
     bool chaos_nak_fill_after_persist_done_ = false;
@@ -273,12 +409,194 @@ private:
                  FormatDayKey(last_decision_timestamp_),
                  FormatDayKey(engine_.lastExecutionTimestamp()),
                  fill ? std::to_string(fill->fill_id) : std::string{"none"});
+        if (fill)
+            recordFillInLedger(*fill);
     }
 
+
+    // Accounting projection ----------------------------------------------------------
+    // The fills (plus venue fees and funding) are the authority; the position/equity tables are
+    // derived from them. A failure here is logged and never stops trading: the next
+    // restart rebuilds everything from the fills.
+
+    static Timestamp dayOf(Timestamp timestamp)
+    {
+        return timestamp >= 100000000 ? timestamp / 10 : timestamp; // strip a replay phase digit
+    }
+
+    void recordFillInLedger(const Fill& fill)
+    {
+        try {
+            const std::optional<PositionLot> closed = ledger_.applyFill(fill);
+            std::vector<PositionLot> newlyClosed;
+            if (closed) {
+                newlyClosed.push_back(*closed);
+                LG_INFO("Closed {} {} position: net PnL {} (gross {}, fees {}, funding {})",
+                        closed->sideName(), closed->coin, FormatUsd(closed->netPnl()),
+                        FormatUsd(closed->gross_pnl), FormatUsd(closed->fees), FormatUsd(closed->funding));
+            }
+            store_->saveLedger(ledger_, newlyClosed);
+        }
+        catch (const std::exception& error) {
+            LG_ERROR("Could not record fill {} in the position ledger (rebuilt on restart): {}", fill.fill_id, error.what());
+        }
+    }
+
+    // Account value at close(day): cash plus every position marked at its exact close.
+    // Interest and capital flows up to that day, and the day's venue collateral, are
+    // recorded beside it (real venues only).
+    std::optional<EquityDay> markEquity(
+        Timestamp day,
+        double cash,
+        const std::unordered_map<Coin, double>& positions,
+        const PositionLedger& ledger,
+        const std::vector<VenueCostEvent>& accountMovements,
+        double collateralUsd
+    ) const
+    {
+        std::set<Coin> coins;
+        for (const auto& [coin, quantity] : positions)
+            if (quantity != 0.0)
+                coins.insert(coin);
+        std::unordered_map<Coin, double> closes;
+        try {
+            closes = market_reader_.loadExactClosingPrices(day, coins);
+        }
+        catch (const std::exception& error) {
+            LG_WARN("Equity for {} not recorded: {}", FormatDayKey(day), error.what());
+            return std::nullopt;
+        }
+
+        EquityDay row;
+        row.date = day;
+        row.cash = cash;
+        for (const auto& [coin, quantity] : positions)
+            if (quantity != 0.0)
+                row.positions_value += quantity * closes.at(coin);
+        row.equity = row.cash + row.positions_value;
+        row.realized_gross_pnl = ledger.realizedGrossPnl();
+        row.fees = ledger.fees();
+        row.funding = ledger.funding();
+        row.open_positions = ledger.openPositions().size();
+        for (const VenueCostEvent& movement : accountMovements) {
+            if (dayOf(movement.timestamp) > day)
+                break;
+            (movement.kind == VenueCostKind::CapitalFlow ? row.capital_flows : row.interest) += movement.amount_usd;
+        }
+        row.collateral_usd = collateralUsd;
+        return row;
+    }
+
+    void recordEquityDay(Timestamp day, double collateralUsd)
+    {
+        try {
+            if (const auto row = markEquity(day, engine_.account().cash(), engine_.account().positions().values(), ledger_,
+                                            store_->loadAccountCashMovements(), collateralUsd)) {
+                store_->saveEquityDay(*row);
+                LG_INFO("Equity at the close of {}: {} (cash {}, positions {})",
+                        FormatDayKey(day), FormatUsd(row->equity), FormatUsd(row->cash), FormatUsd(row->positions_value));
+                if (row->collateral_usd > 0.0 || row->capital_flows != 0.0)
+                    LG_INFO("Beside the equity of {}: venue collateral {} after haircut, net capital flows {}, interest {}",
+                            FormatDayKey(day), FormatUsd(row->collateral_usd), FormatUsd(row->capital_flows),
+                            FormatUsd(row->interest));
+            }
+        }
+        catch (const std::exception& error) {
+            LG_ERROR("Could not record the equity for {}: {}", FormatDayKey(day), error.what());
+        }
+    }
+
+    // Days without an equity row since the first fill (for example right after this table
+    // was added) are rebuilt by replaying the fills from the initial cash. Skipped when that
+    // replay does not end at the current account (state restored from another source).
+    void backfillEquityHistory(const std::vector<Fill>& fills, const std::vector<FundingPayment>& funding)
+    {
+        if (fills.empty())
+            return;
+
+        const std::vector<VenueCostEvent> movements = store_->loadAccountCashMovements();
+        Account replayed(options_.initial_cash);
+        for (const Fill& fill : fills)
+            replayed.applyFill(fill);
+        for (const FundingPayment& payment : funding)
+            replayed.applyCashMovement(payment.amount);
+        for (const VenueCostEvent& movement : movements)
+            replayed.applyCashMovement(movement.amount_usd);
+        const auto& live = engine_.account().positions().values();
+        bool matches = std::abs(replayed.cash() - engine_.account().cash()) <= 1e-6 * std::max(1.0, std::abs(replayed.cash()));
+        for (const auto& [coin, quantity] : replayed.positions().values()) {
+            const auto found = live.find(coin);
+            const double current = found == live.end() ? 0.0 : found->second;
+            matches = matches && std::abs(current - quantity) <= 1e-9 * std::max(1.0, std::abs(quantity));
+        }
+        if (!matches) {
+            LG_WARN("Equity history not backfilled: replaying the fills from the initial cash does not reach the current account");
+            return;
+        }
+
+        const std::set<Timestamp> existing = store_->equityDays();
+        const Timestamp lastDay = newestCompletedUtcDate(time_handler_);
+        Account account(options_.initial_cash);
+        PositionLedger ledger;
+        std::size_t nextFill = 0;
+        std::size_t nextFunding = 0;
+        std::size_t nextMovement = 0;
+        std::size_t written = 0;
+        for (Timestamp day = dayOf(fills.front().timestamp); day <= lastDay;
+             day = static_cast<Timestamp>(nextDay(static_cast<unsigned int>(day)))) {
+            while (nextFunding < funding.size() && dayOf(funding[nextFunding].timestamp) <= day) {
+                account.applyCashMovement(funding[nextFunding].amount);
+                ledger.applyFunding(funding[nextFunding++]);
+            }
+            while (nextMovement < movements.size() && dayOf(movements[nextMovement].timestamp) <= day)
+                account.applyCashMovement(movements[nextMovement++].amount_usd);
+            while (nextFill < fills.size() && dayOf(fills[nextFill].timestamp) <= day) {
+                account.applyFill(fills[nextFill]);
+                ledger.applyFill(fills[nextFill]);
+                ++nextFill;
+            }
+            if (existing.contains(day))
+                continue;
+            if (const auto row = markEquity(day, account.cash(), account.positions().values(), ledger, movements,
+                                            store_->dailyCollateral(day).value_or(0.0))) {
+                store_->saveEquityDay(*row);
+                ++written;
+            }
+        }
+        if (written > 0)
+            LG_INFO("Backfilled {} days of equity history from the fills", written);
+    }
+
+    void rebuildAccounting()
+    {
+        try {
+            std::vector<Fill> fills = store_->loadFills();
+            // A venue fee reported after its fill (Kraken) joins that fill's commission.
+            const std::unordered_map<FillID, double> venueFees = store_->loadFillFees();
+            for (Fill& fill : fills)
+                if (const auto fee = venueFees.find(fill.fill_id); fee != venueFees.end())
+                    fill.commission += fee->second;
+            const std::vector<FundingPayment> funding = store_->loadFunding();
+            ledger_ = PositionLedger::rebuild(fills, funding);
+            store_->replaceLedger(ledger_);
+            LG_INFO("Position ledger rebuilt from {} fills: {} open positions, {} closed, realized {}, fees {}, funding {}",
+                    fills.size(), ledger_.openPositions().size(), ledger_.closedPositions().size(),
+                    FormatUsd(ledger_.realizedGrossPnl()), FormatUsd(ledger_.fees()), FormatUsd(ledger_.funding()));
+            backfillEquityHistory(fills, funding);
+        }
+        catch (const std::exception& error) {
+            LG_ERROR("Position ledger rebuild failed; the position/equity tables may be stale: {}", error.what());
+        }
+    }
+
+    // collateralUsd: the daily sizing snapshot passes the value fixed for its day; the
+    // others carry the latest venue value.
     void publishAccountSnapshot(
         Timestamp timestamp,
         const std::string& messageId,
-        const std::string& correlationId = {}
+        const std::string& correlationId = {},
+        bool resyncToTargets = false,
+        std::optional<double> collateralUsd = std::nullopt
     )
     {
         AccountSnapshot value;
@@ -287,7 +605,9 @@ private:
         value.metadata.correlation_id = correlationId;
         value.metadata.produced_at = timestamp;
         value.timestamp = timestamp;
+        value.resync_to_targets = resyncToTargets;
         value.cash = engine_.account().cash();
+        value.collateral_usd = collateralUsd.value_or(venue_collateral_usd_);
         value.positions = engine_.account().positions().values();
 
         for (const auto& strategy : options_.strategies) {
@@ -544,6 +864,66 @@ private:
         persist();
     }
 
+    // Planned USD notional -> executable quantity. Used by the daily plan and by manual
+    // rebalances.
+    static ExecutionOrder executableOrder(
+        const PlannedNotionalOrder& order,
+        const ExecutionPlanningStateSnapshot& current,
+        Timestamp executionTimestamp)
+    {
+        if (!std::isfinite(order.reference_close) || order.reference_close <= 0.0 ||
+            !std::isfinite(order.notional_usd) || order.notional_usd <= 0.0)
+            throw std::invalid_argument("Notional plan order has invalid close(T)/notional");
+
+        // A full FLAT must use the exact filled quantity owned by ExecutionState.
+        // Recomputing q as (q * close(T)) / close(T) can leave IEEE-754 dust
+        // (for example ~4.5e-13), which then survives as a fake held position.
+        // That is economically wrong and can later force PortfolioRisk to request
+        // OHLCV for a symbol whose market-data history has legitimately ended.
+        double quantity = 0.0;
+        if (order.target_notional_usd == 0.0) {
+            const auto strategyIt = current.strategy_positions.find(order.strategy_id);
+            if (strategyIt == current.strategy_positions.end())
+                throw std::invalid_argument("FLAT plan has no current strategy position state");
+
+            const auto positionIt = strategyIt->second.find(order.coin);
+            if (positionIt == strategyIt->second.end())
+                throw std::invalid_argument("FLAT plan has no current filled position for asset");
+
+            const double currentQuantity = positionIt->second;
+            if (!std::isfinite(currentQuantity) || currentQuantity == 0.0)
+                throw std::invalid_argument("FLAT plan current filled position is invalid");
+
+            const OrderSide expectedSide =
+                currentQuantity > 0.0 ? OrderSide::Sell : OrderSide::Buy;
+            if (order.side != expectedSide)
+                throw std::invalid_argument("FLAT plan side does not flatten current filled position");
+
+            quantity = std::abs(currentQuantity);
+        } else {
+            // Non-flat sizing remains exactly the established T17 rule: convert
+            // economic notional with the exact canonical close(T). Fill price is
+            // independent exchange truth supplied by the historical T+1 OPEN.
+            quantity = order.notional_usd / order.reference_close;
+        }
+
+        if (!std::isfinite(quantity) || quantity <= 0.0)
+            throw std::invalid_argument("Notional plan converts to invalid quantity");
+
+        ExecutionOrder executable(
+            order.order_id,
+            order.strategy_id,
+            order.created_at,
+            executionTimestamp,
+            order.coin,
+            order.side,
+            quantity
+        );
+        // The sizing price. A real venue checks the order's USD value against it.
+        executable.reference_price = order.reference_close;
+        return executable;
+    }
+
     DurableMessageDisposition onNotionalOrderPlan(const BusMessage& message)
     {
         try {
@@ -600,54 +980,7 @@ private:
                     order.created_at != plan.decision_timestamp ||
                     order.state_revision != plan.state_revision)
                     throw std::invalid_argument("Notional plan order identity mismatch");
-                if (!std::isfinite(order.reference_close) || order.reference_close <= 0.0 ||
-                    !std::isfinite(order.notional_usd) || order.notional_usd <= 0.0)
-                    throw std::invalid_argument("Notional plan order has invalid close(T)/notional");
-
-                // A full FLAT must use the exact filled quantity owned by ExecutionState.
-                // Recomputing q as (q * close(T)) / close(T) can leave IEEE-754 dust
-                // (for example ~4.5e-13), which then survives as a fake held position.
-                // That is economically wrong and can later force PortfolioRisk to request
-                // OHLCV for a symbol whose market-data history has legitimately ended.
-                double quantity = 0.0;
-                if (order.target_notional_usd == 0.0) {
-                    const auto strategyIt = current.strategy_positions.find(order.strategy_id);
-                    if (strategyIt == current.strategy_positions.end())
-                        throw std::invalid_argument("FLAT plan has no current strategy position state");
-
-                    const auto positionIt = strategyIt->second.find(order.coin);
-                    if (positionIt == strategyIt->second.end())
-                        throw std::invalid_argument("FLAT plan has no current filled position for asset");
-
-                    const double currentQuantity = positionIt->second;
-                    if (!std::isfinite(currentQuantity) || currentQuantity == 0.0)
-                        throw std::invalid_argument("FLAT plan current filled position is invalid");
-
-                    const OrderSide expectedSide =
-                        currentQuantity > 0.0 ? OrderSide::Sell : OrderSide::Buy;
-                    if (order.side != expectedSide)
-                        throw std::invalid_argument("FLAT plan side does not flatten current filled position");
-
-                    quantity = std::abs(currentQuantity);
-                } else {
-                    // Non-flat sizing remains exactly the established T17 rule: convert
-                    // economic notional with the exact canonical close(T). Fill price is
-                    // independent exchange truth supplied by the historical T+1 OPEN.
-                    quantity = order.notional_usd / order.reference_close;
-                }
-
-                if (!std::isfinite(quantity) || quantity <= 0.0)
-                    throw std::invalid_argument("Notional plan converts to invalid quantity");
-
-                executable.submit_orders.emplace_back(
-                    order.order_id,
-                    order.strategy_id,
-                    order.created_at,
-                    executionTimestamp,
-                    order.coin,
-                    order.side,
-                    quantity
-                );
+                executable.submit_orders.push_back(executableOrder(order, current, executionTimestamp));
             }
 
             engine_.applyOrderPlan(
@@ -682,11 +1015,11 @@ private:
         }
     }
 
-    void requestExchangeSnapshot()
+    void requestExchangeSnapshot(const std::string& reason = "startup")
     {
         ExchangeSnapshotRequest request;
         request.metadata.schema_version = 1;
-        request.metadata.correlation_id = "execution-state-startup";
+        request.metadata.correlation_id = "execution-state-" + reason;
         request.metadata.produced_at = engine_.lastExecutionTimestamp();
 
         const auto nonce = std::chrono::system_clock::now().time_since_epoch().count();
@@ -698,8 +1031,277 @@ private:
             MessageJson::encode(request),
             request.metadata.message_id
         );
-        LG_INFO("Requested exchange snapshot (last execution {})", FormatDayKey(engine_.lastExecutionTimestamp()));
+        LG_INFO("Requested exchange snapshot ({}, last execution {})", reason, FormatDayKey(engine_.lastExecutionTimestamp()));
         LG_DEBUG("Exchange snapshot request message id {}", request.metadata.message_id);
+    }
+
+    // Scheduled re-check of the exchange (see nextReconciliationAfter). Skipped while an
+    // execution cycle runs or any order is open: in-flight orders and fills would show as
+    // differences that are not drift. A mismatch pauses trading exactly like the startup
+    // check; the next clean scheduled check resumes it.
+    void maybeRequestPeriodicReconciliation()
+    {
+        if (!options_.periodic_reconciliation)
+            return;
+        const auto now = std::chrono::system_clock::now();
+        if (!next_reconciliation_at_) {
+            next_reconciliation_at_ = nextReconciliationAfter(now);
+            return;
+        }
+        if (now < *next_reconciliation_at_)
+            return;
+        next_reconciliation_at_ = nextReconciliationAfter(now);
+
+        const bool ordersOpen = std::any_of(
+            engine_.orderManager().orders().begin(), engine_.orderManager().orders().end(),
+            [](const auto& entry) { return entry.second.isOpen(); });
+        if (active_execution_cycle_ || ordersOpen) {
+            LG_INFO("Skipped the scheduled reconciliation: an execution cycle or open orders are in flight");
+            return;
+        }
+        requestExchangeSnapshot("scheduled");
+    }
+
+    // Manual Control ---------------------------------------------------------------------
+    // The dashboard drops a target portfolio (asset weights of equity) in the request
+    // folder. It executes at once at the current Binance prices, through the normal
+    // planner and exchange path, or is rejected with its reason: nothing waits in a queue,
+    // so an old request can never execute later. The next daily account snapshot then
+    // asks risk to return to the strategy targets.
+
+    struct ManualRejected : std::runtime_error {
+        using std::runtime_error::runtime_error;
+    };
+
+    static constexpr auto MANUAL_REQUEST_MAX_AGE = std::chrono::minutes(2);
+    static constexpr auto MANUAL_PRICE_MAX_AGE = std::chrono::minutes(5);
+
+    Timestamp todayKey() const
+    {
+        return static_cast<Timestamp>(toYYYYMMDD(getCurrentUtcDate(time_handler_.getTime())));
+    }
+
+    void setupManualControl()
+    {
+        if (options_.manual_dir.empty())
+            return;
+        try {
+            if (replay_bootstrap_completed_date_.has_value())
+                throw std::invalid_argument("not available in a historical replay");
+            manual_risk_ = loadManualRiskConfig(options_.portfolio_config, options_.strategies);
+            manual_folder_ = std::make_unique<ManualRequestFolder>(options_.manual_dir);
+            price_source_ = std::make_unique<BinanceLastPrices>(options_.price_url);
+            LG_INFO("Manual Control enabled: requests in {}, limits {:.0f}% in total and {:.0f}% per asset",
+                    options_.manual_dir, manual_risk_->max_gross_leverage * 100.0,
+                    manual_risk_->max_asset_weight * 100.0);
+        }
+        catch (const std::exception& error) {
+            manual_folder_.reset();
+            manual_risk_.reset();
+            price_source_.reset();
+            LG_ALERT("Manual Control is disabled: {}", error.what());
+        }
+    }
+
+    // Current Binance price of every asset in `assets`; rejects when one is missing or old.
+    ExecutionReferencePrices currentPrices(const std::set<Coin>& assets) const
+    {
+        std::unordered_map<Coin, LastPrice> prices;
+        try {
+            prices = price_source_->fetchAll();
+        }
+        catch (const std::exception& error) {
+            throw ManualRejected(std::string("Could not read current Binance prices: ") + error.what());
+        }
+        const auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        const auto maxAgeMs = std::chrono::duration_cast<std::chrono::milliseconds>(MANUAL_PRICE_MAX_AGE).count();
+
+        ExecutionReferencePrices result;
+        for (const Coin& asset : assets) {
+            const auto it = prices.find(asset);
+            if (it == prices.end())
+                throw ManualRejected("No current Binance price for " + asset);
+            if (it->second.time_ms != 0 && nowMs - it->second.time_ms > maxAgeMs)
+                throw ManualRejected("The last Binance trade of " + asset + " is more than 5 minutes old");
+            result.set(asset, it->second.price);
+        }
+        return result;
+    }
+
+    void checkManualRequestAllowed(const ManualRequest& request) const
+    {
+        const auto now = std::chrono::system_clock::now();
+        const auto created = parseUtcSeconds(request.created_at);
+        if (!created || now - *created > MANUAL_REQUEST_MAX_AGE || *created - now > std::chrono::minutes(1))
+            throw ManualRejected("The request is more than 2 minutes old; send it again");
+        if (!reconciled_)
+            throw ManualRejected("Reconciliation with the exchange is not clean");
+        if (inDailyCycleWindow(now))
+            throw ManualRejected("No manual orders between 23:45 and 00:15 UTC (daily cycle)");
+        const bool decisionNotExecuted = last_decision_timestamp_ != 0 &&
+            engine_.lastExecutionTimestamp() < static_cast<Timestamp>(
+                nextDay(static_cast<unsigned int>(last_decision_timestamp_)));
+        if (active_execution_cycle_ || pending_decision_ || decisionNotExecuted)
+            throw ManualRejected("The daily cycle is still running; try again when its orders are filled");
+        for (const auto& [orderId, order] : engine_.orderManager().orders()) {
+            (void)orderId;
+            if (order.isOpen())
+                throw ManualRejected("Orders are still open at the exchange");
+        }
+
+        double gross = 0.0;
+        for (const auto& [asset, weight] : request.weights) {
+            if (weight > manual_risk_->max_asset_weight + 1e-9)
+                throw ManualRejected(asset + " is above the risk limit per asset");
+            gross += weight;
+        }
+        if (gross > manual_risk_->max_gross_leverage + 1e-9)
+            throw ManualRejected("The weights add up to more than the risk limit in total");
+    }
+
+    // Plans and sends one request. Returns its outcome; throws ManualRejected.
+    ManualOutcome executeManualRequest(const ManualRequest& request)
+    {
+        checkManualRequestAllowed(request);
+        const Timestamp today = todayKey();
+
+        // Every asset the plan touches: targets, account holdings and strategy holdings.
+        std::set<Coin> assets;
+        for (const auto& [asset, weight] : request.weights) {
+            (void)weight;
+            assets.insert(asset);
+        }
+        for (const auto& [asset, quantity] : engine_.account().positions().values())
+            if (quantity != 0.0)
+                assets.insert(asset);
+        for (const auto& [strategyId, positions] : engine_.strategyPositions()) {
+            (void)strategyId;
+            for (const auto& [asset, quantity] : positions.values())
+                if (quantity != 0.0)
+                    assets.insert(asset);
+        }
+        const ExecutionReferencePrices prices = currentPrices(assets);
+
+        // Same capital as the daily sizing: cash, venue collateral after haircut, positions.
+        double equity = engine_.account().cash() + venue_collateral_usd_;
+        for (const auto& [asset, quantity] : engine_.account().positions().values())
+            if (quantity != 0.0)
+                equity += quantity * prices.get(asset);
+        if (!std::isfinite(equity) || equity <= 0.0)
+            throw ManualRejected("Account equity is not positive");
+
+        DecisionBatch decisions;
+        decisions.decision_timestamp = today;
+        for (const auto& strategy : options_.strategies) {
+            StrategyDecisionIntent intent;
+            intent.strategy_id = strategy.strategy_id;
+            intent.decision_timestamp = today;
+            intent.reference_capital = equity * manual_risk_->allocation.at(strategy.strategy_id);
+            setTargetDecisions(intent, request.weights, &engine_.strategyPosition(strategy.strategy_id), prices);
+            decisions.strategies.push_back(std::move(intent));
+        }
+
+        const ExecutionPlanningStateSnapshot state = planningState();
+        const NotionalOrderPlannerResult plan = NotionalOrderPlanner().createPlan(
+            strategy_ids_, engine_.strategyPositions(), engine_.orderManager(),
+            today, state.state_revision, prices, decisions, engine_.nextOrderId());
+        if (!plan.cancel_order_ids.empty())
+            throw ManualRejected("Orders are still open at the exchange");
+
+        ManualOutcome outcome;
+        outcome.executed = true;
+        outcome.execution_day = today;
+        if (plan.submit_orders.empty()) {
+            outcome.detail = "Already at these weights; no order was needed";
+            return outcome;
+        }
+
+        std::vector<ExecutionOrder> orders;
+        for (const PlannedNotionalOrder& planned : plan.submit_orders) {
+            ExecutionOrder order = executableOrder(planned, state, today);
+            order.fill_at_reference_price = true;
+            orders.push_back(std::move(order));
+        }
+        outcome.first_order = orders.front().order_id;
+        outcome.last_order = orders.back().order_id;
+        outcome.detail = std::to_string(orders.size()) + " orders sent at the current Binance prices (equity " +
+            FormatUsd(equity) + ")";
+
+        // Durable before anything leaves: re-sync marker, then the processed record (so the
+        // request can never run twice), then the orders (staged, persisted, submitted).
+        manual_folder_->markResyncPending();
+        manual_folder_->finish(request.file, request.raw_lines, outcome);
+        for (const ExecutionOrder& order : orders)
+            LG_INFO("Manual order {}: {} {} {} at about {} for strategy {}",
+                    order.order_id, order.side == OrderSide::Buy ? "BUY" : "SELL",
+                    FormatQuantity(order.quantity), order.coin, FormatQuantity(order.reference_price),
+                    order.strategy_id);
+        engine_.applyManualOrders(orders, plan.next_order_id, today,
+                                  [this](const std::optional<Fill>& fill) { persist(fill); });
+        return outcome;
+    }
+
+    void processManualRequest()
+    {
+        if (!manual_folder_)
+            return;
+
+        std::optional<std::filesystem::path> file;
+        try {
+            file = manual_folder_->nextRequest();
+        }
+        catch (const std::exception& error) {
+            LG_ERROR("Cannot read the manual request folder: {}", error.what());
+            return;
+        }
+        if (!file)
+            return;
+        if (manual_folder_->alreadyProcessed(*file)) {
+            LG_WARN("Manual request {} was already processed; removing the copy", file->filename().string());
+            manual_folder_->remove(*file);
+            return;
+        }
+
+        ManualRequest request;
+        try {
+            request = manual_folder_->read(*file);
+            LG_INFO("Manual request {} from {}: {} target assets", request.request_id, request.actor,
+                    request.weights.size());
+            const ManualOutcome outcome = executeManualRequest(request);
+            if (outcome.last_order == 0)
+                manual_folder_->finish(*file, request.raw_lines, outcome);
+            LG_INFO("Manual request {} executed: {}", request.request_id, outcome.detail);
+        }
+        catch (const ManualRejected& rejected) {
+            LG_WARN("Manual request {} rejected: {}", file->filename().string(), rejected.what());
+            finishRejected(*file, request.raw_lines, rejected.what());
+        }
+        catch (const std::invalid_argument& error) {
+            LG_WARN("Manual request {} rejected: {}", file->filename().string(), error.what());
+            finishRejected(*file, request.raw_lines, std::string("Invalid request: ") + error.what());
+        }
+        catch (const std::exception& error) {
+            // After the processed record the request never runs again; orders already
+            // staged are recovered like any other unsent order.
+            LG_ALERT("Manual request {} failed: {}", file->filename().string(), error.what());
+            if (std::filesystem::exists(*file))
+                finishRejected(*file, request.raw_lines, std::string("Failed: ") + error.what());
+        }
+    }
+
+    void finishRejected(const std::filesystem::path& file, const std::vector<std::string>& lines,
+                        const std::string& reason)
+    {
+        try {
+            ManualOutcome outcome;
+            outcome.detail = reason;
+            manual_folder_->finish(file, lines, outcome);
+        }
+        catch (const std::exception& error) {
+            LG_ERROR("Cannot record the manual request outcome: {}", error.what());
+            manual_folder_->remove(file);
+        }
     }
 
     void recoverOutboundIntents()
@@ -739,6 +1341,11 @@ private:
             if (value.snapshot.timestamp == 0)
                 return DurableMessageDisposition::Terminate;
 
+            if (value.snapshot.collateral_usd != venue_collateral_usd_)
+                LG_INFO("Venue collateral after haircut: {} (was {})",
+                        FormatUsd(value.snapshot.collateral_usd), FormatUsd(venue_collateral_usd_));
+            venue_collateral_usd_ = value.snapshot.collateral_usd;
+
             const ReconciliationReport report = reconciler_.compare(snapshot(), value.snapshot);
             if (!report.clean()) {
                 reconciled_ = false;
@@ -752,6 +1359,16 @@ private:
                             FormatQuantity(issue.local_value),
                             FormatQuantity(issue.exchange_value));
                 }
+                return DurableMessageDisposition::Ack;
+            }
+
+            if (reconciled_ && options_.periodic_reconciliation) {
+                // A scheduled check confirming already reconciled state: nothing to resume
+                // or republish. (Without the schedule the original path below is kept.)
+                LG_INFO("Reconciliation still clean: cash {}, {} positions, {} open orders",
+                        FormatUsd(value.snapshot.cash),
+                        value.snapshot.positions.size(),
+                        value.snapshot.open_orders.size());
                 return DurableMessageDisposition::Ack;
             }
 
@@ -825,13 +1442,31 @@ private:
                 }
             }
 
+            // Venue collateral for day T's sizing, fixed at its first use so a redelivered
+            // update republishes the identical snapshot (risk rejects a different one).
+            const double collateral = venue_collateral_usd_ > 0.0
+                ? store_->fixDailyCollateral(update.completed_through, venue_collateral_usd_)
+                : store_->dailyCollateral(update.completed_through).value_or(0.0);
+
+            // The account at close T (after T's open execution) marked at close(T).
+            recordEquityDay(update.completed_through, collateral);
+
+            // After a manual rebalance this snapshot asks risk to return to the strategy
+            // targets (the marker keeps the answer stable if the update is redelivered).
+            const bool resync = manual_folder_ && manual_folder_->resyncForDay(update.completed_through);
+            if (resync)
+                LG_INFO("Account snapshot for {} asks risk to return to the strategy targets after a manual rebalance",
+                        FormatDayKey(update.completed_through));
+
             // LIVE market-data no longer publishes MarketSliceSnapshot. This small bridge
             // exposes the already durable ExecutionState account at close T so
             // PortfolioRisk can join StrategyIntent(T) + AccountSnapshot(T).
             publishAccountSnapshot(
                 update.completed_through,
                 "account-snapshot:market-data:" + std::to_string(update.completed_through),
-                update.metadata.message_id
+                update.metadata.message_id,
+                resync,
+                collateral
             );
 
             LG_INFO("Published account snapshot after the {} {} market update for {}",
@@ -998,12 +1633,57 @@ private:
         }
     }
 
+    // A venue fee reported after its fill, a funding payment, venue interest or a USD
+    // capital flow (deposit, withdrawal, conversion) - real venues only; the PAPER simulation
+    // charges its commission inside the fill. Applied to cash once: the cost row and the
+    // snapshot with the new cash commit together. The position ledger is then rebuilt so
+    // a fee joins its fill and funding its position; interest and flows stay account-level.
+    DurableMessageDisposition onVenueCost(const BusMessage& message)
+    {
+        try {
+            const VenueCostEvent cost = MessageJson::decodeVenueCostEvent(message.payload);
+            if (store_->knowsVenueCost(cost.cost_id)) {
+                LG_DEBUG("Venue cost {} was already applied; ignoring the duplicate", cost.cost_id);
+                return DurableMessageDisposition::Ack;
+            }
+
+            engine_.account().applyCashMovement(cost.amount_usd);
+            try {
+                store_->saveVenueCost(snapshot(), cost);
+            }
+            catch (...) {
+                engine_.account().applyCashMovement(-cost.amount_usd);
+                throw;
+            }
+            LG_INFO("Applied venue {} {} on {}{}: cash is now {}",
+                    venueCostKindLabel(cost.kind), FormatUsd(cost.amount_usd),
+                    cost.coin.empty() ? std::string{"the account"} : cost.coin,
+                    cost.fill_id != 0 ? " (fill " + std::to_string(cost.fill_id) + ")" : std::string{},
+                    FormatUsd(engine_.account().cash()));
+            LG_DEBUG("Venue cost id {}", cost.cost_id);
+
+            rebuildAccounting();
+            publishAccountSnapshot(cost.timestamp, "account-snapshot:cost:" + cost.cost_id, cost.metadata.message_id);
+            return DurableMessageDisposition::Ack;
+        }
+        catch (const std::invalid_argument& error) {
+            LG_WARN("Rejected invalid venue cost: {}", error.what());
+            return DurableMessageDisposition::Terminate;
+        }
+        catch (const std::exception& error) {
+            LG_ERROR("Venue cost handling failed; will retry: {}", error.what());
+            return DurableMessageDisposition::Retry;
+        }
+    }
+
     DurableMessageDisposition onExchangeEvent(const BusMessage& message)
     {
         if (message.subject == MessageSubjects::ORDER_UPDATE)
             return onOrderUpdate(message);
         if (message.subject == MessageSubjects::FILL)
             return onFill(message);
+        if (message.subject == MessageSubjects::VENUE_COST)
+            return onVenueCost(message);
         return DurableMessageDisposition::Terminate;
     }
 
@@ -1029,7 +1709,8 @@ public:
           market_reader_(options_.market_data_db),
           account_(options_.initial_cash),
           exchange_(bus_),
-          engine_(options_.strategies, account_, trade_recorder_, exchange_)
+          engine_(options_.strategies, account_, trade_recorder_, exchange_),
+          reconciler_(options_.cash_tolerance_usd)
     {
         for (const auto& strategy : options_.strategies) {
             strategy_ids_.push_back(strategy.strategy_id);
@@ -1058,6 +1739,8 @@ public:
             LG_INFO("No saved state found; starting with {} cash", FormatUsd(options_.initial_cash));
             persist();
         }
+        rebuildAccounting();
+        setupManualControl();
 
         exchange_snapshot_subscription_ = bus_.subscribe(
             consumer("execution-state-exchange-snapshot", MessageSubjects::EXCHANGE_SNAPSHOT),
@@ -1100,8 +1783,9 @@ public:
 
     void run()
     {
-        LG_INFO("Execution state service ready (stream {}, {} strategies, initial cash {}, reconciliation required)",
-                options_.stream, options_.strategies.size(), FormatUsd(options_.initial_cash));
+        LG_INFO("Execution state service ready (stream {}, {} strategies, initial cash {}, reconciliation required{})",
+                options_.stream, options_.strategies.size(), FormatUsd(options_.initial_cash),
+                options_.periodic_reconciliation ? ", re-checked hourly 01:00-23:00 UTC and at 23:50" : "");
         LG_DEBUG("Market data database {} (source {})", options_.market_data_db, options_.market_data_source);
         std::cout.flush();
 
@@ -1115,6 +1799,8 @@ public:
             bus_.poll(market_update_account_subscription_, 32, 1);
             bus_.poll(decision_subscription_, 32, 1);
             bus_.poll(notional_plan_subscription_, 32, 1);
+            maybeRequestPeriodicReconciliation();
+            processManualRequest();
 
             const auto elapsed = std::chrono::steady_clock::now() - cycleStart;
             const auto interval = std::chrono::seconds(1);

@@ -12,7 +12,8 @@
 
 // Actual cash and filled positions owned by the account
 //
-// This is reality, not strategy intent. Account changes only from Fill objects.
+// This is reality, not strategy intent. Account changes only from Fill objects, plus the
+// venue cash movements of a real exchange (late fees, funding; applyCashMovement).
 // Equity is marked from an externally supplied PriceSnapshot so the same object can be
 // used in historical backtests and live trading.
 class Account {
@@ -37,6 +38,15 @@ public:
         cash_ -= signedQuantity * fill.price; // A buy spends cash; a sell receives it.
         cash_ -= fill.commission;
         positions_.add(fill.coin, signedQuantity);
+    }
+
+    // Cash moved by the venue outside a fill: a fee reported after the fill or a funding
+    // payment (negative = paid). The caller applies each venue cost once.
+    void applyCashMovement(double amount)
+    {
+        if (!std::isfinite(amount))
+            throw std::invalid_argument("Cash movement must be finite");
+        cash_ += amount;
     }
 
     // Restore authoritative filled account state during startup recovery

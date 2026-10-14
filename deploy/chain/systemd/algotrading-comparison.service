@@ -1,5 +1,5 @@
 [Unit]
-Description=Read-only PAPER forward comparison against CURRENT fast PureRSI
+Description=Read-only PAPER or Kraken LIVE (MODE in chain.env) comparison against CURRENT fast PureRSI
 After=docker.service algotrading-chain.service
 Wants=algotrading-chain.service
 

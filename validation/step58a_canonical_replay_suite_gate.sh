@@ -23,7 +23,7 @@ printf '%s\n' '[2/8] One canonical public CLI exposes three modes plus partial-d
 for f in \
  "$ROOT/research/replay.py" \
  "$ROOT/research/src/canonical/canonical_replay.cpp" \
- "$ROOT/research/src/legacy/backtesting_main.cpp" \
+ "$ROOT/research/src/backtests/backtesting_main.cpp" \
  "$ROOT/research/REPLAY.md"; do
   [[ -f "$f" ]] || fail "missing ${f#$ROOT/}"
 done
@@ -220,13 +220,13 @@ PY
 pass 'cutoff policy matches the requested open-trade semantics exactly'
 
 printf '%s\n' '[7/8] Fast research mode is date/output controllable without creating a second public replay CLI'
-grep -Fq 'ALGOTRADING_REPLAY_START_DATE' "$ROOT/research/src/legacy/backtesting_main.cpp" \
+grep -Fq 'ALGOTRADING_REPLAY_START_DATE' "$ROOT/research/src/backtests/backtesting_main.cpp" \
   || fail 'fast Backtester start override missing'
-grep -Fq 'ALGOTRADING_REPLAY_END_DATE' "$ROOT/research/src/legacy/backtesting_main.cpp" \
+grep -Fq 'ALGOTRADING_REPLAY_END_DATE' "$ROOT/research/src/backtests/backtesting_main.cpp" \
   || fail 'fast Backtester end override missing'
-grep -Fq 'ALGOTRADING_REPLAY_TRADES_CSV' "$ROOT/research/src/legacy/backtesting_main.cpp" \
+grep -Fq 'ALGOTRADING_REPLAY_TRADES_CSV' "$ROOT/research/src/backtests/backtesting_main.cpp" \
   || fail 'fast candidate trade output override missing'
-grep -Fq 'ALGOTRADING_REPLAY_SKIP_INTERNAL_REALTEST' "$ROOT/research/src/legacy/backtesting_main.cpp" \
+grep -Fq 'ALGOTRADING_REPLAY_SKIP_INTERNAL_REALTEST' "$ROOT/research/src/backtests/backtesting_main.cpp" \
   || fail 'central RealTest ownership switch missing'
 if command -v meson >/dev/null 2>&1 && [[ -f "$ROOT/meson.build" ]]; then
   # Only compile when this checkout has a configured build or can configure one with its local deps.

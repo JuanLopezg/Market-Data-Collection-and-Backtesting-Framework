@@ -93,15 +93,15 @@ def main(build=True):
                      f"-Wl,-rpath,{library}", "-lalgolib", "-lfmt", "-llog4cpp",
                      "-o", str(stop_fixture)], log)
                 run([str(stop_fixture)], log)
-                current = ROOT / "build/research/src/legacy/algotrading_research_html"
+                current = ROOT / "build/research/src/backtests/algotrading_research_html"
                 data = ROOT / "storage/databases/1d_cmc.csv"
                 arguments = ["--database", str(data), "--start", "20200101", "--end", "20200416",
                              "--output-root", str(work)]
-                initial = ROOT / "build/research/src/legacy/algotrading_research_initial_params"
+                initial = ROOT / "build/research/src/backtests/algotrading_research_initial_params"
                 grid_source = work / "initial_grid_test.cpp"
                 grid_source.write_text(
                     '#define main initialParameterStudyMain\n'
-                    f'#include "{ROOT / "research/src/legacy/initial_strategy_parameters.cpp"}"\n'
+                    f'#include "{ROOT / "research/src/backtests/initial_strategy_parameters.cpp"}"\n'
                     '#undef main\n'
                     'int main() {\n'
                     '  const auto definitions = makeStrategyDefinitions();\n'
@@ -161,7 +161,7 @@ def main(build=True):
                     prefix = rows(work / "initial_prefix" / f"{name}_account.csv")
                     full = rows(report / f"{name}_account.csv")
                     assert prefix == full[:len(prefix)], f"Future data changed {name} prefix account"
-                statistics = ROOT / "build/research/src/legacy/algotrading_research_stats"
+                statistics = ROOT / "build/research/src/backtests/algotrading_research_stats"
                 for study, extra in (("initial", []), ("initial_fees", ["--fee-taker", "0.001"])):
                     result = subprocess.run([str(statistics), "--database", str(data), "--start", "20200101",
                                              "--end", "20200416", *extra], cwd=ROOT, text=True,
@@ -180,11 +180,11 @@ def main(build=True):
                 run([str(initial), "--strategy", "unknown"], log, expected=1)
                 print("RESEARCH-INITIAL: PASS: seven baselines, 82 compact runs, original 37702 valid grid points; "
                       "deterministic reports/exports; long/short PnL, fees, accounts, prefixes and statistics parity")
-                btc_study = ROOT / "build/research/src/legacy/algotrading_research_btc_ma"
+                btc_study = ROOT / "build/research/src/backtests/algotrading_research_btc_ma"
                 btc_fixture_source = work / "btc_report_contract_test.cpp"
                 btc_fixture_source.write_text(
                     '#define main btcMovingAverageStudyMain\n'
-                    f'#include "{ROOT / "research/src/legacy/btc_moving_average.cpp"}"\n'
+                    f'#include "{ROOT / "research/src/backtests/btc_moving_average.cpp"}"\n'
                     '#undef main\n'
                     'int main(int argc, char** argv) {\n'
                     '  auto definition = makeStrategyDefinitions().front();\n'
@@ -288,7 +288,7 @@ def main(build=True):
                            ALGOTRADING_REPLAY_START_DATE="20200101",
                            ALGOTRADING_REPLAY_END_DATE="20200416",
                            ALGOTRADING_REPLAY_SKIP_INTERNAL_REALTEST="1")
-                run([str(ROOT / "build/research/src/legacy/algotrading_research")], log, env)
+                run([str(ROOT / "build/research/src/backtests/algotrading_research")], log, env)
                 baseline = work / "current/reports/PureRSI_trades.csv"
                 assert baseline.read_bytes() == (work / "initial/PureRSI_trades.csv").read_bytes()
                 assert (work / "current/reports/PureRSI_account.csv").read_bytes() == (
@@ -391,13 +391,13 @@ def main(build=True):
                           f"{count} compact runs, contracts, prefix and fees PASS")
                 # The migrated robustness consumer has its own ranges/contracts,
                 # but its baseline must equal the shared CURRENT XH economics.
-                robustness = ROOT / "build/research/src/legacy/algotrading_research_xhbreakout"
+                robustness = ROOT / "build/research/src/backtests/algotrading_research_xhbreakout"
                 # Exercise the actual orchestration's rejection/failure paths
                 # without expanding the production CLI with test-only switches.
                 rejection_source = work / "robustness_rejection_test.cpp"
                 rejection_source.write_text(
                     '#define main researchXHStudyMain\n'
-                    f'#include "{ROOT / "research/src/legacy/testing_xhbreakout.cpp"}"\n'
+                    f'#include "{ROOT / "research/src/backtests/testing_xhbreakout.cpp"}"\n'
                     '#undef main\n'
                     'int main(int argc, char** argv) {\n'
                     '  auto definitions = makeStrategyDefinitions();\n'

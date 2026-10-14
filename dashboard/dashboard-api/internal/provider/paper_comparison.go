@@ -26,6 +26,16 @@ type paperComparisonRow struct {
 	LiveCash          float64 `json:"liveCash"`
 	ExpectedCash      float64 `json:"expectedCash"`
 	SignalDifferences int     `json:"signalDifferences"`
+	// Kraken LIVE study only (absent for PAPER): where the difference comes from, USD
+	// totals since the study started. Fees positive = paid; funding and interest negative
+	// = paid; slippage positive = fills worse than the Binance open.
+	LiveFees     *float64 `json:"liveFees,omitempty"`
+	ExpectedFees *float64 `json:"expectedFees,omitempty"`
+	LiveFunding  *float64 `json:"liveFunding,omitempty"`
+	LiveInterest *float64 `json:"liveInterest,omitempty"`
+	CapitalFlows *float64 `json:"capitalFlows,omitempty"`
+	Slippage     *float64 `json:"slippage,omitempty"`
+	Skipped      []string `json:"skipped,omitempty"`
 }
 
 type paperComparisonPosition struct {

@@ -9,11 +9,13 @@ not `/mnt/c`, because PostgreSQL needs real file ownership).
 ├── chain/      compose.yml, algo, chain.env, monitor.py, logging/   (what you operate)
 ├── config/     non-secret configuration: strategies/, portfolio/, market_data.json
 ├── secrets/    chain.env with credentials (0700/0600; never print or copy it around)
-├── data/       durable state, one folder per owner
-│   ├── postgres/    orders, accounts, checkpoints
+├── data/       durable state, one folder per owner (MODE=paper)
+│   ├── postgres/    orders, accounts, checkpoints, positions and daily equity
 │   ├── nats/        JetStream messages
 │   ├── market/      database.db (candles, quote volume)
 │   ├── dashboard/   watchdog/, audit/, alerts/, notifier/
+│   ├── manual/      Manual Control requests/ and processed/ (dash-api <-> execution)
+│   ├── live/        MODE=live: its own postgres/, nats/, market/, dashboard/, venue/, manual/
 │   ├── telemetry/   host.json from monitor.py (regenerated, not backed up)
 │   └── receiver/    log receiver state (not backed up)
 ├── logs/       <service>/YYYYMMDD.log, today and yesterday, at most 50 MiB per file
@@ -25,13 +27,25 @@ not `/mnt/c`, because PostgreSQL needs real file ownership).
 Only `data/`, `config/` and `secrets/` must survive a reinstall. `chain/` is replaced
 by `algo install`; `logs/` and `reports/` can be deleted.
 
-`reports/` (written by `dash-api` every 10 minutes, rebuilt from all persisted fills):
+`reports/` (written by `dash-api` every 10 minutes from ExecutionState's position ledger):
 `closed_positions.csv` and `closed_positions_<YEAR>.csv` (by UTC close year), one row per
 position from flat to flat: asset, side, opened/closed, quantity, entry/exit price, cost
 basis, proceeds, gross PnL, fees, funding (+ received) and net PnL = gross - fees +
 funding, in USD. Use them for the yearly tax report and to match the exchange export.
-Funding is not persisted by the PAPER chain yet, so it is 0 there. Files are not written
-when the fill history does not fit one read (200,000 fills).
+Funding is recorded only from a real venue (`trading_funding`); the PAPER simulation has
+none, so it is 0 there. In LIVE, Kraken reports fees and funding in its account history,
+not on the fills: the gateway reads it every 5 minutes (and 30 s after a fill), and
+execution books each entry once (`trading_venue_costs`), so a position's fees and funding
+fill in while it is open and are final when it closes.
+
+Accounting owned by `execution` (PostgreSQL, rebuilt from `trading_fills` plus
+`trading_funding` at every start, so it can never drift from the fills):
+`trading_open_positions` and `trading_closed_positions` (average-cost basis, realized PnL,
+fees, funding per position) and `trading_equity_daily` (cash + positions marked at each
+daily close; missing days since the first fill are backfilled from the fills). In
+`MODE=live` each row also has the venue interest and net USD capital flows up to that day
+and the BTC collateral (after haircut) that day was sized with; equity excludes the
+collateral. The strategy sizes with equity + collateral (`trading_daily_collateral`).
 
 ## Services
 
@@ -42,9 +56,10 @@ when the fill history does not fit one read (200,000 fills).
 | `strategy` | PureRSI intents from completed candles |
 | `risk` | portfolio risk and target weights |
 | `planner` | notional order plans |
-| `execution` | order state, fills and accounting |
-| `gateway` | exchange command/backend boundary |
-| `sim-exchange` | PAPER venue: virtual account and simulated fills |
+| `execution` | order state, fills and accounting; reconciles with the exchange at startup, hourly 01:00-23:00 UTC and at 23:50 (a mismatch pauses trading until a clean check); executes Manual Control requests |
+| `gateway` | MODE=paper: exchange commands to the simulated backend |
+| `sim-exchange` | MODE=paper: virtual account and simulated fills |
+| `gateway-kraken` | MODE=live: exchange commands to Kraken Futures (journal in `data/live/venue`) |
 | `dash-api`, `dash-web` | dashboard API and web on `127.0.0.1:DASHBOARD_PORT` |
 | `watchdog`, `notifier` | alert evaluation and delivery (test file or Telegram) |
 | `data-init`, `market-data-init` | one-shot folder ownership and market schema setup |
@@ -52,6 +67,32 @@ when the fill history does not fit one read (200,000 fills).
 The container name equals the service name, so logs land in `logs/<service>/`.
 Each line is exactly what the service wrote:
 `YYYY-MM-DD HH:MM:SS.mmm [LEVEL] Class::function : message` (UTC).
+
+## Private mobile dashboard access (Tailscale)
+
+The VPS uses host-installed Tailscale with `tailscaled` enabled at boot. Its
+`algotrading` node and the phone belong to the same private tailnet. Enrollment
+uses `--accept-dns=false --accept-routes=false`; HTTPS certificates are enabled
+in the Tailscale console. Funnel is not enabled.
+
+With Tailscale connected on the phone, open:
+`https://algotrading.taild27a89.ts.net/` and use the existing dashboard login.
+The PC and its SSH tunnel are not required. The dashboard remains bound to
+`127.0.0.1:8092`; host Serve supplies the private HTTPS proxy.
+
+```bash
+sudo tailscale serve --bg http://127.0.0.1:8092
+sudo tailscale serve status
+sudo systemctl status tailscaled
+# Disable only mobile dashboard serving:
+sudo tailscale serve --https=443 off
+```
+
+Serve configuration persists in the host Tailscale state. Check node key expiry
+in the Tailscale admin console for long-term access and review tailnet permissions
+before adding other members/devices. HTTPS device names appear in public
+certificate-transparency records; dashboard content remains private.
+Actual phone login and chart acceptance are tracked in CURRENT_STATE.md.
 
 ## Commands
 
@@ -71,7 +112,37 @@ deploy/chain/algo build            # from the repository: build the images named
 ```
 
 `install` never overwrites `chain.env`, `config/`, `secrets/` or `data/`. The dashboard
-viewer password is in `secrets/chain.env`.
+viewer and operator passwords are in `secrets/chain.env` (`DASHBOARD_OPERATOR_PASSWORD`;
+an installation created before Manual Control has none: add the line to enable the
+operator login).
+
+## Manual Control (PAPER and LIVE)
+
+The dashboard page Manual Control (OPERATOR login) takes a target portfolio CSV
+(`asset,weight_pct`, % of equity; CASH optional, held assets missing from the file are
+closed). Flow:
+
+1. `dash-api` checks the file against the portfolio risk limits (the strictest strategy's
+   `max_asset_weight` and `max_gross_leverage`) and the tradable assets (PAPER: the
+   top-50 universe and held assets; LIVE: Kraken contracts verified on the Symbol Mapping
+   page), shows the change at the latest daily closes, and on confirmation writes
+   `data/manual/requests/<time>-<id>.request`.
+2. `execution` picks it up within a second and checks again: reconciliation clean, no
+   order open, the daily cycle finished, not between 23:45 and 00:15 UTC, request less
+   than 2 minutes old, limits. It reads the current Binance prices
+   (`/fapi/v1/ticker/price`, at most 5 minutes old), sizes every strategy's orders on its
+   share of equity with the normal planner and sends them through the gateway. Anything
+   that fails is rejected with its reason; nothing waits in a queue.
+3. PAPER: the simulated exchange fills them at once at those prices (normal commission).
+   LIVE: Kraken executes them at the market, with the gateway's usual checks (symbol map,
+   USD value within 1.5x of the planned value) and only when `LIVE_ORDER_SUBMISSION=enabled`
+   (otherwise the page shows `LIVE_ORDER_SUBMISSION_DISABLED`).
+4. The outcome is written to `data/manual/processed/` and shown as a progress bar
+   (checked, orders at the exchange, filled). The next 00:00 UTC daily cycle returns to the
+   strategy targets: its account snapshot carries `resync_to_targets`, so risk moves every
+   position back to its approved weight, including positions it would otherwise hold.
+
+Every request is also in the Alerts & Audit history (`data/dashboard/audit`).
 
 ## Settings
 
@@ -79,7 +150,51 @@ viewer password is in `secrets/chain.env`.
 values shown by the dashboard (keep them equal to the strategy file), initial cash,
 commission, warmup days, dashboard port and notifier sink.
 
-`secrets/chain.env`: PostgreSQL and dashboard passwords, optional Telegram bot settings.
+`secrets/chain.env`: PostgreSQL and dashboard passwords (viewer, operator), optional
+Telegram bot settings.
+
+`MODE` selects the venue: `paper` (default) or `live` (next section). `./algo` adds it to
+`COMPOSE_PROFILES`; list only extra profiles (`kraken`) there.
+
+## Switching to live (MODE=live, Kraken Futures)
+
+Nothing here is enabled by default, and each step needs the user's authorization. LIVE
+uses its own trading state in `data/live/` (NATS, PostgreSQL, market data, dashboard
+stores, venue journal): the PAPER history stays in `data/` and is never mixed with real
+money. Internal stream and database names keep their `PAPER` spelling in both modes.
+
+1. Trading key: create a Kraken Futures key with trading permission and **no withdrawal
+   permission**. Write `<root>/secrets/kraken.env` with `KRAKEN_API_KEY=` and
+   `KRAKEN_API_SECRET=`, readable by the runtime user only:
+   `sudo chown 10001:10001 /secrets/kraken.env && sudo chmod 400 /secrets/kraken.env`.
+2. `chain.env`: `LIVE_INITIAL_CASH` = the account's USD balance at the switch (the startup
+   reconciliation compares it with Kraken), `LIVE_ACCOUNT_NAMESPACE` = a short new name
+   (part of every client order id; use a new one after any reset of `data/live`).
+   Keep `LIVE_ORDER_SUBMISSION=disabled`.
+3. Stop PAPER **before** changing the mode: `algo down`; then set `MODE=live` and
+   `algo up`. `algo up` refuses to start while a container of the other mode runs (two
+   gateways would send the same orders to two venues).
+4. Read-only first: with submission disabled the gateway only sends GET requests. Check
+   the startup reconciliation in `logs/execution`, the Symbol Mapping page and that no
+   strategy asset is reported as not tradeable. LIVE reconciliation accepts 0.50 USD of
+   cash difference (venue rounding; PAPER is exact).
+5. Real orders: set `LIVE_ORDER_SUBMISSION=enabled` and `algo up gateway-kraken dash-api`
+   only for an explicitly authorized test; set it back to `disabled` afterwards. A first
+   small test can use Manual Control (one asset, a small weight). Optional:
+   `LIVE_DEAD_MANS_SWITCH_SECONDS` (Kraken cancels open orders if the gateway goes silent).
+
+Live vs Expected in LIVE: with `PAPER_COMPARISON_FILE=/data/comparison/comparison.json`
+in `chain.env`, restart `algotrading-comparison` after the switch (it reads `MODE` from
+`chain.env`). The study is kept in `data/live/comparison/` and starts from the first
+observed cycle; from the next one each row compares the Kraken account with the fast
+backtest (same frozen market data and decisions, Binance open of the execution day,
+`LIVE_COMMISSION_RATE`, default 0.0005 = Kraken taker fee at the lowest tier, the same BTC
+collateral for sizing and the same USD deposits/withdrawals) and splits the difference into
+real versus expected fees, funding, interest, fill prices against the Binance open and the
+markets Kraken skipped. Fees and funding arrive after the fills, so the latest row keeps
+updating until the next cycle. Manual Control trades are not in the expected run.
+
+Back to PAPER: `algo down`, `MODE=paper`, `algo up` (PAPER state was untouched).
 
 ## Log receiver and monitor
 
@@ -104,8 +219,8 @@ sudo cp /chain/logging/algotrading-logs.service /chain/logging/algotrading-log-c
 sudo chown syslog:adm /logs /data/receiver && sudo chmod 0750 /logs
 sudo cp /chain/logging/rsyslog.apparmor /etc/apparmor.d/rsyslog.d/algotrading && sudo apparmor_parser -r /etc/apparmor.d/usr.sbin.rsyslogd
 sudo systemctl daemon-reload && sudo systemctl enable --now algotrading-logs.service algotrading-log-cleanup.timer
-# load released images (docker load < /releases/<version>/images.tar), then:
-sudo /chain/algo up
+# loads the release's images, installs its chain files and starts (section "Releases"):
+sudo /releases/<version>/algo activate /releases/<version> /
 ```
 
 This replaced the previous `deploy/paper_trading` + `deploy/live/logging` installation
@@ -137,6 +252,37 @@ targeting, open positions are resized when their weight is off by more than 2 po
 `data/comparison/archive-<fingerprint>/` and seeds the fast baseline with the PAPER account
 and strategy state at the switch; the rows already shown remain in the chart.
 
+Baseline signals come from the persisted strategy intent at the seed's exact
+decision date. Execution snapshots supply cash, holdings and virtual positions;
+their empty `signals` field is not the strategy's signal state. This applies to
+both PAPER configuration switches and the initial LIVE observation.
+
+An older seeded study without its strategy intent is repaired from that historical
+PostgreSQL checkpoint. Before repair, the collector preserves existing study,
+manifest, fast and comparison files under `before-seed-repair/`. If the checkpoint
+is missing or its date/strategy identities differ, observation stays unavailable;
+signals are never inferred from holdings or taken from a later day. The baseline
+cache (`fast-input.sha256`) tracks economic inputs/configuration, so a corrected
+seed triggers recomputation even when the cycle count is unchanged. These changes
+were prepared locally on 2026-10-14; VPS deployment remains pending.
+
+## Telegram setup message
+
+Configure `NOTIFIER_SINK=TELEGRAM` in `chain/chain.env` and put
+`DASHBOARD_TELEGRAM_BOT_TOKEN` / `DASHBOARD_TELEGRAM_CHAT_ID` in the installation's
+private `secrets/chain.env`. Start the notifier with `algo up --no-deps notifier`.
+It uses the existing watchdog heartbeat and durable receipt store. An explicit
+one-time setup message can be requested while the container is running:
+
+```bash
+docker exec notifier /dashboard-alert-notifier --test-message
+```
+
+Continuous startup may also send current active warnings. To stop only delivery,
+use `algo down notifier`. Earlier ignored Telegram files and receipts are not
+deleted by retiring the older deployment. The Kraken account notifier is separate
+and uses the `kraken` profile described below.
+
 ## Kraken account monitor and Telegram
 
 Warning-only watch of the real Kraken account, independent of PAPER trading:
@@ -150,9 +296,19 @@ algotrading-kraken.service (host, python3)          kraken-notifier (container, 
 
 - Warnings (each sent once, with a "resolved" message when it clears): equity below the
   minimum, USD available below the reserve, initial/maintenance margin, equity down >= 10%
-  versus yesterday, gross exposure above 5x. Thresholds: `config/kraken_account_policy.json`
+  versus yesterday, gross exposure above 5x, and a fall of less than 25% of BTC and the long
+  positions that would reach maintenance margin (`--maintenance-drop-warning` in the unit;
+  changing it does not touch the journal). Thresholds: `config/kraken_account_policy.json`
   (installed once from `config/venues/kraken_futures/account_policy.json`).
-- One daily portfolio message at 09:00 UTC (balance, equity, positions in USD).
+- One daily portfolio message at 09:00 UTC (balance, equity, BTC collateral before and
+  after haircut, maintenance margin and headroom, the price drop that would reach
+  maintenance margin, positions in USD).
+- `data/kraken_account/account.json` (each successful read): the same collateral and
+  margin figures for the dashboard. In `MODE=live` the Overview shows BTC Collateral,
+  Sizing Capital (equity + BTC after haircut, what the strategy sizes with), Margin
+  Headroom, Drop to Maintenance and Net Deposits; older than 5 minutes it is flagged stale.
+  Drop to maintenance is a linear estimate (maintenance margin taken as fixed): "BTC" is
+  the fall of BTC alone, "all" the fall of BTC and the net long positions together.
 - It never places, cancels or closes anything. Raw samples are kept 3 days; alert history
   and per-day portfolio snapshots stay. A failed read never reports a recovery.
 - The key must be a Kraken Derivatives key with **General API: Read Only** and
@@ -184,9 +340,64 @@ deploy/chain/algo build
 deploy/chain/algo release storage/releases     # -> storage/releases/<UTC stamp>-<commit>[-dirty]/
 ```
 
-Each release folder holds `images.tar` (chain images plus nats, postgres, alpine),
-`source.tar.gz` (no data, builds or credentials) and `SHA256SUMS`. Copy it to
-`/releases/` on the VPS; the previous release folder is the rollback.
+Each release folder holds:
+
+| File | Content |
+|---|---|
+| `images.tar` | chain images as `<name>:<version>`, plus nats, postgres, alpine |
+| `source.tar.gz` | the source the images came from (no data, builds or credentials) |
+| `release.json` | version, commit, image IDs and architecture, `state_format` |
+| `algo` | this launcher, so the release can activate itself |
+| `SHA256SUMS` | checksums of the four files above |
+
+Deploy on the VPS (only when authorized, outside 23:30-00:30 UTC):
+
+```bash
+# from the PC: copy storage/releases/<version>/ to /releases/<version>/ on the VPS
+sudo /releases/<version>/algo activate /releases/<version> /
+sudo /chain/algo releases          # current and previous
+sudo /chain/algo rollback          # back to the previous release, same steps
+```
+
+`activate` checks before touching anything: checksums, that each image in `images.tar`
+has the recorded ID and the host architecture, that `chain.env` runs the `:chain` images,
+and that `data/` was not written by a newer state format. Then it stops the chain, makes a
+backup (`algo backup`), installs the release's chain files (`algo install`, which never
+overwrites config, secrets or data), points `<name>:chain` at the release's images,
+records `releases/current`, `releases/previous` and `releases/history.log`, and starts.
+`images.tar` is loaded only when its images are not already present, so a rollback is
+quick. If a step after the stop fails, the chain stays stopped with the backup on disk.
+
+Not done automatically:
+
+- Host units: `activate` prints a NOTE for every unit in `/etc/systemd/system/` that
+  differs from the release; copy it and run `systemctl daemon-reload`.
+- Configuration in `/config` is kept as it is. A release that needs a config change says
+  so in CURRENT_STATE.md (for example `market_data.json` for the faster 00:00 download).
+- Old releases stay in `/releases/` and as `<name>:<version>` images. Remove one with
+  `rm -r /releases/<version>` and `docker image rm algotrading-{runtime,dash-api,dash-web}:<version>`;
+  keep the current and previous ones.
+
+State format: `STATE_FORMAT` in `algo` is the format of the durable state a release
+writes (tables, snapshot JSON, journals); `data/STATE_FORMAT` records the last activated
+one. Adding tables or optional fields keeps the number. A release that changes the meaning
+of stored state increases it; `activate` then refuses any older release on that data. To go
+back anyway, stop the chain and restore the backup taken just before the newer release
+(`backups/<stamp>.tar.gz`; extract it into an empty `data/` from a container, like
+`algo backup` creates it), then activate the older release. Everything after that backup
+is lost, and with real money the venue must be reconciled first.
+
+Releases made before `release.json` (the 2026-10-13 VPS one) carry `:chain` tags and no
+image IDs. `activate` accepts them, checked by `SHA256SUMS` only, keeps their images as
+`<name>:<version>` and treats them as state format 1. Before the first `activate` on the
+VPS, record that release as current so `rollback` can return to it:
+
+```bash
+echo <version of the 2026-10-13 release> | sudo tee /releases/current
+```
+
+Its own launcher has no `rollback`; to move forward again from it, use the newer
+release's copy: `sudo /releases/<newer>/algo activate /releases/<newer> /`.
 
 ## Moving the VPS PAPER study into the chain (keeps its history)
 

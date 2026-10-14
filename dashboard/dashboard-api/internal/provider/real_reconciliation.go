@@ -15,9 +15,17 @@ import (
 	"control-dashboard-api/internal/tradingwire"
 )
 
+// Same tolerances as the C++ Reconciler: quantities match within max(1e-10 units,
+// 1e-12 x the larger quantity), so double rounding on positions of millions of units
+// is not reported as drift while a one-unit difference still is.
 const (
-	reconciliationCashTolerance     = 1e-6
-	reconciliationQuantityTolerance = 1e-10
+	reconciliationCashTolerance             = 1e-6
+	reconciliationQuantityTolerance         = 1e-10
+	reconciliationQuantityRelativeTolerance = 1e-12
+	reconciliationToleranceLabel            = "cash 1e-6 / quantity max(1e-10, 1e-12 x size) (runtime Reconciler defaults)"
+	// Kraken LIVE: execution-state runs with --cash-tolerance-usd 0.5 (venue rounding).
+	reconciliationLiveCashTolerance  = 0.5
+	reconciliationLiveToleranceLabel = "cash 0.50 USD / quantity max(1e-10, 1e-12 x size) (runtime Reconciler, Kraken LIVE)"
 )
 
 type realReconciliationData struct {
@@ -89,28 +97,29 @@ func (p *Real) reconciliation(ctx context.Context) (realReconciliationData, erro
 	if err != nil {
 		return realReconciliationData{}, fmt.Errorf("read durable reconciliation state: %w", err)
 	}
+	tolerance := p.reconciliationTolerances()
 
 	message, err := p.jetstream.LastBySubject(ctx, natsdiag.SubjectExchangeSnapshot)
 	if err != nil {
 		if errors.Is(err, natsdiag.ErrJetStreamMessageNotFound) {
-			return buildReconciliationWithoutExchange(state, "No retained execution.exchange.snapshot.v1 event exists in ALGOTRADING_RUNTIME yet."), nil
+			return buildReconciliationWithoutExchange(state, "No retained execution.exchange.snapshot.v1 event exists in ALGOTRADING_RUNTIME yet.", tolerance), nil
 		}
-		return buildReconciliationWithoutExchange(state, "Exchange evidence could not be read from JetStream: "+err.Error()), nil
+		return buildReconciliationWithoutExchange(state, "Exchange evidence could not be read from JetStream: "+err.Error(), tolerance), nil
 	}
 
 	exchangeEvent, err := tradingwire.DecodeExchangeSnapshotEvent(message.Data)
 	if err != nil {
-		return buildReconciliationWithoutExchange(state, "The latest retained exchange snapshot could not be decoded safely: "+err.Error()), nil
+		return buildReconciliationWithoutExchange(state, "The latest retained exchange snapshot could not be decoded safely: "+err.Error(), tolerance), nil
 	}
-	return buildRealReconciliation(state, message, exchangeEvent), nil
+	return buildRealReconciliation(state, message, exchangeEvent, tolerance), nil
 }
 
-func buildReconciliationWithoutExchange(state pgstore.RuntimeState, reason string) realReconciliationData {
+func buildReconciliationWithoutExchange(state pgstore.RuntimeState, reason string, tolerance reconciliationTolerance) realReconciliationData {
 	rows := buildReconciliationRows(state.Snapshot, nil, false, false)
 	return realReconciliationData{
 		Status:                 "PENDING",
 		LastChecked:            "Awaiting exchange evidence",
-		Tolerance:              "cash 1e-6 / quantity 1e-10 (runtime Reconciler defaults)",
+		Tolerance:              tolerance.label,
 		TargetPortfolioValue:   "Not available",
 		LocalPortfolioValue:    "Cash " + formatUSD(state.Snapshot.AccountCash) + " + positions unvalued",
 		ExchangePortfolioValue: "Not available",
@@ -125,9 +134,9 @@ func buildReconciliationWithoutExchange(state pgstore.RuntimeState, reason strin
 	}
 }
 
-func buildRealReconciliation(state pgstore.RuntimeState, message natsdiag.JetStreamMessage, event tradingwire.ExchangeSnapshotEvent) realReconciliationData {
+func buildRealReconciliation(state pgstore.RuntimeState, message natsdiag.JetStreamMessage, event tradingwire.ExchangeSnapshotEvent, tolerance reconciliationTolerance) realReconciliationData {
 	fresh := exchangeEvidenceFresh(state.UpdatedAt, message.Time)
-	comparison := compareRuntimeAndExchange(state.Snapshot, event.Snapshot)
+	comparison := compareRuntimeAndExchange(state.Snapshot, event.Snapshot, tolerance.cash)
 	status := "CLEAN"
 	if !fresh {
 		status = "PENDING"
@@ -148,7 +157,7 @@ func buildRealReconciliation(state pgstore.RuntimeState, message natsdiag.JetStr
 	return realReconciliationData{
 		Status:                    status,
 		LastChecked:               lastChecked,
-		Tolerance:                 "cash 1e-6 / quantity 1e-10 (runtime Reconciler defaults)",
+		Tolerance:                 tolerance.label,
 		TargetPortfolioValue:      "Not available",
 		LocalPortfolioValue:       "Cash " + formatUSD(state.Snapshot.AccountCash) + " + positions unvalued",
 		ExchangePortfolioValue:    "Cash " + formatUSD(event.Snapshot.Cash) + " + positions unvalued",
@@ -229,7 +238,7 @@ func buildReconciliationRows(local tradingwire.TradingStateSnapshot, exchange *t
 			if !evidenceFresh {
 				row.Status = "PENDING"
 				row.Explanation = "Exchange evidence predates the latest durable local state; current alignment cannot be proven from this retained snapshot."
-			} else if sameReconciliationValue(localQty, exchangeQty, reconciliationQuantityTolerance) {
+			} else if sameReconciliationQuantity(localQty, exchangeQty) {
 				row.Status = "ALIGNED"
 				row.Explanation = "Durable local filled position matches the retained exchange position within the runtime quantity tolerance."
 			} else {
@@ -286,9 +295,21 @@ func pendingSignedQuantities(orders []tradingwire.PersistedTrackedOrder) map[str
 	return result
 }
 
-func compareRuntimeAndExchange(local tradingwire.TradingStateSnapshot, exchange tradingwire.ExchangeSnapshot) reconciliationComparison {
+type reconciliationTolerance struct {
+	cash  float64
+	label string
+}
+
+func (p *Real) reconciliationTolerances() reconciliationTolerance {
+	if p.krakenLive() {
+		return reconciliationTolerance{reconciliationLiveCashTolerance, reconciliationLiveToleranceLabel}
+	}
+	return reconciliationTolerance{reconciliationCashTolerance, reconciliationToleranceLabel}
+}
+
+func compareRuntimeAndExchange(local tradingwire.TradingStateSnapshot, exchange tradingwire.ExchangeSnapshot, cashTolerance float64) reconciliationComparison {
 	result := reconciliationComparison{Issues: []realReconciliationIssue{}}
-	if !sameReconciliationValue(local.AccountCash, exchange.Cash, reconciliationCashTolerance) {
+	if !sameReconciliationValue(local.AccountCash, exchange.Cash, cashTolerance) {
 		result.Issues = append(result.Issues, realReconciliationIssue{Kind: "CashMismatch", LocalValue: local.AccountCash, ExchangeValue: exchange.Cash, Message: "Local cash does not match exchange cash"})
 	}
 
@@ -307,7 +328,7 @@ func compareRuntimeAndExchange(local tradingwire.TradingStateSnapshot, exchange 
 	for _, coin := range orderedCoins {
 		localQty := local.AccountPositions[coin]
 		exchangeQty := exchange.Positions[coin]
-		if !sameReconciliationValue(localQty, exchangeQty, reconciliationQuantityTolerance) {
+		if !sameReconciliationQuantity(localQty, exchangeQty) {
 			result.Issues = append(result.Issues, realReconciliationIssue{Kind: "PositionMismatch", Asset: coin, LocalValue: localQty, ExchangeValue: exchangeQty, Message: "Local filled position does not match exchange position"})
 		}
 	}
@@ -356,7 +377,7 @@ func compareRuntimeAndExchange(local tradingwire.TradingStateSnapshot, exchange 
 		matched[matchIndex] = struct{}{}
 		exchangeOrder := exchange.OpenOrders[matchIndex]
 		metadataMatches := exchangeOrder.Coin == localOrder.Coin && exchangeOrder.Side == localOrder.Side
-		quantityMatches := sameReconciliationValue(exchangeOrder.Quantity, localOrder.Quantity, reconciliationQuantityTolerance) && sameReconciliationValue(exchangeOrder.FilledQuantity, localOrder.FilledQuantity, reconciliationQuantityTolerance)
+		quantityMatches := sameReconciliationQuantity(exchangeOrder.Quantity, localOrder.Quantity) && sameReconciliationQuantity(exchangeOrder.FilledQuantity, localOrder.FilledQuantity)
 		if !metadataMatches || !quantityMatches {
 			result.Issues = append(result.Issues, realReconciliationIssue{
 				Kind: "OrderMismatch", Asset: localOrder.Coin, OrderID: strconv.FormatUint(localOrder.OrderID, 10),
@@ -382,6 +403,11 @@ func compareRuntimeAndExchange(local tradingwire.TradingStateSnapshot, exchange 
 
 func sameReconciliationValue(a, b, tolerance float64) bool {
 	return !math.IsNaN(a) && !math.IsInf(a, 0) && !math.IsNaN(b) && !math.IsInf(b, 0) && math.Abs(a-b) <= tolerance
+}
+
+func sameReconciliationQuantity(a, b float64) bool {
+	scale := math.Max(math.Abs(a), math.Abs(b))
+	return sameReconciliationValue(a, b, math.Max(reconciliationQuantityTolerance, reconciliationQuantityRelativeTolerance*scale))
 }
 
 func isTerminalPersistedStatus(status int) bool {

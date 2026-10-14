@@ -117,15 +117,22 @@ func configuredRealProvider() (*provider.Real, error) {
 	environment := strings.ToUpper(strings.TrimSpace(envOr("DASHBOARD_VENUE_TARGET_ENVIRONMENT", "TESTNET")))
 	gateway := strings.ToLower(strings.TrimSpace(envOr("DASHBOARD_EXCHANGE_GATEWAY_MODE", "hyperliquid-dry-run")))
 	publicURL := strings.TrimSpace(envOr("DASHBOARD_HYPERLIQUID_PUBLIC_INFO_URL", "https://api.hyperliquid-testnet.xyz/info"))
-	paper := strings.TrimSpace(os.Getenv("DASHBOARD_RUNTIME_MODE")) == "PAPER" &&
+	runtimeMode := strings.TrimSpace(os.Getenv("DASHBOARD_RUNTIME_MODE"))
+	paper := runtimeMode == "PAPER" &&
 		venue == "SIMULATED" && environment == "PAPER" && gateway == "backend"
-	if strings.TrimSpace(os.Getenv("DASHBOARD_RUNTIME_MODE")) == "PAPER" && !paper {
+	if runtimeMode == "PAPER" && !paper {
 		return nil, fmt.Errorf("PAPER requires SIMULATED venue, PAPER environment and backend gateway")
 	}
-	if !paper && (venue != "HYPERLIQUID" || environment != "TESTNET" || gateway != "hyperliquid-dry-run") {
+	// The chain's MODE=live: Kraken Futures through the venue gateway (same read models).
+	krakenLive := runtimeMode == "LIVE" && venue == "KRAKEN"
+	if krakenLive && (environment != "LIVE" || gateway != "venue") {
+		return nil, fmt.Errorf("KRAKEN requires LIVE runtime, LIVE environment and venue gateway")
+	}
+	chain := paper || krakenLive
+	if !chain && (venue != "HYPERLIQUID" || environment != "TESTNET" || gateway != "hyperliquid-dry-run") {
 		return nil, fmt.Errorf("watchdog must remain on HYPERLIQUID TESTNET hyperliquid-dry-run")
 	}
-	if paper {
+	if chain {
 		publicURL = ""
 	} else if err := validateTestnetInfoURL(publicURL); err != nil {
 		return nil, err

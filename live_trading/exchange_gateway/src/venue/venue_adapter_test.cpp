@@ -125,14 +125,38 @@ struct Events {
     std::vector<OrderUpdateEvent> updates;
     std::vector<FillEvent> fills;
     std::vector<ExchangeSnapshotEvent> snapshots;
+    std::vector<VenueCostEvent> costs;
 
     ExchangeGatewayHandlers handlers()
     {
         return {[this](const OrderUpdateEvent& e) { updates.push_back(e); },
                 [this](const FillEvent& e) { fills.push_back(e); },
-                [this](const ExchangeSnapshotEvent& e) { snapshots.push_back(e); }};
+                [this](const ExchangeSnapshotEvent& e) { snapshots.push_back(e); },
+                [this](const VenueCostEvent& e) { costs.push_back(e); }};
     }
 };
+
+std::string accountLog(const std::string& rows) { return R"({"accountUid":"x","logs":[)" + rows + "]}"; }
+
+// One account history row; null fields as Kraken sends them.
+std::string logRow(int id, const std::string& info, const std::string& fee, const std::string& funding,
+                   const std::string& execution, const std::string& asset = "usd",
+                   const std::string& date = "2026-10-12T00:00:05.000Z")
+{
+    return R"({"id":)" + std::to_string(id) + R"(,"date":")" + date + R"(","info":")" + info +
+           R"(","asset":")" + asset + R"(","contract":"PF_XBTUSD","booking_uid":"b-)" + std::to_string(id) +
+           R"(","execution":)" + (execution.empty() ? "null" : "\"" + execution + "\"") + R"(,"fee":)" + fee +
+           R"(,"realized_funding":)" + funding + R"(,"margin_account":"flex","old_balance":1,"new_balance":1})";
+}
+
+// A history row that only moves a balance (transfer, conversion, interest).
+std::string balanceRow(int id, const std::string& info, const std::string& asset, const std::string& oldBalance,
+                       const std::string& newBalance, const std::string& wallet = "flex")
+{
+    return R"({"id":)" + std::to_string(id) + R"(,"date":"2026-10-12T00:00:05.000Z","info":")" + info +
+           R"(","asset":")" + asset + R"(","contract":null,"execution":null,"fee":null,"realized_funding":null,)"
+           R"("margin_account":")" + wallet + R"(","old_balance":)" + oldBalance + R"(,"new_balance":)" + newBalance + "}";
+}
 
 // One adapter over a fresh (or reused) journal, with test-controlled clocks.
 struct Harness {
@@ -154,6 +178,7 @@ struct Harness {
             removeJournal();
         transport.responses["instruments"] = {ok(INSTRUMENTS)};
         transport.responses["tickers"] = {ok(TICKERS)};
+        transport.responses["account-log"] = {ok(accountLog(""))};
         open(enabled);
     }
 
@@ -542,12 +567,116 @@ void testSnapshot()
     if (!h.events.snapshots.empty()) {
         const auto& event = h.events.snapshots[0];
         CHECK(event.metadata.message_id == "kraken-futures-snapshot:snapshot-1" && event.metadata.correlation_id == "snapshot-1");
-        CHECK(near(event.snapshot.cash, 120.5) && event.snapshot.timestamp == TODAY);
+        // Spot-style cash: USD balance minus the entry value of the open positions
+        // (0.002 x 60000 long, 7000 x 0.00001 short): 120.5 - (120 - 0.07).
+        CHECK(near(event.snapshot.cash, 0.57) && event.snapshot.timestamp == TODAY);
+        // BTC counts as collateral at Kraken's post-haircut value, never as cash.
+        CHECK(near(event.snapshot.collateral_usd, 613.8));
         CHECK(near(event.snapshot.positions.at("BTCUSDT"), 0.002));
         CHECK(near(event.snapshot.positions.at("1000PEPEUSDT"), -7.0));
     }
     for (const HttpRequest& request : h.transport.requests)
         CHECK(request.method == "GET");
+}
+
+void testFeesAndFundingFromAccountLog()
+{
+    Harness h("costs");
+    h.transport.responses["sendorder"] = {ok(PLACED)};
+    h.transport.responses["fills"] = {ok(fills("")),
+                                      ok(fills(fill("f-1", "algo-t1-7", "PF_XBTUSD", "buy", "0.0012", "62000.5")))};
+    h.transport.responses["openorders"] = {ok(openOrders(""))};
+    const std::string older = logRow(1, "futures trade", "0.5", "null", "f-old");
+    const std::string fee = logRow(2, "futures trade", "0.0372", "null", "f-1");
+    const std::string funding = logRow(3, "funding rate change", "null", "-0.0123", "");
+    const std::string transfer = logRow(4, "transfer", "null", "null", "");
+    const std::string btcFee = logRow(5, "futures trade", "0.000001", "null", "f-1", "xbt");
+    const std::string early = logRow(6, "futures trade", "0.02", "null", "f-2", "usd", "2026-10-12T00:00:30.000Z");
+    h.transport.responses["account-log"] = {
+        ok(accountLog(older)),                                                          // baseline
+        ok(accountLog(early + "," + transfer + "," + btcFee + "," + funding + "," + fee + "," + older))};
+
+    h.submit(7, "BTCUSDT", OrderSide::Buy, 0.00123);
+    h.poll();          // sent; the first history read is the baseline
+    h.poll();          // fill f-1 recorded and published
+    CHECK(h.events.fills.size() == 1 && h.events.costs.empty());
+    h.poll(31000);     // history read again soon after the fill
+    CHECK(h.events.costs.size() == 2);
+    if (h.events.costs.size() == 2) {
+        const VenueCostEvent& f = h.events.costs[0].kind == VenueCostKind::Fee ? h.events.costs[0] : h.events.costs[1];
+        const VenueCostEvent& r = h.events.costs[0].kind == VenueCostKind::Fee ? h.events.costs[1] : h.events.costs[0];
+        CHECK(f.cost_id == "kraken-futures:2:fee" && f.metadata.message_id == "kraken-futures-cost:2:fee");
+        CHECK(near(f.amount_usd, -0.0372) && f.fill_id == 1 && f.coin == "BTCUSDT" && f.timestamp == TODAY);
+        CHECK(r.kind == VenueCostKind::Funding && near(r.amount_usd, -0.0123) && r.fill_id == 0 && r.coin == "BTCUSDT");
+    }
+
+    const HttpRequest* read = nullptr;
+    for (const HttpRequest& request : h.transport.requests)
+        if (request.endpoint == "account-log")
+            read = &request;
+    CHECK(read != nullptr && read->method == "GET" &&
+          read->url == "https://futures.kraken.com/api/history/v2/account-log?count=500");
+    if (read != nullptr) {
+        bool signedWithQuery = false;
+        for (const auto& [name, value] : read->headers)
+            signedWithQuery |= name == "Authent" &&
+                value == KrakenFuturesProtocol::authent(SECRET, "count=500", "", "/api/history/v2/account-log");
+        CHECK(signedWithQuery);
+    }
+
+    // The fee of f-2 (not yet polled) waits for its fill, then is booked on the account.
+    h.poll(301000);
+    CHECK(h.events.costs.size() == 2);
+    h.poll(600000);
+    CHECK(h.events.costs.size() == 3 && h.events.costs.back().fill_id == 0 && near(h.events.costs.back().amount_usd, -0.02));
+
+    // Restart: nothing is published twice.
+    const std::size_t before = h.events.costs.size();
+    h.open(true);
+    h.poll(301000);
+    CHECK(h.events.costs.size() == before);
+}
+
+// User decision 2026-10-14: USD deposits, withdrawals and conversions are capital flows,
+// venue interest a cost; BTC movements change only the collateral.
+void testInterestAndCapitalFlowsFromAccountLog()
+{
+    Harness h("flows");
+    const std::string deposit = balanceRow(10, "cross-exchange transfer", "usd", "100", "150");
+    const std::string withdrawal = balanceRow(11, "transfer", "usd", "150", "140");
+    const std::string conversion = balanceRow(12, "conversion", "usd", "140", "160.4");
+    const std::string interest = balanceRow(13, "interest payment", "usd", "160.4", "160.37");
+    const std::string btcIn = balanceRow(14, "cross-exchange transfer", "xbt", "0.01", "0.02");
+    const std::string otherWallet = balanceRow(15, "transfer", "usd", "5", "0", "fi_xbtusd");
+    const std::string unknown = balanceRow(16, "admin adjustment", "usd", "160.37", "161.37");
+    const std::string noChange = balanceRow(17, "transfer", "usd", "161.37", "161.37");
+    h.transport.responses["account-log"] = {
+        ok(accountLog("")),                                                             // baseline
+        ok(accountLog(deposit + "," + withdrawal + "," + conversion + "," + interest + "," + btcIn + "," +
+                      otherWallet + "," + unknown + "," + noChange))};
+
+    h.poll();          // baseline
+    h.poll(301000);    // next scheduled history read
+    std::map<std::string, VenueCostEvent> byId;
+    for (const VenueCostEvent& cost : h.events.costs)
+        byId[cost.cost_id] = cost;
+    CHECK(h.events.costs.size() == 4);
+    CHECK(byId.contains("kraken-futures:10:flow") && byId["kraken-futures:10:flow"].kind == VenueCostKind::CapitalFlow &&
+          near(byId["kraken-futures:10:flow"].amount_usd, 50.0));
+    CHECK(byId.contains("kraken-futures:11:flow") && near(byId["kraken-futures:11:flow"].amount_usd, -10.0));
+    CHECK(byId.contains("kraken-futures:12:flow") && near(byId["kraken-futures:12:flow"].amount_usd, 20.4));
+    CHECK(byId.contains("kraken-futures:13:interest") && byId["kraken-futures:13:interest"].kind == VenueCostKind::Interest &&
+          near(byId["kraken-futures:13:interest"].amount_usd, -0.03) && byId["kraken-futures:13:interest"].coin.empty());
+
+    // The parser keeps BTC and other-wallet entries apart from unknown USD changes.
+    KrakenFuturesProtocol protocol("https://futures.kraken.com", CREDENTIALS);
+    const AccountLog log = protocol.parseAccountLog(ok(accountLog(btcIn + "," + otherWallet + "," + unknown)));
+    CHECK(log.entries.empty() && log.not_cash.size() == 2 && log.unaccounted == std::vector<std::string>{"admin adjustment"});
+
+    // Restart: nothing is published twice.
+    h.open(true);
+    h.poll(301000);
+    CHECK(h.events.costs.size() == 4);
 }
 
 void testPermissions()
@@ -598,12 +727,15 @@ int liveReadOnlyProbe(const std::string& credentialsFile, const std::string& sym
     request.metadata.message_id = "read-only-probe";
     adapter.requestSnapshot(request);
     const auto fills = protocol.parseFills(transport.send(protocol.fillsRequest()));
+    const auto history = protocol.parseAccountLog(transport.send(protocol.accountLogRequest()));
 
     const auto& snapshot = events.snapshots.at(0).snapshot;
     std::cout << "LIVE-READ-ONLY-PROBE: permissions read=" << permissions.read << " trade=" << permissions.trade
               << " withdraw=" << permissions.withdraw << "; snapshot parsed: " << snapshot.positions.size()
               << " positions, " << snapshot.open_orders.size() << " open orders; fills parsed: " << fills.size()
-              << "; requests: GET only\n";
+              << "; account history: " << history.entries.size() << " cash entries, "
+              << history.not_cash.size() << " collateral-only, " << history.unaccounted.size()
+              << " not booked; requests: GET only\n";
     return 0;
 }
 
@@ -643,6 +775,8 @@ int main(int argc, char** argv)
         {"partial fill then remainder ends", testPartialFillThenRemainderEnds},
         {"unattributed and reused client id fills", testUnattributedAndReusedClientIdFills},
         {"snapshot", testSnapshot},
+        {"fees and funding from the account history", testFeesAndFundingFromAccountLog},
+        {"interest and capital flows from the account history", testInterestAndCapitalFlowsFromAccountLog},
         {"permissions", testPermissions},
     };
     for (const auto& [name, test] : tests) {

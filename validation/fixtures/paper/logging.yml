@@ -1,4 +1,4 @@
-# VPS overlay: start the host receiver before recreating containers with this file.
+# Validation-only overlay for the legacy-named isolated fixture's logging contract.
 x-daily-logging: &daily_logging
   driver: syslog
   options:

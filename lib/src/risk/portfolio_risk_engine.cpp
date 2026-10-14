@@ -66,7 +66,12 @@ double PortfolioRiskEngine::accountEquity(
     if (tsIt == marketData.end())
         throw std::out_of_range("Portfolio-risk timestamp is missing from market data");
 
-    double equity = account.cash;
+    if (!std::isfinite(account.collateral_usd) || account.collateral_usd < 0.0)
+        throw std::invalid_argument("Account snapshot collateral must be finite and not negative");
+
+    // Venue collateral after its haircut (Kraken BTC) is part of the capital sizes are
+    // computed from; it is 0 in PAPER and replay.
+    double equity = account.cash + account.collateral_usd;
     for (const auto& [coin, quantity] : account.positions) {
         if (!std::isfinite(quantity))
             throw std::invalid_argument("Account snapshot position must be finite");

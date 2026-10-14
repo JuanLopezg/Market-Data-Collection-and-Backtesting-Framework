@@ -21,6 +21,10 @@
 // - an ambiguous submit becomes UNKNOWN and is resolved only from venue evidence
 //   (open orders, fills); it is never resent automatically;
 // - fills are de-duplicated by venue fill id and get a stable local FillID;
+// - fees and funding come from the venue's account history, each entry published once;
+// - the snapshot reports cash as on a spot account (USD balance minus the entry value of
+//   open positions), the convention execution-state keeps, so reconciliation compares like
+//   with like;
 // - unavailable markets are rejected with a reason; no other product is substituted;
 // - source symbols and units go through the explicit SymbolMap only;
 // - before an order is journaled its USD value at the venue (venue quantity x venue mark
@@ -43,6 +47,8 @@ struct LiveVenueOptions {
     long long settle_after_ms = 15000;             // Absent from open orders this long: remainder ended.
     long long unknown_alert_after_ms = 120000;     // UNKNOWN this long: ALERT for the operator.
     int dead_mans_switch_seconds = 0;              // 0: not armed.
+    long long account_log_interval_ms = 300000;    // Fees and funding from the account history.
+    long long fee_lookup_after_fill_ms = 30000;    // Read it again this soon after a new fill.
 };
 
 class LiveVenueAdapter final : public ExchangeGatewayAdapter {
@@ -105,6 +111,8 @@ private:
     std::map<OrderID, long long> last_cancel_attempt_ms_;
     std::map<OrderID, long long> last_evidence_ms_;
     std::set<OrderID> unknown_alerted_;
+    long long next_account_log_ms_ = 0;          // 0: read at the first poll.
+    std::set<std::string> unaccounted_logged_;   // History kinds already reported once.
 
     HttpResponse send(const HttpRequest& request, Endpoint endpoint);
     void loadMarkets();
@@ -120,8 +128,10 @@ private:
     void applyFills(const std::vector<VenueFill>& fills);
     void applyOpenOrders(const std::vector<OpenOrder>& openOrders);
     void refreshDeadMansSwitch();
+    void readAccountLogIfDue();
 
     void publishPending();
+    void publishCashEntry(const JournalCashEntry& entry);
     void publishOrder(const JournalOrder& order);
     void publishFill(const JournalFill& fill, const JournalOrder& order);
     void transition(JournalOrder& order, OrderState state, const std::string& reason);

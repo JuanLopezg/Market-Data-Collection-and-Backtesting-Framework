@@ -15,6 +15,17 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RECEIVER_PORT=5514
 
+# Format of the durable state this version writes (data/ and data/live/: PostgreSQL tables,
+# snapshot JSON, journals, request folders). Increase it when a change writes state that an
+# older release would misread; "algo activate" then refuses to go back to an older release
+# on that data (README "Releases"). Adding tables or optional JSON fields does not need it.
+STATE_FORMAT=1
+
+# Images a release carries. Compose runs the chain images as "<name>:chain"; every release
+# also keeps "<name>:<version>" so earlier releases stay loadable for a rollback.
+CHAIN_IMAGES=(algotrading-runtime algotrading-dash-api algotrading-dash-web)
+BASE_IMAGES=(alpine:3.20 nats:2.10-alpine postgres:16-alpine)
+
 usage() {
     cat <<'EOF'
 Usage: algo <command> [service...]
@@ -28,6 +39,11 @@ Usage: algo <command> [service...]
   backup                stop, archive data/ into backups/, start again if it was running
   receiver start|stop   local log receiver (only where systemd does not run it)
   monitor start|stop    local host telemetry collector (only where systemd does not run it)
+  releases              release folders in releases/, with the current and previous one
+  rollback              activate the previous release again
+  activate <release folder> [root]
+                        verify a release, stop, back up data/, install it and start
+                        (also runs from the release folder's own copy: <folder>/algo)
 
 Repository only:
   install <root>        create or update an installation; never overwrites config/secrets/data
@@ -37,7 +53,8 @@ Repository only:
 Moving the older algotrading-paper stack into an installation: chain/migrate_paper.py --help
 
 Services: data-init nats postgres market-data-init market-data strategy risk planner
-          execution gateway sim-exchange dash-api dash-web watchdog notifier
+          execution dash-api dash-web watchdog notifier
+          MODE=paper: gateway sim-exchange      MODE=live: gateway-kraken
 EOF
 }
 
@@ -118,9 +135,18 @@ DASHBOARD_PORT=8092
 NOTIFIER_SINK=TEST_FILE
 # "kraken" starts kraken-notifier (Telegram for the read-only Kraken account monitor,
 # host unit algotrading-kraken.service). Needs secrets/kraken_readonly.env and the bot settings.
+# (MODE is added as a profile by ./algo; list only extra profiles here.)
 COMPOSE_PROFILES=
 KRAKEN_NOTIFIER_SINK=TELEGRAM
 LOG_DEBUG=0
+# MODE=live only (README "Switching to live"): Kraken USD balance at the switch, a new
+# namespace after any reset of data/live, and enabled only for authorized real orders.
+LIVE_INITIAL_CASH=
+LIVE_ACCOUNT_NAMESPACE=
+LIVE_ORDER_SUBMISSION=disabled
+LIVE_DEAD_MANS_SWITCH_SECONDS=0
+# Fee rate of the expected run in the Kraken LIVE comparison (taker, lowest tier).
+LIVE_COMMISSION_RATE=0.0005
 EOF
         echo "LOG_MODE=$log_mode" >> "$chain/chain.env"
         echo "Created $chain/chain.env (LOG_MODE=$log_mode)"
@@ -156,11 +182,13 @@ open(sys.argv[1], "w").write(
     "# Generated once. Never print or commit this file.\n"
     f"POSTGRES_PASSWORD={secrets.token_hex(24)}\n"
     f"DASHBOARD_VIEWER_PASSWORD={secrets.token_hex(12)}\n"
+    # OPERATOR login: Manual Control (sends orders). Leave empty to have no operator.
+    f"DASHBOARD_OPERATOR_PASSWORD={secrets.token_hex(12)}\n"
     "DASHBOARD_TELEGRAM_BOT_TOKEN=\n"
     "DASHBOARD_TELEGRAM_CHAT_ID=\n")
 PY
         )
-        echo "Created $secrets/chain.env (dashboard viewer password is inside)"
+        echo "Created $secrets/chain.env (dashboard viewer and operator passwords are inside)"
     fi
     echo "Installed chain in $root. Next: $chain/algo up"
 }
@@ -173,24 +201,46 @@ build_images() {
         algotrading_exchange_gateway algotrading_simulated_exchange_service algotrading_historical_market_data_service \
         algotrading_research  # fast baseline used by comparison.py
     bash "$repo/deploy/live/build_runtime_bundle.sh" --paper
-    docker build -t algotrading-runtime:chain "$repo/deploy/paper_trading/.runtime_bundle"
+    docker build -t algotrading-runtime:chain "$repo/deploy/chain/.runtime_bundle"
     docker build -t algotrading-dash-api:chain "$repo/dashboard/dashboard-api"
     docker build -t algotrading-dash-web:chain --build-arg VITE_DASHBOARD_DATA_MODE=api \
         --build-arg VITE_DASHBOARD_API_BASE_URL=/api --build-arg VITE_DASHBOARD_API_TIMEOUT_MS=8000 "$repo/dashboard"
 }
 
-# One folder per release: built images, the source they came from, checksums.
-# On the VPS: docker load -i images.tar; extract source.tar.gz; source/deploy/chain/algo install /
+# One folder per release: built images, the source they came from, a manifest, this script
+# and checksums. On the VPS: sudo /releases/<version>/algo activate /releases/<version> /
 make_release() {
     local out="${1:?Usage: algo release <output folder>}"
-    local repo version folder
+    local repo version folder name ref refs=() images=()
     repo="$(repo_root)"
     version="$(date -u +%Y%m%d_%H%M%S)-$(git -C "$repo" rev-parse --short HEAD 2>/dev/null || echo nogit)"
     [[ -z "$(git -C "$repo" status --porcelain 2>/dev/null)" ]] || version="$version-dirty"
     folder="$out/$version"
     mkdir -p "$folder"
-    docker save -o "$folder/images.tar" algotrading-runtime:chain algotrading-dash-api:chain algotrading-dash-web:chain \
-        alpine:3.20 nats:2.10-alpine postgres:16-alpine
+    # Saved under "<name>:<version>": loading the archive adds this version next to the
+    # running ":chain" images without replacing them; activation moves ":chain" later.
+    for name in "${CHAIN_IMAGES[@]}"; do docker tag "$name:chain" "$name:$version"; refs+=("$name:$version"); done
+    docker save -o "$folder/images.tar" "${refs[@]}" "${BASE_IMAGES[@]}"
+    for ref in "${refs[@]}" "${BASE_IMAGES[@]}"; do
+        images+=("$ref $(docker image inspect -f '{{.Id}} {{.Architecture}}' "$ref")")
+    done
+    for ref in "${refs[@]}"; do docker image rm "$ref" >/dev/null; done   # removes only the extra tag here
+    python3 - "$folder/release.json" "$version" "$(git -C "$repo" rev-parse HEAD 2>/dev/null || echo nogit)" \
+        "$STATE_FORMAT" "${images[@]}" <<'PY'
+import datetime, json, sys
+path, version, commit, state_format, *images = sys.argv[1:]
+manifest = {
+    "version": version,
+    "commit": commit,
+    "created_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "state_format": int(state_format),
+    "images": [dict(zip(("ref", "id", "architecture"), image.split())) for image in images],
+}
+open(path, "w").write(json.dumps(manifest, indent=2) + "\n")
+PY
+    # The release's own launcher, so "activate" works before anything is extracted.
+    cp "$repo/deploy/chain/algo" "$folder/algo"
+    chmod 0755 "$folder/algo"
     # Source = the committed tree (HEAD), or for a dirty release the working tree: tracked
     # files plus new files git does not ignore. Never ignored data, builds or credentials
     # (a plain tar of the folder packed ~1.8 GB of ignored data and replay runs).
@@ -201,8 +251,156 @@ make_release() {
     else
         git -C "$repo" archive --format=tar.gz -o "$folder/source.tar.gz" HEAD
     fi
-    (cd "$folder" && sha256sum images.tar source.tar.gz > SHA256SUMS)
+    (cd "$folder" && sha256sum images.tar source.tar.gz release.json algo > SHA256SUMS)
     echo "Release written: $folder"
+}
+
+# ------------------------------------------------------------------- releases
+# Install a release folder (in <root>/releases/) and start it:
+#   1. checksums, image IDs and architecture; the data's state format must not be newer
+#   2. load images.tar unless the release's images are already here (a rollback)
+#   3. stop the chain, back up data/, install the release's chain files, point ":chain"
+#      at its images, record current/previous, start
+# Refused between 23:30 and 00:30 UTC: the daily candle, decisions and orders run then.
+activate_release() {
+    local folder="${1:?Usage: algo activate <release folder> [root]}" root="${2:-}"
+    [[ -d "$folder" ]] || { echo "ERROR: no release folder $folder" >&2; exit 1; }
+    folder="$(cd "$folder" && pwd)"
+    if [[ -z "$root" ]]; then
+        [[ -f "$SCRIPT_DIR/chain.env" ]] || { echo "ERROR: give the installation root: algo activate <release folder> <root>" >&2; exit 1; }
+        root="$(cd "$SCRIPT_DIR/.." && pwd)"
+    fi
+    local version chain releases data
+    version="$(basename "$folder")"
+    chain="$(under "$root" chain)"; releases="$(under "$root" releases)"; data="$(under "$root" data)"
+    [[ -f "$chain/chain.env" ]] || { echo "ERROR: $root is not an installed chain (algo install <root> first)" >&2; exit 1; }
+    [[ "$folder" == "$releases/$version" ]] || {
+        echo "ERROR: keep release folders in $releases/ (rollback looks for them there), not $folder" >&2; exit 1; }
+
+    local minute
+    minute=$((10#$(date -u +%H) * 60 + 10#$(date -u +%M)))
+    if (( minute >= 23 * 60 + 30 || minute < 30 )); then
+        echo "ERROR: no release changes between 23:30 and 00:30 UTC (daily candle and orders); try later" >&2; exit 1
+    fi
+
+    (cd "$folder" && sha256sum --quiet -c SHA256SUMS) || { echo "ERROR: checksum mismatch in $folder" >&2; exit 1; }
+
+    # Compose must run exactly the ":chain" images this activation sets.
+    local key expected
+    for key in RUNTIME_IMAGE=algotrading-runtime DASH_API_IMAGE=algotrading-dash-api DASH_WEB_IMAGE=algotrading-dash-web; do
+        expected="${key#*=}:chain"
+        [[ "$(sed -n "s/^${key%%=*}=//p" "$chain/chain.env" | tail -n 1)" == "$expected" ]] || {
+            echo "ERROR: chain.env must have ${key%%=*}=$expected (releases move the :chain tag)" >&2; exit 1; }
+    done
+
+    # Releases made before release.json (2026-10-13) carry ":chain" tags and no recorded
+    # image IDs; they are checked by SHA256SUMS only and read state format 1.
+    local release_format=1 entries=() entry ref id arch
+    if [[ -f "$folder/release.json" ]]; then
+        mapfile -t entries < <(python3 - "$folder/release.json" <<'PY'
+import json, sys
+manifest = json.load(open(sys.argv[1]))
+print(manifest["state_format"])
+for image in manifest["images"]:
+    print(image["ref"], image["id"], image["architecture"])
+PY
+        )
+        release_format="${entries[0]}"
+        entries=("${entries[@]:1}")
+    fi
+
+    local data_format=1
+    [[ ! -f "$data/STATE_FORMAT" ]] || data_format="$(cat "$data/STATE_FORMAT")"
+    if (( release_format < data_format )); then
+        echo "ERROR: data/ holds state format $data_format; release $version reads only format $release_format." >&2
+        echo "       Going back needs the data backup taken before the newer release (README \"Releases\")." >&2
+        exit 1
+    fi
+
+    local host_arch missing=0
+    case "$(uname -m)" in x86_64) host_arch=amd64 ;; aarch64|arm64) host_arch=arm64 ;; *) host_arch="$(uname -m)" ;; esac
+    for entry in "${entries[@]}"; do
+        read -r ref id arch <<< "$entry"
+        [[ "$arch" == "$host_arch" ]] || { echo "ERROR: $ref is built for $arch, this host is $host_arch" >&2; exit 1; }
+        [[ "$(docker image inspect -f '{{.Id}}' "$ref" 2>/dev/null)" == "$id" ]] || missing=1
+    done
+    if (( ${#entries[@]} == 0 || missing )); then
+        echo "Loading $folder/images.tar"
+        local loaded
+        loaded="$(docker load -i "$folder/images.tar")"
+        if (( ${#entries[@]} == 0 )); then
+            # Older release: its chain images arrive as ":chain"; keep them as "<name>:<version>" too.
+            while read -r ref; do
+                [[ "$ref" == algotrading-*:chain ]] || continue
+                docker tag "$ref" "${ref%:chain}:$version"
+                entries+=("${ref%:chain}:$version $(docker image inspect -f '{{.Id}} {{.Architecture}}' "$ref")")
+            done < <(sed -n 's/^Loaded image: //p' <<< "$loaded")
+            (( ${#entries[@]} == ${#CHAIN_IMAGES[@]} )) || {
+                echo "ERROR: $folder/images.tar did not contain the ${#CHAIN_IMAGES[@]} chain images" >&2; exit 1; }
+        fi
+    fi
+    for entry in "${entries[@]}"; do
+        read -r ref id arch <<< "$entry"
+        [[ "$(docker image inspect -f '{{.Id}}' "$ref" 2>/dev/null)" == "$id" ]] || {
+            echo "ERROR: image $ref does not have the ID recorded in the release ($id)" >&2; exit 1; }
+    done
+    echo "Release $version verified: checksums, ${#entries[@]} images, state format $release_format (data: $data_format)"
+
+    # From here the chain is stopped; a failure leaves it stopped with the backup on disk.
+    "$chain/algo" down
+    "$chain/algo" backup
+    rm -rf "$folder/source"
+    mkdir -p "$folder/source"
+    tar -xzf "$folder/source.tar.gz" -C "$folder/source"
+    bash "$folder/source/deploy/chain/algo" install "$root"
+    for entry in "${entries[@]}"; do
+        read -r ref id arch <<< "$entry"
+        [[ "$ref" != algotrading-* ]] || docker tag "$id" "${ref%:*}:chain"
+    done
+    echo "$release_format" > "$data/STATE_FORMAT"
+
+    local current=""
+    [[ ! -f "$releases/current" ]] || current="$(cat "$releases/current")"
+    if [[ "$current" != "$version" ]]; then
+        [[ -z "$current" ]] || echo "$current" > "$releases/previous"
+        echo "$version" > "$releases/current"
+    fi
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) activated $version (was ${current:-unrecorded})" >> "$releases/history.log"
+
+    "$chain/algo" up
+    # Host units are not replaced automatically; say which ones changed.
+    local unit installed
+    for unit in "$chain"/systemd/*.service "$chain"/logging/*.service "$chain"/logging/*.timer; do
+        installed="/etc/systemd/system/$(basename "$unit")"
+        [[ -f "$unit" && -f "$installed" ]] || continue
+        cmp -s "$unit" "$installed" || echo "NOTE: $installed differs from this release's $unit; copy it and run systemctl daemon-reload"
+    done
+    echo "Release $version is running. Previous: $(cat "$releases/previous" 2>/dev/null || echo none) (algo rollback)"
+}
+
+rollback_release() {
+    local releases previous
+    releases="$(under "$ALGO_ROOT" releases)"
+    [[ -s "$releases/previous" ]] || { echo "ERROR: no previous release recorded in $releases/previous" >&2; exit 1; }
+    previous="$(cat "$releases/previous")"
+    echo "Rolling back from $(cat "$releases/current" 2>/dev/null || echo unrecorded) to $previous"
+    activate_release "$releases/$previous" "$ALGO_ROOT"
+}
+
+list_releases() {
+    local releases current previous folder version mark
+    releases="$(under "$ALGO_ROOT" releases)"
+    current="$(cat "$releases/current" 2>/dev/null || true)"
+    previous="$(cat "$releases/previous" 2>/dev/null || true)"
+    for folder in "$releases"/*/; do
+        [[ -d "$folder" ]] || continue
+        version="$(basename "$folder")"
+        mark=""
+        [[ "$version" != "$current" ]] || mark="  <- current"
+        [[ "$version" != "$previous" ]] || mark="  <- previous (algo rollback)"
+        printf '%-40s %6s%s\n' "$version" "$(du -sh "$folder" 2>/dev/null | cut -f1)" "$mark"
+    done
+    [[ -n "$current" ]] || echo "No current release recorded in $releases/current"
 }
 
 # ---------------------------------------------------------------- installation
@@ -219,6 +417,58 @@ require_installation() {
     LOG_MODE="$(sed -n 's/^LOG_MODE=//p' "$SCRIPT_DIR/chain.env" | tail -n 1)"
     LOG_MODE="${LOG_MODE:-receiver}"
     [[ -r "$SECRETS_FILE" ]] || { echo "ERROR: cannot read $SECRETS_FILE (run as its owner or with sudo)" >&2; exit 1; }
+    select_mode
+}
+
+# MODE in chain.env picks the execution venue. Exported values override chain.env.
+#   paper: simulated exchange; trading state in data/.
+#   live:  Kraken Futures gateway; trading state in data/live/ (own NATS, PostgreSQL,
+#          market data, venue journal), so PAPER history is never mixed with real money.
+select_mode() {
+    local setting extra_profiles live_cash
+    setting() { sed -n "s/^$1=//p" "$SCRIPT_DIR/chain.env" | tail -n 1; }
+    MODE="$(setting MODE)"; MODE="${MODE:-paper}"
+    extra_profiles="$(setting COMPOSE_PROFILES)"
+    export ALGO_STATE ALGO_SECRETS COMPOSE_PROFILES DASHBOARD_RUNTIME_MODE DASHBOARD_EXECUTION_VENUE \
+        DASHBOARD_VENUE_TARGET_ENVIRONMENT DASHBOARD_EXCHANGE_GATEWAY_MODE
+    ALGO_SECRETS="$(under "$ALGO_ROOT" secrets)"
+    case "$MODE" in
+        paper)
+            ALGO_STATE="$ALGO_DATA"
+            DASHBOARD_RUNTIME_MODE=PAPER DASHBOARD_EXECUTION_VENUE=SIMULATED
+            DASHBOARD_VENUE_TARGET_ENVIRONMENT=PAPER DASHBOARD_EXCHANGE_GATEWAY_MODE=backend ;;
+        live)
+            ALGO_STATE="$ALGO_DATA/live"
+            DASHBOARD_RUNTIME_MODE=LIVE DASHBOARD_EXECUTION_VENUE=KRAKEN
+            DASHBOARD_VENUE_TARGET_ENVIRONMENT=LIVE DASHBOARD_EXCHANGE_GATEWAY_MODE=venue
+            [[ -r "$ALGO_SECRETS/kraken.env" ]] || {
+                echo "ERROR: MODE=live needs $ALGO_SECRETS/kraken.env (trading key, no withdrawal permission; README)" >&2; exit 1; }
+            [[ -n "$(setting LIVE_ACCOUNT_NAMESPACE)" ]] || {
+                echo "ERROR: MODE=live needs LIVE_ACCOUNT_NAMESPACE in chain.env" >&2; exit 1; }
+            # ExecutionState starts from the venue's USD balance, not the PAPER virtual cash.
+            live_cash="$(setting LIVE_INITIAL_CASH)"
+            [[ -n "$live_cash" ]] || { echo "ERROR: MODE=live needs LIVE_INITIAL_CASH (the Kraken USD balance) in chain.env" >&2; exit 1; }
+            # Kraken rounds balances and entry prices; reconciliation accepts 0.50 USD of cash.
+            # PAPER_COMPARISON_FILE stays as set: data/live/comparison is the Kraken LIVE study.
+            export INITIAL_CASH="$live_cash" CASH_TOLERANCE_USD=0.5
+            mkdir -p "$ALGO_STATE" ;;
+        *) echo "ERROR: MODE must be paper or live, got '$MODE'" >&2; exit 1 ;;
+    esac
+    COMPOSE_PROFILES="$MODE${extra_profiles:+,$extra_profiles}"
+}
+
+# Both gateways must never run at once: one would keep sending the chain's orders to the
+# other venue. Switch with "algo down" before changing MODE.
+refuse_other_mode() {
+    local name others
+    if [[ "$MODE" == live ]]; then others="gateway sim-exchange"; else others="gateway-kraken"; fi
+    for name in $others; do
+        if [[ -n "$(docker ps -q -f "name=^${name}\$")" ]]; then
+            echo "ERROR: '$name' from the other MODE is running. Set MODE back and run 'algo down'" \
+                 "(or 'docker stop $name') before starting MODE=$MODE." >&2
+            exit 1
+        fi
+    done
 }
 
 compose() {
@@ -308,40 +558,50 @@ backup() {
     echo "Backup written: $archive"
 }
 
-command="${1:-help}"; shift || true
-case "$command" in
-    install) install_chain "$@" ;;
-    build) build_images ;;
-    release) make_release "$@" ;;
-    help|-h|--help) usage ;;
-    *)
-        require_installation
-        case "$command" in
-            up)
-                [[ "$LOG_MODE" == local ]] || receiver_start
-                compose up -d "$@"
-                [[ $# -gt 0 ]] || monitor_start ;;
-            down)
-                if [[ $# -gt 0 ]]; then compose stop "$@"
-                else compose down; monitor_stop; systemd_unit_active algotrading-logs.service || receiver_stop; fi ;;
-            restart) [[ $# -gt 0 ]] || { usage; exit 1; }; compose restart "$@" ;;
-            ps)
-                compose ps -a
-                if [[ "$LOG_MODE" == local ]]; then echo "logs: local mode (host monitor copies container logs)"
-                elif receiver_listening; then echo "log receiver: listening on 127.0.0.1:$RECEIVER_PORT"; else echo "log receiver: STOPPED"; fi
-                if [[ -f "$ALGO_DATA/telemetry/monitor.pid" ]] && kill -0 "$(cat "$ALGO_DATA/telemetry/monitor.pid")" 2>/dev/null \
-                   || systemd_unit_active algotrading-monitor.service; then echo "host monitor: running"; else echo "host monitor: STOPPED"; fi
-                if systemd_unit_active algotrading-kraken.service; then echo "kraken account monitor: running"
-                elif [[ -f "$(under "$ALGO_ROOT" secrets)/kraken_readonly.env" ]]; then echo "kraken account monitor: STOPPED"
-                else echo "kraken account monitor: not configured (no secrets/kraken_readonly.env)"; fi ;;
-            logs)
-                service="${1:?Usage: algo logs <service> [-n N]}"; shift
-                lines=50; [[ "${1:-}" == "-n" ]] && lines="${2:?}"
-                tail -n "$lines" -F "$LOGS/$service/$(date -u +%Y%m%d).log" ;;
-            show) compose config "$@" | mask_secrets ;;
-            backup) backup ;;
-            receiver) case "${1:-}" in start) receiver_start ;; stop) receiver_stop ;; *) usage; exit 1 ;; esac ;;
-            monitor) case "${1:-}" in start) monitor_start ;; stop) monitor_stop ;; *) usage; exit 1 ;; esac ;;
-            *) usage; exit 1 ;;
-        esac ;;
-esac
+main() {
+    local command="${1:-help}"; shift || true
+    case "$command" in
+        install) install_chain "$@" ;;
+        build) build_images ;;
+        release) make_release "$@" ;;
+        activate) activate_release "$@" ;;
+        help|-h|--help) usage ;;
+        *)
+            require_installation
+            case "$command" in
+                releases) list_releases ;;
+                rollback) rollback_release ;;
+                up)
+                    refuse_other_mode
+                    [[ "$LOG_MODE" == local ]] || receiver_start
+                    compose up -d "$@"
+                    [[ $# -gt 0 ]] || monitor_start ;;
+                down)
+                    if [[ $# -gt 0 ]]; then compose stop "$@"
+                    else compose down; monitor_stop; systemd_unit_active algotrading-logs.service || receiver_stop; fi ;;
+                restart) [[ $# -gt 0 ]] || { usage; exit 1; }; compose restart "$@" ;;
+                ps)
+                    compose ps -a
+                    if [[ "$LOG_MODE" == local ]]; then echo "logs: local mode (host monitor copies container logs)"
+                    elif receiver_listening; then echo "log receiver: listening on 127.0.0.1:$RECEIVER_PORT"; else echo "log receiver: STOPPED"; fi
+                    if [[ -f "$ALGO_DATA/telemetry/monitor.pid" ]] && kill -0 "$(cat "$ALGO_DATA/telemetry/monitor.pid")" 2>/dev/null \
+                       || systemd_unit_active algotrading-monitor.service; then echo "host monitor: running"; else echo "host monitor: STOPPED"; fi
+                    if systemd_unit_active algotrading-kraken.service; then echo "kraken account monitor: running"
+                    elif [[ -f "$(under "$ALGO_ROOT" secrets)/kraken_readonly.env" ]]; then echo "kraken account monitor: STOPPED"
+                    else echo "kraken account monitor: not configured (no secrets/kraken_readonly.env)"; fi ;;
+                logs)
+                    service="${1:?Usage: algo logs <service> [-n N]}"; shift
+                    lines=50; [[ "${1:-}" == "-n" ]] && lines="${2:?}"
+                    tail -n "$lines" -F "$LOGS/$service/$(date -u +%Y%m%d).log" ;;
+                show) compose config "$@" | mask_secrets ;;
+                backup) backup ;;
+                receiver) case "${1:-}" in start) receiver_start ;; stop) receiver_stop ;; *) usage; exit 1 ;; esac ;;
+                monitor) case "${1:-}" in start) monitor_start ;; stop) monitor_stop ;; *) usage; exit 1 ;; esac ;;
+                *) usage; exit 1 ;;
+            esac ;;
+    esac
+}
+
+# "activate"/"rollback" replace this file while it runs; bash has read this whole line
+# before main starts, so it never reads the new file's bytes.
+main "$@"; exit

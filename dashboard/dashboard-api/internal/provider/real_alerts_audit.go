@@ -249,15 +249,23 @@ func buildRealAlertsAudit(
 			if i >= 20 {
 				break
 			}
+			// A venue skip is expected behaviour (INFO); a wrong USD value points to a wrong
+			// unit scale (CRITICAL); any other rejection stays a WARN.
+			severity, eventType, title := "WARN", "ORDER_REJECT", "Order "+reject.OrderID+" rejected: "+reject.Title
+			if reject.Kind == "SKIPPED" {
+				severity, eventType, title = "INFO", "ORDER_SKIPPED", reject.Asset+" skipped: "+reject.Title
+			} else if reject.Code == "NOTIONAL_MISMATCH" {
+				severity = "CRITICAL"
+			}
 			alerts = append(alerts, realOperationalAlert{
-				ID: "derived-execution-reject-" + reject.OrderID, Timestamp: execution.SourceUpdatedAt, Severity: "WARN", Status: "ACTIVE",
-				Service: "Execution", Asset: reject.Asset, EventType: "ORDER_REJECT", Title: "Durable rejected order " + reject.OrderID,
-				Detail: reject.Reason, LinkedContext: "Open Execution",
+				ID: "derived-execution-reject-" + reject.OrderID, Timestamp: execution.SourceUpdatedAt, Severity: severity, Status: "ACTIVE",
+				Service: "Execution", Asset: reject.Asset, EventType: eventType, Title: title,
+				Detail: reject.Reason + ". " + reject.Remediation, LinkedContext: "Open Execution",
 			})
 			audit = append(audit, realAuditRecord{
 				ID: "evidence-order-reject-" + reject.OrderID, Timestamp: execution.SourceUpdatedAt, Actor: "system", ActorType: "SYSTEM",
-				Action: "ORDER_REJECT_STATE_OBSERVED", Target: reject.Asset + " / order " + reject.OrderID, Result: "REJECTED",
-				Detail: reject.Reason,
+				Action: "ORDER_REJECT_STATE_OBSERVED", Target: reject.Asset + " / order " + reject.OrderID, Result: reject.Kind,
+				Detail: reject.Code + ": " + reject.Reason,
 			})
 		}
 		for i, fill := range execution.PartialFills {

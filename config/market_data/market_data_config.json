@@ -8,7 +8,7 @@
   "active_top_n": 50,
   "retain_after_top_n_days": 365,
   "minimum_history_days": 100,
-  "max_parallel_requests": 8,
-  "midnight_delay_seconds": 5,
+  "max_parallel_requests": 16,
+  "midnight_delay_ms": 100,
   "retry_after_failure_seconds": 300
 }

@@ -8,6 +8,23 @@ The dashboard supports real reads, canonical replay observation, durable watchdo
 operator acknowledgements, notification adapters and audited manual-intent admission.
 Actual private exchange submission remains disabled.
 
+## Mobile viewing
+
+Below 900px the desktop sidebar becomes a Menu drawer; panels stack and wide data
+tables scroll horizontally inside their panels. Below 480px metrics use one
+column. The login and date controls fit phone screens without zooming out.
+The VPS dashboard is available privately through Tailscale; see
+[chain operations](../deploy/chain/README.md#private-mobile-dashboard-access-tailscale).
+Phone/browser validation evidence belongs in CURRENT_STATE.md.
+
+Bounded mock-browser layout check (requires Python Playwright and Chromium):
+
+```bash
+python3 validation/mobile_dashboard_browser_test.py --dist <mock-dist> --output storage/mobile_dashboard/browser
+```
+
+Run from the repository root against a mock frontend build, not a trading account.
+
 ## Choose the data source
 
 | API provider | Source and meaning |
@@ -80,7 +97,7 @@ The slow paced browser campaign is separate acceptance work, not implied by that
 ## Observe the running live stack
 
 For current public data with virtual funds, use the separate
-[paper deployment](../deploy/paper_trading/README.md). Infrastructure reads a fresh
+[chain deployment](../deploy/chain/README.md). Infrastructure reads a fresh
 host snapshot for CPU/RAM/disk and project container measurements, without a Docker
 socket mount. Stale readings become unavailable. Container health is separate from
 trading readiness. Trading executable observations, daily PAPER decision/plan-date
@@ -130,10 +147,10 @@ ignored preview fixtures. The program never displays or copies credential conten
 The PAPER notifier now accepts `DASHBOARD_NOTIFIER_SINK=TELEGRAM`; TEST_FILE
 remains the default. Create a bot with [BotFather](https://core.telegram.org/bots#how-do-i-create-a-bot),
 start a conversation with it, and obtain the destination chat ID through your bot's
-Bot API updates. Keep the token/chat ID in ignored `storage/paper_trading/.env`:
+Bot API updates. Keep the token/chat ID in the installation's private `secrets/chain.env`;
+set `NOTIFIER_SINK=TELEGRAM` in its non-secret `chain/chain.env`:
 
 ```dotenv
-DASHBOARD_NOTIFIER_SINK=TELEGRAM
 DASHBOARD_TELEGRAM_BOT_TOKEN=
 DASHBOARD_TELEGRAM_CHAT_ID=
 DASHBOARD_NOTIFIER_MIN_SEVERITY=WARN
@@ -143,12 +160,14 @@ After filling those fields, build the notifier locally and explicitly send one s
 message from the repository root in WSL:
 
 ```bash
-docker compose --env-file storage/paper_trading/.env -f deploy/paper_trading/docker-compose.yml build dashboard-alert-notifier
-docker compose --env-file storage/paper_trading/.env -f deploy/paper_trading/docker-compose.yml run --rm --no-deps dashboard-alert-notifier --test-message
+deploy/chain/algo build
+"$HOME/algotrading-runtime/chain/algo" up --no-deps notifier
+docker exec notifier /dashboard-alert-notifier --test-message
 ```
 
-Check the message in your chat. Then start continuous alert delivery with the same
-Compose command ending in `up -d --no-deps dashboard-alert-notifier`. This sends
+For one explicit setup message, use the installation's notifier with `--test-message`
+as documented in the [chain guide](../deploy/chain/README.md#telegram-setup-message).
+Continuous delivery sends
 active WARN/CRITICAL alerts at startup, subsequent openings/escalations, eligible
 updates after the default five-minute cooldown and resolution of notified alerts.
 It does not send resolved historical alerts. Changing sinks uses a separate default
@@ -158,13 +177,12 @@ no more than 30 seconds ahead, and no failed last sweep. A stopped/stale watchdo
 leaves delivery waiting; an old alert journal is not treated as current evidence.
 PAPER notifier healthchecks reject recorded errors even after an earlier success.
 
-The currently enabled local notifier uses the validated image through ignored
-`storage/paper_trading/telegram.override.yml`; trading services remain stopped.
-Use that override alongside the base Compose file when recreating this notifier,
-or build the current source before returning to the default image. To stop only it:
+The chain uses its configured dash-api image for the notifier. Earlier local
+Telegram evidence and credential files remain in ignored storage. To stop only
+the current installation's notifier:
 
 ```bash
-docker compose --env-file storage/paper_trading/.env -f deploy/paper_trading/docker-compose.yml stop dashboard-alert-notifier
+"$HOME/algotrading-runtime/chain/algo" down notifier
 ```
 
 The real two-message controlled recovery check passed. To deliberately repeat it:

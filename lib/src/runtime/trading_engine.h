@@ -56,10 +56,13 @@ public:
     bool tradingEnabled() const { return trading_enabled_; }
 
     // Completed market-data event: update signals and create plans for a later execution event.
+    // extraCapital is sizing capital outside the account (venue collateral after haircut,
+    // as Kraken LIVE sizes); 0 everywhere else.
     void onBarClose(
         const MarketData& marketData,
         Timestamp ts,
-        const PriceSnapshot& marks
+        const PriceSnapshot& marks,
+        double extraCapital = 0.0
     );
 
     // Resolve pending strategy plans at the supplied executable/reference prices.

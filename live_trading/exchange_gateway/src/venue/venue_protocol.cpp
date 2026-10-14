@@ -15,6 +15,7 @@ const char* endpointName(Endpoint endpoint)
         case Endpoint::SendOrder:      return "send order";
         case Endpoint::CancelOrder:    return "cancel order";
         case Endpoint::DeadMansSwitch: return "dead man's switch";
+        case Endpoint::AccountLog:     return "account log";
     }
     return "unknown";
 }

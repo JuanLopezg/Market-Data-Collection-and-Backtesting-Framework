@@ -68,6 +68,11 @@ public:
     HttpRequest positionsRequest() override;
     AccountState parseAccount(const HttpResponse& accounts, const HttpResponse& positions) const override;
 
+    // GET /api/history/v2/account-log (newest 500). Fee entries ("fee", paid, positive) and
+    // funding ("realized_funding", taken as the balance change) in USD; see the .cpp.
+    HttpRequest accountLogRequest() override;
+    AccountLog parseAccountLog(const HttpResponse& response) const override;
+
     std::optional<HttpRequest> deadMansSwitchRequest(int timeoutSeconds) override;
 
     // Exposed for tests: the documented signing algorithm.

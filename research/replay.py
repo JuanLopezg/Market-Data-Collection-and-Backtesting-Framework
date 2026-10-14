@@ -70,6 +70,7 @@ FULL_RUN_SOURCES = [
     "lib/src/strategy/strategy_signal_engine.cpp",
     "lib/src/runtime/replay_runtime.cpp",
     "lib/src/risk/portfolio_risk_engine.cpp",
+    "lib/src/risk/target_decisions.cpp",
     "lib/src/execution/planning/notional_order_planner.cpp",
     "lib/src/market/rolling_market_state.cpp",
     "lib/src/utils/time_handler.cpp",
@@ -85,7 +86,7 @@ FULL_RUN_SOURCES = [
 FAST_RUN_SOURCES = [
     "research/src/common/backtest_helpers.cpp",
     "research/src/common/realtest.cpp",
-    "research/src/legacy/backtesting_main.cpp",
+    "research/src/backtests/backtesting_main.cpp",
 ]
 
 

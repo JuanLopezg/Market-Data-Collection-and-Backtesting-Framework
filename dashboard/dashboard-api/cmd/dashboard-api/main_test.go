@@ -61,6 +61,26 @@ func TestConfiguredProviderPaperRequiresFullySimulatedBoundary(t *testing.T) {
 	}
 }
 
+func TestConfiguredProviderAcceptsOnlyTheFullKrakenLiveBoundary(t *testing.T) {
+	t.Setenv("DASHBOARD_DATA_PROVIDER", "real")
+	t.Setenv("DASHBOARD_RUNTIME_MODE", "LIVE")
+	t.Setenv("DASHBOARD_EXECUTION_VENUE", "KRAKEN")
+	t.Setenv("DASHBOARD_VENUE_TARGET_ENVIRONMENT", "LIVE")
+	t.Setenv("DASHBOARD_EXCHANGE_GATEWAY_MODE", "venue")
+	if _, err := configuredProvider(); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DASHBOARD_EXCHANGE_GATEWAY_MODE", "backend")
+	if _, err := configuredProvider(); err == nil {
+		t.Fatal("Kraken with the simulated backend gateway accepted")
+	}
+	t.Setenv("DASHBOARD_EXCHANGE_GATEWAY_MODE", "venue")
+	t.Setenv("DASHBOARD_VENUE_TARGET_ENVIRONMENT", "PAPER")
+	if _, err := configuredProvider(); err == nil {
+		t.Fatal("Kraken with a PAPER target accepted")
+	}
+}
+
 func TestValidateHyperliquidTestnetInfoURL(t *testing.T) {
 	if err := validateHyperliquidTestnetInfoURL("https://api.hyperliquid-testnet.xyz/info"); err != nil {
 		t.Fatalf("expected official testnet info URL to pass: %v", err)

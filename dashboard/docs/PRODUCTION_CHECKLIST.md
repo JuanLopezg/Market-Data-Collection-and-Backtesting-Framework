@@ -40,7 +40,7 @@ Before making the dashboard reachable from the Internet:
 - [ ] Trading continues if dashboard-web and dashboard-api are stopped.
 
 The isolated local `PAPER_RECOVERY_TEST=1` rehearsal is documented in
-[paper operations](../../deploy/paper_trading/README.md#local-backup-and-recovery-rehearsal).
+[validation recovery guide](../../validation/README.md).
 It does not mark the deployed backup/restore or dashboard-independence items above
 complete: accept those again on the destination host with its own state/configuration.
 - [ ] `./scripts/production-smoke.sh .env.production` passes after deployment.

@@ -5,7 +5,7 @@ baseline selected by `ALGOTRADING_PAPER_BASELINE_MANIFEST`. Its orchestration li
 `src/common/paper_baseline.cpp` and uses CURRENT TradingEngine/sizing/accounting in
 process, with per-day canonical 100-day indicator windows and observed next-open
 prices. It does not change the default historical fast profile or RealTest reference.
-The [PAPER study runbook](../deploy/paper_trading/README.md#forward-activity-study-and-fast-baseline)
+The [chain study runbook](../deploy/chain/README.md#changing-the-portfolio-sizer)
 owns forward capture, the experimental 50/40 profile and dashboard comparison.
 
 Replay/backtest work has **one public entry point**:
@@ -14,8 +14,10 @@ Replay/backtest work has **one public entry point**:
 python3 research/replay.py <mode> ...
 ```
 
-Old `tools/historical_replay/run_t*.py`, `step56a_*`, `step58_*` and
-`step58a_*` runners remain frozen historical evidence. They are not deleted.
+Old `tools/historical_replay/run_t*.py` and `step56a_*` runners remain frozen historical
+evidence. The `step58_*`/`step58a_*` runners (hand-listed builds that no longer linked
+against the current `lib/`, replaced by this front door) were removed on 2026-10-14; they
+stay in Git history and `docs/venue/step58*/SHA256SUMS` keeps their recorded checksums.
 **No new replay engine should be added** for another speed, date window or UI mode;
 add an option to `research/replay.py` instead.
 
@@ -135,7 +137,7 @@ python3 research/replay.py fast --days 100
 ```
 
 Uses the existing research `Backtester`/PureRSI path. It does **not** instantiate the
-canonical MOCK venue stack or dashboard. The legacy `backtesting_main.cpp` remains a
+canonical MOCK venue stack or dashboard. `backtests/backtesting_main.cpp` remains a
 normal research program; the canonical wrapper supplies its date/output overrides through
 process environment so there is still only one public replay CLI.
 
@@ -220,7 +222,7 @@ Dashboard state remains at the existing Step58 path:
 ## RealTest-parity execution isolation
 
 `realtest-parity` reproduces the execution semantics of the historical
-`research/src/legacy/backtesting_main.cpp` while still traversing the modern full-system
+`research/src/backtests/backtesting_main.cpp` while still traversing the modern full-system
 Strategy -> Risk -> Planner -> CanonicalVenueAdapter -> MOCK path.
 
 The boundary is intentionally simple and explicit:
@@ -285,7 +287,7 @@ The same invariant is required in both `system` and `dashboard` modes.
 
 ## Current implementation and research migration
 
-The fast replay executable is built from `src/legacy/backtesting_main.cpp`
+The fast replay executable is built from `src/backtests/backtesting_main.cpp`
 against CURRENT `lib/backtest/Backtester`; its directory name does not mean it
 uses the frozen runtime. System/dashboard use `src/canonical/canonical_replay.cpp`
 and CURRENT `lib/src/runtime/replay_runtime.*`.
@@ -306,7 +308,7 @@ execution and accounting APIs for all eight strategy families.
 
 ### Research consumer inventory
 
-All entrypoints below live under `src/legacy/`; verify build linkage in its
+All entrypoints below live under `src/backtests/`; verify build linkage in its
 `meson.build`, rather than inferring runtime from the directory name.
 
 | Entrypoint | Useful capabilities | Current implementation |
@@ -324,7 +326,7 @@ From the repository root under WSL:
 
 ```bash
 meson compile -C build -j 3 algotrading_research_html
-build/research/src/legacy/algotrading_research_html \
+build/research/src/backtests/algotrading_research_html \
   --start 20200101 --end 20200416 --grid compact --study-id my_current_rsi_study
 python3 validation/research_html_report_gate.py
 ```
@@ -359,7 +361,7 @@ status still listed by exchangeInfo) with `volume` = USDT quote volume, complete
 only. Use `--benchmark BTCUSDT` with it. Example (2025 to date, 20% vol target):
 
 ```bash
-build/research/src/legacy/algotrading_research_html \
+build/research/src/backtests/algotrading_research_html \
   --database storage/databases/1d_binance_perp_quote_20241207.csv \
   --start 20241207 --end 20261011 --benchmark BTCUSDT \
   --sizer volatility-target --target-volatility 0.20 --study-id <new id>
@@ -416,7 +418,7 @@ its own original full ranges (2,508 XH combinations and 2,299 XH-ATR combination
 
 ```bash
 meson compile -C build -j 3 algotrading_research_xhbreakout
-build/research/src/legacy/algotrading_research_xhbreakout \
+build/research/src/backtests/algotrading_research_xhbreakout \
   --start 20200101 --end 20200416 --grid compact --study-id my_xh_robustness
 ```
 
@@ -438,12 +440,12 @@ fresh strategy, indicators, account and campaigns. It does not combine strategie
 into one portfolio. Its eight original families and 18 dataset definitions remain
 available, including stocks, intraday, shifted bars, multiday bars and OOS data.
 Original strategy settings differ from the initial parameter study and are explicit
-in `src/legacy/multi_strategy_main.cpp`. Report embedding and correlation presentation
+in `src/backtests/multi_strategy_main.cpp`. Report embedding and correlation presentation
 live in the cohesive `src/common/scenario_reports.*` component.
 
 ```bash
 meson compile -C build -j 3 algotrading_research_multi_strategy
-build/research/src/legacy/algotrading_research_multi_strategy \
+build/research/src/backtests/algotrading_research_multi_strategy \
   --strategy all --dataset 1d_cmc,stocks_daily,4h_binance \
   --start 20200101 --end 20200416 --study-id my_scenario_study
 python3 validation/research_scenario_gate.py
@@ -484,7 +486,7 @@ BTC below its SMA; PureMom requires BTC above it. No separate filter toggle exis
 
 ```bash
 meson compile -C build -j 3 algotrading_research_btc_ma
-build/research/src/legacy/algotrading_research_btc_ma \
+build/research/src/backtests/algotrading_research_btc_ma \
   --start 20200101 --end 20200416 --grid full --study-id my_btc_ma_study
 ```
 
@@ -510,9 +512,9 @@ compact mode uses the first and last reachable value on each enabled axis for
 
 ```bash
 meson compile -C build -j 3 algotrading_research_initial_params algotrading_research_stats
-build/research/src/legacy/algotrading_research_initial_params \
+build/research/src/backtests/algotrading_research_initial_params \
   --grid compact --study-id my_initial_parameters
-build/research/src/legacy/algotrading_research_stats \
+build/research/src/backtests/algotrading_research_stats \
   --start 20200101 --end 20200416
 ```
 

@@ -27,25 +27,25 @@ func TestDailyTradingProgressUsesBusinessDatesNotRecentWritesOrFills(t *testing.
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			runtime.LastBarCloseTimestamp, runtime.LastExecutionTimestamp = tc.decision, tc.plan
-			if got := buildTradingProgress(runtime, nil, true, "PAPER", now); got.State != tc.state {
+			if got := buildTradingProgress(runtime, nil, true, true, now); got.State != tc.state {
 				t.Fatalf("unexpected progress: %+v", got)
 			}
 		})
 	}
 	runtime.LastBarCloseTimestamp, runtime.LastExecutionTimestamp = 20261006, 20261007
-	if got := buildTradingProgress(runtime, nil, true, "PAPER", now.Truncate(24*time.Hour).Add(10*time.Minute)); got.State != "WARN" {
+	if got := buildTradingProgress(runtime, nil, true, true, now.Truncate(24*time.Hour).Add(10*time.Minute)); got.State != "WARN" {
 		t.Fatalf("UTC grace not respected: %+v", got)
 	}
-	if got := buildTradingProgress(runtime, nil, true, "PAPER", now.Truncate(24*time.Hour).Add(30*time.Minute)); got.State != "CRITICAL" {
+	if got := buildTradingProgress(runtime, nil, true, true, now.Truncate(24*time.Hour).Add(30*time.Minute)); got.State != "CRITICAL" {
 		t.Fatalf("UTC grace did not expire: %+v", got)
 	}
-	if got := buildTradingProgress(runtime, errors.New("read failed"), true, "PAPER", now); got.State != "CRITICAL" {
+	if got := buildTradingProgress(runtime, errors.New("read failed"), true, true, now); got.State != "CRITICAL" {
 		t.Fatal("Database failure hidden")
 	}
-	if got := buildTradingProgress(runtime, nil, true, "LIVE", now); got.State != "UNKNOWN" {
-		t.Fatal("Non-PAPER business clock compared to wall clock")
+	if got := buildTradingProgress(runtime, nil, true, false, now); got.State != "UNKNOWN" {
+		t.Fatal("Replay business clock compared to wall clock")
 	}
-	if got := buildTradingProgress(pgstore.RuntimeSummary{}, nil, true, "PAPER", now); got.State != "UNKNOWN" {
+	if got := buildTradingProgress(pgstore.RuntimeSummary{}, nil, true, true, now); got.State != "UNKNOWN" {
 		t.Fatal("Missing first snapshot fabricated progress")
 	}
 }

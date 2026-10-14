@@ -151,7 +151,7 @@ def main(build=True):
                 if build:
                     run(["meson", "compile", "-C", "build", "-j", "3", "algotrading_research_multi_strategy",
                          "algotrading_research_html", "algotrading_research_initial_params", "algotrading_research_btc_ma"], log)
-                executable = ROOT / "build/research/src/legacy/algotrading_research_multi_strategy"
+                executable = ROOT / "build/research/src/backtests/algotrading_research_multi_strategy"
                 data = ROOT / "storage/databases"
                 datasets = ["1d_cmc", "stocks_daily", "4h_binance"]
                 arguments = ["--databases-dir", str(data), "--output-root", str(work), "--strategy", "all",
@@ -181,7 +181,7 @@ def main(build=True):
                         expected_settings[entry["dataset"]])
                 benchmark_curves = check_reports(work / "current", datasets, data)
                 check_correlations(work / "current", work, log, benchmark_curves["1d_cmc"])
-                html_runner = ROOT / "build/research/src/legacy/algotrading_research_html"
+                html_runner = ROOT / "build/research/src/backtests/algotrading_research_html"
                 for study, extra in (("html", []), ("html_fees", ["--fee-taker", "0.001"])):
                     run([str(html_runner), "--strategy", "all", "--start", "20200101", "--end", "20200416",
                          "--output-root", str(work), "--study-id", study, *extra], log)

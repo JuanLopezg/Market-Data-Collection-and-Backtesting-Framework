@@ -1,6 +1,498 @@
 # Current state
 
-Last synchronized: 2026-10-13. Current source and test output take precedence.
+Last synchronized: 2026-10-14. Current source and test output take precedence.
+
+## Superseded PAPER deployment retired (2026-10-14, local only)
+
+User explicitly requested step 3 after the local baseline fix, without deployment.
+Retired all ten tracked deploy/paper_trading files: old launcher, three systemd
+units, activity/VPS overlays, old guide and LAN phone bridge. The useful Compose
+topology and logging overlay moved to validation/fixtures/paper (two of those ten
+files preserved as fixtures), keeping recovery/shadow service and volume contracts.
+Retired the bridge-specific mobile_access_test; private Tailscale/mobile layout
+remain supported. Ignored old bundles, credential files and accepted run evidence
+were not deleted; the physical old directory may still hold ignored artifacts.
+
+--paper bundling and chain/algo builds now use deploy/chain/.runtime_bundle.
+PAPER/shadow tests default to current chain image tags and resolve build contexts
+from their fixture directory. Repository collector defaults use chain service names
+and ignored storage/chain; installed runtime defaults are unchanged. Maintained
+guides/Telegram instructions now point to chain or isolated validation. Historical
+migration evidence and frozen venue records are preserved.
+
+Validation: syntax checks, 14 comparison tests, 3 monitor tests (one
+opt-in Docker test skipped), 8 logging tests and 5 shadow unit tests PASS. Full
+isolated shadow campaign PASS in
+storage/paper_validation/algotrading-paper-2a37250ac5ae/: actual producer plans,
+read-only fixture, skips, faults and durable/restarted observations. PAPER/recovery PASS in
+storage/paper_validation/algotrading-paper-a870571ff893/: completed-bar/fill/
+dashboard/restart checks, HTTP/NATS/PostgreSQL faults, duplicate handling,
+maintenance backup and fresh-volume restore with identical SQL tables/files.
+The new-path PAPER bundle
+build passes (9 executables, 38 shared libraries); runtime and API validation images
+were built successfully. This cleanup changes no C++ source. Step59
+PASS with the accepted fingerprint, 25/25 RealTest, zero differences and restart/
+dashboard/pacing equality. The moved 15-service Compose renders identically to the
+original apart from current image tags/bundle location; logging overlay renders.
+Meson compile hit the existing Docker-bind-mount path mismatch; the redundant
+Ninja rebuild was stopped and accepted unchanged C++ artifacts were used.
+Source-reference/whitespace checks and 4 AI index tests pass; navigation refreshed.
+No VPS connection, installation, restart,
+private orders or Telegram messages were performed for this source cleanup.
+
+## Baseline strategy seed corrected (2026-10-14, local only)
+
+User authorized step 1 without deployment. comparison.py now persists the strategy
+intent alongside PAPER/LIVE seeds and uses its signals, retaining cash, positions,
+desired weights and virtual positions from the execution snapshot. Date and strategy
+IDs must match; missing signal payloads are rejected. An older seed is recovered from
+the exact historical PostgreSQL checkpoint, never today's intent or held positions.
+The original study/manifest/fast/comparison files are preserved once under
+before-seed-repair/. Missing historical evidence leaves the study unavailable.
+
+Fast cache identity now hashes baseline economic inputs and profile/portfolio bytes,
+excluding observational cycle state; seed/input changes rerun the baseline even at
+the same cycle count. The identity is recorded only after a successful matching
+output, so failed recalculation remains retryable. Configuration-change archives
+include the cache identity.
+
+WSL paper_comparison_test.py: 14/14 PASS, including the 40..50 RSI hold-vs-close
+economic regression, historical repair/preservation/restart, absent/wrong-date/wrong-ID
+checkpoints, seeded LIVE with empty execution signals, configuration-switch date
+rejection, and cache invalidation/failure retry. Canonical Step59 PASS: RealTest
+25/25, zero differences, 50 fills, rerun/restart/dashboard/pacing equality; fingerprint
+`94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2` unchanged.
+WSL diff whitespace check passes; generated .ai navigation refreshed.
+No VPS connection, deployment, collector restart or original study
+recalculation was performed in this implementation turn.
+
+## PAPER baseline seed mismatch explained (2026-10-14, isolated reproduction)
+
+The four first-volatility-cycle signal differences come from baseline initialization.
+At the portfolio configuration switch, comparison.py copied the execution snapshot
+into the seed. Its strategy `signals` and `desired_weights` are empty (execution
+owns fills/virtual positions, while strategy checkpoints own signal state). The
+strategy checkpoint at seed decision 20261012 has AVAX, NEAR, ONDO, QNT and WLD
+active. paper_baseline.cpp restored the empty execution `signals` verbatim.
+
+At decision close 20261013, RSI(7) on the frozen 100-day window is AVAX 42.81665,
+NEAR 49.96914, ONDO 41.73249, WLD 47.23346. PAPER correctly retains these active
+signals (exit below 40); the unseeded baseline cannot open them (entry above 50)
+and flattens the copied holdings. QNT is 38.48881 (exit), PEPE 53.12285 (entry).
+The smaller expected active set also changes volatility sizing for PEPE.
+
+Controlled replay uses the exact deployed runtime image, frozen market/profile/
+portfolio, cash, positions and opening prices, without network or service changes.
+Unchanged seed reproduces the retained fast.json exactly. Changing ONLY the seed
+signals to the persisted strategy intent removes all four signal differences:
+expected PEPE 4170812.73393 -> 711394.39138 units (PAPER 711394.39138).
+Expected equity 92170.128671916 -> 92196.61532922616 USD; PAPER is
+92196.61655036971 (remaining gap 0.00122114355 USD). Expected cash after correction
+77254.13183556445 versus PAPER 77252.91191313534; ONDO/WLD quantity differences
+match the documented close-vs-next-open sizing convention.
+
+Evidence: storage/paper_cleanup/reproduction-result.json (control equality and
+per-asset results), rsi-result.json and the reproduction scripts; remote isolated
+artifacts under /tmp/algotrading-baseline-audit-_ceokz8z. No running collector,
+original study/fast outputs, trading account or deployment was modified. Required
+fix: seed from the strategy checkpoint at the SAME decision date, not the execution
+snapshot; apply also to LIVE seeds; invalidate cached baseline on seed changes.
+The local implementation is now recorded above; deployment/recalculation and
+multi-day acceptance remain pending.
+
+## Superseded PAPER deployment cleanup prerequisite (2026-10-14)
+
+User requested removing superseded deploy/paper_trading files after chain acceptance.
+Read-only VPS check: chain services up; dashboard/database healthy; host receiver and
+monitor running; comparison fresh. The first volatility-target cycle (decision
+20261013, execution 20261014) reports four signal differences: AVAXUSDT, NEARUSDT,
+ONDOUSDT and WLDUSDT are 1 in PAPER and absent in fast expected. Equity is
+92196.61655036971 versus 92170.128671916 USD. The cause is reproduced above;
+the retained running comparison has not yet been corrected.
+Multi-day/economic acceptance remains pending; no tracked files removed yet.
+The old Compose still feeds paper_trading_test and therefore recovery/shadow;
+algo/build_runtime_bundle still use its ignored bundle directory. Cleanup must
+migrate these dependencies instead of deleting useful validation. Review in
+storage/paper_cleanup/REVIEW.md; awaiting the user's choice to investigate first or retire
+the old deployment independently of pending economic acceptance.
+
+## Mobile dashboard layout deployed (2026-10-14)
+
+User requested a bounded mobile adaptation. Below 900px the dashboard removes
+the desktop body minimum width, uses a collapsible navigation drawer and stacks
+panels. Narrow phones use one-column metrics; wide tables scroll inside their
+panels. Headers, date controls, inspectors and login fit the viewport; touch can
+scroll vertically over charts. Desktop styles remain outside these breakpoints.
+
+- WSL Node/TypeScript/Vite builds pass for mock and API bundles.
+- `validation/mobile_dashboard_browser_test.py`: Chromium PASS, 44 page/viewport
+  checks (11 pages at 360/390/768/1440px), no document overflow or page errors;
+  navigation selection/Escape/backdrop, date picker and mobile login also pass.
+  Mock screenshots/results: `storage/mobile_dashboard/browser/`.
+- Built from the VPS release's frontend plus only AppShell/mobile CSS changes,
+  excluding unrelated current local work. Deployed image
+  `algotrading-dash-web:mobile-20261014` under the existing chain tag; evidence,
+  source and image archive in `/releases/dashboard-mobile-20261014/`.
+  Archive SHA-256: `51d8ccbdbd1f4c9553043feadf452e0291bf80917c0bcd39553ec2d360f75d4b`.
+- VPS: dash-web healthy; valid Tailscale HTTPS frontend/assets, unauthenticated
+  API 401; before/after container IDs confirm only dash-web was recreated.
+  Previous image retained as `algotrading-dash-web:before-mobile-20261014`.
+  Rollback: retag it to `algotrading-dash-web:chain`, then
+  `sudo /chain/algo up --no-deps dash-web`.
+- User accepted the mobile result in chat after deployment. No trading/core changes;
+  canonical Step59 was not rerun for this presentation-only update.
+
+## Research on CURRENT lib: confirmed done (2026-10-14)
+
+Checked for the user's step 6/7 list: `research/src/legacy/runtime/` was removed in commit
+42b2ff0 (80 files, about 19,700 lines) and every research executable in
+`research/src/{legacy,canonical,tools}` links `libalgolib`; they build in every full build
+and the fast baseline/step59 use them. Only AGENTS.md "Current direction" still listed the
+migration and removal as pending; corrected.
+
+Then (user request): `research/src/legacy/` renamed to `research/src/backtests/` (meson
+`subdir('backtests')`, `backtests_inc`; binaries now `build/research/src/backtests/`). Paths
+updated in comparison.py, build_runtime_bundle.sh, replay.py, REPLAY.md, ARCHITECTURE_FULL,
+CONTEXT_FULL, AGENTS.md and the validation scripts (paper_comparison_test,
+research_html_report_gate, research_scenario_gate, step58a_canonical_replay_suite_gate).
+Historical CURRENT_STATE text and the `.ai` index test's example paths keep the old name.
+
+Step 8: the `tools/historical_replay` step58/step58a runners were retired. Their build
+scripts compiled a hand-listed subset of `lib/` sources and no longer linked (both failed
+with `ld` errors on 2026-10-14); nothing used them outside their own run scripts, and
+`research/replay.py` (CURRENT `ReplayRuntime`) already writes the dashboard simulation
+state they used to write. Removed: the two runner sources, two build scripts, three run
+scripts, two step58a check scripts and `config/historical_replay/step58_dashboard_simulation_v1.json`
+(only referenced by frozen checksums). They stay in Git history; `docs/venue/step58*/SHA256SUMS`
+still lists their recorded hashes as evidence.
+
+Checks after the rename and removal: full meson build (7 research executables in
+`build/research/src/backtests/`, stale `build/research/src/legacy` deleted); PAPER runtime
+bundle builds with its 9 executables; paper_comparison_test 10/10; ai_index_test 4/4;
+step59 PASS with the unchanged fingerprint `94fdf8d8…` (RealTest 25/25). (The two Python
+tests first failed inside the combined script with an import-path FileNotFoundError and
+passed when rerun on their own.)
+
+## Kraken coverage refreshed; one year of the strategy universe (2026-10-14)
+
+ROADMAP 21. Public data only, nothing deployed.
+- `tools/exchange_coverage.py` at 15:55 UTC, window 2026-09-19..2026-10-13 (25 completed days),
+  523 Binance USDT perpetuals: Kraken 39/50 (96.19% of top-50 turnover), Hyperliquid main
+  38/50 (94.49%), with HIP-3 39/50 (95.92%). Kraken lacks ranks 24-50 only: 龙虾, AKE, BTW,
+  RLC, ONE, US, BR, MAGIC, GTC, LIT, NIL; all of today's top 20 (the strategy universe) are
+  on Kraken. Evidence: storage/exchange_coverage/20261014T155526Z/.
+- `tools/kraken_symbol_map.py` rebuilt: 161 mapped, identical to the committed table except
+  `generated_at`; the repository file was left unchanged.
+- New `tools/universe_coverage_history.py` (+ `validation/universe_coverage_history_test.py`,
+  2 offline tests): daily top-20 by the 25-day mean quote turnover over 2025-10-04..2026-10-13
+  (375 days) against today's Kraken map and Hyperliquid listing. Kraken: a missing asset on
+  368 days, 3.83 per day; with RSI(7) > 50 on 266 days (1.29/day), > 80 on 79 days
+  (0.24/day); 25 of the last 30 days had one, none on 10-09..10-13. Hyperliquid: 367 days,
+  4.24/day, RSI>50 294 days, RSI>80 87 days. Most missed on Kraken: PIPPIN 125 days, LAB 97,
+  BEAT 80, AKE 66, SIREN 64. Approximations: today's listings (delisted Binance coins absent,
+  later Kraken listings counted as always available); RSI above the entry is a candidate,
+  not a guaranteed entry. Evidence: storage/exchange_coverage/universe-history-20261014/.
+- Checks: `validation/exchange_coverage_test.py --snapshot .../20261014T155526Z` 5 tests and
+  COVERAGE-AUDIT PASS (all candles, ranking, filters, aliases, three counts); the new tool's
+  2 offline tests; the tool reproduced the exploratory script's numbers exactly.
+
+## VPS deployment of the 2026-10-14 local work (2026-10-14)
+
+Authorized by the user. Release `20261014_175134-6bdac56-dirty` (working tree on 6bdac56,
+includes the mobile dashboard layout deployed earlier as `dashboard-mobile-20261014`):
+SHA256SUMS verified on the VPS. Before activating: `/config/market_data.json` backed up as
+`market_data.json.before-20261014` and changed to `midnight_delay_ms: 100`,
+`max_parallel_requests: 16`; `/releases/current` set to `20261013_212613-94df131-dirty`
+so `algo rollback` returns to it (that release has the pre-mobile dash-web). `activate` at
+18:26 UTC: backup, install, `:chain` retagged, `data/STATE_FORMAT` = 1, 13 containers up.
+Updated host units `algotrading-comparison` and `algotrading-kraken` copied +
+daemon-reload; comparison restarted ("PAPER comparison refreshed"); `algotrading-kraken`
+stays inactive (no read-only key on the VPS yet).
+Verified: no error lines in any service, risk restored its 2026-10-13 checkpoint,
+reconciliation clean (cash 77,252.91 USD, 5 positions, 0 open orders), equity history
+backfilled, dashboard 200 / API 401 unauthenticated, Tailscale Serve still proxies it.
+Not done: `DASHBOARD_OPERATOR_PASSWORD` in `/secrets/chain.env` (user's credential; no
+operator login until added). Pending: check the first 00:00 UTC cycle with the faster
+market-data settings.
+
+## VPS mobile dashboard access via Tailscale (2026-10-14)
+
+User authorized installing private mobile access on the VPS. Installed Tailscale
+1.104.1 from its official signed Ubuntu noble repository; `tailscaled` enabled
+for boot. Existing dashboard still listens on `127.0.0.1:8092`; no trading
+container restart was required. Started account enrollment with hostname
+`algotrading`, `--accept-dns=false` and `--accept-routes=false`.
+Account enrollment completed; VPS and Android phone belong to the same tailnet.
+Persistent HTTPS Serve proxies `https://algotrading.taild27a89.ts.net/` to the
+existing loopback dashboard. Serve status confirms tailnet-only access and no
+Funnel configuration. Verified valid TLS with curl (no insecure bypass), HTTP/2
+200 for the frontend and 401 for unauthenticated `/api/overview`; phone ping
+succeeded through the Madrid relay. `tailscaled` is enabled and active.
+User accepted mobile access/layout in chat; exhaustive phone-specific API/chart
+interaction was not separately tested. Review tailnet access policy
+if other users/devices are added. Mobile access is requested again and supersedes
+the earlier cancellation for this scope. See deploy/chain/README.md.
+
+## Live vs Expected for Kraken LIVE (2026-10-14, local)
+
+ROADMAP 13. Changed locally, not deployed; PAPER comparison unchanged:
+- `deploy/chain/comparison.py` with `MODE=live` (`collect_live`): reads the Kraken account
+  snapshot, real fills, `trading_venue_costs` and `trading_daily_collateral`; starts the study
+  at the first observed cycle (seed) and compares from the next; fetches the Binance open of
+  each execution day for every asset the account or expected run may trade (kept in
+  study.json); gives the fast baseline that day's collateral and the USD capital flows since
+  the previous cycle; the latest row (and the seed) follows the account until the next cycle
+  because Kraken fees/funding arrive after the fills; output `data/live/comparison/`.
+  Shared helpers `check_profiles`, `freeze_market`, `run_baseline` (PAPER path identical).
+- Rows add `liveFees`, `expectedFees` (`LIVE_COMMISSION_RATE`, default 0.0005, new in
+  chain.env), `liveFunding`, `liveInterest`, `capitalFlows`, `slippage` (fills of the
+  cycle's planned orders vs the Binance open; Manual Control fills excluded) and `skipped`
+  (MARKET_UNAVAILABLE / MARKET_NOT_TRADING / BELOW_MINIMUM_QUANTITY). The dashboard page
+  shows "Where the difference comes from" (each part's effect on equity, rest = rounding,
+  sizing, skipped markets) and extra daily columns, only when the fields exist.
+- `TradingEngine::onBarClose(..., extraCapital = 0)`; `paper_baseline` takes per-cycle
+  `collateral_usd` (extra sizing capital) and `capital_flow_usd`, and reports cumulative `fees`.
+- `algo` no longer clears `PAPER_COMPARISON_FILE` in live mode.
+- Checks: full meson build; `validation/paper_comparison_test.py` 10/10 (new: baseline with
+  collateral 100000 → 50 units and fee 20, a 1000 USD flow → 25.25 units; difference parts
+  since the start with a manual fill excluded from slippage and a pre-start fee ignored;
+  Binance open of the exact day, another day's candle refused; collect_live seed → first
+  cycle with collateral 613.8, flow 50, skipped PEPEUSDT, start cash 900, rate 0.0005 → a
+  late fee updates the same row); TypeScript `tsc -b` clean; Go vet + all tests; 15/15
+  component tests; step59 PASS with the unchanged fingerprint `94fdf8d8…` (RealTest 25/25).
+
+## Kraken BTC/USD collateral, capital flows, liquidation distance (2026-10-14, local)
+
+ROADMAP 8. User decisions: the strategy sizes with USD + BTC after Kraken's haircut; USD
+deposits, withdrawals and conversions are capital flows (not PnL); interest is a cost.
+Changed locally, not deployed:
+- Sizing capital: the gateway snapshot carries `collateral_usd` = Σ `collateral` (Kraken's
+  post-haircut USD value) of the non-USD wallet currencies; reconciliation ignores it.
+  Execution-state keeps the latest value, fixes it per day in `trading_daily_collateral`
+  (first use wins, so a redelivered daily snapshot is byte-identical for risk) and puts it
+  in the daily `AccountSnapshot`; `PortfolioRiskEngine::accountEquity` adds it; Manual
+  Control (execution-state and the dashboard preview) uses the same capital. Orders never
+  spend it (no cash check exists; cash may go negative as before). Field written only when
+  non-zero: PAPER/replay messages unchanged.
+- Account history: besides fees/funding, USD changes of the `flex` wallet
+  (`new_balance - old_balance`) with "interest" in `info` become INTEREST and with
+  "transfer"/"conversion" CAPITAL_FLOW (`VenueCostKind`, one enum for gateway, journal,
+  wire and store). BTC/other-wallet entries are logged once as collateral-only; unknown USD
+  kinds stay "not booked" (reconciliation then pauses). A deposit no longer pauses LIVE.
+- `trading_equity_daily` gains `capital_flows`, `interest`, `collateral_usd` (ALTER ... ADD
+  COLUMN IF NOT EXISTS; equity stays cash + positions); the equity backfill replays interest
+  and flows. Dashboard reads the table with `SELECT *` so an older database still works.
+- Reporting (warning-only, no new thresholds): `kraken_portfolio_summary.collateral_risk`
+  gives BTC quantity/value/collateral/haircut, maintenance headroom and the price drop that
+  would reach maintenance margin (BTC alone; BTC plus net long positions, linear estimate).
+  Daily Telegram portfolio adds three lines; the monitor writes `account.json`; dash-api
+  mounts it (`DASHBOARD_KRAKEN_ACCOUNT_FILE`) and the LIVE Overview adds BTC Collateral,
+  Sizing Capital, Margin Headroom, Drop to Maintenance and Net Deposits (stale after 5 min).
+- Warning (user request after the step): MAINTENANCE_DROP, WARN, when a fall of less than
+  25% of BTC and the net long positions would reach maintenance margin
+  (`--maintenance-drop-warning 0.25`, explicit in `algotrading-kraken.service`); sent once,
+  resolved when it clears, unavailable (no false recovery) without fresh marks, never with
+  only short exposure. No stop or order. Monitor tests 15 (new boundary test: exactly 25%
+  silent, 24.7% warns, missing prices keep it, recovery resolves); other monitor tests'
+  samples now carry no BTC so they keep testing their own warning.
+- UNCONFIRMED until the read-only key: history `info` words, `old_balance`/`new_balance`
+  semantics, the funded `collateral` value.
+- Checks: full meson build; venue adapter test 103/103 (snapshot collateral 613.8; new
+  test with deposit, withdrawal, conversion, interest, BTC and other-wallet entries, an
+  unknown kind and restart); new store SQL against PostgreSQL 16 starting from the older
+  `trading_equity_daily` (ALTER keeps the row, collateral fixed at first use, interest/flows
+  only, new columns written); portfolio risk diagnostics (collateral 500 → reference capital
+  1480, negative refused); manual_chain_test (collateral and CAPITAL_FLOW round trips,
+  unchanged bytes without them); 15/15 component tests; Python account 26, monitor 14,
+  portfolio summary 6 (new: collateral lines, `account.json`, 20.0%/22.8% drops, unknown
+  without marks, no long exposure); Go vet + all tests (new `TestKrakenCollateralCardsOnlyInLive`,
+  `TestDropLabel`); step59 PASS with the unchanged fingerprint `94fdf8d8…` (RealTest 25/25).
+
+## Releases with rollback (2026-10-14, local)
+
+ROADMAP 15. `deploy/chain/algo` (runbook: deploy/chain/README.md "Releases"), not deployed:
+- `algo release` saves the chain images as `<name>:<version>` (loading no longer replaces the
+  running `:chain` images), writes `release.json` (commit, image IDs, architecture,
+  `state_format`) and a copy of `algo`; `SHA256SUMS` covers all four files.
+- `algo activate <folder> [root]` (also from the release's own `algo`): refuses 23:30-00:30
+  UTC, a checksum mismatch, an image ID or architecture mismatch, `chain.env` images other
+  than `:chain`, a folder outside `releases/`, and an older state format than `data/STATE_FORMAT`;
+  then down, `algo backup`, extract source, `algo install`, move `:chain`, record
+  `releases/current|previous|history.log`, up; reports host units that differ (not replaced).
+  Images are loaded only if missing. `algo rollback` activates `previous`; `algo releases` lists.
+- Older releases without `release.json` are accepted (SHA256SUMS only, state format 1, images
+  kept as `<name>:<version>`). Before the first VPS activation record the running release:
+  `echo 20261013_212613-94df131-dirty | sudo tee /releases/current`. Rolling back to it
+  reinstalls its `comparison.py`, without the two fixes applied in place afterwards (see
+  "VPS PAPER switched to volatility targeting").
+- The dispatcher is `main "$@"; exit` so bash never reads the launcher file that `install`
+  replaces during `activate`/`rollback`.
+- Local acceptance (scratch installation `/home/juan/reltest`, full chain, since removed):
+  two releases with a different dash-web image; activate A from its folder (first activation,
+  loaded), activate B from the installed `algo`, rollback to A without reloading, the running
+  containers' image IDs matched the manifests each time; refusals of state format 2, a changed
+  `release.json` and a folder outside `releases/` left A running; an old-format release (HEAD
+  source and launcher, `:chain` tags, no manifest) activated, then forward again from B's own
+  `algo`; one backup per activation (5), history log correct. 22/22 functional checks pass;
+  the test's own cleanup removed the local `algotrading-dash-web:chain` image, rebuilt from
+  the current source.
+
+## Kraken fees and funding; comparable LIVE cash (2026-10-14, local)
+
+ROADMAP 9 (user decision: nothing in PAPER; with Kraken update fees/funding while a
+position is open and keep the final values at close). Changed locally, not deployed:
+- Gateway (venue mode): Kraken fills carry no fee, so the adapter reads the account history
+  (`GET /api/history/v2/account-log?count=500`, signed with the query as postData; path from
+  the python-kraken-sdk, the docs site was not readable) every 5 min and 30 s after a new
+  fill. `fee` (paid, USD) with `execution` = fill id, and `realized_funding`, become journaled
+  `cash_entries` (once per log id; first read of a journal = baseline, not booked; a fee
+  listed before its fill waits up to 10 min) and are published as `VenueCostEvent`
+  (`execution.event.venue_cost.v1`, new subject merged into the stream). Other balance
+  changes (transfers, conversions, interest, non-USD fees) are logged once as not booked.
+  A failing history read no longer stops the poll.
+- Execution-state: applies each cost once (cash `Account::applyCashMovement`, cost row in
+  `trading_venue_costs` and the snapshot in one transaction; funding also into
+  `trading_funding`), then rebuilds the ledger with venue fees added to their fill's
+  commission; publishes an account snapshot. PAPER produces no costs (unchanged).
+- Found on the way (LIVE blocker): execution-state keeps spot-style cash (a buy spends its
+  value) but Kraken's USD balance does not move when a perpetual is opened, so the first
+  reconciliation after a real fill would have reported CashMismatch and paused trading. The
+  venue snapshot now reports USD balance minus Σ position size x `openPositions[].price`;
+  reconciliation cash tolerance is `--cash-tolerance-usd` (PAPER 1e-6 unchanged, chain LIVE
+  0.50 USD via `./algo`), mirrored by the dashboard Reconciliation page.
+- UNCONFIRMED until the read-only key / first authorized order: history fields and info
+  values, funding sign, fee currency, `price` = average entry, realized PnL settled into
+  the USD balance at once. The read-only probe now also reads the account history.
+- Checks: full meson build; venue adapter test 95/95 (new: fees and funding from the
+  account history incl. baseline, deferral, unbooked kinds, signing and restart; snapshot
+  cash convention); the new store SQL against a temporary PostgreSQL 16 (save with
+  snapshot, duplicate refused, fees per fill, funding row); 15/15 component tests; Go tests
+  incl. `TestKrakenLiveCashToleranceMatchesExecutionState`; step59 PASS with the unchanged
+  fingerprint `94fdf8d8…` (RealTest 25/25).
+
+## Manual Control in the PAPER/LIVE chain (2026-10-14, local)
+
+User decisions: a manual request confirmed during the day executes at once at the current
+market price (also in PAPER), and the next 00:00 UTC daily cycle returns to the strategy
+targets (as in the replay). Changed locally, not deployed:
+- Flow: dash-api (OPERATOR) validates the CSV against the strictest strategy limits of the
+  risk checkpoint's portfolio config and the tradable assets (PAPER: top-N + held; LIVE:
+  Kraken contracts verified on Symbol Mapping), previews at the latest closes and writes
+  `data/manual/requests/<ns>-<id>.request` (`real_manual.go`). Execution-state
+  (`--manual-dir --portfolio-config --price-url`) checks again (reconciled, no open order,
+  daily cycle finished, not 23:45-00:15 UTC, request < 2 min old, limits), prices every
+  touched asset with Binance `/fapi/v1/ticker/price` (< 5 min old), plans each strategy on
+  its share of equity with `NotionalOrderPlanner`, writes the processed record before any
+  order (so a request never runs twice) and submits through `ExecutionEngine::applyManualOrders`
+  (daily markers untouched). Rejections are recorded with their reason; nothing waits.
+- PAPER fill: orders carry `fill_at_reference_price`; the simulated exchange fills them at
+  once at that price (`SimulatedExchange::fillAtPrice`). LIVE: Kraken at the market through
+  `gateway-kraken`; the page shows `LIVE_ORDER_SUBMISSION_DISABLED` unless submission is enabled.
+- Re-sync: the next daily `AccountSnapshot` carries `resync_to_targets` (marker
+  `data/manual/resync_state`, bound to that day so a redelivery is identical); risk then
+  applies `resyncToApprovedTargets` (`lib/src/risk/target_decisions.*`, now shared with the
+  replay; it also adds a strategy whose decisions were all HOLD).
+- Fix found on the way (LIVE): daily-plan orders reached the gateway without
+  `reference_price`, so Kraken venue mode would have rejected every one with
+  NO_REFERENCE_PRICE. Execution-state now sets it (close(T)) and persists it with recovered
+  orders. New wire fields are written only when set, so other messages keep their bytes.
+- Chain: `data/manual/{requests,processed}` (10001, 2770; dash-api writes 0644 files),
+  `DASHBOARD_OPERATOR_PASSWORD` (generated for new installs; add it to an existing
+  `secrets/chain.env`), `DASHBOARD_LIVE_ORDER_SUBMISSION`. Page wording per mode, LIVE banner.
+- Checks: meson build; 15/15 component tests incl. new `manual_chain_test.cpp`; Go vet/tests
+  incl. `real_manual_test.go`; chain images build (web type-check). Local PAPER chain from a
+  scratch install (real public Binance data, no keys): manual 10% BTC + 5% ETH went
+  QUEUED -> AT_EXCHANGE -> FILLED in ~3 s at the ticker prices (fees 0.1%, cash 84,985); a
+  second request closed BTC exactly (no dust) and bought ETH; 160% per asset refused in the
+  preview; a hand-written 4-hour-old request rejected; restart: clean reconciliation, nothing
+  re-executed; runtime ledger rows correct. The 00:00 re-sync was not observed locally (needs
+  a day change): check it on the VPS the night after the first request. step59 PASS with
+  the unchanged fingerprint `94fdf8d8…` (RealTest 25/25; `research/replay.py` now also
+  compiles `target_decisions.cpp`).
+
+## Faster daily market-data run; Infrastructure range picker in the heading (2026-10-14, local)
+
+First vol-target cycle on the VPS (2026-10-14): market-data started 00:00:05, finished
+00:00:20.9 (93 candle requests then 93 opening-price requests, 8 at a time in batches, a new
+TLS connection per request, ~0.27 s each); orders reached the simulated exchange at 00:00:28.
+Changed locally, not deployed:
+- `market_data_service`: start 100 ms after midnight (`midnight_delay_ms`, replaces
+  `midnight_delay_seconds`, which is now rejected); `serverTime` guard so only candles closed
+  on Binance's clock are stored; a 16-worker pool with one reused curl handle per worker;
+  opening prices download alongside the candles; exchangeInfo and 24h tickers in parallel;
+  an open with no trade yet is polled 30 s (250 ms) instead of failing to the 300 s retry.
+- Real Binance from the local PC (database on WSL ext4): ranking 0.6 s, full 50-symbol x 100-day
+  backfill plus opens 3 s, daily incremental plus opens 1.5 s. Build and market-data audits pass.
+- `live_sqlite_ownership_audit` now approves the gateway's `venue/venue_journal.cpp` (its own
+  `--venue-journal` file) and fails if that file names a canonical market table; it passes, and a
+  planted `ohlcv_data` reference makes it fail as intended.
+- Deploy note: the VPS `/config/market_data.json` is created once and still has
+  `midnight_delay_seconds`; replace it with `"midnight_delay_ms": 100` and set
+  `"max_parallel_requests": 16` before starting the new image, or the service refuses to start.
+- Reconciler quantity tolerance (`lib/src/recovery/reconciler.*`): positions and open-order
+  quantities now match within max(1e-10 units, 1e-12 x the larger quantity). The fixed 1e-10
+  was below double rounding noise from ~1 million units (tonight's PAPER PEPE order was 711,394),
+  so a false PositionMismatch would have paused trading (ExecutionState stops handing decisions
+  to the planner until a clean snapshot). A real difference of one unit still blocks, even at
+  1e10 units; cash tolerance unchanged. New `validation/reconciler_quantity_tolerance_test.cpp`
+  in `mock_component_tests.sh` (13/13 pass); full meson build and step59 PASS with the
+  unchanged fingerprint `94fdf8d8…` (RealTest 25/25). The simulator's 8-decimal quantity grid (backtests
+  above ~10 million units) stays as is: dropped by the user on 2026-10-14 because it does not
+  affect live trading (live sizes in Binance contract units; the gateway rounds to Kraken's).
+- Runtime-owned accounting (ROADMAP 11): new `lib/src/account/position_ledger.*` (account-level
+  positions flat to flat: average-cost basis, realized PnL, fees split on a flip, funding to
+  the open position; the same rules as the dashboard's former Go rebuild). ExecutionState
+  rebuilds it from `trading_fills` + `trading_funding` at every start, updates it per fill and
+  writes `trading_open_positions`, `trading_closed_positions` and `trading_equity_daily`
+  (`PostgresStateStore`; account marked at close(T) when T's market update arrives; missing
+  days since the first fill are backfilled when replaying the fills from the initial cash ends
+  at the live account). Failures are logged, never stop trading. Dashboard: Positions, the
+  closed-positions CSV and the Overview equity curve read these tables (fallback to the old
+  rebuild while an older ExecutionState runs); Live vs Expected keeps the PAPER comparison.
+  Checks: `position_ledger_test.cpp` (the Go scenario, out-of-order rebuild, idempotent fills
+  and funding; 14/14 component tests), Go tests incl. `TestRuntimeAccountingFeedsPositionsAndEquity`,
+  and a run against a copy of the VPS PAPER data (21 fills): 5 open, 6 closed, realized
+  -6,906.69 USD, fees 185.85 USD, equity 10-13 Oct backfilled (13 Oct cash 45,535.43 = the
+  account), identical on a second start. Funding: user decision, none in the simulation;
+  with Kraken, fees/funding updated while open and final values kept at close (ROADMAP 9).
+  PostgreSQL "relation already exists" NOTICEs are silenced (`client_min_messages`).
+  Full meson build, 14/14 component tests and step59 PASS with the unchanged fingerprint
+  `94fdf8d8…` (RealTest 25/25).
+- Chain LIVE mode (ROADMAP 6): `MODE=live` in chain.env makes `./algo` use profile `live`
+  (`gateway-kraken`: venue mode, `/secrets/kraken.env`, symbol map, journal in
+  `data/live/venue`, `LIVE_ORDER_SUBMISSION=disabled` by default) instead of `paper`
+  (`gateway` + `sim-exchange`); all trading state moves to `data/live/` (ALGO_STATE) so
+  PAPER is never mixed with real money; INITIAL_CASH comes from `LIVE_INITIAL_CASH`; the
+  PAPER comparison is hidden. `algo` refuses MODE=live without the key file, namespace or
+  cash, and refuses `up` while a container of the other mode runs. Dashboard API/watchdog
+  accept the LIVE/KRAKEN/LIVE/venue boundary (Infrastructure shows Kraken via
+  `gateway-kraken`; daily progress applies to it). Checks: rendered configs for both modes
+  in a scratch installation; the PAPER render differs from HEAD only in data-init folders,
+  `--periodic-reconciliation` and the profiles; Go test for the accepted/rejected boundaries.
+  Not run against Kraken (no trading key).
+- Periodic reconciliation (user request): ExecutionState compared with the exchange only at
+  startup, so a lost fill or a manual venue change stayed unseen until a restart. With
+  `--periodic-reconciliation` (added to `deploy/chain/compose.yml`) it also requests an exchange
+  snapshot hourly 01:00-23:00 UTC and at 23:50 (wall clock; 00:00 skipped, the 23:50 result
+  gates the daily cycle). A check is skipped while an execution cycle runs or any order is open.
+  Mismatch: ALERT, trading paused as before, and the dashboard (which compares the latest
+  retained snapshot) shows BLOCKED with its CRITICAL alert to Telegram. The next clean check
+  resumes automatically (user accepted the recommendation); a clean check while already
+  reconciled only logs "Reconciliation still clean". Without the option behaviour is unchanged.
+  Dashboard `real_reconciliation.go` now uses the same size-relative quantity tolerance
+  (`TestReconciliationQuantityToleranceScalesWithSize`). Side effect: the Reconciliation page
+  becomes fresh every hour instead of PENDING between restarts. Checks: build, a scratch check of
+  the schedule (24 checks a day, none at 00:00), all Go tests, step59 PASS with the unchanged
+  fingerprint `94fdf8d8…`; first scheduled checks still to be seen on the VPS after deployment.
+- Dashboard Execution shows why the venue skipped an order. The gateway rejects with
+  `CODE: text`; the API (`classifyRejection` in `real_execution.go`) splits it: MARKET_UNAVAILABLE,
+  MARKET_NOT_TRADING and BELOW_MINIMUM_QUANTITY become state SKIPPED (own "Skipped by venue"
+  count, not in the reject rate, INFO alert `ORDER_SKIPPED`, neutral card with reason and what to
+  do); NOTIONAL_MISMATCH and NO_REFERENCE_PRICE stay REJECTED (mismatch alert CRITICAL); unknown
+  messages stay generic. Go test `TestVenueSkipsAreShownApartFromRejects`; all Go tests and the
+  dashboard image build pass. Nothing produces these codes until the Kraken venue mode runs.
+- Dashboard Infrastructure: the CPU/RAM/disk time-range picker moved to the page heading, as on
+  Overview (same 1H/6H/24H/7D presets, From/To and drag-zoom); dashboard image build passes.
 
 ## VPS PAPER switched to volatility targeting (2026-10-13, 21:27-21:31 UTC)
 

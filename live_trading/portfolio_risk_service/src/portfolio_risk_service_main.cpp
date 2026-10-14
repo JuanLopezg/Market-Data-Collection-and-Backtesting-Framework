@@ -39,6 +39,7 @@
 #include "portfolio_risk_engine.h"
 #include "sample_covariance_estimator.h"
 #include "service_logging.h"
+#include "target_decisions.h"
 #include "threshold_rebalance_policy.h"
 #include "time_handler_factory.h"
 #include "time_utils.h"
@@ -571,6 +572,30 @@ std::set<Coin> requiredSymbols(const StrategyIntentBatch& signals, const Account
     return symbols;
 }
 
+StrategyPositionSnapshot strategyPositionSnapshot(const AccountSnapshot& account)
+{
+    StrategyPositionSnapshot result;
+    for (const auto& [strategyId, positions] : account.strategy_positions) {
+        VirtualPositionState state;
+        for (const auto& [coin, quantity] : positions)
+            state.set(coin, quantity);
+        result.emplace(strategyId, std::move(state));
+    }
+    return result;
+}
+
+ExecutionReferencePrices closePrices(const MarketData& marketData, Timestamp timestamp)
+{
+    ExecutionReferencePrices result;
+    const auto day = marketData.find(timestamp);
+    if (day == marketData.end())
+        return result;
+    for (const auto& [coin, bar] : day->second)
+        if (std::isfinite(bar.close) && bar.close > 0.0)
+            result.set(coin, bar.close);
+    return result;
+}
+
 std::size_t marketRowCount(const MarketData& marketData)
 {
     std::size_t rows = 0;
@@ -726,6 +751,9 @@ private:
 
             LG_INFO("Account snapshot ready for {}: cash {}, {} positions, {} strategy position sets",
                     FormatDayKey(snapshotTimestamp), FormatUsd(cash), physicalPositions, strategyPositionSets);
+            if (snapshot.collateral_usd > 0.0)
+                LG_INFO("Venue collateral {} after haircut counts in the sizing equity for {}",
+                        FormatUsd(snapshot.collateral_usd), FormatDayKey(snapshotTimestamp));
             LG_DEBUG("Account snapshot message id {}", messageId);
             return DurableMessageDisposition::Ack;
         }
@@ -814,6 +842,14 @@ private:
 
             std::vector<PortfolioRiskEvaluation> evaluations;
             DecisionBatch output = engine_->onSignals(signals, marketData, account, &evaluations);
+            if (account.resync_to_targets) {
+                // First decision after a manual rebalance: move every strategy back to its
+                // approved weights, positions the policy would otherwise HOLD included.
+                output = resyncToApprovedTargets(
+                    output, evaluations, strategyPositionSnapshot(account), closePrices(marketData, target));
+                LG_INFO("Decision for {} returns the account to the strategy targets after a manual rebalance",
+                        FormatDayKey(target));
+            }
             output.metadata.schema_version = 1;
             output.metadata.message_id = decisionMessageId(target);
             output.metadata.correlation_id = !signals.metadata.correlation_id.empty()

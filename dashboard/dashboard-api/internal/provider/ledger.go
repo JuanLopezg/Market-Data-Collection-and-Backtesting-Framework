@@ -91,7 +91,7 @@ func buildLedgerStatus(window pgstore.LedgerFillWindow, checkedAt time.Time) Led
 		OrderRouting:              "DISABLED",
 		CheckedAt:                 checkedAt.UTC().Format(time.RFC3339),
 		Entries:                   []LedgerEntry{},
-		Note:                      "Step 42 exposes a deterministic read-only economic ledger foundation over the runtime-owned append-only trading_fills table. Each persisted fill becomes one immutable economic event with explicit asset and cash deltas. This does NOT yet claim durable cost basis, realized/unrealized PnL attribution or historical equity; those require a runtime-owned accounting ledger/projection rather than dashboard reconstruction.",
+		Note:                      "Read-only economic ledger over the append-only trading_fills table: each persisted fill is one immutable event with explicit asset and cash deltas. Cost basis, realized PnL and daily equity are owned by ExecutionState (trading_open_positions, trading_closed_positions, trading_equity_daily).",
 	}
 
 	if window.TotalRows < 0 || window.DistinctFillIDs < 0 || window.InvalidRows < 0 {

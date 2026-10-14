@@ -65,9 +65,11 @@ Do not run full-history/slow visual tests unless the task requires them.
 ## Current direction
 
 1. Keep current library/live structure readable; finish only concrete remaining issues.
-2. Migrate `research/` to CURRENT `lib/` APIs and behavior.
-3. Remove `research/src/legacy/runtime/` only after useful research tools are migrated.
-4. Build the generated `.ai/` context/index layer.
-5. Continue VPS and exchange-readiness work using `docs/ROADMAP.md`: compare Kraken/Hyperliquid coverage and BTC collateral first; Kraken is preferred for the initial small live test, subject to validation.
+2. Done: `research/` runs on CURRENT `lib/` (every executable links `libalgolib`), and the
+   frozen `research/src/legacy/runtime/` copy was removed (commit 42b2ff0); the CURRENT
+   research executables live in `research/src/backtests/` (renamed from `legacy/`).
+3. Done: the generated `.ai/` context/index layer (`tools/generate_ai_index.py`).
+4. Continue VPS and exchange-readiness work using `docs/ROADMAP.md`; Kraken Multi-M with
+   BTC/USD collateral is the venue for the initial small live test.
 
-Do not treat the frozen research legacy runtime as permanent architecture.
+Do not reintroduce a separate research runtime: research uses `lib/`.

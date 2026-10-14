@@ -168,6 +168,61 @@ void ExecutionEngine::processExchangeEvents(const PersistCallback& persist)
 }
 
 
+void ExecutionEngine::validateSubmitOrders(
+    const std::vector<ExecutionOrder>& orders,
+    OrderID nextOrderId
+) const
+{
+    std::unordered_set<OrderID> submitIds;
+    for (const ExecutionOrder& order : orders) {
+        order.validateConditional();
+        if (order.entry_stop_price != 0.0 && !exchange_.supportsStopEntries())
+            throw std::invalid_argument("Exchange adapter does not support stop entries");
+        if ((order.protective_stop_price != 0.0 || order.parent_order_id != 0) &&
+            !exchange_.supportsShortBrackets())
+            throw std::invalid_argument("Exchange adapter does not support short brackets");
+        if (!submitIds.insert(order.order_id).second)
+            throw std::invalid_argument("Order plan contains duplicate submit order id");
+        if (order.order_id < next_order_id_ || order.order_id >= nextOrderId)
+            throw std::invalid_argument("Order plan submit id is outside allocated order-id range");
+        if (order_manager_.find(order.order_id))
+            throw std::invalid_argument("Order plan submit id is already tracked");
+        if (strategy_names_.find(order.strategy_id) == strategy_names_.end())
+            throw std::invalid_argument("Order plan contains unknown strategy id");
+    }
+}
+
+
+// Manual orders outside the daily cycle. Same staging contract as applyOrderPlan (all
+// orders durable before the first command leaves), but the daily-cycle markers
+// (last execution timestamp, global target) are left alone: a manual rebalance must not
+// make the next daily plan look already applied.
+void ExecutionEngine::applyManualOrders(
+    const std::vector<ExecutionOrder>& orders,
+    OrderID nextOrderId,
+    Timestamp submittedAt,
+    const PersistCallback& persist
+)
+{
+    if (submittedAt == 0)
+        throw std::invalid_argument("Manual order timestamp must be non-zero");
+    if (nextOrderId == 0 || nextOrderId < next_order_id_)
+        throw std::invalid_argument("Manual orders regress the next order id");
+    validateSubmitOrders(orders, nextOrderId);
+
+    next_order_id_ = nextOrderId;
+    for (const ExecutionOrder& order : orders)
+        order_manager_.track(order);
+    persist(std::nullopt);
+
+    for (const ExecutionOrder& order : orders) {
+        exchange_.submitOrder(order);
+        order_manager_.markSubmitted(order.order_id, submittedAt);
+        persist(std::nullopt);
+    }
+}
+
+
 // Accept a previously-computed order plan and own all resulting side effects
 //
 // All local cancel/submit intents are persisted together before the first outbound
@@ -194,23 +249,7 @@ void ExecutionEngine::applyOrderPlan(
             throw std::invalid_argument("Order plan contains invalid cancel intent");
     }
 
-    std::unordered_set<OrderID> submitIds;
-    for (const ExecutionOrder& order : plan.submit_orders) {
-        order.validateConditional();
-        if (order.entry_stop_price != 0.0 && !exchange_.supportsStopEntries())
-            throw std::invalid_argument("Exchange adapter does not support stop entries");
-        if ((order.protective_stop_price != 0.0 || order.parent_order_id != 0) &&
-            !exchange_.supportsShortBrackets())
-            throw std::invalid_argument("Exchange adapter does not support short brackets");
-        if (!submitIds.insert(order.order_id).second)
-            throw std::invalid_argument("Order plan contains duplicate submit order id");
-        if (order.order_id < next_order_id_ || order.order_id >= plan.next_order_id)
-            throw std::invalid_argument("Order plan submit id is outside allocated order-id range");
-        if (order_manager_.find(order.order_id))
-            throw std::invalid_argument("Order plan submit id is already tracked");
-        if (strategy_names_.find(order.strategy_id) == strategy_names_.end())
-            throw std::invalid_argument("Order plan contains unknown strategy id");
-    }
+    validateSubmitOrders(plan.submit_orders, plan.next_order_id);
 
     last_execution_timestamp_ = plan.execution_timestamp;
     next_order_id_ = plan.next_order_id;

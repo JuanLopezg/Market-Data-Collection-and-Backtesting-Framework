@@ -15,6 +15,7 @@ import urllib.request
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+FIXTURE_DIR = ROOT / 'validation/fixtures/paper'
 spec = importlib.util.spec_from_file_location('paper_monitor', ROOT / 'deploy/chain/monitor.py')
 monitor = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(monitor)
@@ -29,7 +30,7 @@ func main(){
   w.Header().Set("Content-Type","application/json")
   switch r.URL.Path {
   case "/fapi/v1/exchangeInfo":
-   json.NewEncoder(w).Encode(map[string]any{"symbols":[]any{
+   json.NewEncoder(w).Encode(map[string]any{"serverTime":time.Now().UnixMilli(),"symbols":[]any{
     map[string]string{"symbol":"BTCUSDT","contractType":"PERPETUAL","status":"TRADING","quoteAsset":"USDT"},
     map[string]string{"symbol":"ETHUSDT","contractType":"PERPETUAL","status":"TRADING","quoteAsset":"USDT"}}})
   case "/fapi/v1/ticker/24hr":
@@ -98,18 +99,18 @@ def main():
     else:
         run(['docker','run','--rm','-e','CGO_ENABLED=0','-v',str(directory)+':/fixture',
              '-w','/fixture','golang:1.23','go','build','-o','/fixture/server','/fixture/fixture.go'], directory, timeout=600)
-    document = yaml.safe_load((ROOT / 'deploy/paper_trading/docker-compose.yml').read_text())
+    document = yaml.safe_load((FIXTURE_DIR / 'compose.yml').read_text())
     document['name'] = project
     document['networks']['paper'] = {'internal': True}
     document['networks']['web'] = {}
     for name, service in document['services'].items():
         # Optional fresh tags allow packaged-binary acceptance without changing the local PAPER stack.
-        if service.get('image') == 'algotrading-runtime:paper' and os.environ.get('PAPER_RUNTIME_IMAGE'):
+        if service.get('image') == 'algotrading-runtime:chain' and os.environ.get('PAPER_RUNTIME_IMAGE'):
             service['image'] = os.environ['PAPER_RUNTIME_IMAGE']
         if name in ('dashboard-api', 'dashboard-watchdog', 'dashboard-alert-notifier') and os.environ.get('PAPER_API_IMAGE'):
             service['image'] = os.environ['PAPER_API_IMAGE']
         if 'build' in service:
-            service['build']['context'] = str((ROOT / 'deploy/paper_trading' / service['build']['context']).resolve())
+            service['build']['context'] = str((FIXTURE_DIR / service['build']['context']).resolve())
         if name == 'dashboard-web':
             if os.environ.get('PAPER_WEB_IMAGE'):
                 service['image'] = os.environ['PAPER_WEB_IMAGE']
@@ -133,8 +134,8 @@ def main():
                                    'INITIAL_CASH=100000\nCOMMISSION_RATE=0.001\nMARKET_TOP_N=2\n')
     (directory / '.env').chmod(0o600)
     merged = json.loads(run(['docker','compose','--project-name',project,'--env-file',str(directory/'.env'),
-                            '-f',str(ROOT/'deploy/paper_trading/docker-compose.yml'),
-                            '-f',str(ROOT/'deploy/paper_trading/docker-compose.logging.yml'),
+                            '-f',str(FIXTURE_DIR/'compose.yml'),
+                            '-f',str(FIXTURE_DIR/'logging.yml'),
                             'config','--format','json'], directory))
     assert len(merged['services']) == 15
     for service in merged['services'].values():
@@ -162,7 +163,8 @@ def main():
         compose('up','-d',*[name for name in document['services'] if name != 'market-data'])
         (directory/'missing-price').touch()
         compose('up','-d','market-data')
-        deadline = time.monotonic()+30
+        # A missing open is polled for 30 s (the candle may not have started yet) before failing.
+        deadline = time.monotonic()+75
         while time.monotonic()<deadline:
             state=json.loads(compose('ps','-a','--format','json','market-data'))
             if state['State']=='exited':

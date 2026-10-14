@@ -1,6 +1,7 @@
 #include "trading_engine.h"
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
@@ -221,10 +222,13 @@ void TradingEngine::persist(const std::optional<Fill>& newFill) const
 void TradingEngine::onBarClose(
     const MarketData& marketData,
     Timestamp ts,
-    const PriceSnapshot& marks
+    const PriceSnapshot& marks,
+    double extraCapital
 )
 {
     requireTradingEnabled();
+    if (!std::isfinite(extraCapital) || extraCapital < 0.0)
+        throw std::invalid_argument("Extra sizing capital must be finite and not negative");
 
     for (const auto& strategy : strategies_) {
         if (!strategy.strategy().requiresTradeObservations())
@@ -239,7 +243,7 @@ void TradingEngine::onBarClose(
     decision_engine_.onBarClose(
         marketData,
         ts,
-        execution_engine_.accountEquity(marks),
+        execution_engine_.accountEquity(marks) + extraCapital,
         execution_engine_.strategyPositions()
     );
 

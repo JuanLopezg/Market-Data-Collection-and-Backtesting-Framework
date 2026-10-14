@@ -66,6 +66,18 @@ struct JournalFill {
     bool published = false;
 };
 
+// A USD cash entry from the venue's account history (fee, funding, interest or capital
+// flow), as published to execution.
+struct JournalCashEntry {
+    std::string entry_id;
+    VenueCostKind kind = VenueCostKind::Fee;
+    Timestamp day = 0;
+    Coin coin;                 // Source symbol, or the venue symbol when it is not mapped.
+    FillID local_fill_id = 0;  // The fee's fill when it is one of ours.
+    double amount_usd = 0.0;   // Negative = paid.
+    bool published = false;
+};
+
 class VenueJournal {
 public:
     // Binds the file to one venue and account namespace; a mismatch is refused.
@@ -92,6 +104,18 @@ public:
     // Fills on our account that no order of ours explains (manual trades, liquidations).
     // Returns true the first time a fill id is recorded.
     bool recordUnattributedFill(const VenueFill& fill);
+
+    // The local fill (and its order id) recorded for a venue fill id, when it is ours.
+    std::optional<JournalFill> fillByVenueId(const std::string& venueFillId) const;
+
+    // Account history. The first read only marks what already existed (baseline); every
+    // entry seen after that is recorded once and published once.
+    bool accountLogBaselined() const;
+    void markAccountLogBaselined();
+    bool knowsCashEntry(const std::string& entryId) const;
+    void recordCashEntry(const JournalCashEntry& entry);
+    std::vector<JournalCashEntry> unpublishedCashEntries() const;
+    void markCashEntryPublished(const std::string& entryId);
 
 private:
     sqlite3* db_ = nullptr;

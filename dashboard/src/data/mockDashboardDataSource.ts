@@ -463,8 +463,10 @@ const executionData: ExecutionData = {
     { fillId: 'fill-7715', orderId: 'ord-1842', asset: 'BTC', quantity: 0.2284, priceLabel: '$37,426.84', cumulativeLabel: '0.4684 / 0.7026', feesLabel: '$4.80', timestamp: '14:31:41.908' },
   ],
   rejects: [
-    { orderId: 'ord-1838', asset: 'ATOM', code: 'LOT_SIZE / -1013', reason: 'Requested quantity did not satisfy venue precision constraints.', remediation: 'Blocked from blind retry. Planner must normalize quantity and produce a new auditable order.' },
+    { orderId: 'ord-1838', asset: 'ATOM', code: 'LOT_SIZE / -1013', kind: 'REJECTED', title: 'Order rejected', reason: 'Requested quantity did not satisfy venue precision constraints.', remediation: 'Blocked from blind retry. Planner must normalize quantity and produce a new auditable order.' },
+    { orderId: 'ord-1836', asset: 'XYZUSDT', code: 'MARKET_UNAVAILABLE', kind: 'SKIPPED', title: 'Not on the venue', reason: 'XYZUSDT is not in the kraken-futures symbol map', remediation: 'The venue has no contract for this asset (or none in symbol_map.json). The position is not opened there and nothing is retried.' },
   ],
+  skippedCount: 1,
   replacements: [
     { asset: 'AVAX', originalOrderId: 'ord-1841', cancelRequestedAt: '14:31:51.982', canceledAt: 'Pending', replacementOrderId: 'ord-1845', replacementState: 'NEW' },
     { asset: 'BTC', originalOrderId: 'ord-1832', cancelRequestedAt: '14:23:20.011', canceledAt: '14:23:20.104', replacementOrderId: 'ord-1833', replacementState: 'FILLED' },

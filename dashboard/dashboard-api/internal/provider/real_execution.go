@@ -24,6 +24,7 @@ type realExecutionData struct {
 	FilledOrders          int                     `json:"filledOrders"`
 	FillCount             int64                   `json:"fillCount"`
 	RejectCount           int                     `json:"rejectCount"`
+	SkippedCount          int                     `json:"skippedCount"`
 	AvgSubmitLatencyMs    int                     `json:"avgSubmitLatencyMs"`
 	AvgFillLatencyMs      int                     `json:"avgFillLatencyMs"`
 	AvgSlippageBpsLabel   string                  `json:"avgSlippageBpsLabel"`
@@ -90,11 +91,53 @@ type realExecutionFill struct {
 }
 
 type realExecutionReject struct {
-	OrderID     string `json:"orderId"`
-	Asset       string `json:"asset"`
-	Code        string `json:"code"`
+	OrderID string `json:"orderId"`
+	Asset   string `json:"asset"`
+	Code    string `json:"code"`
+	// SKIPPED: the venue cannot take this asset or size, so the order is deliberately not
+	// placed (no retry, no substitute). REJECTED: a safety check or the venue refused it.
+	Kind        string `json:"kind"`
+	Title       string `json:"title"`
 	Reason      string `json:"reason"`
 	Remediation string `json:"remediation"`
+}
+
+// rejectionClass explains one reason code the exchange gateway puts at the start of a
+// rejection message ("MARKET_UNAVAILABLE: PEPE is not in the kraken-futures symbol map").
+type rejectionClass struct {
+	Kind        string
+	Title       string
+	Remediation string
+}
+
+var rejectionClasses = map[string]rejectionClass{
+	"MARKET_UNAVAILABLE": {"SKIPPED", "Not on the venue",
+		"The venue has no contract for this asset (or none in symbol_map.json). The position is not opened there and nothing is retried. If the venue lists it now, refresh the table with tools/kraken_symbol_map.py; Symbol Mapping shows the current state."},
+	"MARKET_NOT_TRADING": {"SKIPPED", "Venue market not trading",
+		"The venue contract exists but is suspended or closed. The order is not retried; the next daily cycle tries again if the market reopens."},
+	"BELOW_MINIMUM_QUANTITY": {"SKIPPED", "Below the venue minimum",
+		"The order is smaller than the venue's minimum size, so it is skipped. Usual for small rebalances; the position keeps its previous size."},
+	"NOTIONAL_MISMATCH": {"REJECTED", "USD value mismatch",
+		"Safety check: the order's USD value at the venue differs more than 1.5x from the planned value, which points to a wrong unit scale. Check Symbol Mapping for this asset before trading it again."},
+	"NO_REFERENCE_PRICE": {"REJECTED", "No planning price",
+		"Safety check: the order carried no planning price, so its USD value could not be verified. Inspect the order planner output for this cycle."},
+}
+
+// classifyRejection splits "CODE: text" into the code, its explanation and the text.
+// Messages without a known code stay generic REJECTED rows.
+func classifyRejection(orderID, asset, message string) realExecutionReject {
+	message = strings.TrimSpace(message)
+	if code, text, found := strings.Cut(message, ":"); found {
+		if class, known := rejectionClasses[strings.TrimSpace(code)]; known {
+			return realExecutionReject{OrderID: orderID, Asset: asset, Code: strings.TrimSpace(code), Kind: class.Kind,
+				Title: class.Title, Reason: strings.TrimSpace(text), Remediation: class.Remediation}
+		}
+	}
+	if message == "" {
+		message = "Rejected state is durable, but no rejection message is persisted."
+	}
+	return realExecutionReject{OrderID: orderID, Asset: asset, Code: "REJECTED", Kind: "REJECTED", Title: "Order rejected",
+		Reason: message, Remediation: "No remediation is inferred by the dashboard; inspect the execution logs/audit trail before retrying."}
 }
 
 type realCancelReplacement struct {
@@ -177,7 +220,7 @@ func buildRealExecution(state pgstore.RuntimeState, tracked []tradingwire.Persis
 
 	orders := make([]realExecutionOrder, 0, len(tracked))
 	rejects := make([]realExecutionReject, 0)
-	openOrders, partialOrders, pendingCancels, filledOrders := 0, 0, 0, 0
+	openOrders, partialOrders, pendingCancels, filledOrders, skippedOrders := 0, 0, 0, 0, 0
 
 	for _, order := range tracked {
 		stateLabel := mapExecutionState(order)
@@ -193,17 +236,12 @@ func buildRealExecution(state pgstore.RuntimeState, tracked []tradingwire.Persis
 		case "FILLED":
 			filledOrders++
 		case "REJECTED":
-			reason := strings.TrimSpace(order.LastMessage)
-			if reason == "" {
-				reason = "Rejected state is durable, but no rejection message is persisted."
+			reject := classifyRejection(strconv.FormatUint(order.OrderID, 10), order.Coin, order.LastMessage)
+			rejects = append(rejects, reject)
+			if reject.Kind == "SKIPPED" {
+				stateLabel = "SKIPPED"
+				skippedOrders++
 			}
-			rejects = append(rejects, realExecutionReject{
-				OrderID:     strconv.FormatUint(order.OrderID, 10),
-				Asset:       order.Coin,
-				Code:        "REJECTED",
-				Reason:      reason,
-				Remediation: "No remediation is inferred by the dashboard; inspect the execution logs/audit trail before retrying.",
-			})
 		}
 
 		fillAgg := fillsByOrder[order.OrderID]
@@ -254,9 +292,11 @@ func buildRealExecution(state pgstore.RuntimeState, tracked []tradingwire.Persis
 		})
 	}
 
+	// Skipped orders are deliberate venue skips, not failures: they do not count as rejects.
+	rejectedOrders := len(rejects) - skippedOrders
 	rejectRate := "0.0%"
 	if len(tracked) > 0 {
-		rejectRate = fmt.Sprintf("%.1f%%", 100*float64(len(rejects))/float64(len(tracked)))
+		rejectRate = fmt.Sprintf("%.1f%%", 100*float64(rejectedOrders)/float64(len(tracked)))
 	}
 
 	note := "Orders come from trading_runtime_state.snapshot.orders and fills from trading_fills. Price/slippage and gateway latency are not inferred because the durable runtime contract does not persist a canonical expected price or wall-clock latency trace. Replacement lineage is not persisted."
@@ -274,7 +314,8 @@ func buildRealExecution(state pgstore.RuntimeState, tracked []tradingwire.Persis
 		PendingCancels:        pendingCancels,
 		FilledOrders:          filledOrders,
 		FillCount:             fills.TotalRows,
-		RejectCount:           len(rejects),
+		RejectCount:           rejectedOrders,
+		SkippedCount:          skippedOrders,
 		AvgSlippageBpsLabel:   "Not available",
 		BestSlippageBpsLabel:  "Not available",
 		WorstSlippageBpsLabel: "Not available",
@@ -327,7 +368,7 @@ func lifecycleTone(state string) string {
 		return "good"
 	case "REJECTED":
 		return "bad"
-	case "PARTIAL", "PENDING_CANCEL", "NEW":
+	case "PARTIAL", "PENDING_CANCEL", "NEW", "SKIPPED":
 		return "warn"
 	default:
 		return "muted"

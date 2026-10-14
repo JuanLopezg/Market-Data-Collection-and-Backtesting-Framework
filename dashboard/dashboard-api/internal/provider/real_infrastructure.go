@@ -219,7 +219,7 @@ func (p *Real) loadInfrastructure(ctx context.Context) realInfrastructure {
 	}
 
 	p.applyHostTelemetry(&result, checkedAt)
-	result.TradingProgress = buildTradingProgress(pg.Runtime, pgErr, sources.PostgreSQL.Reachable, p.runtimeMode(), checkedAt)
+	result.TradingProgress = buildTradingProgress(pg.Runtime, pgErr, sources.PostgreSQL.Reachable, p.currentDataChain(), checkedAt)
 	result.Dependencies = append(result.Dependencies, realReadinessDependency{
 		Component: "Daily trading progress", State: result.TradingProgress.State,
 		Reason: result.TradingProgress.Detail, LastCheck: checkedAt.Format("15:04:05 UTC"),
@@ -232,6 +232,19 @@ func (p *Real) loadInfrastructure(ctx context.Context) realInfrastructure {
 		result.Exchange.ReconnectState = "Local simulated backend; no private venue connection"
 		for _, row := range result.Containers {
 			if row.Name == "sim-exchange" || row.Name == "simulated-exchange" {
+				result.Exchange.Connected = row.State == "RUNNING"
+				result.Exchange.State = row.Health
+			}
+		}
+	}
+	if p.krakenLive() {
+		result.SourceMode = "LIVE"
+		result.ReadinessReason = "Live trading on Kraken Futures through the venue gateway; order submission is enabled only by explicit configuration."
+		result.SourceNote = "Current public market data and Kraken Futures execution. " + result.SourceNote
+		result.Exchange.Venue = "KRAKEN FUTURES"
+		result.Exchange.ReconnectState = "Venue gateway (REST); reconciliation proves the account state"
+		for _, row := range result.Containers {
+			if row.Name == "gateway-kraken" {
 				result.Exchange.Connected = row.State == "RUNNING"
 				result.Exchange.State = row.Health
 			}

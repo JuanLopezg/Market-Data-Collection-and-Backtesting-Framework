@@ -161,6 +161,12 @@ int runPaperBaseline(const std::string& manifestPath)
         if (closeDate <= previous || openDate <= closeDate)
             throw std::runtime_error("Unordered PAPER baseline cycles");
         previous = closeDate;
+        // Kraken LIVE studies (absent for PAPER): USD deposited or withdrawn since the
+        // previous cycle enters the expected cash too, so it is never a difference; the
+        // day's BTC collateral after haircut is extra sizing capital, as the risk service
+        // uses it.
+        account.applyCashMovement(cycle.value("capital_flow_usd", 0.0));
+        const double collateral = cycle.value("collateral_usd", 0.0);
         std::set<Coin> held;
         for (const auto& [coin, quantity] : strategies.front().signalState().values())
             if (quantity != 0.0) held.insert(coin);
@@ -176,7 +182,7 @@ int runPaperBaseline(const std::string& manifestPath)
         }
         MarketData marketData = window.market_data;
         addSizerHistory(marketData, window.raw_data, closeDate, sizerHistoryDays(portfolio.at("sizer")));
-        engine.onBarClose(marketData, closeDate, closes);
+        engine.onBarClose(marketData, closeDate, closes, collateral);
         PriceSnapshot opens;
         CoinBarMap openBars;
         for (const auto& [coin, priceValue] : cycle.at("open_prices").items()) {
@@ -190,8 +196,12 @@ int runPaperBaseline(const std::string& manifestPath)
         engine.processExchangeEvents();
         exchange.processOpen(openDate, openBars);
         engine.processExchangeEvents();
+        double fees = 0.0; // Commission of every expected trade so far (open and closed).
+        for (const TradeRecord& trade : recorder.allTrades(opens, openDate))
+            fees += trade.commission;
         rows.push_back({{"decisionDate", closeDate}, {"executionDate", openDate},
             {"cash", account.cash()}, {"equity", account.equity(opens)},
+            {"fees", fees},
             {"positions", account.positions().values()},
             {"signals", strategies.front().signalState().values()}});
     }

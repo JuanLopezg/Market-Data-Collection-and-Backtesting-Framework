@@ -326,6 +326,23 @@ private:
         }
     }
 
+    void publish(const VenueCostEvent& value)
+    {
+        validateMetadata(value.metadata);
+        validateBackendEventTime(value.timestamp, value.metadata.produced_at, "VenueCostEvent");
+        bus_.publish(
+            MessageSubjects::VENUE_COST,
+            MessageJson::encode(value),
+            value.metadata.message_id
+        );
+        LG_INFO("Forwarded venue {}: {} on {}{}",
+                venueCostKindLabel(value.kind),
+                FormatUsd(value.amount_usd),
+                value.coin.empty() ? std::string{"the account"} : value.coin,
+                value.fill_id != 0 ? " (fill " + std::to_string(value.fill_id) + ")" : std::string{});
+        LG_DEBUG("Venue cost id {}, message id {}", value.cost_id, value.metadata.message_id);
+    }
+
     void publish(const ExchangeSnapshotEvent& value)
     {
         validateMetadata(value.metadata);
@@ -543,7 +560,8 @@ public:
             adapter_->setHandlers({
                 [this](const OrderUpdateEvent& value) { publish(value); },
                 [this](const FillEvent& value) { publish(value); },
-                [this](const ExchangeSnapshotEvent& value) { publish(value); }
+                [this](const ExchangeSnapshotEvent& value) { publish(value); },
+                [this](const VenueCostEvent& value) { publish(value); }
             });
 
             submit_subscription_ = bus_.subscribe(

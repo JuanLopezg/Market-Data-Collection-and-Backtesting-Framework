@@ -5,6 +5,7 @@ import { DAILY_PRESETS, DEFAULT_DAILY_RANGE, LineChart, chartDate, dailyWindow, 
 import { TimeRangePicker } from '../components/TimeRangePicker'
 import type { TimeRange } from '../components/TimeRangePicker'
 import { useDashboardResource } from '../hooks/useDashboardResource'
+import type { LiveVsExpectedRow } from '../types/dashboard'
 
 // Live vs Expected: does the running system earn what the fast backtest says it should?
 // Equity against the expected equity for the same days, the gap over time, and (PAPER)
@@ -25,6 +26,20 @@ const signedUsd = (value: number) => Math.abs(value) < 0.5 ? '0$' : `${value > 0
 function gapTone(value: number) {
   const abs = Math.abs(value)
   return abs <= GAP_OK ? 'positive' : abs <= GAP_BAD ? 'leverage--elevated' : 'negative'
+}
+
+// Kraken LIVE: each part's effect on live equity against expected (positive = in favour
+// of live), totals since the study started. What is left is quantity rounding,
+// close-versus-open sizing and skipped markets.
+function explainedParts(row: LiveVsExpectedRow, difference: number) {
+  const parts = [
+    { label: 'Fees (expected − real)', value: (row.expectedFees ?? 0) - (row.liveFees ?? 0) },
+    { label: 'Funding', value: row.liveFunding ?? 0 },
+    { label: 'Interest', value: row.liveInterest ?? 0 },
+    { label: 'Fill prices vs Binance open', value: -(row.slippage ?? 0) },
+  ]
+  const explained = parts.reduce((sum, part) => sum + part.value, 0)
+  return [...parts, { label: 'Other (rounding, sizing, skipped markets)', value: difference - explained }]
 }
 
 export function LiveVsExpectedPage() {
@@ -55,6 +70,8 @@ export function LiveVsExpectedPage() {
   const largest = rows.reduce((worst, row) => Math.abs(row.gap) > Math.abs(worst.gap) ? row : worst, rows[0])
   const matching = rows.filter(row => Math.abs(row.gap) <= GAP_OK).length
   const showSignals = rows.some(row => row.signalDifferences > 0)
+  const venueCosts = latest.liveFees !== undefined
+  const skippedNow = latest.skipped ?? []
   const days = rows.map(row => chartDate(row.label)).filter(Number.isFinite)
   const visible = dailyWindow(range, Math.min(...days), Math.max(...days))
   const shared = { ...visible, onSelectRange: (from: number, to: number) => setRange({ kind: 'custom', from, to }), onReset: () => setRange(DEFAULT_DAILY_RANGE) }
@@ -82,6 +99,21 @@ export function LiveVsExpectedPage() {
       <Panel title="Difference (%)"><LineChart data={rows} lines={[GAP]} formatValue={pct} compact shared={shared}/></Panel>
     </section>
 
+    {venueCosts && <Panel title={`Where the difference comes from (since the start, ${latest.label})`}>
+      <div className="table-wrap"><table>
+        <thead><tr><th>Part</th><th>Effect on equity</th></tr></thead>
+        <tbody>
+          {explainedParts(latest, latest.difference).map(part => <tr key={part.label}>
+            <td>{part.label}</td>
+            <td className={part.value < -0.5 ? 'negative' : part.value > 0.5 ? 'positive' : ''}>{signedUsd(part.value)}</td>
+          </tr>)}
+          <tr><td><strong>Difference</strong></td><td className={gapTone(latest.gap)}><strong>{signedUsd(latest.difference)}</strong></td></tr>
+          {skippedNow.length > 0 && <tr><td>Skipped at Kraken (last cycle)</td><td>{skippedNow.join(', ')}</td></tr>}
+          {(latest.capitalFlows ?? 0) !== 0 && <tr><td>Deposits − withdrawals (in both runs)</td><td>{signedUsd(latest.capitalFlows ?? 0)}</td></tr>}
+        </tbody>
+      </table></div>
+    </Panel>}
+
     {positions.length > 0 && <Panel title="Positions vs Expected">
       <div className="table-wrap"><table className="wide-table">
         <thead><tr><th>Asset</th><th>Quantity</th><th>Expected Qty</th><th>Value</th><th>Expected Value</th><th>Difference</th></tr></thead>
@@ -102,7 +134,8 @@ export function LiveVsExpectedPage() {
 
     <Panel title="Daily Comparison">
       <div className="table-wrap"><table className="wide-table">
-        <thead><tr><th>Date</th><th>Equity</th><th>Expected</th><th>Difference</th><th>Difference %</th>{showSignals && <th>Signal Mismatches</th>}</tr></thead>
+        <thead><tr><th>Date</th><th>Equity</th><th>Expected</th><th>Difference</th><th>Difference %</th>{showSignals && <th>Signal Mismatches</th>}
+          {venueCosts && <><th>Fees</th><th>Expected Fees</th><th>Funding + Interest</th><th>Slippage</th><th>Skipped</th></>}</tr></thead>
         <tbody>{recent.slice(0, limit).map(row => <tr key={row.label}>
           <td>{row.label}</td>
           <td>{usd(row.equity)}</td>
@@ -110,6 +143,13 @@ export function LiveVsExpectedPage() {
           <td className={gapTone(row.gap)}>{signedUsd(row.difference)}</td>
           <td className={gapTone(row.gap)}>{pct(row.gap)}</td>
           {showSignals && <td className={row.signalDifferences > 0 ? 'negative' : ''}>{row.signalDifferences}</td>}
+          {venueCosts && <>
+            <td>{row.liveFees !== undefined ? usd(row.liveFees) : '—'}</td>
+            <td>{row.expectedFees !== undefined ? usd(row.expectedFees) : '—'}</td>
+            <td>{row.liveFunding !== undefined ? signedUsd((row.liveFunding ?? 0) + (row.liveInterest ?? 0)) : '—'}</td>
+            <td>{row.slippage !== undefined ? signedUsd(row.slippage) : '—'}</td>
+            <td>{row.skipped?.length ? row.skipped.join(', ') : '—'}</td>
+          </>}
         </tr>)}</tbody>
       </table></div>
       {recent.length > limit && <div className="table-more"><span className="muted">{limit} of {recent.length}</span><button className="ghost-button" onClick={() => setLimit(value => value + PAGE)}>Show more</button></div>}

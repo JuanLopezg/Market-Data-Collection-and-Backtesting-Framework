@@ -281,9 +281,9 @@ class ObserverRegressionTest(unittest.TestCase):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--unit', action='store_true')
-    parser.add_argument('--runtime-image', default=os.environ.get('PAPER_RUNTIME_IMAGE', 'algotrading-runtime:risk-evaluations'))
-    parser.add_argument('--api-image', default=os.environ.get('PAPER_API_IMAGE', 'algotrading-telegram-api'))
-    parser.add_argument('--web-image', default=os.environ.get('PAPER_WEB_IMAGE', 'algotrading-browser-web'))
+    parser.add_argument('--runtime-image', default=os.environ.get('PAPER_RUNTIME_IMAGE', 'algotrading-runtime:chain'))
+    parser.add_argument('--api-image', default=os.environ.get('PAPER_API_IMAGE', 'algotrading-dash-api:chain'))
+    parser.add_argument('--web-image', default=os.environ.get('PAPER_WEB_IMAGE', 'algotrading-dash-web:chain'))
     args = parser.parse_args()
     if args.unit:
         result = unittest.TextTestRunner().run(unittest.defaultTestLoader.loadTestsFromTestCase(ObserverRegressionTest))

@@ -266,11 +266,6 @@ private:
     ::AccountSnapshot portfolioRiskAccountView(
         Timestamp timestamp) const;
 
-    DecisionBatch resyncToApprovedTargets(
-        const DecisionBatch& approved,
-        const std::vector<PortfolioRiskEvaluation>& evaluations,
-        const ExecutionReferencePrices& closes) const;
-
     void markCurrentPositionsAtClose(
         Timestamp timestamp,
         const std::vector<MarketBarSnapshot>& bars);

@@ -54,6 +54,12 @@ type RealConfig struct {
 	AlertStoreDir         string
 	ManualAuditDir        string
 	AlertAckDir           string
+	// Manual Control of the trading chain: folder shared with execution-state (empty =
+	// disabled) and the Kraken LIVE submission switch (anything but "enabled" blocks it).
+	ManualRequestDir    string
+	LiveOrderSubmission string
+	// account.json of the read-only Kraken account monitor (collateral, margin); empty = none.
+	KrakenAccountFile string
 }
 
 type Real struct {
@@ -236,7 +242,13 @@ func (p *Real) Read(ctx context.Context, resource Resource) (json.RawMessage, er
 		}
 		return raw, nil
 	case ResourceManualControl:
-		value, err := p.manualControlBase(ctx)
+		var value ManualControlData
+		var err error
+		if p.chainManualEnabled() {
+			value, _ = p.chainManualBase(ctx, "")
+		} else {
+			value, err = p.manualControlBase(ctx)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -298,6 +310,16 @@ func (p *Real) RuntimeStateSummary(ctx context.Context) map[string]any {
 	result["available"] = true
 	result["postgres"] = snapshot
 	return result
+}
+
+// krakenLive is the chain's MODE=live: Kraken Futures through the venue gateway.
+func (p *Real) krakenLive() bool {
+	return p.runtimeMode() == "LIVE" && strings.EqualFold(strings.TrimSpace(p.cfg.ExecutionVenue), "KRAKEN")
+}
+
+// currentDataChain is the daily trading chain on current market data (PAPER or Kraken LIVE).
+func (p *Real) currentDataChain() bool {
+	return p.runtimeMode() == "PAPER" || p.krakenLive()
 }
 
 func (p *Real) runtimeMode() string {

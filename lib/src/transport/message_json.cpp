@@ -58,6 +58,8 @@ json executionOrderToJson(const ExecutionOrder& order)
     };
     if (order.reference_price > 0.0)
         result["reference_price"] = order.reference_price;
+    if (order.fill_at_reference_price)
+        result["fill_at_reference_price"] = true;
     return result;
 }
 
@@ -76,6 +78,9 @@ ExecutionOrder executionOrderFromJson(const json& value)
         value.at("quantity").get<double>()
     );
     order.reference_price = value.value("reference_price", 0.0);
+    order.fill_at_reference_price = value.value("fill_at_reference_price", false);
+    if (order.fill_at_reference_price && !(order.reference_price > 0.0))
+        throw std::invalid_argument("An order filled at its reference price needs a positive reference price");
     return order;
 }
 
@@ -513,15 +518,56 @@ FillEvent decodeFillEvent(const std::string& payload)
 }
 
 
-std::string encode(const AccountSnapshot& value)
+std::string encode(const VenueCostEvent& value)
 {
     return dump(json{
+        {"metadata", metadataToJson(value.metadata)},
+        {"cost_id", value.cost_id},
+        {"kind", venueCostKindName(value.kind)},
+        {"timestamp", value.timestamp},
+        {"coin", value.coin},
+        {"fill_id", value.fill_id},
+        {"amount_usd", value.amount_usd}
+    });
+}
+
+VenueCostEvent decodeVenueCostEvent(const std::string& payload)
+{
+    const json value = json::parse(payload);
+    VenueCostEvent result;
+    result.metadata = metadataFromJson(value.at("metadata"));
+    result.cost_id = value.at("cost_id").get<std::string>();
+    const std::string kind = value.at("kind").get<std::string>();
+    const std::optional<VenueCostKind> parsed = venueCostKindFromName(kind);
+    if (!parsed)
+        throw std::invalid_argument("Unknown venue cost kind: " + kind);
+    result.kind = *parsed;
+    result.timestamp = value.at("timestamp").get<Timestamp>();
+    result.coin = value.at("coin").get<std::string>();
+    result.fill_id = value.at("fill_id").get<FillID>();
+    result.amount_usd = value.at("amount_usd").get<double>();
+    if (result.cost_id.empty() || result.timestamp == 0 || !std::isfinite(result.amount_usd))
+        throw std::invalid_argument("Invalid venue cost event");
+    return result;
+}
+
+
+std::string encode(const AccountSnapshot& value)
+{
+    json result{
         {"metadata", metadataToJson(value.metadata)},
         {"timestamp", value.timestamp},
         {"cash", value.cash},
         {"positions", value.positions},
         {"strategy_positions", value.strategy_positions}
-    });
+    };
+    // Only present after a manual rebalance, so every other snapshot keeps its exact bytes.
+    if (value.resync_to_targets)
+        result["resync_to_targets"] = true;
+    // Only with venue collateral (LIVE), so PAPER and replay snapshots keep their bytes.
+    if (value.collateral_usd != 0.0)
+        result["collateral_usd"] = value.collateral_usd;
+    return dump(result);
 }
 
 AccountSnapshot decodeAccountSnapshot(const std::string& payload)
@@ -535,6 +581,10 @@ AccountSnapshot decodeAccountSnapshot(const std::string& payload)
     result.strategy_positions = value.at("strategy_positions").get<
         std::unordered_map<StrategyID, std::unordered_map<Coin, double>>
     >();
+    result.resync_to_targets = value.value("resync_to_targets", false);
+    result.collateral_usd = value.value("collateral_usd", 0.0);
+    if (!std::isfinite(result.collateral_usd) || result.collateral_usd < 0.0)
+        throw std::invalid_argument("Account snapshot collateral_usd must be finite and not negative");
     return result;
 }
 
@@ -575,7 +625,7 @@ std::string encode(const ExchangeSnapshotEvent& value)
         });
     }
 
-    return dump(json{
+    json result{
         {"metadata", metadataToJson(value.metadata)},
         {"snapshot", {
             {"timestamp", value.snapshot.timestamp},
@@ -583,7 +633,10 @@ std::string encode(const ExchangeSnapshotEvent& value)
             {"positions", value.snapshot.positions},
             {"open_orders", std::move(openOrders)}
         }}
-    });
+    };
+    if (value.snapshot.collateral_usd != 0.0)
+        result["snapshot"]["collateral_usd"] = value.snapshot.collateral_usd;
+    return dump(result);
 }
 
 ExchangeSnapshotEvent decodeExchangeSnapshotEvent(const std::string& payload)
@@ -596,6 +649,9 @@ ExchangeSnapshotEvent decodeExchangeSnapshotEvent(const std::string& payload)
     result.snapshot.timestamp = snapshot.at("timestamp").get<Timestamp>();
     result.snapshot.cash = snapshot.at("cash").get<double>();
     result.snapshot.positions = snapshot.at("positions").get<std::unordered_map<Coin, double>>();
+    result.snapshot.collateral_usd = snapshot.value("collateral_usd", 0.0);
+    if (!std::isfinite(result.snapshot.collateral_usd) || result.snapshot.collateral_usd < 0.0)
+        throw std::invalid_argument("Exchange snapshot collateral_usd must be finite and not negative");
 
     for (const json& item : snapshot.at("open_orders")) {
         ExchangeOpenOrderSnapshot order;

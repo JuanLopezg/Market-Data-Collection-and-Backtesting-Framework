@@ -107,7 +107,7 @@ func (p *Simulation) RouteManualControl(_ context.Context, req SimulationManualR
 		return result, nil
 	}
 
-	targets, _, _ := parseManualTargetCSV(req.CSV, routableSet(s), simulationManualLimits(s))
+	targets, _, _ := parseManualTargetCSV(req.CSV, routableSet(s), simulationManualLimits(s), simulationUnavailableAsset)
 	id, err := p.queueManualRequest(req.Actor, preview.RequestHash, targets)
 	if err != nil {
 		return SimulationManualRouteResult{}, err
@@ -170,7 +170,7 @@ func (p *Simulation) manualBase(s simulationSnapshot, actor string) (ManualContr
 // Held assets missing from the CSV are shown as closed, because the replay closes them.
 func (p *Simulation) manualPreview(s simulationSnapshot, req ManualControlPreviewRequest) ManualControlData {
 	result, _ := p.manualBase(s, req.Actor)
-	targets, cash, issues := parseManualTargetCSV(req.CSV, routableSet(s), simulationManualLimits(s))
+	targets, cash, issues := parseManualTargetCSV(req.CSV, routableSet(s), simulationManualLimits(s), simulationUnavailableAsset)
 	result.ValidationIssues = issues
 	result.ValidationPassed = !hasManualError(issues)
 	result.ExchangeConstraintsValidated = result.ValidationPassed
@@ -179,8 +179,15 @@ func (p *Simulation) manualPreview(s simulationSnapshot, req ManualControlPrevie
 		result.RouteBlockers = uniqueStrings(append(result.RouteBlockers, "PREVIEW_VALIDATION_FAILED"))
 		return result
 	}
+	fillManualPreview(&result, targets, cash, currentWeights(s), s.Account.Equity)
+	return result
+}
 
-	current := currentWeights(s)
+const simulationUnavailableAsset = "Not tradable in the simulation right now (no price today or no MOCK route)."
+
+// fillManualPreview adds one row per asset (held assets missing from the CSV are shown
+// as closed, because they are closed), the turnover and the request hash.
+func fillManualPreview(result *ManualControlData, targets map[string]float64, cash float64, current map[string]float64, equity float64) {
 	assets := make([]string, 0, len(targets)+len(current))
 	seen := map[string]bool{}
 	for asset := range targets {
@@ -209,7 +216,7 @@ func (p *Simulation) manualPreview(s simulationSnapshot, req ManualControlPrevie
 		}
 		result.PreviewRows = append(result.PreviewRows, ManualPreviewRow{
 			Asset: asset, CurrentWeightPct: current[asset], RequestedWeightPct: requested, ApprovedWeightPct: requested,
-			DeltaPct: delta, EstimatedNotionalLabel: formatSignedUSD(delta / 100 * s.Account.Equity), Action: action,
+			DeltaPct: delta, EstimatedNotionalLabel: formatSignedUSD(delta / 100 * equity), Action: action,
 		})
 	}
 	result.PreviewRows = append(result.PreviewRows, ManualPreviewRow{
@@ -220,7 +227,6 @@ func (p *Simulation) manualPreview(s simulationSnapshot, req ManualControlPrevie
 
 	digest := sha256.Sum256([]byte(canonicalManualTargets(targets, cash)))
 	result.RequestHash = "sha256:" + hex.EncodeToString(digest[:])
-	return result
 }
 
 func hasManualError(issues []ManualValidationIssue) bool {
@@ -235,8 +241,9 @@ func hasManualError(issues []ManualValidationIssue) bool {
 // parseManualTargetCSV reads asset,weight_pct rows (weights in percent of equity).
 // Accepts a UTF-8 BOM and the Excel ";" + decimal-comma format. CASH is optional:
 // when omitted, whatever is not allocated stays in cash (negative = borrowed, only up
-// to the risk gross limit). Limits are rejected, never clipped.
-func parseManualTargetCSV(raw string, routable map[string]bool, limits manualLimits) (map[string]float64, float64, []ManualValidationIssue) {
+// to the risk gross limit). Limits are rejected, never clipped. unavailable explains an
+// asset that is not in routable.
+func parseManualTargetCSV(raw string, routable map[string]bool, limits manualLimits, unavailable string) (map[string]float64, float64, []ManualValidationIssue) {
 	targets := map[string]float64{}
 	issues := []ManualValidationIssue{}
 	fail := func(field, message string) {
@@ -315,7 +322,7 @@ func parseManualTargetCSV(raw string, routable map[string]bool, limits manualLim
 			if routable[asset+"USDT"] {
 				fail(asset, fmt.Sprintf("Unknown asset. Did you mean %sUSDT?", asset))
 			} else {
-				fail(asset, "Not tradable in the simulation right now (no price today or no MOCK route).")
+				fail(asset, unavailable)
 			}
 			continue
 		}

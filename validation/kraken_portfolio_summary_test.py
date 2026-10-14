@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'live_trading'))
 from kraken_account_monitor import AccountAlertMonitor
 from kraken_account import FIXTURE_SCOPE
-from kraken_portfolio_summary import dollars, position_lines
+from kraken_portfolio_summary import collateral_risk, dollars, percent, position_lines
 from kraken_shadow import SCOPE
 from kraken_account_test import fixture, RELATIVE_POLICY
 
@@ -89,6 +89,29 @@ class SummaryTests(unittest.TestCase):
         self.assertIn('600.00% equity', position_lines(result, market, now)[0])
         market['observed_at'] -= 90
         self.assertIn('unavailable', position_lines(result, market, now)[0])
+
+    def test_collateral_and_drop_to_maintenance(self):
+        result, market, now = self.observe(10, 9)
+        detail = self.summaries()[0]['alert']['detail']
+        self.assertIn('BTC collateral: 0.1 BTC = $5,000.00 ($4,950.00 after haircut)', detail)
+        self.assertIn('Maintenance margin: $250.00, headroom $6,599.00', detail)
+        self.assertIn('BTC alone more than 100%', detail)
+        account = json.loads((self.directory / 'account.json').read_text())
+        self.assertEqual((account['btc_collateral_usd'], account['btc_haircut']), ('4950', '0.01'))
+        self.assertEqual(account['net_long_usd'], '-600.00')
+
+        # Headroom 990: BTC alone 990 / 4950; with the 600 USD short the long exposure is 4350.
+        result['venue_totals_usd']['marginEquity'] = '1240'
+        risk = collateral_risk(result, market, now)
+        self.assertEqual(percent(risk['btc_drop_to_maintenance']), '20.0%')
+        self.assertEqual(percent(risk['crypto_drop_to_maintenance']), '22.8%')
+        # Without fresh marks the combined drop is unknown, never guessed from entry prices.
+        self.assertEqual(percent(collateral_risk(result, None, now)['crypto_drop_to_maintenance']), 'unavailable')
+        # No BTC and only a short: a fall does not reduce the margin.
+        del result['currencies']['BTC']
+        risk = collateral_risk(result, market, now)
+        self.assertEqual((percent(risk['btc_drop_to_maintenance']), percent(risk['crypto_drop_to_maintenance'])),
+                         ('no long exposure', 'no long exposure'))
 
     def test_stale_account_does_not_create_daily_summary(self):
         now = datetime(2026, 10, 10, 9, tzinfo=timezone.utc).timestamp()

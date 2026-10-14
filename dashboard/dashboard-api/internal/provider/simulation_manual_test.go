@@ -123,7 +123,7 @@ func TestManualTargetCSVValidation(t *testing.T) {
 		{"bad header", "coin,weight\nBTCUSDT,10\n", "first line"},
 	}
 	for _, c := range cases {
-		_, _, issues := parseManualTargetCSV(c.csv, routable, limits)
+		_, _, issues := parseManualTargetCSV(c.csv, routable, limits, simulationUnavailableAsset)
 		found := false
 		for _, issue := range issues {
 			if issue.Severity == "ERROR" && strings.Contains(issue.Message, c.wantError) {
@@ -136,13 +136,13 @@ func TestManualTargetCSVValidation(t *testing.T) {
 	}
 
 	// Leverage inside the risk limit borrows cash.
-	targets, cash, issues := parseManualTargetCSV("asset,weight_pct\nBTCUSDT,80\nETHUSDT,40\n", routable, limits)
+	targets, cash, issues := parseManualTargetCSV("asset,weight_pct\nBTCUSDT,80\nETHUSDT,40\n", routable, limits, simulationUnavailableAsset)
 	if hasManualError(issues) || len(targets) != 2 || math.Abs(cash+20) > 1e-9 {
 		t.Fatalf("leveraged csv: targets=%v cash=%v issues=%+v", targets, cash, issues)
 	}
 
 	// Excel (Spanish locale) export: BOM, ";" separator and decimal comma.
-	targets, cash, issues = parseManualTargetCSV("\uFEFFasset;weight_pct\r\nbtcusdt;12,5\r\nETHUSDT;7,5%\r\n", routable, limits)
+	targets, cash, issues = parseManualTargetCSV("\uFEFFasset;weight_pct\r\nbtcusdt;12,5\r\nETHUSDT;7,5%\r\n", routable, limits, simulationUnavailableAsset)
 	if hasManualError(issues) || targets["BTCUSDT"] != 12.5 || targets["ETHUSDT"] != 7.5 || cash != 80 {
 		t.Fatalf("excel csv: targets=%v cash=%v issues=%+v", targets, cash, issues)
 	}

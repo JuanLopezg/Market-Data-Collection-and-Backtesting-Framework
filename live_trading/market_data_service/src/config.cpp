@@ -53,7 +53,9 @@ MarketDataConfig loadMarketDataConfig(const std::filesystem::path& path)
     if (root.contains("max_parallel_requests"))
         config.max_parallel_requests = root.at("max_parallel_requests").get<std::size_t>();
     if (root.contains("midnight_delay_seconds"))
-        config.midnight_delay_seconds = root.at("midnight_delay_seconds").get<int>();
+        throw std::runtime_error("'midnight_delay_seconds' was replaced by 'midnight_delay_ms'");
+    if (root.contains("midnight_delay_ms"))
+        config.midnight_delay_ms = root.at("midnight_delay_ms").get<int>();
     if (root.contains("retry_after_failure_seconds"))
         config.retry_after_failure_seconds = root.at("retry_after_failure_seconds").get<int>();
 
@@ -81,8 +83,8 @@ MarketDataConfig loadMarketDataConfig(const std::filesystem::path& path)
         throw std::runtime_error("'ranking_size' is unreasonably large");
     if (config.minimum_history_days > 1500)
         throw std::runtime_error("'minimum_history_days' cannot exceed 1500");
-    if (config.midnight_delay_seconds < 0 || config.midnight_delay_seconds > 300)
-        throw std::runtime_error("'midnight_delay_seconds' must be between 0 and 300");
+    if (config.midnight_delay_ms < 0 || config.midnight_delay_ms > 300000)
+        throw std::runtime_error("'midnight_delay_ms' must be between 0 and 300000");
 
     if (!config.binance_base_url.empty() && config.binance_base_url.back() == '/')
         config.binance_base_url.pop_back();

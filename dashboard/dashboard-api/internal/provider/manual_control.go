@@ -191,6 +191,10 @@ func (p *Real) decorateManualControlContract(result *ManualControlData) {
 	result.RouteBlockers = uniqueStrings(result.RouteBlockers)
 }
 func (p *Real) PreviewManualControl(ctx context.Context, req ManualControlPreviewRequest) (ManualControlData, error) {
+	if p.chainManualEnabled() {
+		result, _ := p.chainManualPreview(ctx, req)
+		return result, nil
+	}
 	checkpoint, err := p.postgres.LatestPipelineCheckpoint(ctx)
 	if err != nil {
 		return ManualControlData{}, fmt.Errorf("read manual-control reference checkpoint: %w", err)

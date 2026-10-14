@@ -206,6 +206,10 @@ VenueJournal::VenueJournal(const std::string& path, const std::string& venue, co
         "CREATE TABLE IF NOT EXISTS unattributed_fills ("
         " venue_fill_id TEXT PRIMARY KEY, symbol TEXT NOT NULL, side INTEGER NOT NULL,"
         " venue_quantity REAL NOT NULL, price REAL NOT NULL, fill_time TEXT NOT NULL, fill_type TEXT NOT NULL);"
+        "CREATE TABLE IF NOT EXISTS cash_entries ("
+        " entry_id TEXT PRIMARY KEY, kind TEXT NOT NULL, day INTEGER NOT NULL, coin TEXT NOT NULL,"
+        " local_fill_id INTEGER NOT NULL, amount_usd REAL NOT NULL, published INTEGER NOT NULL);"
+        "CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT NOT NULL);"
     );
 
     Statement existing(db_, "SELECT venue, account_namespace FROM context WHERE id = 1");
@@ -402,6 +406,94 @@ bool VenueJournal::recordUnattributedFill(const VenueFill& fill)
     statement.bind(7, fill.fill_type);
     statement.step();
     return sqlite3_changes(db_) == 1;
+}
+
+
+std::optional<JournalFill> VenueJournal::fillByVenueId(const std::string& venueFillId) const
+{
+    Statement statement(db_,
+        "SELECT venue_fill_id, local_fill_id, local_order_id, venue_quantity, price, day, published FROM fills"
+        " WHERE venue_fill_id = ?");
+    statement.bind(1, venueFillId);
+    if (!statement.step())
+        return std::nullopt;
+    JournalFill fill;
+    fill.venue_fill_id = statement.text(0);
+    fill.local_fill_id = static_cast<FillID>(statement.integer(1));
+    fill.local_order_id = static_cast<OrderID>(statement.integer(2));
+    fill.venue_quantity = statement.real(3);
+    fill.price = statement.real(4);
+    fill.day = static_cast<Timestamp>(statement.integer(5));
+    fill.published = statement.integer(6) != 0;
+    return fill;
+}
+
+
+bool VenueJournal::accountLogBaselined() const
+{
+    Statement statement(db_, "SELECT 1 FROM settings WHERE name = 'account_log_baseline'");
+    return statement.step();
+}
+
+
+void VenueJournal::markAccountLogBaselined()
+{
+    execute("INSERT OR IGNORE INTO settings (name, value) VALUES ('account_log_baseline', 'done')");
+}
+
+
+bool VenueJournal::knowsCashEntry(const std::string& entryId) const
+{
+    Statement statement(db_, "SELECT 1 FROM cash_entries WHERE entry_id = ?");
+    statement.bind(1, entryId);
+    return statement.step();
+}
+
+
+void VenueJournal::recordCashEntry(const JournalCashEntry& entry)
+{
+    Statement statement(db_,
+        "INSERT OR IGNORE INTO cash_entries (entry_id, kind, day, coin, local_fill_id, amount_usd, published)"
+        " VALUES (?,?,?,?,?,?,?)");
+    statement.bind(1, entry.entry_id);
+    statement.bind(2, std::string(venueCostKindName(entry.kind)));
+    statement.bind(3, static_cast<long long>(entry.day));
+    statement.bind(4, entry.coin);
+    statement.bind(5, static_cast<long long>(entry.local_fill_id));
+    statement.bind(6, entry.amount_usd);
+    statement.bind(7, static_cast<long long>(entry.published ? 1 : 0));
+    statement.step();
+}
+
+
+std::vector<JournalCashEntry> VenueJournal::unpublishedCashEntries() const
+{
+    Statement statement(db_,
+        "SELECT entry_id, kind, day, coin, local_fill_id, amount_usd FROM cash_entries WHERE published = 0"
+        " ORDER BY day, entry_id");
+    std::vector<JournalCashEntry> result;
+    while (statement.step()) {
+        JournalCashEntry entry;
+        entry.entry_id = statement.text(0);
+        const std::optional<VenueCostKind> kind = venueCostKindFromName(statement.text(1));
+        if (!kind)
+            throw std::runtime_error("Venue journal cash entry " + entry.entry_id + " has an unknown kind");
+        entry.kind = *kind;
+        entry.day = static_cast<Timestamp>(statement.integer(2));
+        entry.coin = statement.text(3);
+        entry.local_fill_id = static_cast<FillID>(statement.integer(4));
+        entry.amount_usd = statement.real(5);
+        result.push_back(entry);
+    }
+    return result;
+}
+
+
+void VenueJournal::markCashEntryPublished(const std::string& entryId)
+{
+    Statement statement(db_, "UPDATE cash_entries SET published = 1 WHERE entry_id = ?");
+    statement.bind(1, entryId);
+    statement.step();
 }
 
 } // namespace Venue

@@ -7,7 +7,7 @@ BUILD="${BUILD_DIR:-$ROOT/build}"
 BUNDLE="$SCRIPT_DIR/.runtime_bundle"
 KIND=LIVE
 if [[ "${1:-}" == "--paper" ]]; then
-    BUNDLE="$ROOT/deploy/paper_trading/.runtime_bundle"
+    BUNDLE="$ROOT/deploy/chain/.runtime_bundle"
     KIND=PAPER
 elif [[ $# -ne 0 ]]; then
     echo 'Usage: build_runtime_bundle.sh [--paper]' >&2; exit 1
@@ -27,7 +27,7 @@ if [[ "$KIND" == PAPER ]]; then
     BINARIES+=(
         "$BUILD/live_trading/simulated_exchange_service/src/algotrading_simulated_exchange_service"
         "$BUILD/live_trading/historical_market_data_service/src/algotrading_historical_market_data_service"
-        "$BUILD/research/src/legacy/algotrading_research"
+        "$BUILD/research/src/backtests/algotrading_research"
     )
 fi
 

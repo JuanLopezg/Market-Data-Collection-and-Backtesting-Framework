@@ -8,8 +8,9 @@ import { useDashboardDataSource } from '../providers/DashboardDataSourceProvider
 import type { ManualControlData, ManualRequestStatus } from '../types/dashboard'
 
 // Manual Control: upload a target portfolio CSV, preview it against the current account
-// and send it. The replay executes it at its next price; the end-of-day decision then
-// returns to the strategy targets. A progress bar follows the request to the exchange.
+// and send it. The replay executes it at its next price; the PAPER/LIVE chain executes it
+// at once at the current market prices. The next daily decision then returns to the
+// strategy targets. A progress bar follows the request to the exchange.
 
 const MAX_BYTES = 256 * 1024
 const POLL_MS = 2000
@@ -18,12 +19,28 @@ type Notice = { tone: 'ok' | 'bad'; text: string }
 
 const STEPS: { stage: ManualRequestStatus['stage']; label: string }[] = [
   { stage: 'QUEUED', label: 'Sent' },
-  { stage: 'EXECUTED', label: 'Picked up by replay' },
+  { stage: 'EXECUTED', label: 'Checked' },
   { stage: 'AT_EXCHANGE', label: 'Orders at exchange' },
   { stage: 'FILLED', label: 'Filled' },
   { stage: 'RESYNCED', label: 'Back to strategy targets' },
 ]
 const STEP_INDEX: Record<string, number> = Object.fromEntries(STEPS.map((step, index) => [step.stage, index]))
+
+// Wording per runtime: the replay simulation, PAPER (simulated account) or LIVE (Kraken).
+function modeText(mode: string) {
+  if (mode === 'REPLAY') return {
+    checked: 'Picked up by replay', waiting: 'Waiting for the next replay price', send: 'Send to replay',
+    timing: 'Executes at the next price; the end-of-day decision then returns to the strategy targets.',
+  }
+  if (mode === 'LIVE') return {
+    checked: 'Checked by execution', waiting: 'Waiting for execution-state (a few seconds)', send: 'Send real orders to Kraken',
+    timing: 'Executes now at the market on Kraken; the 00:00 UTC daily cycle then returns to the strategy targets. No requests from 23:45 to 00:15 UTC.',
+  }
+  return {
+    checked: 'Checked by execution', waiting: 'Waiting for execution-state (a few seconds)', send: 'Send (PAPER)',
+    timing: 'Executes now at the current Binance prices in the simulated account; the 00:00 UTC daily cycle then returns to the strategy targets. No requests from 23:45 to 00:15 UTC.',
+  }
+}
 
 const pct = (value: number) => `${value.toFixed(2)}%`
 const signedPct = (value: number) => `${value > 0 ? '+' : ''}${value.toFixed(2)}%`
@@ -32,13 +49,14 @@ function actionTone(action?: string) {
   return action === 'BUY' ? 'positive' : action === 'SELL' || action === 'CLOSE' ? 'negative' : 'muted'
 }
 
-function RequestProgress({ status }: { status?: ManualRequestStatus }) {
+function RequestProgress({ status, checkedLabel }: { status?: ManualRequestStatus; checkedLabel: string }) {
   const failed = status?.stage === 'FAILED'
   const reached = status ? (failed ? 0 : STEP_INDEX[status.stage]) : 0
   return <div className="manual-progress">
     <ol>{STEPS.map((step, index) => {
       const state = failed && index === 1 ? 'failed' : index <= reached ? 'done' : index === reached + 1 && !failed ? 'current' : 'todo'
-      const label = step.stage === 'AT_EXCHANGE' && status && status.orders > 0 ? `${step.label} (${status.filled}/${status.orders} filled)` : step.label
+      const base = step.stage === 'EXECUTED' ? checkedLabel : step.label
+      const label = step.stage === 'AT_EXCHANGE' && status && status.orders > 0 ? `${base} (${status.filled}/${status.orders} filled)` : base
       return <li key={step.stage} className={`manual-progress__step manual-progress__step--${state}`}>
         <span>{state === 'done' ? <Check size={12}/> : state === 'failed' ? <X size={12}/> : index + 1}</span>{failed && index === 1 ? 'Rejected' : label}
       </li>
@@ -134,15 +152,18 @@ export function ManualControlPage() {
   const sendable = !!preview?.validationPassed && !!preview.routeEnabled && !busy
   const grossPct = data.maxGrossPct ?? 100
   const assetPct = data.maxAssetPct ?? 100
+  const text = modeText(data.mode)
+  const live = data.mode === 'LIVE'
 
   return <>
     <div className="page-heading"><h1>Manual Control</h1></div>
 
+    {live && <div className="manual-banner manual-banner--bad">LIVE: sending a portfolio places real orders on Kraken with real money.</div>}
     {!isOperator && <div className="manual-banner">Sign in as an OPERATOR to send a portfolio.</div>}
     {notice && <div className={`manual-banner manual-banner--${notice.tone}`}>{notice.text}</div>}
 
     {trackedId && <Panel title="Request Progress" right={finished ? <button className="button-secondary" onClick={() => setTrackedId(null)}>Close</button> : undefined}>
-      <RequestProgress status={tracked ?? { id: trackedId, stage: 'QUEUED', detail: 'Waiting for the next replay price', orders: 0, filled: 0 }}/>
+      <RequestProgress checkedLabel={text.checked} status={tracked ?? { id: trackedId, stage: 'QUEUED', detail: text.waiting, orders: 0, filled: 0 }}/>
     </Panel>}
 
     {!preview && <section className="manual-layout">
@@ -166,7 +187,7 @@ export function ManualControlPage() {
           <li>CASH is optional; whatever is not allocated stays in cash.</li>
           <li>Held assets missing from the file are closed.</li>
           <li>Risk limits: total up to {grossPct.toFixed(0)}% ({(grossPct / 100).toFixed(2)}x), {assetPct.toFixed(0)}% per asset, long only.</li>
-          <li>Executes at the next price; the end-of-day decision then returns to the strategy targets.</li>
+          <li>{text.timing}</li>
         </ul>
       </Panel>
     </section>}
@@ -190,7 +211,7 @@ export function ManualControlPage() {
       {blockers.length > 0 && <div className="manual-banner manual-banner--bad">Cannot send now: {blockers.join(', ')}</div>}
       <div className="manual-actions">
         <button className="button-secondary" onClick={clear} disabled={busy}>Cancel</button>
-        <button className="button-primary" onClick={() => void send()} disabled={!sendable}>{busy ? 'Sending…' : 'Send to replay'}</button>
+        <button className="button-primary" onClick={() => void send()} disabled={!sendable}>{busy ? 'Sending…' : text.send}</button>
       </div>
     </Panel>}
   </>

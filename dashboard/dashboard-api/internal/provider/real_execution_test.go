@@ -38,6 +38,34 @@ func TestBuildRealExecutionMapsDurableOrdersAndFillsWithoutInventingQuality(t *t
 	}
 }
 
+func TestVenueSkipsAreShownApartFromRejects(t *testing.T) {
+	state := pgstore.RuntimeState{UpdatedAt: "2026-10-14T00:00:30.000Z", Snapshot: tradingwire.TradingStateSnapshot{SchemaVersion: 1}}
+	orders := []tradingwire.PersistedTrackedOrder{
+		{OrderID: 3, Coin: "XYZUSDT", Status: 6, CreatedAt: 20261014, UpdatedAt: 20261014, LastMessage: "MARKET_UNAVAILABLE: XYZUSDT is not in the kraken-futures symbol map"},
+		{OrderID: 2, Coin: "ETHUSDT", Status: 6, CreatedAt: 20261014, UpdatedAt: 20261014, LastMessage: "BELOW_MINIMUM_QUANTITY: 0.0001 ETH is below the venue minimum 0.001"},
+		{OrderID: 1, Coin: "1000PEPEUSDT", Status: 6, CreatedAt: 20261014, UpdatedAt: 20261014, LastMessage: "NOTIONAL_MISMATCH: $5,000.00 at the venue vs $5.00 planned"},
+	}
+	data := buildRealExecution(state, orders, len(orders), pgstore.FillWindow{})
+	if data.SkippedCount != 2 || data.RejectCount != 1 || data.RejectRateLabel != "33.3%" {
+		t.Fatalf("skips must not count as rejects: skipped=%d rejected=%d rate=%s", data.SkippedCount, data.RejectCount, data.RejectRateLabel)
+	}
+	if data.Orders[0].State != "SKIPPED" || data.Orders[1].State != "SKIPPED" || data.Orders[2].State != "REJECTED" {
+		t.Fatalf("unexpected order states: %+v", data.Orders)
+	}
+	first := data.Rejects[0]
+	if first.Code != "MARKET_UNAVAILABLE" || first.Kind != "SKIPPED" || first.Title != "Not on the venue" ||
+		first.Reason != "XYZUSDT is not in the kraken-futures symbol map" || first.Remediation == "" {
+		t.Fatalf("venue code was not split from its text: %+v", first)
+	}
+	if mismatch := data.Rejects[2]; mismatch.Code != "NOTIONAL_MISMATCH" || mismatch.Kind != "REJECTED" {
+		t.Fatalf("safety rejection must stay a rejection: %+v", mismatch)
+	}
+	// A message with a colon but no known code stays a generic rejection with its full text.
+	if other := classifyRejection("9", "BTC", "Venue error: insufficient margin"); other.Code != "REJECTED" || other.Reason != "Venue error: insufficient margin" {
+		t.Fatalf("unknown prefix must not be treated as a code: %+v", other)
+	}
+}
+
 func TestMapExecutionStatePreservesCancelRequest(t *testing.T) {
 	order := tradingwire.PersistedTrackedOrder{Status: 2, CancelRequested: true}
 	if got := mapExecutionState(order); got != "PENDING_CANCEL" {

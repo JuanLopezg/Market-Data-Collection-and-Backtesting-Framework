@@ -46,10 +46,10 @@
       "minimum": 1,
       "maximum": 64
     },
-    "midnight_delay_seconds": {
+    "midnight_delay_ms": {
       "type": "integer",
       "minimum": 0,
-      "maximum": 300
+      "maximum": 300000
     },
     "retry_after_failure_seconds": {
       "type": "integer",

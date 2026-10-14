@@ -3,6 +3,8 @@
 // Order commands, venue events and execution-time coordination messages.
 
 #include <cstdint>
+#include <optional>
+#include <string>
 #include <unordered_map>
 #include <variant>
 
@@ -36,6 +38,57 @@ struct FillEvent {
 };
 
 using ExecutionEvent = std::variant<OrderUpdateEvent, FillEvent>;
+
+// A cash movement on the venue account that is not part of a fill price. It changes cash
+// only, never quantities.
+enum class VenueCostKind {
+    Fee,          // trading fee reported after the fill (Kraken Futures fills carry none)
+    Funding,      // funding payment on an open perpetual position
+    Interest,     // interest the venue charges, e.g. on a negative USD balance
+    CapitalFlow   // deposit, withdrawal or conversion of USD: capital, not profit or loss
+};
+
+inline const char* venueCostKindName(VenueCostKind kind)
+{
+    switch (kind) {
+    case VenueCostKind::Fee: return "FEE";
+    case VenueCostKind::Funding: return "FUNDING";
+    case VenueCostKind::Interest: return "INTEREST";
+    case VenueCostKind::CapitalFlow: return "CAPITAL_FLOW";
+    }
+    return "UNKNOWN";
+}
+
+inline std::optional<VenueCostKind> venueCostKindFromName(const std::string& name)
+{
+    for (VenueCostKind kind : {VenueCostKind::Fee, VenueCostKind::Funding,
+                               VenueCostKind::Interest, VenueCostKind::CapitalFlow})
+        if (name == venueCostKindName(kind))
+            return kind;
+    return std::nullopt;
+}
+
+// Lower-case word for logs: "fee", "funding", "interest", "capital flow".
+inline const char* venueCostKindLabel(VenueCostKind kind)
+{
+    switch (kind) {
+    case VenueCostKind::Fee: return "fee";
+    case VenueCostKind::Funding: return "funding";
+    case VenueCostKind::Interest: return "interest";
+    case VenueCostKind::CapitalFlow: return "capital flow";
+    }
+    return "unknown";
+}
+
+struct VenueCostEvent {
+    ContractMetadata metadata;
+    std::string cost_id;       // Stable venue id; each cost is applied once.
+    VenueCostKind kind = VenueCostKind::Fee;
+    Timestamp timestamp = 0;   // UTC business day (YYYYMMDD).
+    Coin coin;                 // Source symbol; empty when the venue gave no contract.
+    FillID fill_id = 0;        // Local fill a fee belongs to; 0 when not ours or unknown.
+    double amount_usd = 0.0;   // Change of the account's USD cash: negative = paid, positive = received.
+};
 
 // Authoritative execution barrier emitted after one decision/open cycle
 //

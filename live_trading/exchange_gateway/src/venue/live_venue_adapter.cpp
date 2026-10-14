@@ -102,7 +102,8 @@ LiveVenueAdapter::LiveVenueAdapter(
         throw std::invalid_argument("Venue account namespace is required");
     if (options_.working_poll_interval_ms <= 0 || options_.settle_after_ms <= 0 ||
         options_.market_refresh_interval_ms <= 0 || options_.unknown_alert_after_ms <= 0 ||
-        options_.mark_price_max_age_ms <= 0)
+        options_.mark_price_max_age_ms <= 0 || options_.account_log_interval_ms <= 0 ||
+        options_.fee_lookup_after_fill_ms <= 0)
         throw std::invalid_argument("Venue adapter intervals must be positive");
     if (!(options_.max_notional_ratio > 1.0))
         throw std::invalid_argument("Venue adapter max notional ratio must be above 1");
@@ -113,8 +114,8 @@ LiveVenueAdapter::LiveVenueAdapter(
     LG_INFO("{} adapter ready: order submission {}, account namespace {}, {} mapped symbols",
             protocol_.name(), options_.order_submission_enabled ? "ENABLED" : "disabled (read-only)",
             options_.account_namespace, symbol_map_.entries().size());
-    LG_WARN("{} fills carry no commission; fills are published with commission 0 until cost accounting is added",
-            protocol_.name());
+    LG_INFO("{} fills are published with commission 0; fees and funding follow from the account history "
+            "every {} s", protocol_.name(), options_.account_log_interval_ms / 1000);
 }
 
 
@@ -338,11 +339,18 @@ void LiveVenueAdapter::requestSnapshot(const ExchangeSnapshotRequest& request)
     ExchangeSnapshotEvent event;
     const Timestamp today = business_day_();
     event.snapshot.timestamp = today;
-    event.snapshot.cash = account.usd_balance;
+    // Execution-state keeps cash as on a spot account (a buy spends its value). On the
+    // venue opening a perpetual position leaves the USD balance unchanged, so the balance
+    // minus the open positions' entry value is the comparable number. UNCONFIRMED: that
+    // Kraken settles realized PnL into the USD balance at once.
+    double entryValue = 0.0;
     for (const Position& position : account.positions) {
         const auto [coin, scale] = coinAndScale(position.symbol);
         event.snapshot.positions[coin] += position.signed_quantity / scale;
+        entryValue += position.signed_quantity * position.entry_price;
     }
+    event.snapshot.cash = account.usd_balance - entryValue;
+    event.snapshot.collateral_usd = account.collateral_usd;
     for (const OpenOrder& open : protocol_.parseOpenOrders(openOrders)) {
         const auto [coin, scale] = coinAndScale(open.symbol);
         ExchangeOpenOrderSnapshot row;
@@ -361,8 +369,10 @@ void LiveVenueAdapter::requestSnapshot(const ExchangeSnapshotRequest& request)
     event.metadata.correlation_id = request.metadata.message_id;
     event.metadata.produced_at = today;
 
-    LG_INFO("Venue snapshot: USD balance {}, {} positions, {} open orders",
-            FormatUsd(event.snapshot.cash), event.snapshot.positions.size(), event.snapshot.open_orders.size());
+    LG_INFO("Venue snapshot: USD balance {}, positions entered for {}, cash as compared {}, {} positions, {} open orders, "
+            "collateral after haircut {}",
+            FormatUsd(account.usd_balance), FormatUsd(entryValue), FormatUsd(event.snapshot.cash),
+            event.snapshot.positions.size(), event.snapshot.open_orders.size(), FormatUsd(account.collateral_usd));
     if (handlers_.on_snapshot)
         handlers_.on_snapshot(event);
 }
@@ -384,6 +394,7 @@ void LiveVenueAdapter::poll(int timeoutMs)
         sendDueOrders();
         sendCancels();
         checkVenue();
+        readAccountLogIfDue();
         refreshDeadMansSwitch();
         publishPending();
     }
@@ -587,6 +598,8 @@ void LiveVenueAdapter::applyFills(const std::vector<VenueFill>& fills)
 
         const JournalFill stored = journal_.recordFill(fill, *order);
         last_evidence_ms_[order->local_order_id] = now_ms_();
+        // The fee appears in the account history shortly after the fill.
+        next_account_log_ms_ = std::min(next_account_log_ms_, now_ms_() + options_.fee_lookup_after_fill_ms);
         LG_INFO("Venue fill for order {}: {} {} {} at {} ({})", order->local_order_id, sideName(fill.side),
                 FormatQuantity(fill.quantity), fill.symbol, FormatQuantity(fill.price), fill.fill_type);
         LG_DEBUG("Venue fill id {} -> local fill {}", fill.venue_fill_id, stored.local_fill_id);
@@ -636,6 +649,86 @@ void LiveVenueAdapter::applyOpenOrders(const std::vector<OpenOrder>& openOrders)
             LG_ALERT("Order {} outcome is still unknown: not open and no fills seen. It will not be resent; "
                      "check the venue and resolve it manually", order.local_order_id);
         }
+    }
+}
+
+
+// Fees, funding, interest and capital flows: the venue's recent account history. Entries
+// are recorded once (the journal is the de-duplication), mapped to our fills and source
+// symbols, and published.
+// The very first read of a journal only marks the existing history as seen: it predates
+// this account state.
+void LiveVenueAdapter::readAccountLogIfDue()
+{
+    constexpr long long WAIT_FOR_FILL_MS = 600000;
+    if (now_ms_() < next_account_log_ms_)
+        return;
+    // Scheduled before the request: a failing read waits for the next interval and never
+    // stops the order and fill work of this poll.
+    next_account_log_ms_ = now_ms_() + options_.account_log_interval_ms;
+    AccountLog log;
+    try {
+        log = protocol_.parseAccountLog(send(protocol_.accountLogRequest(), Endpoint::AccountLog));
+    }
+    catch (const RateBudgetExhausted& error) {
+        LG_DEBUG("{}; account history read later", error.what());
+        return;
+    }
+    catch (const ProtocolError& error) {
+        LG_ERROR("Account history unreadable, trying again in {} s: {}", options_.account_log_interval_ms / 1000,
+                 error.what());
+        return;
+    }
+
+    for (const std::string& kind : log.unaccounted) {
+        if (unaccounted_logged_.insert(kind).second)
+            LG_WARN("Account history entry \"{}\" changes the USD balance but is not booked here; "
+                    "reconciliation may report a cash difference", kind);
+    }
+    for (const std::string& kind : log.not_cash) {
+        if (unaccounted_logged_.insert(kind).second)
+            LG_INFO("Account history entry \"{}\" changes the collateral, not the USD cash; "
+                    "the next snapshot carries the new collateral value", kind);
+    }
+
+    const bool baseline = !journal_.accountLogBaselined();
+    int recorded = 0;
+    for (const CashEntry& entry : log.entries) {
+        if (journal_.knowsCashEntry(entry.entry_id))
+            continue;
+        // A fee listed before its fill was polled: book it once the fill is known, so it is
+        // attached to it (after 10 minutes it is booked on the account anyway).
+        if (!baseline && !entry.venue_fill_id.empty() && !journal_.knowsFill(entry.venue_fill_id) &&
+            now_ms_() - entry.time_ms < WAIT_FOR_FILL_MS) {
+            next_account_log_ms_ = std::min(next_account_log_ms_, now_ms_() + options_.fee_lookup_after_fill_ms);
+            continue;
+        }
+        JournalCashEntry stored;
+        stored.entry_id = entry.entry_id;
+        stored.kind = entry.kind;
+        stored.day = entry.day;
+        stored.amount_usd = entry.amount_usd;
+        stored.published = baseline;
+        stored.coin = entry.symbol;
+        if (const SymbolMapping* mapping = symbol_map_.byVenueSymbol(entry.symbol))
+            stored.coin = mapping->source;
+        if (!entry.venue_fill_id.empty()) {
+            if (const auto fill = journal_.fillByVenueId(entry.venue_fill_id)) {
+                stored.local_fill_id = fill->local_fill_id;
+                if (const auto order = journal_.order(fill->local_order_id))
+                    stored.coin = order->coin;
+            }
+        }
+        journal_.recordCashEntry(stored);
+        ++recorded;
+        if (!baseline)
+            LG_INFO("Venue {} {}: {} on {}{}", venueCostKindLabel(entry.kind),
+                    entry.entry_id, FormatUsd(entry.amount_usd), stored.coin.empty() ? "the account" : stored.coin,
+                    stored.local_fill_id != 0 ? " (fill " + std::to_string(stored.local_fill_id) + ")" : "");
+    }
+    if (baseline) {
+        journal_.markAccountLogBaselined();
+        LG_INFO("Account history baseline: {} earlier cash entries marked as seen, not booked", recorded);
     }
 }
 
@@ -698,6 +791,13 @@ void LiveVenueAdapter::publishPending()
         publishFill(fill, *order);
         journal_.markFillPublished(fill.venue_fill_id);
     }
+    // Costs after fills, so a fee never arrives before its fill.
+    if (handlers_.on_cost) {
+        for (const JournalCashEntry& entry : journal_.unpublishedCashEntries()) {
+            publishCashEntry(entry);
+            journal_.markCashEntryPublished(entry.entry_id);
+        }
+    }
     for (const JournalOrder& order : journal_.unpublishedOrders()) {
         if (!reportedStatus(order.state))
             continue;
@@ -740,9 +840,26 @@ void LiveVenueAdapter::publishFill(const JournalFill& fill, const JournalOrder& 
     event.fill.side = order.side;
     event.fill.quantity = fill.venue_quantity / order.unit_scale;
     event.fill.price = fill.price * order.unit_scale;
-    event.fill.commission = 0.0; // Not reported by the venue fill; see constructor warning.
+    event.fill.commission = 0.0; // Not reported by the venue fill; the fee follows as a cost.
     event.fill.validate();
     handlers_.on_fill(event);
+}
+
+
+void LiveVenueAdapter::publishCashEntry(const JournalCashEntry& entry)
+{
+    VenueCostEvent event;
+    event.metadata.schema_version = 1;
+    event.metadata.message_id = protocol_.name() + "-cost:" + entry.entry_id;
+    event.metadata.correlation_id = entry.entry_id;
+    event.metadata.produced_at = entry.day;
+    event.cost_id = protocol_.name() + ":" + entry.entry_id;
+    event.kind = entry.kind;
+    event.timestamp = entry.day;
+    event.coin = entry.coin;
+    event.fill_id = entry.local_fill_id;
+    event.amount_usd = entry.amount_usd;
+    handlers_.on_cost(event);
 }
 
 } // namespace Venue

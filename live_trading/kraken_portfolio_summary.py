@@ -42,6 +42,65 @@ def position_values(result, market, now):
     return values
 
 
+def collateral_risk(result, market, now):
+    """BTC collateral and the price drops that would use up the maintenance-margin headroom.
+
+    Reporting only (no stop or order). Linear estimate: a drop of d reduces the BTC
+    collateral by d x its post-haircut value and a net long position by d x its notional;
+    maintenance margin is taken as fixed, so the real distance is slightly larger.
+    """
+    totals = result['venue_totals_usd']
+    headroom = number(totals['marginEquity']) - number(totals['maintenanceMargin'])
+    btc = result['currencies'].get('BTC')
+    btc_quantity = number(btc['quantity']) if btc else Decimal(0)
+    btc_collateral = number(btc['collateral']) if btc else Decimal(0)
+    btc_value = number(btc['value']) if btc else Decimal(0)
+    values = position_values(result, market, now)
+    net_long = None
+    if all(row['notional_usd'] is not None for row in values):
+        net_long = sum((number(row['notional_usd']) * (1 if row['side'] == 'LONG' else -1) for row in values), Decimal(0))
+
+    def drop(exposure):
+        # None: unknown; 'NONE': a fall does not reduce the margin (no long exposure).
+        if exposure is None:
+            return None
+        if exposure <= 0:
+            return 'NONE'
+        return str(max(Decimal(0), headroom) / exposure)
+
+    return {
+        'btc_quantity': str(btc_quantity), 'btc_value_usd': str(btc_value),
+        'btc_collateral_usd': str(btc_collateral),
+        'btc_haircut': str(1 - btc_collateral / btc_value) if btc_value > 0 else None,
+        'margin_equity_usd': totals['marginEquity'], 'maintenance_margin_usd': totals['maintenanceMargin'],
+        'maintenance_headroom_usd': str(headroom),
+        'net_long_usd': str(net_long) if net_long is not None else None,
+        'btc_drop_to_maintenance': drop(btc_collateral),
+        'crypto_drop_to_maintenance': drop(None if net_long is None else btc_collateral + net_long),
+    }
+
+
+def percent(fraction):
+    if fraction is None:
+        return 'unavailable'
+    if fraction == 'NONE':
+        return 'no long exposure'
+    value = number(fraction)
+    return 'more than 100%' if value >= 1 else format(value * 100, '.1f') + '%'
+
+
+def collateral_lines(risk):
+    lines = []
+    if number(risk['btc_quantity']) != 0:
+        lines.append('BTC collateral: ' + format(number(risk['btc_quantity']), 'f') + ' BTC = ' +
+                     dollars(risk['btc_value_usd']) + ' (' + dollars(risk['btc_collateral_usd']) + ' after haircut)')
+    lines.append('Maintenance margin: ' + dollars(risk['maintenance_margin_usd']) +
+                 ', headroom ' + dollars(risk['maintenance_headroom_usd']))
+    lines.append('Drop to maintenance margin: BTC alone ' + percent(risk['btc_drop_to_maintenance']) +
+                 ', BTC and positions together ' + percent(risk['crypto_drop_to_maintenance']))
+    return lines
+
+
 def position_lines(result, market, now):
     equity = number(result['venue_totals_usd']['marginEquity'])
     lines = []
@@ -84,8 +143,9 @@ class DailyPortfolio:
         yesterday = (timestamp.date() - timedelta(days=1)).isoformat()
         previous = self.db.execute('SELECT payload FROM portfolio_days WHERE day=?', (yesterday,)).fetchone()
         lines = ['As of: ' + timestamp.strftime('%Y-%m-%d %H:%M UTC'),
-                 'Balance: ' + dollars(snapshot['balance']), 'Equity: ' + dollars(snapshot['equity']),
-                 'Active positions (USD exposure):']
+                 'Balance: ' + dollars(snapshot['balance']), 'Equity: ' + dollars(snapshot['equity'])]
+        lines.extend(collateral_lines(collateral_risk(result, market, now)))
+        lines.append('Active positions (USD exposure):')
         lines.extend(snapshot['positions'] or ['None'])
         if previous:
             prior = json.loads(previous[0])

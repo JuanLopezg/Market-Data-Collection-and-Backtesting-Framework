@@ -49,6 +49,9 @@ OrderUpdateEvent decodeOrderUpdateEvent(const std::string& payload);
 std::string encode(const FillEvent& value);
 FillEvent decodeFillEvent(const std::string& payload);
 
+std::string encode(const VenueCostEvent& value);
+VenueCostEvent decodeVenueCostEvent(const std::string& payload);
+
 std::string encode(const AccountSnapshot& value);
 AccountSnapshot decodeAccountSnapshot(const std::string& payload);
 

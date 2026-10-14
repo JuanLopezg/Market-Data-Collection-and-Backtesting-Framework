@@ -33,7 +33,7 @@ its rolling comparison after that boundary. See the PAPER guide for state migrat
 | `research/` | Public replay CLI, canonical runner and research executables. |
 | `dashboard/` | React UI, Go read-model API, observability stores and deployment. |
 | `validation/` | Current release gate, component tests and focused source audits. |
-| `deploy/` | `chain/` (runtime root layout, single compose.yml, `algo` launcher, log receiver, host monitor), plus the previous LIVE/paper and isolated historical Compose deployments. |
+| `deploy/` | `chain/` (runtime root layout, single compose.yml, `algo` launcher, log receiver, host monitor), plus LIVE and isolated historical Compose deployments. PAPER test fixtures live in validation/fixtures/paper/. |
 | `config/` | Runtime configuration, source-symbol maps and venue registries. |
 | `docs/` | Documentation index, agent handoff and frozen venue specifications. |
 | `storage/` | Historical inputs, reports and accepted run evidence. |
@@ -96,7 +96,7 @@ flowchart LR
     ACCOUNT --> OUTPUT["Fingerprint / exports / comparison"]
 ```
 
-- `fast` invokes `research/src/legacy/backtesting_main.cpp`, whose current
+- `fast` invokes `research/src/backtests/backtesting_main.cpp`, whose current
   build uses CURRENT `lib/backtest/Backtester`. The directory name does not imply
   that this particular executable uses the frozen runtime.
 - `system` invokes `research/src/canonical/canonical_replay.cpp` and
@@ -307,8 +307,8 @@ It is a separate integration workflow, not the canonical RealTest release entryp
 ## Research migration
 
 All six useful research consumers use CURRENT lib APIs. The frozen runtime and
-comparison target have been removed after migration. The `src/legacy/` directory
-name remains for the entrypoints; it does not imply an old execution engine.
+comparison target have been removed after migration. The entrypoints live in
+`src/backtests/` (named `src/legacy/` until 2026-10-14).
 
 The HTML report source now builds CURRENT PureRSI and research Donchian/XH/XH-ATR reporting as
 `algotrading_research_html`, using current `Backtester`, strategy instances,
@@ -342,7 +342,7 @@ research strategies reject durable-store attachment.
 BTC moving-average reporting now reuses the shared PureMom/MRShort definitions,
 with its original SMA sweep and CSV/HTML contracts. The scenario consumer now uses
 CURRENT APIs for all eight isolated strategy families and 18 dataset definitions.
-`research/src/legacy/multi_strategy_main.cpp` owns settings and study orchestration;
+`research/src/backtests/multi_strategy_main.cpp` owns settings and study orchestration;
 `research/src/common/scenario_reports.*` owns embedded charts and correlation reports.
 Shared short/momentum signals accept per-scenario benchmark symbols, with BTC defaults.
 Benchmarks come from the same bounded market data as trading. Synthetic intraday keys
@@ -354,12 +354,12 @@ trim older entries before a file exceeds 50 MiB;
 VPS installation, initial PAPER cycle, boot recovery and receiver restart pass;
 multi-day/fault/capacity acceptance and private venue readiness remain pending.
 
-`deploy/paper_trading/` is a separate current-public-data stack with virtual funds
+`deploy/chain/` in PAPER mode is the current-public-data stack with virtual funds
 and the durable simulated exchange. Ingestion opt-in fetches only open(T+1), publishes
 the execution-price contract before the completed T update, and keeps unfinished
 candles out of feature SQLite. Service sizing retains close(T); simulated opening
 fills are not live-price or canonical-sizing parity evidence. The paper bundle option
-targets its own directory; default LIVE packaging remains separate. A host collector
+targets `deploy/chain/.runtime_bundle`; default LIVE packaging remains separate. A host collector
 writes atomic JSON, read by dashboard API with project/schema/freshness checks.
 Infrastructure refreshes CPU/RAM/disk and container observations every 10 seconds.
 Dashboard market mounts are read-only; observer-created writable SQLite WAL/SHM
@@ -373,7 +373,7 @@ dates, not database-write recency, with an explicit 30-minute UTC rollover grace
 Empty plans count as progress. External process sampling is not an application
 heartbeat or response/control contract. The deployed VPS retains its earlier source
 until an authorized update. Local capture reuses the two-day/50-MiB daily writer;
-the optional VPS overlay covers all services. See [paper operations](../../deploy/paper_trading/README.md).
+the chain receiver covers all services. See [chain operations](../../deploy/chain/README.md).
 The [VPS equivalence procedure](../../deploy/live/README.md#local-to-vps-equivalence-acceptance)
 compares source/input identity, configured builds, packaging, non-secret settings
 and bounded Step59 results before separate deployed-cycle acceptance.
@@ -384,6 +384,12 @@ Exact source paths and the research backlog
 are in [CONTEXT_FULL.txt](CONTEXT_FULL.txt).
 
 ## Dashboard boundary
+
+Mobile presentation uses AppShell's navigation drawer and global.css breakpoints
+at 900/480px. Wide tables retain their columns and scroll inside panel wrappers;
+panel/header/login/date-control layout adapts without changing API or trading
+behavior. The VPS uses private Tailscale HTTPS Serve (no Funnel); see chain/README.
+Current browser/deployment evidence is recorded in CURRENT_STATE.md.
 
 Pending reporting requirement (not implemented): Trades must expose separate
 Commission and Funding columns in USD and net PnL after both; gross trade PnL is
@@ -396,7 +402,13 @@ reserves a task for future dashboard adjustments once the user specifies them.
 The optional PAPER activity study adds `deploy/chain/comparison.py`, a host
 read-only collector with a separate immutable daily market/account observation
 journal. It invokes `research/src/common/paper_baseline.cpp` through the existing
-fast research binary in a network-disabled container. CURRENT TradingEngine,
+fast research binary in a network-disabled container. The expected run starts from
+the exact-date strategy intent plus execution cash/holdings.
+Signals are not read from execution snapshots. Old missing seed
+intents are recovered from historical strategy checkpoints with prior evidence
+preserved; economic-input/configuration hashes invalidate the fast cache.
+This correction is local and awaiting deployment (CURRENT_STATE.md).
+CURRENT TradingEngine,
 PureRSI, sizing and fill accounting own baseline decisions; no Python trading engine
 is introduced. The activity overlay keeps original account/message volumes and
 selects a distinct 50/40 experiment. The API reads bounded atomic comparison JSON;
@@ -407,13 +419,9 @@ React talks to the Go API over authenticated HTTP and SSE. Browsers do not conne
 PostgreSQL, SQLite, NATS or an exchange. The API's `mock`, `real` and
 `simulation` providers are different read-model sources.
 
-Mobile access was cancelled by the user on 2026-10-09 and is not a pending requirement.
-The retained optional same-Wi-Fi helper is `deploy/paper_trading/mobile_access.py`
-on the PC: a TLS byte-stream bridge with one exact source-IP allowlist targets an
-existing loopback dashboard or VPS SSH tunnel. It neither bypasses API auth nor
-starts trading/changes the VPS. Generated certificates stay ignored; host firewall
-setup is documented in the inactive optional PAPER runbook. The upstream
-remains loopback HTTP with its existing cookie settings; the phone listener is TLS-only.
+Mobile access uses the accepted private Tailscale HTTPS proxy on the VPS. The
+superseded LAN bridge and its dedicated test have been retired; ignored local
+certificates remain untouched. API authentication is required over Tailscale.
 
 Real reads use bounded PostgreSQL queries, canonical SQLite and retained NATS snapshots.
 SSE asks the browser to refresh resources; it does not expose raw trading messages.

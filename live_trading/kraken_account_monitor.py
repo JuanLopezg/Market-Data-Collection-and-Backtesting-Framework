@@ -14,7 +14,7 @@ import threading
 import time
 
 from kraken_account import AccountJournal, PRIVATE_SCOPE, ROOT, reader_from_credentials
-from kraken_portfolio_summary import DailyPortfolio, dollars, position_values
+from kraken_portfolio_summary import DailyPortfolio, collateral_risk, dollars, percent, position_values
 from kraken_shadow import KrakenPublicReader
 from shadow_observer import number
 from readable_log import setup_logging
@@ -57,10 +57,22 @@ def warnings(result):
     return alerts
 
 
-def account_warnings(result, market, now, yesterday, decline_fraction, gross_limit):
+def account_warnings(result, market, now, yesterday, decline_fraction, gross_limit, maintenance_drop):
     """Observe user-selected thresholds only; no stop, order or account mutation."""
     alerts = {}
     unavailable = set()
+    # User request 2026-10-14: warn when a fall of BTC and the net long positions smaller
+    # than this fraction would reach the maintenance margin.
+    risk = collateral_risk(result, market, now)
+    drop = risk['crypto_drop_to_maintenance']
+    if drop is None:
+        unavailable.add('MAINTENANCE_DROP')
+    elif drop != 'NONE' and number(drop) < maintenance_drop:
+        alerts['MAINTENANCE_DROP'] = ('WARN', 'Close to maintenance margin',
+            'A fall of ' + percent(drop) + ' in BTC and the long positions would reach it' +
+            '\nBTC alone: ' + percent(risk['btc_drop_to_maintenance']) +
+            '\nHeadroom: ' + dollars(risk['maintenance_headroom_usd']) +
+            '\nWarning below: ' + format(maintenance_drop * 100, '.0f') + '%')
     equity = number(result['venue_totals_usd']['marginEquity'])
     previous = number(yesterday['equity']) if yesterday else None
     if previous is None or previous <= 0:
@@ -129,9 +141,10 @@ class AccountAlertMonitor:
 
     def __init__(self, directory, policy, environment='live', scope=PRIVATE_SCOPE,
                  account_name='Kraken', summary_hour_utc=None, decline_fraction='0.10', gross_limit='5',
-                 retention_days=None):
+                 retention_days=None, maintenance_drop='0.25'):
         self.decline_fraction, self.gross_limit = number(decline_fraction), number(gross_limit)
-        if not 0 < self.decline_fraction <= 1 or self.gross_limit <= 0:
+        self.maintenance_drop = number(maintenance_drop)
+        if not 0 < self.decline_fraction <= 1 or self.gross_limit <= 0 or not 0 < self.maintenance_drop <= 1:
             raise ValueError('Invalid account warning thresholds')
         if retention_days is not None and retention_days < 2:
             raise ValueError('Keep at least two days of account samples')
@@ -159,7 +172,7 @@ class AccountAlertMonitor:
         result = self.journal.observe(bundle, now)
         desired = warnings(result)
         extra, unavailable = account_warnings(result, market, now, self.summary.yesterday(result['observed_at']),
-                                              self.decline_fraction, self.gross_limit)
+                                              self.decline_fraction, self.gross_limit, self.maintenance_drop)
         desired.update(extra)
         timestamp = result['observed_at']
         with self.db:
@@ -194,8 +207,21 @@ class AccountAlertMonitor:
                     self.db.execute('INSERT INTO alert_events(payload) VALUES (?)', (json.dumps(summary),))
         self.unavailable_checks = sorted(unavailable)
         self.prune(timestamp)
+        self.publish_account(result, market, now)
         self.publish(now)
         return result
+
+    def publish_account(self, result, market, now):
+        """Latest successful observation for the dashboard: collateral, margin, drop to maintenance."""
+        totals = result['venue_totals_usd']
+        usd = result['currencies'].get('USD')
+        document = {'version': 'kraken-account-v1', 'observedAt': utc(result['observed_at']),
+                    'accountName': self.account_name, 'equityUsd': totals['marginEquity'],
+                    'usdBalance': usd['quantity'] if usd else None,
+                    'initialMarginUsd': totals['initialMarginWithOrders'],
+                    'positions': len(result['positions']), 'reasons': result['reasons'],
+                    **collateral_risk(result, market, now)}
+        atomic_text(self.directory / 'account.json', json.dumps(document, indent=2) + '\n')
 
     def prune(self, observed_at):
         """Delete raw samples beyond the retention window, at most once an hour."""
@@ -246,6 +272,8 @@ def main():
     parser.add_argument('--summary-hour-utc', type=int, default=9)
     parser.add_argument('--daily-equity-drop-fraction', default='0.10')
     parser.add_argument('--gross-exposure-warning', default='5')
+    parser.add_argument('--maintenance-drop-warning', default='0.25',
+                        help='Warn when a fall of BTC and the long positions smaller than this fraction reaches maintenance margin')
     parser.add_argument('--policy', type=Path, default=ROOT / 'storage/kraken_shadow/account-policy.json')
     parser.add_argument('--credentials', type=Path, default=ROOT / 'storage/kraken_shadow/.env',
                         help='File with KRAKEN_API_KEY and KRAKEN_API_SECRET (read-only key); read internally, never shown')
@@ -279,6 +307,7 @@ def main():
         monitor = AccountAlertMonitor(directory, policy, args.environment,
             account_name=args.account_name.strip(), summary_hour_utc=args.summary_hour_utc,
             decline_fraction=args.daily_equity_drop_fraction, gross_limit=args.gross_exposure_warning,
+            maintenance_drop=args.maintenance_drop_warning,
             retention_days=args.retention_days or None)
         public_reader = KrakenPublicReader(args.environment, directory / 'public-prices')
         atomic_text(directory / 'monitor.pid', str(os.getpid()) + '\n')

@@ -1,9 +1,9 @@
-# Current public data, virtual funds and simulated execution.
+# Isolated PAPER validation topology, operated only by paper_trading_test.py.
 name: ${PAPER_PROJECT:-algotrading-paper}
 x-runtime:
-  image: algotrading-runtime:paper
+  image: algotrading-runtime:chain
   build: &id001
-    context: ./.runtime_bundle
+    context: ../../../deploy/chain/.runtime_bundle
   init: true
   restart: unless-stopped
   environment: &id002
@@ -40,7 +40,7 @@ services:
     environment:
       POSTGRES_DB: algotrading_paper
       POSTGRES_USER: algotrading
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run manage.py prepare}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run validation/paper_trading_test.py}
     healthcheck:
       test:
       - CMD-SHELL
@@ -74,7 +74,7 @@ services:
         max-size: 25m
         max-file: '2'
   market-data-db-init:
-    image: algotrading-runtime:paper
+    image: algotrading-runtime:chain
     build: *id001
     init: true
     restart: 'no'
@@ -97,7 +97,7 @@ services:
       market-data-volume-init:
         condition: service_completed_successfully
   strategy:
-    image: algotrading-runtime:paper
+    image: algotrading-runtime:chain
     build: *id001
     init: true
     restart: unless-stopped
@@ -138,7 +138,7 @@ services:
       market-data-db-init:
         condition: service_completed_successfully
   portfolio-risk:
-    image: algotrading-runtime:paper
+    image: algotrading-runtime:chain
     build: *id001
     init: true
     restart: unless-stopped
@@ -175,7 +175,7 @@ services:
       market-data-db-init:
         condition: service_completed_successfully
   execution-state:
-    image: algotrading-runtime:paper
+    image: algotrading-runtime:chain
     build: *id001
     init: true
     restart: unless-stopped
@@ -216,7 +216,7 @@ services:
       market-data-db-init:
         condition: service_completed_successfully
   order-planner:
-    image: algotrading-runtime:paper
+    image: algotrading-runtime:chain
     build: *id001
     init: true
     restart: unless-stopped
@@ -243,7 +243,7 @@ services:
       postgres:
         condition: service_healthy
   exchange-gateway:
-    image: algotrading-runtime:paper
+    image: algotrading-runtime:chain
     build: *id001
     init: true
     restart: unless-stopped
@@ -273,7 +273,7 @@ services:
       nats:
         condition: service_started
   simulated-exchange:
-    image: algotrading-runtime:paper
+    image: algotrading-runtime:chain
     build: *id001
     init: true
     restart: unless-stopped
@@ -308,7 +308,7 @@ services:
       postgres:
         condition: service_healthy
   market-data:
-    image: algotrading-runtime:paper
+    image: algotrading-runtime:chain
     build: *id001
     init: true
     restart: unless-stopped
@@ -326,7 +326,7 @@ services:
     - /opt/algotrading/paper/market_data_config.json
     volumes:
     - market-data-db:/data/market:rw
-    - ${PAPER_RUN_DIR:?run manage.py prepare}/market_data_config.json:/opt/algotrading/paper/market_data_config.json:ro
+    - ${PAPER_RUN_DIR:?run validation/paper_trading_test.py}/market_data_config.json:/opt/algotrading/paper/market_data_config.json:ro
     depends_on:
       nats:
         condition: service_started
@@ -336,7 +336,7 @@ services:
     environment:
       DASHBOARD_DATA_PROVIDER: real
       DASHBOARD_POSTGRES_DSN: host=postgres port=5432 dbname=algotrading_paper user=algotrading
-        password=${POSTGRES_PASSWORD:?run manage.py prepare}
+        password=${POSTGRES_PASSWORD:?run validation/paper_trading_test.py}
       DASHBOARD_NATS_URL: nats://nats:4222
       DASHBOARD_NATS_MONITOR_URL: http://nats:8222
       DASHBOARD_NATS_STREAM: ALGOTRADING_PAPER_RUNTIME
@@ -358,7 +358,7 @@ services:
       DASHBOARD_HOST_METRICS_PROJECT: ${PAPER_PROJECT:-algotrading-paper}
       DASHBOARD_AUTH_ALLOW_DEMO: 'false'
       DASHBOARD_AUTH_COOKIE_SECURE: 'false'
-      DASHBOARD_VIEWER_PASSWORD: ${DASHBOARD_VIEWER_PASSWORD:?run manage.py prepare}
+      DASHBOARD_VIEWER_PASSWORD: ${DASHBOARD_VIEWER_PASSWORD:?run validation/paper_trading_test.py}
     volumes:
     - market-data-db:/data/market:ro
     - ${PAPER_RUN_DIR:?}/telemetry:/data/telemetry:ro
@@ -368,8 +368,8 @@ services:
     networks:
     - paper
     build:
-      context: ../../dashboard/dashboard-api
-    image: algotrading-paper-dashboard-api:local
+      context: ../../../dashboard/dashboard-api
+    image: algotrading-dash-api:chain
     group_add:
     - '10001'
     logging:
@@ -379,7 +379,7 @@ services:
         max-file: '2'
   dashboard-watchdog:
     build:
-      context: ../../dashboard/dashboard-api
+      context: ../../../dashboard/dashboard-api
     restart: unless-stopped
     init: true
     stop_grace_period: 10s
@@ -388,7 +388,7 @@ services:
     environment:
       DASHBOARD_DATA_PROVIDER: real
       DASHBOARD_POSTGRES_DSN: host=postgres port=5432 dbname=algotrading_paper user=algotrading
-        password=${POSTGRES_PASSWORD:?run manage.py prepare}
+        password=${POSTGRES_PASSWORD:?run validation/paper_trading_test.py}
       DASHBOARD_NATS_URL: nats://nats:4222
       DASHBOARD_NATS_MONITOR_URL: http://nats:8222
       DASHBOARD_NATS_STREAM: ALGOTRADING_PAPER_RUNTIME
@@ -434,7 +434,7 @@ services:
       retries: 3
     networks:
     - paper
-    image: algotrading-paper-dashboard-api:local
+    image: algotrading-dash-api:chain
     group_add:
     - '10001'
     logging:
@@ -444,7 +444,7 @@ services:
         max-file: '2'
   dashboard-alert-notifier:
     build:
-      context: ../../dashboard/dashboard-api
+      context: ../../../dashboard/dashboard-api
     restart: unless-stopped
     init: true
     stop_grace_period: 10s
@@ -488,7 +488,7 @@ services:
       retries: 3
     networks:
     - paper
-    image: algotrading-paper-dashboard-api:local
+    image: algotrading-dash-api:chain
     group_add:
     - '10001'
     logging:
@@ -498,7 +498,7 @@ services:
         max-file: '2'
   dashboard-web:
     build:
-      context: ../../dashboard
+      context: ../../../dashboard
       args:
         VITE_DASHBOARD_DATA_MODE: api
         VITE_DASHBOARD_API_BASE_URL: /api
@@ -514,7 +514,7 @@ services:
     pids_limit: 96
     networks:
     - paper
-    image: algotrading-paper-dashboard-web:local
+    image: algotrading-dash-web:chain
     logging:
       driver: json-file
       options:

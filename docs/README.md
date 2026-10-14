@@ -35,7 +35,7 @@ Neither is a cumulative development diary.
 | Dashboard production review | [Checklist](../dashboard/docs/PRODUCTION_CHECKLIST.md) |
 | Runtime layout, single Compose file and `algo` launcher | [Chain](../deploy/chain/README.md) |
 | Live Compose stack | [Live deploy](../deploy/live/README.md) |
-| Current-data paper stack and dashboard host telemetry | [Paper trading](../deploy/paper_trading/README.md) |
+| Isolated PAPER/recovery/shadow test topology | [PAPER fixture](../validation/fixtures/paper/README.md) |
 | Isolated distributed historical stack | [Historical deploy](../deploy/historical_replay/README.md) |
 | Sensitivity CSV analysis | [Report tool](../tools/README_sensitivity_report.md) |
 

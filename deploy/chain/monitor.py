@@ -14,7 +14,7 @@ import time
 # Short service names of chain/compose.yml (default selection).
 CHAIN_SERVICES = ('nats', 'postgres', 'market-data', 'strategy', 'risk', 'execution', 'planner',
                   'gateway', 'sim-exchange', 'dash-api', 'dash-web', 'watchdog', 'notifier')
-# Names of the previous deploy/paper_trading stack, still running on the current VPS.
+# Service names retained by the isolated PAPER validation fixture.
 LEGACY_SERVICES = ('nats', 'postgres', 'market-data', 'strategy', 'portfolio-risk',
                    'execution-state', 'order-planner', 'exchange-gateway', 'simulated-exchange',
                    'dashboard-api', 'dashboard-web', 'dashboard-watchdog', 'dashboard-alert-notifier')

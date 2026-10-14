@@ -199,21 +199,30 @@ func configuredProvider() (provider.Provider, error) {
 		if err != nil || venuePublicTimeout <= 0 || venuePublicTimeout > 10*time.Second {
 			return nil, fmt.Errorf("invalid DASHBOARD_HYPERLIQUID_PUBLIC_TIMEOUT")
 		}
-		paper := strings.TrimSpace(os.Getenv("DASHBOARD_RUNTIME_MODE")) == "PAPER" &&
+		runtimeMode := strings.TrimSpace(os.Getenv("DASHBOARD_RUNTIME_MODE"))
+		paper := runtimeMode == "PAPER" &&
 			executionVenue == "SIMULATED" && venueEnvironment == "PAPER" && gatewayMode == "backend"
-		if strings.TrimSpace(os.Getenv("DASHBOARD_RUNTIME_MODE")) == "PAPER" && !paper {
+		if runtimeMode == "PAPER" && !paper {
 			return nil, fmt.Errorf("PAPER requires SIMULATED venue, PAPER environment and backend gateway")
 		}
-		if !paper && executionVenue != "HYPERLIQUID" {
+		// The chain's MODE=live: Kraken Futures through the venue gateway.
+		krakenLive := runtimeMode == "LIVE" && executionVenue == "KRAKEN"
+		if krakenLive && (venueEnvironment != "LIVE" || gatewayMode != "venue") {
+			return nil, fmt.Errorf("KRAKEN requires LIVE runtime, LIVE environment and venue gateway")
+		}
+		// The trading chain (PAPER or Kraken LIVE) uses the same read models and no
+		// Hyperliquid testnet probe; anything else is the older Hyperliquid testnet setup.
+		chain := paper || krakenLive
+		if !chain && executionVenue != "HYPERLIQUID" {
 			return nil, fmt.Errorf("Step 36 current audited execution venue must be HYPERLIQUID, got %q", executionVenue)
 		}
-		if !paper && venueEnvironment != "TESTNET" {
+		if !chain && venueEnvironment != "TESTNET" {
 			return nil, fmt.Errorf("Step 36 target environment must be TESTNET, got %q", venueEnvironment)
 		}
-		if !paper && gatewayMode != "hyperliquid-dry-run" {
+		if !chain && gatewayMode != "hyperliquid-dry-run" {
 			return nil, fmt.Errorf("Step 36 gateway mode must remain hyperliquid-dry-run, got %q", gatewayMode)
 		}
-		if paper {
+		if chain {
 			venuePublicInfoURL = ""
 		} else if err := validateHyperliquidTestnetInfoURL(venuePublicInfoURL); err != nil {
 			return nil, err
@@ -247,6 +256,9 @@ func configuredProvider() (provider.Provider, error) {
 			AlertStoreDir:          strings.TrimSpace(envOr("DASHBOARD_ALERT_STORE_DIR", "/data/watchdog")),
 			ManualAuditDir:         strings.TrimSpace(os.Getenv("DASHBOARD_MANUAL_AUDIT_DIR")),
 			AlertAckDir:            strings.TrimSpace(os.Getenv("DASHBOARD_ALERT_ACK_DIR")),
+			ManualRequestDir:       strings.TrimSpace(os.Getenv("DASHBOARD_MANUAL_REQUEST_DIR")),
+			LiveOrderSubmission:    strings.TrimSpace(os.Getenv("DASHBOARD_LIVE_ORDER_SUBMISSION")),
+			KrakenAccountFile:      strings.TrimSpace(os.Getenv("DASHBOARD_KRAKEN_ACCOUNT_FILE")),
 		}), nil
 	default:
 		return nil, fmt.Errorf("unsupported DASHBOARD_DATA_PROVIDER %q; expected mock, simulation or real", mode)

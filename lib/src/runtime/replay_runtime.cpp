@@ -4,6 +4,8 @@
 
 #include "replay_runtime.h"
 
+#include "target_decisions.h"
+
 namespace Replay {
 
 ReplayRuntime::ReplayRuntime(
@@ -121,7 +123,7 @@ void ReplayRuntime::onClosedSlice(const MarketSliceSnapshot& slice)
 
     // First close after a manual rebalance: bring every strategy back to its targets.
     const DecisionBatch decisions = resync_targets_after_manual_
-        ? resyncToApprovedTargets(approved, last_risk_evaluations_, closes)
+        ? resyncToApprovedTargets(approved, last_risk_evaluations_, strategy_positions_, closes)
         : approved;
     resync_targets_after_manual_ = false;
 
@@ -276,40 +278,6 @@ ReplayRuntime::ManualLimits ReplayRuntime::manualLimits() const
     return limits;
 }
 
-namespace {
-
-// Per-strategy decisions that move holdings to `weights` of the reference capital:
-// TARGET for every positive weight, FLAT for held assets without one. Held assets with
-// no price are left untouched (HOLD).
-void setTargetDecisions(
-    StrategyDecisionIntent& intent,
-    const std::map<Coin, double>& weights,
-    const VirtualPositionState* held,
-    const ExecutionReferencePrices& prices)
-{
-    intent.decisions.clear();
-    intent.target_notional_usd.clear();
-    std::map<Coin, double> assets = weights;
-    if (held != nullptr)
-        for (const auto& [asset, quantity] : held->values())
-            if (quantity != 0.0)
-                assets.emplace(asset, 0.0);
-
-    for (const auto& [asset, weight] : assets) {
-        if (!prices.contains(asset))
-            continue;
-        if (weight > 0.0) {
-            intent.decisions.emplace(asset, RebalanceDecision::targetWeight(weight));
-            intent.target_notional_usd.emplace(asset, intent.reference_capital * weight);
-        } else {
-            intent.decisions.emplace(asset, RebalanceDecision::flat());
-            intent.target_notional_usd.emplace(asset, 0.0);
-        }
-    }
-}
-
-} // namespace
-
 ReplayRuntime::ManualRebalanceResult ReplayRuntime::rebalanceToManualTarget(
     const std::map<Coin, double>& weights,
     Timestamp execution_timestamp,
@@ -418,31 +386,6 @@ ReplayRuntime::ManualRebalanceResult ReplayRuntime::rebalanceToManualTarget(
 bool ReplayRuntime::targetResyncPending() const
 {
     return resync_targets_after_manual_;
-}
-
-// Strategy decisions with every non-HOLD kept, and HOLD positions moved to the
-// risk-approved weight. Used once after a manual rebalance so the account returns to
-// the strategy targets at the end-of-day decision. A strategy without an evaluation
-// (sizing unavailable) keeps its normal decisions.
-DecisionBatch ReplayRuntime::resyncToApprovedTargets(
-    const DecisionBatch& approved,
-    const std::vector<PortfolioRiskEvaluation>& evaluations,
-    const ExecutionReferencePrices& closes) const
-{
-    DecisionBatch resync = approved;
-    for (StrategyDecisionIntent& intent : resync.strategies) {
-        const auto evaluation = std::find_if(evaluations.begin(), evaluations.end(),
-            [&](const PortfolioRiskEvaluation& value) { return value.strategy_id == intent.strategy_id; });
-        if (evaluation == evaluations.end() || !evaluation->sizing_available)
-            continue;
-        std::map<Coin, double> weights;
-        for (const auto& [asset, weight] : evaluation->approved_weights.values())
-            if (weight > 0.0)
-                weights.emplace(asset, weight);
-        const auto held = strategy_positions_.find(intent.strategy_id);
-        setTargetDecisions(intent, weights, held == strategy_positions_.end() ? nullptr : &held->second, closes);
-    }
-    return resync;
 }
 
 ReplayEvidence ReplayRuntime::finalizeEvidence(Timestamp snapshot_time)

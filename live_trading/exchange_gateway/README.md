@@ -89,6 +89,37 @@ Order states in the journal: `PREPARED`, `SENDING`, `OPEN`, `UNKNOWN`, `FILLED`,
 `CANCELLED` (also partial fills whose remainder ended), `REJECTED`. Only `OPEN`
 (Accepted), `FILLED`, `CANCELLED` and `REJECTED` are reported to execution.
 
+Fees and funding (the venue reports no fee on fills): the adapter reads the account
+history every 5 minutes and 30 s after a new fill. Each fee or funding entry is
+journaled once (`cash_entries`, keyed by the venue log id) and published as a
+`VenueCostEvent` (`execution.event.venue_cost.v1`): the fee with its local fill id, the
+funding with its source coin, the amount as the change of USD cash. A fee listed before
+its fill has been polled waits for it (at most 10 minutes, then it is booked on the
+account). The first read of a new journal only marks the existing history as seen.
+Execution-state applies each cost once (`trading_venue_costs`): cash moves, fees join
+their fill's commission and funding its position in the position ledger.
+
+The same path carries the other USD changes of the Multi-M wallet (user decision
+2026-10-14): venue interest (`INTEREST`, a cost) and deposits, withdrawals and
+conversions (`CAPITAL_FLOW`: capital, not profit or loss). Both stay account-level and
+are totalled per day in `trading_equity_daily` (`interest`, `capital_flows`), so the cash
+keeps matching Kraken and the dashboard can tell deposits from performance. BTC movements
+and other wallets do not change the USD cash; they are logged once as collateral-only. A
+USD change of an unknown kind is logged as not booked; reconciliation then reports the
+cash difference and pauses trading.
+
+Cash in the snapshot is reported spot-style (USD balance minus the entry value of open
+positions), because execution-state's cash falls by the value of a buy. Reconciliation in
+the chain's LIVE mode accepts 0.50 USD of difference (`--cash-tolerance-usd`, venue
+rounding); PAPER stays exact.
+
+BTC collateral: the snapshot also carries `collateral_usd`, Kraken's own post-haircut USD
+value of the non-USD wallet currencies (BTC). Reconciliation does not compare it.
+Execution-state fixes the value per day (`trading_daily_collateral`, first use wins, so a
+redelivered daily snapshot is identical) and puts it in the daily `AccountSnapshot`;
+portfolio risk sizes with cash + positions + collateral (user decision 2026-10-14: "USD +
+BTC with haircut"). Orders never spend it. PAPER has none and its messages are unchanged.
+
 ## Kraken Futures mapping
 
 Checked against docs.kraken.com (Futures REST reference, authentication guide and
@@ -105,7 +136,8 @@ test with small, individually authorized real-money orders).
 | Cancel | `POST /derivatives/api/v3/cancelorder` | by `cliOrdId`; `cancelled` / `filled` / `notFound` |
 | Open orders | `GET /derivatives/api/v3/openorders` | evidence for `UNKNOWN` orders |
 | Fills | `GET /derivatives/api/v3/fills` | last 100, newest first; includes `cliOrdId`; **no fee field** |
-| Snapshot | `GET accounts`, `openpositions`, `openorders` | cash = USD quantity of the Multi-M (`flex`) wallet |
+| Fees, funding, interest, capital flows | `GET /api/history/v2/account-log?count=500` | newest 500 entries; `fee` (paid, positive) with `execution` = fill id; `realized_funding`; other USD changes of the `flex` wallet = `new_balance - old_balance`: `info` with "interest" → INTEREST, with "transfer"/"conversion" → CAPITAL_FLOW; read every 5 min and 30 s after a fill |
+| Snapshot | `GET accounts`, `openpositions`, `openorders` | cash = USD quantity of the Multi-M (`flex`) wallet minus Σ position size x `price` (average entry); collateral = Σ `collateral` (USD after haircut) of the non-USD currencies |
 | Dead man's switch | `POST /derivatives/api/v3/cancelallordersafter` | off by default; path/parameter UNCONFIRMED |
 
 Signing: `Authent = Base64(HMAC-SHA512(Base64Decode(secret), SHA256(postData + nonce + path)))`
@@ -157,15 +189,26 @@ Rate budget: 500 units per 10 s; sendorder/cancelorder 10, reads 2, dead man's s
 - `sendorder` response for `mkt` orders: status (`placed` vs `filled`) and events.
 - Whether `clientOrderIdAlreadyExist` applies only to open orders (treated as `UNKNOWN`).
 - `cancelallordersafter` path, parameter and response (keep disabled until then).
-- Commissions: fills carry none, so fills are published with commission 0 for now;
-  actual fees and funding need the account log (roadmap step 9).
-- Snapshot cash is the USD wallet balance; BTC collateral valuation and margin
-  belong to roadmap step 8 and the account monitor, not to this snapshot.
+- Account history (fees and funding): path, the query string as signed `postData`
+  (no nonce), the `info` values ("futures trade", "funding rate change"), that `fee` is
+  positive and in USD for the Multi-M wallet (`asset` "usd"), that `execution` equals the
+  `fill_id` of `/fills`, and the sign of `realized_funding` (taken as the change of the USD
+  balance: negative = paid). Entries in another currency, or other balance changes
+  (transfers, conversions, interest), are logged once as not booked.
+- Other account-history entries: the `info` words for interest, transfers and conversions
+  ("interest", "transfer", "conversion" are matched), that `old_balance`/`new_balance` are
+  the entry asset's balance in the named `margin_account`, and that a conversion lists its
+  USD and BTC sides as separate entries.
+- Snapshot cash: the USD balance minus the open positions' entry value, assuming Kraken
+  settles realized PnL into the USD balance at once and that `openPositions[].price` is
+  the average entry price. Collateral: that `accounts.flex.currencies.XBT.collateral` is the
+  post-haircut USD value Kraken counts as margin (the read-only account check of
+  2026-10-10 showed the field; its value with a funded BTC balance is not yet observed).
 
 ## Run and test
 
 ```bash
-# Offline: recorded responses only (85 checks).
+# Offline: recorded responses only.
 build/live_trading/exchange_gateway/src/algotrading_venue_adapter_test
 
 # Real, read-only: GET only through GetOnlyTransport; prints counts, never credentials.
@@ -182,3 +225,9 @@ algotrading_exchange_gateway --mode venue --venue kraken-futures \
 The credentials file contains exactly `KRAKEN_API_KEY=...` and `KRAKEN_API_SECRET=...`.
 Never print it. Enabling `--order-submission enabled` and any real order require the
 user's explicit authorization for that specific test.
+
+In the chain this is the `gateway-kraken` service, started by `MODE=live` in chain.env
+(deploy/chain/README.md, "Switching to live"); `LIVE_ORDER_SUBMISSION` maps to
+`--order-submission`. Execution-state sets `reference_price` on every order (the daily
+plan's close(T), or the current Binance price for a Manual Control order), including
+orders recovered after a restart, so the USD value check always has its planning price.

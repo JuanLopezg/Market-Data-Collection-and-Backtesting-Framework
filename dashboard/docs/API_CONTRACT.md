@@ -64,16 +64,16 @@ All following endpoints use GET and require a valid session.
 | Endpoint | Read model |
 | --- | --- |
 | `/api/shell-status` | Global observed source/data/trading status with blockers and warnings. |
-| `/api/overview` | Runtime account/fill aggregates and timestamped canonical valuation. Stats: Total Equity, Cash, (Unrealized PnL), Leverage (gross position value / equity). `equityCurve[]`: `{label, equity, balance?, closeLoop?}` (balance = equity minus open-position PnL; closeLoop = that day's reconciliation state). `liveExpected[]`: `{label, equity, expected?}` (fast backtest; PAPER from the daily comparison, replay from `expected_equity.csv`). |
+| `/api/overview` | Runtime account/fill aggregates and timestamped canonical valuation. Stats: Total Equity, Cash, (Unrealized PnL), Leverage (gross position value / equity); Kraken LIVE adds BTC Collateral (after haircut), Sizing Capital (equity + collateral), Margin Headroom and Drop to Maintenance (from `DASHBOARD_KRAKEN_ACCOUNT_FILE`, the account monitor's `account.json`, stale after 5 min) and Net Deposits (`trading_equity_daily.capital_flows`). `equityCurve[]`: `{label, equity, balance?, closeLoop?}` (balance = equity minus open-position PnL; closeLoop = that day's reconciliation state). `liveExpected[]`: `{label, equity, expected?}` (fast backtest; PAPER from the daily comparison, replay from `expected_equity.csv`). |
 | `/api/positions` | Durable quantities/orders/targets and explicit valuation provenance. |
 | `/api/reconciliation` | Our books compared with the exchange, per asset: `rows[]` `{asset, localQty, exchangeQty, deltaQty (exchange - ours), pendingQty (signed open-order remainder), status}`, `openOrders[]`, `issues[]`, overall `status`. PAPER/LIVE: durable runtime state vs the latest retained exchange snapshot (PENDING when that snapshot is older). Simulation: the reconciler's local ledger (sum of fill position deltas) vs the MOCK account; overall verdict and issues from the C++ reconciler. |
 | `/api/pipeline` | Cycle-aligned Strategy -> Risk -> Planner -> Execution lineage/proof. |
-| `/api/execution` | Current durable orders and bounded fills; optional `slippageHistory` (`{label, bps, fills}` per day, notional-weighted, positive = adverse) when the expected price is known. |
+| `/api/execution` | Current durable orders and bounded fills; optional `slippageHistory` (`{label, bps, fills}` per day, notional-weighted, positive = adverse) when the expected price is known. `rejects[]` splits the gateway's `CODE: text` message into `code`, `title`, `reason` and `remediation`; `kind` is `SKIPPED` for `MARKET_UNAVAILABLE`, `MARKET_NOT_TRADING` and `BELOW_MINIMUM_QUANTITY` (order state `SKIPPED`, counted in `skippedCount`, not in `rejectCount`) and `REJECTED` otherwise. Alerts: a skip is INFO `ORDER_SKIPPED`, `NOTIONAL_MISMATCH` is CRITICAL, other rejects WARN. |
 | `/api/risk` | Approved decision and exact persisted signals/account inputs; optional page view `summary` (cards with `tone`), `history` (`{label, leverage?, drawdown}`), `strategyLimits` and `exposures`. |
 | `/api/market-data` | Canonical ranking/OHLCV, indicator reconstruction and aligned strategy signals. |
 | `/api/infrastructure` | Bounded PostgreSQL/NATS/file diagnostics; optional fresh host telemetry adds CPU/RAM/disk, container health and `telemetryObservedAt`. `processRunning` is liveness, not `ready`; stale/missing measurements stay unknown. |
 | `/api/alerts-audit` | Current derived alerts, watchdog lifecycle, audit and acknowledgement evidence. Simulation: notices for route safety, reconciliation, leverage (>1.5x warn, >2.5x critical), drawdown (<-10% warn, <-25% critical), rejected orders and manual-target state, each with the date the condition started; never stops trading. |
-| `/api/live-vs-expected` | `paperComparison` (equity vs fast-backtest expected equity per day, and PAPER positions vs expected) is what the page shows; the anomaly projection fields remain for compatibility. |
+| `/api/live-vs-expected` | `paperComparison` (equity vs fast-backtest expected equity per day, and positions vs expected) is what the page shows; the anomaly projection fields remain for compatibility. Kraken LIVE rows add `liveFees`, `expectedFees`, `liveFunding`, `liveInterest`, `capitalFlows`, `slippage` (USD totals since the study started) and `skipped` (assets Kraken skipped that cycle); the page then shows where the difference comes from. |
 | `/api/manual-control` | Current capabilities/reference target and preview information. |
 
 Additional authenticated GET diagnostics:
@@ -106,10 +106,30 @@ against the current reference. It requires OPERATOR and `X-CSRF-Token`. It does
 not publish a trading command or alter trading state.
 
 `POST /api/manual-control/route` checks the preview/request hash and reference,
-evaluates admission and appends an isolated durable operator-intent audit.
-It always reports `submitted=false` and `routeEnabled=false`.
-An admission/audit success is not an order submission. Private authentication, manual
-risk transformation, trading-control delivery and real order lifecycle remain deferred.
+evaluates admission and appends an isolated durable operator-intent audit. With the
+real provider outside the trading chain it always reports `submitted=false` and
+`routeEnabled=false`: an admission/audit success is not an order submission.
+
+Real provider in the trading chain (`DASHBOARD_RUNTIME_MODE=PAPER`, or LIVE with
+`DASHBOARD_EXECUTION_VENUE=KRAKEN`, and `DASHBOARD_MANUAL_REQUEST_DIR` set):
+
+- Same CSV rules and response fields as the replay simulation below. Limits are the
+  strictest strategy's `max_asset_weight`/`max_gross_leverage` of the risk checkpoint's
+  portfolio config; tradable assets are the top-N universe plus held assets (PAPER) or the
+  Kraken contracts verified on the Symbol Mapping page (LIVE). Current weights use the
+  latest daily closes.
+- `routeBlockers` can contain `RISK_LIMITS_UNAVAILABLE`, `EXECUTION_STATE_UNAVAILABLE`,
+  `ORDERS_IN_FLIGHT`, `DAILY_CYCLE_WINDOW` (23:45-00:15 UTC), `REQUEST_IN_PROGRESS`,
+  `EQUITY_UNAVAILABLE` and, in LIVE unless `DASHBOARD_LIVE_ORDER_SUBMISSION=enabled`,
+  `LIVE_ORDER_SUBMISSION_DISABLED`.
+- `route` writes a `MANUAL_REQUEST_V1` file (mode 0644; format in
+  `live_trading/execution_state_service/src/manual_requests.h`) to `<dir>/requests` and
+  answers `QUEUED` with `submitted=true`; execution-state executes or rejects it within
+  seconds and writes the outcome to `<dir>/processed`. Each route (queued or blocked) is
+  appended to the manual audit store (action `MANUAL_REBALANCE`).
+- `requests[]` stages: QUEUED (file waiting), EXECUTED (checked, orders being sent),
+  AT_EXCHANGE, FILLED, RESYNCED (the next daily cycle has executed) or FAILED (rejected by
+  execution-state, or an order rejected/canceled by the venue, with its reason).
 
 Replay simulation provider only (`DASHBOARD_DATA_PROVIDER=simulation`):
 

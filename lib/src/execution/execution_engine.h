@@ -55,6 +55,7 @@ private:
     VirtualPositionState& strategyPositionById(StrategyID strategyId);
     const std::string& strategyNameById(StrategyID strategyId) const;
     void applyFill(const Fill& fill, const PersistCallback& persist);
+    void validateSubmitOrders(const std::vector<ExecutionOrder>& orders, OrderID nextOrderId) const;
 
 public:
     ExecutionEngine(
@@ -78,6 +79,14 @@ public:
 
     void applyOrderPlan(
         const OrderPlanBatch& plan,
+        const PersistCallback& persist
+    );
+
+    // Submit manual orders without touching the daily-cycle markers (see .cpp).
+    void applyManualOrders(
+        const std::vector<ExecutionOrder>& orders,
+        OrderID nextOrderId,
+        Timestamp submittedAt,
         const PersistCallback& persist
     );
 

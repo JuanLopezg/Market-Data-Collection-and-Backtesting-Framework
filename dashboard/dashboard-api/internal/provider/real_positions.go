@@ -81,10 +81,37 @@ func (p *Real) positions(ctx context.Context) (realPositionsData, error) {
 	}
 	data := buildRealPositions(state)
 	p.valuePositions(ctx, &data, state.Snapshot.AccountCash)
-	if window, err := p.postgres.TradeHistoryFills(ctx); err == nil && window.TotalRows <= int64(len(window.Rows)) {
+	// The runtime's position ledger is the source; rebuilding from the fills is only the
+	// fallback for an ExecutionState that does not write it yet.
+	if accounting, err := p.postgres.Accounting(ctx); err == nil && accounting.Available {
+		closed, open := lotsFromAccounting(accounting)
+		applyPositionLots(&data, closed, open)
+	} else if window, err := p.postgres.TradeHistoryFills(ctx); err == nil && window.TotalRows <= int64(len(window.Rows)) {
 		applyRealPositionHistory(&data, realTradeEvents(window.Rows))
 	}
 	return data, nil
+}
+
+// lotsFromAccounting converts the runtime position tables into the dashboard's lots.
+func lotsFromAccounting(accounting pgstore.Accounting) ([]positionLot, map[string]*positionLot) {
+	convert := func(row pgstore.AccountingPosition) positionLot {
+		return positionLot{
+			Asset: row.Coin, Side: row.Side, OpenedAt: row.OpenedAt, ClosedAt: row.ClosedAt,
+			Quantity: row.Quantity, MaxQuantity: row.MaxQuantity, EntryPrice: row.EntryPrice,
+			EntryValue: row.EntryValue, ExitValue: row.ExitValue, ExitQty: row.ExitQuantity,
+			GrossPnL: row.GrossPnL, Fees: row.Fees, Funding: row.Funding,
+		}
+	}
+	closed := make([]positionLot, 0, len(accounting.Closed))
+	for _, row := range accounting.Closed {
+		closed = append(closed, convert(row))
+	}
+	open := make(map[string]*positionLot, len(accounting.Open))
+	for _, row := range accounting.Open {
+		lot := convert(row)
+		open[row.Coin] = &lot
+	}
+	return closed, open
 }
 
 // PAPER/LIVE fills carry their commission; funding payments are not persisted yet,
@@ -102,6 +129,10 @@ func realTradeEvents(fills []tradingwire.Fill) []tradeEvent {
 
 func applyRealPositionHistory(data *realPositionsData, events []tradeEvent) {
 	closed, lots := buildPositionHistory(events)
+	applyPositionLots(data, closed, lots)
+}
+
+func applyPositionLots(data *realPositionsData, closed []positionLot, lots map[string]*positionLot) {
 	data.ClosedPositions = closedPositionRows(closed)
 	data.ClosedAvailable = true
 	for index := range data.Positions {
@@ -120,6 +151,11 @@ func applyRealPositionHistory(data *realPositionsData, events []tradeEvent) {
 }
 
 func (p *Real) ClosedPositionsReport(ctx context.Context) (ClosedPositionsReport, error) {
+	if accounting, err := p.postgres.Accounting(ctx); err == nil && accounting.Available {
+		closed, _ := lotsFromAccounting(accounting)
+		return ClosedPositionsReport{Closed: closed, Complete: true,
+			Source: "runtime position ledger (trading_closed_positions; funding only from a real venue)", BuiltAt: time.Now().UTC()}, nil
+	}
 	window, err := p.postgres.TradeHistoryFills(ctx)
 	if err != nil {
 		return ClosedPositionsReport{}, fmt.Errorf("read trade history: %w", err)

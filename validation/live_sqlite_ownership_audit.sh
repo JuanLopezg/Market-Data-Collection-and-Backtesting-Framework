@@ -11,14 +11,24 @@ say_fail() { echo "FAIL: $*" >&2; fail=1; }
 # contains unrelated SQLite users (backtest result storage, legacy/test state
 # stores, generic database utilities) which are outside this LIVE market-data
 # ownership rule.
+#
+# The exchange gateway's venue journal is the other approved SQLite user: it owns a
+# separate file (--venue-journal) holding its order/fill journal, never the
+# canonical market database (checked below).
+VENUE_JOURNAL="live_trading/exchange_gateway/src/venue/venue_journal.cpp"
 while IFS= read -r hit; do
   [[ -z "$hit" ]] && continue
   case "$hit" in
     *"live_trading/market_data_service/src/market_store.cpp"*) ;;
+    *"$VENUE_JOURNAL"*) ;;
     *) say_fail "unexpected direct SQLite C API use in LIVE service: $hit" ;;
   esac
 done < <(grep -RIn --exclude='*.md' --exclude='*.txt' --exclude='*.sh' -E 'sqlite3_(open|prepare|step|exec|bind|column|close|finalize)' \
   "$ROOT/live_trading" 2>/dev/null || true)
+
+if grep -qE 'ohlcv_data|market_volume_rank_daily|tracked_pairs|date_of_start|CanonicalMarketDataReader' "$ROOT/$VENUE_JOURNAL"; then
+  say_fail "venue journal must only use its own journal tables, not the canonical market database"
+fi
 
 # The shared canonical reader is the one intentionally approved read-only SQLite
 # implementation for LIVE consumers. Its safety is checked below (exact date +

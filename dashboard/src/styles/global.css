@@ -169,6 +169,10 @@ main { padding: 20px 22px 28px; }
 .reject-card strong { font-size:10px; }.reject-card>div span { color:var(--red); font-size:8px; font-weight:700; }
 .reject-card p { color:#b4c2cf; font-size:10px; line-height:1.45; margin:8px 0 5px; }
 .reject-card small { display:block; color:#8799aa; font-size:9px; line-height:1.4; }
+/* A venue skip is expected behaviour, not a failure: neutral card, amber code. */
+.reject-card--skipped { border-color: rgba(135,153,170,.3); background: rgba(40,55,72,.18); }
+.reject-card--skipped>div span { color: var(--amber, #f5a524); }
+.reject-card__title { font-weight: 600; color: var(--text); }
 .quality-grid { display:grid; grid-template-columns:1fr 1fr; }
 .quality-grid>div { min-height:68px; display:flex; flex-direction:column; justify-content:center; padding:10px; border-right:1px solid #152333; border-bottom:1px solid #152333; }
 .quality-grid>div:nth-child(2n){border-right:0}.quality-grid>div:nth-last-child(-n+2){border-bottom:0}
@@ -691,3 +695,107 @@ td.leverage--elevated { color: #f08c3c; }
 .panel-actions a.button-secondary { height: 30px; font-size: 12px; padding: 0 12px; text-decoration: none; }
 .positions-layout { display: grid; gap: 12px; }
 .status-warn { color: var(--amber); }
+
+/* Mobile layout: wide data tables scroll inside their panel, not the page. */
+.mobile-menu-toggle, .mobile-menu-close, .mobile-menu-backdrop { display: none; }
+
+@media (max-width: 900px) {
+  body { min-width: 0; }
+  .app-shell { grid-template-columns: minmax(0, 1fr); }
+  .workspace { grid-column: 1; }
+  main { padding: 16px 12px 24px; }
+  .topbar { position: sticky; top: 0; right: auto; width: auto; height: 56px; padding: 0 12px; border-bottom: 1px solid var(--border); background: var(--bg); }
+  .mobile-menu-toggle, .mobile-menu-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 44px;
+    min-width: 44px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-2);
+    cursor: pointer;
+  }
+  .mobile-menu-toggle { font-size: 14px; padding: 0 10px; }
+  .mobile-menu-close { position: absolute; right: 10px; top: 10px; }
+  .sidebar {
+    width: min(300px, 88vw);
+    z-index: 30;
+    visibility: hidden;
+    transform: translateX(-100%);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .sidebar--open { visibility: visible; transform: translateX(0); }
+  .sidebar .brand { padding-right: 58px; flex-shrink: 0; }
+  .sidebar .brand strong { font-size: 14px; }
+  .sidebar nav a { min-height: 44px; font-size: 14px; }
+  .sidebar__identity { margin-top: 12px; }
+  .sidebar__footer { margin-top: 8px; }
+  .mobile-menu-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 29;
+    background: #0009;
+    border: 0;
+  }
+  .page-heading { padding-right: 0; align-items: flex-start; flex-wrap: wrap; gap: 12px; }
+  .page-heading h1 { font-size: 25px; }
+  .page-heading p { line-height: 1.5; overflow-wrap: anywhere; }
+  .grid-2-1, .grid-bottom, .risk-grid, .risk-grid--bottom,
+  .execution-grid, .execution-grid--bottom, .manual-grid,
+  .manual-grid--upload, .manual-grid--orders, .behaviour-drilldown,
+  .infra-grid--top, .infra-grid--services, .infra-grid--bottom,
+  .market-grid, .market-grid--bottom {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .stats-grid, .metric-row, .pipeline-summary, .execution-summary,
+  .risk-summary, .market-summary, .infra-summary, .behaviour-summary, .behaviour-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .panel__header { height: auto; min-height: 48px; padding: 10px 12px; flex-wrap: wrap; gap: 10px; }
+  .panel__header > div { min-width: 0; max-width: 100%; }
+  .panel__body { padding: 12px; }
+  .table-wrap { max-width: 100%; overscroll-behavior-x: contain; }
+  .panel-actions, .table-actions, .alert-toolbar, .chart-controls { flex-wrap: wrap; }
+  .why-inspector, .order-inspector { width: min(520px, 100vw); }
+  .risk-limit { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .overview-range { align-items: flex-start; max-width: 100%; }
+  .range { flex-wrap: wrap; }
+  .time-range { max-width: 100%; }
+  .time-range__button { max-width: 100%; min-height: 40px; text-align: left; }
+  .time-range__button span { overflow-wrap: anywhere; }
+  .time-range__button { white-space: normal; }
+  .time-range__menu { max-width: calc(100vw - 48px); flex-wrap: wrap; }
+  .time-range__custom { min-width: 0; width: 100%; border-right: 0; }
+  .time-range__custom input { min-width: 0; width: 100%; }
+  .time-range__presets { min-width: 0; width: 100%; }
+  .time-range__presets button { min-height: 40px; }
+  .ts-chart__svg { max-width: 100%; touch-action: pan-y; }
+  .close-loop svg { max-width: 100%; }
+  .ts-chart__tooltip { left: 0 !important; right: 0 !important; min-width: 0; max-width: 100%; }
+  .login-form input { font-size: 16px; min-height: 44px; }
+  .login-submit { min-height: 44px; font-size: 14px; }
+  .overview-event, .event { grid-template-columns: 8px 70px minmax(0, 1fr); }
+  .event > :nth-child(n+4) { grid-column: 3; }
+  .event > span { overflow-wrap: anywhere; }
+  .key-value-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .key-value-grid strong { overflow-wrap: anywhere; }
+  .data-load-error { grid-template-columns: 24px minmax(0, 1fr); }
+  .data-load-error > button { grid-column: 2; }
+}
+
+@media (max-width: 480px) {
+  .stats-grid, .metric-row, .pipeline-summary, .execution-summary,
+  .risk-summary, .market-summary, .infra-summary, .behaviour-summary, .behaviour-card-grid, .overview-stats,
+  .component-grid { grid-template-columns: minmax(0, 1fr); }
+  .stat-card { gap: 12px; }
+  .stat-card__value, .overview-stat strong { font-size: 24px; }
+  .mini-metric strong { overflow-wrap: anywhere; }
+  .contributor-row { grid-template-columns: 70px minmax(0, 1fr) 65px 40px; gap: 4px; }
+  .behaviour-detail-kpis { flex-wrap: wrap; }
+  .manual-footer { height: auto; padding: 10px; flex-wrap: wrap; }
+  .manual-footer span { flex-basis: 100%; }
+}

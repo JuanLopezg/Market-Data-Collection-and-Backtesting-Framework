@@ -35,6 +35,7 @@ SOURCES=(
     lib/src/strategy/strategy_signal_engine.cpp
     lib/src/strategy/strategy.cpp
     lib/src/risk/portfolio_risk_engine.cpp
+    lib/src/risk/target_decisions.cpp
     lib/src/execution/planning/notional_order_planner.cpp
     lib/src/market/rolling_market_state.cpp
     lib/src/universe/liquidity_universe.cpp
@@ -44,9 +45,11 @@ SOURCES=(
     lib/src/indicator/indicator_spec.cpp
     lib/src/utils/time_handler.cpp
     lib/src/logging/logger.cpp
+    lib/src/recovery/reconciler.cpp
+    lib/src/account/position_ledger.cpp
 )
 
-# Test file and the language standard it was written for.
+# Test file, the language standard it was written for, and extra sources it needs.
 TESTS=(
     "step47a_multi_exchange_architecture_test.cpp c++17"
     "step48_canonical_multi_venue_adapter_test.cpp c++17"
@@ -60,7 +63,11 @@ TESTS=(
     "step56_full_system_replay_runtime_test.cpp c++20"
     "step57_manual_control_mock_pipeline_test.cpp c++20"
     "order_manager_stale_update_test.cpp c++20"
+    "reconciler_quantity_tolerance_test.cpp c++20"
+    "position_ledger_test.cpp c++20"
+    "manual_chain_test.cpp c++20 lib/src/transport/message_json.cpp lib/src/execution/execution_engine.cpp lib/src/execution/planning/quantity_order_planner.cpp lib/src/execution/planning/planning_state.cpp live_trading/execution_state_service/src/manual_requests.cpp"
 )
+INCLUDES+=("-I$ROOT/live_trading/execution_state_service/src")
 
 echo "Building ${#SOURCES[@]} library sources once"
 OBJECTS=()
@@ -72,11 +79,15 @@ done
 
 failed=()
 for entry in "${TESTS[@]}"; do
-    read -r test standard <<<"$entry"
+    read -r test standard extra <<<"$entry"
     name="${test%.cpp}"
     printf '%-60s ' "$name"
+    extra_sources=()
+    for source in ${extra:-}; do
+        extra_sources+=("$ROOT/$source")
+    done
     if ! "$CXX" -std="$standard" -O1 -Wall -Wextra -Werror -pedantic "${INCLUDES[@]}" \
-            "$ROOT/validation/$test" "${OBJECTS[@]}" -pthread -lfmt -o "$BUILD/$name" 2>"$BUILD/$name.compile.log"; then
+            "$ROOT/validation/$test" "${extra_sources[@]}" "${OBJECTS[@]}" -pthread -lfmt -o "$BUILD/$name" 2>"$BUILD/$name.compile.log"; then
         echo "COMPILE FAIL"
         sed -n '1,20p' "$BUILD/$name.compile.log"
         failed+=("$name")

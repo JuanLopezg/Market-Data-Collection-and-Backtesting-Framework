@@ -316,11 +316,10 @@ archive is not a durable trading journal or an end-to-end delivery guarantee.
 The receiver source moved to `deploy/chain/logging/` and now follows the chain layout:
 `/logs/<service>/YYYYMMDD.log`, short container names as tags, state in `/data/receiver`,
 writer at `/chain/logging/clean_daily_logs.py`. Install it with the chain, as described
-in [deploy/chain/README.md](../chain/README.md). The running VPS still uses the previous
-installation (`/etc/algotrading/logging`, `/usr/local/lib/algotrading`,
-`/var/log/algotrading/services`) until its authorized from-scratch redeploy; its
-installed copy is not changed by repository edits. The older overlays in this
-directory, `deploy/paper_trading` and `dashboard` now tag records with the plain
+in [deploy/chain/README.md](../chain/README.md). The VPS was migrated to the chain
+layout on 2026-10-13; its installed copy is not changed by repository edits.
+The older overlays in this
+directory, the chain and `dashboard` now tag records with the plain
 container name (`{{.Name}}`), which the new receiver accepts.
 
 ### Validation and outstanding VPS acceptance

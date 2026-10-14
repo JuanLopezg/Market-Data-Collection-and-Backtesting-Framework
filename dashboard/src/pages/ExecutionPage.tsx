@@ -8,6 +8,8 @@ import type { ExecutionData, ExecutionOrderState, LedgerEntry } from '../types/d
 
 // Execution: open/filled/rejected orders and fees, daily slippage, the orders and the fills.
 // Rejects and cancels/replacements only appear when there are any. Rows are not clickable.
+// SKIPPED orders are ones the venue cannot take (asset not listed or not trading, size below
+// its minimum); they are shown with the gateway's reason and are not counted as rejects.
 
 const PAGE = 20   // rows shown before "Show more"
 
@@ -48,7 +50,7 @@ function OrdersPanel({ data }: { data: ExecutionData }) {
 
   return <Panel title="Orders" right={<div className="table-actions">
     <label className="search-box"><Search size={14}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Order ID or asset"/></label>
-    <select className="compact-select" value={stateFilter} onChange={event => setStateFilter(event.target.value as 'ALL' | ExecutionOrderState)}><option>ALL</option><option>NEW</option><option>PARTIAL</option><option>FILLED</option><option>PENDING_CANCEL</option><option>CANCELED</option><option>REJECTED</option></select>
+    <select className="compact-select" value={stateFilter} onChange={event => setStateFilter(event.target.value as 'ALL' | ExecutionOrderState)}><option>ALL</option><option>NEW</option><option>PARTIAL</option><option>FILLED</option><option>PENDING_CANCEL</option><option>CANCELED</option><option>REJECTED</option><option>SKIPPED</option></select>
   </div>}>
     <div className="table-wrap"><table className="wide-table execution-table"><thead><tr>
       <th>Order ID</th><th>Asset</th><th>Side</th><th>Qty</th><th>Filled</th><th>State</th><th>Expected</th><th>Avg Fill</th><th>Slippage</th><th>Fees</th><th>Submitted</th>
@@ -120,6 +122,7 @@ export function ExecutionPage() {
     { label: 'Open Orders', value: String(data.openOrders), tone: data.openOrders ? 'warning' : '' },
     { label: 'Filled Orders', value: String(data.filledOrders), tone: '' },
     { label: 'Rejected', value: String(data.rejectCount), tone: data.rejectCount ? 'negative' : '' },
+    { label: 'Skipped by venue', value: String(data.skippedCount ?? 0), tone: data.skippedCount ? 'warning' : '' },
     { label: 'Total Fees', value: displayAmount(data.totalFeesLabel), tone: '' },
   ]
   const slippage = data.slippageHistory ?? []
@@ -141,8 +144,12 @@ export function ExecutionPage() {
     <OrdersPanel data={data}/>
     <FillsPanel/>
 
-    {data.rejects.length > 0 && <Panel title="Rejects" right={<span className="warning"><AlertTriangle size={12}/> {data.rejects.length}</span>}>
-      <div className="reject-list">{data.rejects.map(reject => <div className="reject-card" key={reject.orderId}><div><strong>{reject.asset} · {reject.orderId}</strong><span>{reject.code}</span></div><p>{reject.reason}</p><small>{reject.remediation}</small></div>)}</div>
+    {data.rejects.length > 0 && <Panel title="Skipped and rejected orders" right={<span className="warning"><AlertTriangle size={12}/> {data.rejects.length}</span>}>
+      <div className="reject-list">{data.rejects.map(reject => <div className={`reject-card${reject.kind === 'SKIPPED' ? ' reject-card--skipped' : ''}`} key={reject.orderId}>
+        <div><strong>{reject.asset} · {reject.orderId}</strong><span>{reject.kind === 'SKIPPED' ? 'SKIPPED' : 'REJECTED'} · {reject.code}</span></div>
+        <p>{reject.title && <span className="reject-card__title">{reject.title}: </span>}{reject.reason}</p>
+        <small>{reject.remediation}</small>
+      </div>)}</div>
     </Panel>}
 
     {data.replacements.length > 0 && <Panel title="Cancels / Replacements">

@@ -175,6 +175,22 @@ public:
         }
     }
 
+    // Fill one active market order now at a given price (PAPER manual orders, priced at
+    // the market when the operator confirmed them). Other active orders are untouched.
+    void fillAtPrice(OrderID orderId, Timestamp ts, double price)
+    {
+        const auto it = active_orders_.find(orderId);
+        if (it == active_orders_.end())
+            return;
+        if (it->second.entry_stop_price != 0.0 || it->second.parent_order_id != 0)
+            throw std::invalid_argument("Only market orders can be filled at a given price");
+        if (!std::isfinite(price) || price <= 0.0)
+            throw std::invalid_argument("Invalid simulated fill price");
+
+        emitFill(it->second, ts, price, it->second.quantity);
+        active_orders_.erase(it);
+    }
+
     std::vector<ExchangeEvent> drainEvents() override
     {
         std::vector<ExchangeEvent> result;

@@ -21,9 +21,11 @@ struct MarketDataConfig {
     std::size_t active_top_n = 50;
     int retain_after_top_n_days = 365;
     int minimum_history_days = 100;
-    std::size_t max_parallel_requests = 8;
+    std::size_t max_parallel_requests = 16;
 
-    int midnight_delay_seconds = 5;
+    // The daily run starts this long after UTC midnight; the ingestor still checks Binance's
+    // own clock before reading the day's candles.
+    int midnight_delay_ms = 100;
     int retry_after_failure_seconds = 300;
 };
 

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 	"strings"
+
+	pgstore "control-dashboard-api/internal/integration/postgres"
 )
 
 type realOverviewData struct {
@@ -93,7 +95,30 @@ func (p *Real) overview(ctx context.Context) (realOverviewData, error) {
 	if p.cfg.PaperComparisonFile != "" {
 		addPaperComparison(&overview, readPaperComparison(p.cfg.PaperComparisonFile))
 	}
+	var equityDays []pgstore.EquityDay
+	if accounting, err := p.postgres.Accounting(ctx); err == nil && accounting.Available {
+		addRuntimeEquity(&overview, accounting.Equity)
+		equityDays = accounting.Equity
+	}
+	p.addKrakenCollateral(&overview, positions, equityDays)
 	return overview, nil
+}
+
+// addRuntimeEquity draws the equity curve from ExecutionState's daily equity (account
+// marked at each close), the runtime-owned history. Live vs Expected keeps the PAPER
+// comparison, which pairs live and backtest values at the same execution open.
+func addRuntimeEquity(overview *realOverviewData, days []pgstore.EquityDay) {
+	if len(days) == 0 {
+		return
+	}
+	curve := make([]realEquityPoint, 0, len(days))
+	for _, day := range days {
+		curve = append(curve, realEquityPoint{Label: formatTradingTimestamp(day.Date), Equity: day.Equity})
+	}
+	overview.EquityCurve, overview.EquityAvailable = curve, true
+	if overview.Stats[0].Value == "Not available" {
+		overview.Stats[0] = realOverviewMetric{Label: "Total Equity", Value: formatUSD(days[len(days)-1].Equity)}
+	}
 }
 
 // addPositionValuation shows equity and leverage from positions marked at the latest close.
@@ -211,7 +236,7 @@ func buildRealOverview(
 		topPositions = append([]realPosition(nil), topPositions[:8]...)
 	}
 
-	note := "Step 23 Overview is a read-only aggregate over the already verified real read models: trading_runtime_state, PortfolioRisk checkpoints, trading_fills, retained reconciliation evidence and canonical market-data SQLite. Total equity, realized/unrealized PnL, an equity curve and Live-vs-Expected are intentionally not fabricated because the project does not yet expose a canonical ledger/mark-to-market/baseline read model."
+	note := "Overview reads the durable runtime state (trading_runtime_state), the runtime position ledger and daily equity (trading_open_positions, trading_closed_positions, trading_equity_daily written by ExecutionState), PortfolioRisk checkpoints, retained reconciliation evidence and canonical market-data SQLite. Live vs Expected comes from the PAPER comparison."
 	if len(warnings) > 0 {
 		note += " Some components are degraded; see sourceWarnings."
 	}
@@ -300,11 +325,15 @@ func buildOverviewEvents(
 			if len(events) >= 2 {
 				break
 			}
+			event, severity := fmt.Sprintf("Order %s %s rejected: %s", reject.OrderID, reject.Asset, reject.Reason), "WARN"
+			if reject.Kind == "SKIPPED" {
+				event, severity = fmt.Sprintf("%s skipped (%s): %s", reject.Asset, reject.Title, reject.Reason), "INFO"
+			}
 			events = append(events, realRecentEvent{
 				Time:     execution.SourceUpdatedAt,
-				Event:    fmt.Sprintf("Order %s %s rejected: %s", reject.OrderID, reject.Asset, reject.Reason),
+				Event:    event,
 				Source:   "Execution",
-				Severity: "WARN",
+				Severity: severity,
 			})
 		}
 		for _, fill := range execution.PartialFills {

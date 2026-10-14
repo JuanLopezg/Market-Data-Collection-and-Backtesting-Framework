@@ -41,6 +41,10 @@ struct ExecutionOrder {
     // real-venue adapter compares it with the venue price to check the order's USD value
     // after unit conversion (e.g. 1000PEPEUSDT -> PEPE). Not used by matching.
     double reference_price = 0.0;
+    // Manual orders confirmed during the day: the simulated (PAPER) exchange fills them at
+    // once at reference_price, the market price when they were planned, instead of waiting
+    // for a daily open. Real venues ignore it and execute at the market.
+    bool fill_at_reference_price = false;
 
     ExecutionOrder() = default;
 

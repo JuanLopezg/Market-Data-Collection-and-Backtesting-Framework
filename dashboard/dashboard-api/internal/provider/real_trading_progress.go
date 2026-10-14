@@ -20,9 +20,11 @@ type realTradingProgress struct {
 	PersistedAt       string `json:"persistedAt"`
 }
 
-func buildTradingProgress(runtime pgstore.RuntimeSummary, queryErr error, reachable bool, mode string, now time.Time) *realTradingProgress {
-	result := &realTradingProgress{State: "UNKNOWN", Detail: "Daily wall-clock freshness applies only to current-data PAPER; historical business time is not compared with today's date."}
-	if mode != "PAPER" {
+// currentData: the daily chain on current market data (PAPER or Kraken LIVE), as opposed to
+// a replay whose business time must not be compared with today's date.
+func buildTradingProgress(runtime pgstore.RuntimeSummary, queryErr error, reachable bool, currentData bool, now time.Time) *realTradingProgress {
+	result := &realTradingProgress{State: "UNKNOWN", Detail: "Daily wall-clock freshness applies only to the current-data chain (PAPER or LIVE); historical business time is not compared with today's date."}
+	if !currentData {
 		return result
 	}
 	today := now.UTC().Truncate(24 * time.Hour)

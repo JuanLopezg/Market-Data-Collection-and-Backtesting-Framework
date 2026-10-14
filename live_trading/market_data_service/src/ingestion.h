@@ -32,6 +32,10 @@ private:
     MarketDataConfig config_;
     BinanceMarketDataClient binance_;
 
+    // Ranks the universe once Binance's own clock has passed the end of targetDate, so every
+    // candle of that day is final there even if this host's clock runs slightly ahead.
+    BinanceUniverseSnapshot universeAfterDayClose(std::chrono::year_month_day targetDate) const;
+
     TrackedMarketData updateTracker(
         const TrackedMarketData& previous,
         const std::vector<std::pair<std::string, double>>& ranked,

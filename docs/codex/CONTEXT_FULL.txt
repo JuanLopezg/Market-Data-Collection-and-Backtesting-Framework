@@ -1,5 +1,5 @@
 ALGOTRADING - CURRENT HANDOFF
-Updated: 2026-10-11
+Updated: 2026-10-14
 Build environment: WSL. Repository source and current test output are authoritative.
 
 READING AND DOCUMENT OWNERSHIP
@@ -9,14 +9,52 @@ relevant lib/README.md, live_trading/README.md or research/REPLAY.md and source.
 docs/README.md indexes all retained guides. CURRENT_STATE.md owns accepted
 fingerprints and validation evidence. This file is current context, not a diary.
 
+MOBILE ACCESS UPDATE (2026-10-14)
+===============================
+The user requested mobile dashboard access again, superseding the earlier
+cancellation below. Tailscale is installed on the VPS and enrolled alongside the
+Android phone. Persistent tailnet-only HTTPS Serve proxies
+https://algotrading.taild27a89.ts.net/ to 127.0.0.1:8092; Funnel is disabled.
+Frontend TLS/HTTP 200, unauthenticated API 401 and phone reachability pass.
+The mobile layout adaptation is deployed: Menu drawer below 900px, stacked
+panels/metrics, internally scrolling tables, fitting headers/login/date controls.
+WSL builds and 44 Chromium page/viewport checks pass. Only dash-web was recreated;
+rollback image and evidence are in /releases/dashboard-mobile-20261014/.
+The user accepted the mobile result after deployment. See deploy/chain/README.md,
+dashboard/README.md and CURRENT_STATE.md. Trading containers were not restarted.
+
+PAPER COMPARISON FINDING (2026-10-14)
+===================================
+First vol-target cycle's four signal differences are a baseline-seed bug:
+comparison.py copied empty signals from the execution snapshot rather than the
+strategy checkpoint at the seed date. Isolated replay with only those signals
+restored gives zero differences and equity within USD 0.00122 of PAPER.
+Original VPS collector/study and trading state remain unchanged. The local fix
+now seeds PAPER/LIVE from the exact strategy checkpoint, preserves pre-repair
+evidence and invalidates fast cache on economic-input/configuration changes.
+Fourteen focused WSL tests and Step59 pass with the accepted fingerprint;
+rollout remains explicitly deferred by the user.
+CURRENT_STATE.md owns exact evidence. Superseded deployment source has now been
+retired locally at the user's request; multi-day acceptance and VPS baseline
+deployment remain pending. Do not call the running baseline accepted.
+
 USER PREFERENCES
 ================
+Latest local-only authorization: finish the baseline seed fix and retire the
+superseded PAPER deployment source without deployment. Ten deploy/paper_trading
+tracked files are retired; its useful Compose/logging topology is now an isolated
+validation/fixtures/paper fixture. Bundling/builds use deploy/chain/.runtime_bundle.
+Ignored old bundles, credentials and run evidence remain untouched. Bundle/image
+builds, isolated PAPER/recovery/shadow, component tests and canonical Step59 pass
+(accepted fingerprint). Evidence is in CURRENT_STATE.md; VPS baseline/multi-day acceptance is
+still separate and pending.
+
 Latest authorized scope: deploy a separate VPS PAPER forward study with PureRSI(7)
 entry > 50 / exit < 40 and show simulated-live versus CURRENT fast baseline in the
 VPS dashboard. This supersedes the earlier VPS-freeze instruction for this study
 only. Preserve original profiles/account/message volumes; no private order routing.
 The activity Compose overlay and comparison collector are documented in
-deploy/paper_trading/README.md. The VPS first day, API/browser and collector restart
+deploy/chain/README.md. The VPS first day, API/browser and collector restart
 pass: two simulated positions and zero signal differences. CURRENT_STATE.md owns
 values/evidence; next accumulate several UTC daily observations before accepting
 multi-day comparison. Private orders/collateral integration remain pending.
@@ -84,7 +122,7 @@ Shared ClockState/replay-controller infrastructure has been removed.
 CANONICAL REPLAY AND VALIDATION
 ==============================
 Public CLI: python3 research/replay.py {fast|system|dashboard}.
-fast uses CURRENT lib Backtester via research/src/legacy/backtesting_main.cpp.
+fast uses CURRENT lib Backtester via research/src/backtests/backtesting_main.cpp.
 system uses canonical_replay.cpp and ReplayRuntime with the canonical MOCK venue.
 dashboard shares system economics and adds observational state publication.
 
@@ -387,10 +425,10 @@ deploy/live/README.md owns the 24.5 GiB planning budget for a 60 GB disk and sel
 transfer scope. Daily host logs retain today/yesterday with a 50 MiB cap per file,
 trimming older diagnostics. Actual VPS space/growth is still pending, and durable
 message/trading/audit history needs separate monitoring.
-Current-data paper preparation is in deploy/paper_trading/: separate Compose state,
-PureRSI warmup, virtual funds, simulated backend and real-source dashboard.
-manage.py prepare/build/run operates it under WSL; run stops containers on Ctrl+C,
-preserving volumes. It publishes only open(T+1) outside completed feature bars,
+Current-data PAPER is operated by deploy/chain/algo under WSL/Linux, with PureRSI
+warmup, virtual funds, simulated backend and real-source dashboard. Its isolated
+validation topology is in validation/fixtures/paper; old deployment commands are
+retired. It publishes only open(T+1) outside completed feature bars,
 retaining service close(T) sizing. Simulated fills do not prove achievable prices,
 canonical sizing parity or perpetual collateral/funding economics.
 Infrastructure shows fresh CPU/RAM/disk and project container observations from
@@ -403,8 +441,8 @@ empty plans count, recent writes/fills do not replace current business dates.
 External observations do not provide in-loop heartbeats/control responsiveness.
 The running VPS keeps its earlier collector until a later authorized deployment.
 The paper VPS logging overlay covers all services using the two-day/50-MiB policy.
-See deploy/paper_trading/README.md. The user's Linux 2-vCPU/2-GB Lightsail VPS is
-now deployed at /opt/algotrading with fresh credentials, durable PAPER state,
+See deploy/chain/README.md. The user's Linux 2-vCPU/2-GB Lightsail VPS is
+deployed at /chain (root /) with private credentials, durable PAPER state,
 host monitoring, two-day/50-MiB logs and persistent systemd startup. The source/input
 transfer, eight destination runtime builds and bounded Step59 match are verified.
 AppArmor remains enabled with scoped receiver/writer permissions. Startup waits

@@ -12,6 +12,8 @@ struct ExchangeGatewayHandlers {
     std::function<void(const OrderUpdateEvent&)> on_order_update;
     std::function<void(const FillEvent&)> on_fill;
     std::function<void(const ExchangeSnapshotEvent&)> on_snapshot;
+    // Fees reported after their fill and funding payments (real venues only).
+    std::function<void(const VenueCostEvent&)> on_cost;
 };
 
 

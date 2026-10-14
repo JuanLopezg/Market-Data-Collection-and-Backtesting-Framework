@@ -648,7 +648,8 @@ export interface PipelineData {
   summary?: { label: string; value: string }[]
 }
 
-export type ExecutionOrderState = 'NEW' | 'PARTIAL' | 'FILLED' | 'REJECTED' | 'CANCELED' | 'PENDING_CANCEL'
+// SKIPPED: the venue cannot take the asset or size, so the order was deliberately not placed.
+export type ExecutionOrderState = 'NEW' | 'PARTIAL' | 'FILLED' | 'REJECTED' | 'SKIPPED' | 'CANCELED' | 'PENDING_CANCEL'
 export type LifecycleTone = 'good' | 'warn' | 'bad' | 'info' | 'muted'
 
 export interface ExecutionLifecycleEvent {
@@ -697,7 +698,9 @@ export interface PartialFill {
 export interface ExecutionReject {
   orderId: string
   asset: string
-  code: string
+  code: string                   // Gateway reason code, e.g. MARKET_UNAVAILABLE; REJECTED when unknown.
+  kind?: 'SKIPPED' | 'REJECTED'
+  title?: string                 // Short explanation of the code, e.g. "Not on the venue".
   reason: string
   remediation: string
 }
@@ -719,6 +722,7 @@ export interface ExecutionData {
   filledOrders: number
   fillCount: number
   rejectCount: number
+  skippedCount?: number          // Orders skipped by the venue; not part of rejectCount.
   avgSubmitLatencyMs: number
   avgFillLatencyMs: number
   avgSlippageBpsLabel: string
@@ -1174,6 +1178,25 @@ export interface LiveVsExpectedAnomaly {
   detail: string
 }
 
+// One day of Live vs Expected. The cost fields exist only in the Kraken LIVE study: USD
+// totals since it started (fees positive = paid; funding/interest negative = paid;
+// slippage positive = fills worse than the Binance open).
+export interface LiveVsExpectedRow {
+  date: string
+  liveEquity: number
+  expectedEquity: number
+  liveCash: number
+  expectedCash: number
+  signalDifferences: number
+  liveFees?: number
+  expectedFees?: number
+  liveFunding?: number
+  liveInterest?: number
+  capitalFlows?: number
+  slippage?: number
+  skipped?: string[]
+}
+
 export interface LiveVsExpectedData {
   paperComparison?: {
     contractVersion: string
@@ -1182,7 +1205,7 @@ export interface LiveVsExpectedData {
     profile: string
     fingerprint: string
     note: string
-    rows: { date: string; liveEquity: number; expectedEquity: number; liveCash: number; expectedCash: number; signalDifferences: number }[]
+    rows: LiveVsExpectedRow[]
     positions: { asset: string; liveQuantity: number; expectedQuantity: number; liveUsd: number; expectedUsd: number }[]
   }
   contractVersion: string

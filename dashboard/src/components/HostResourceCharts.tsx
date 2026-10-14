@@ -4,7 +4,6 @@ import type { HostHistoryData, HostHistoryPoint, HostHistoryQuery, HostHistoryRa
 import { Panel } from './Panel'
 import { TimeSeriesChart } from './TimeSeriesChart'
 import type { ChartSeries, TooltipRow } from './TimeSeriesChart'
-import { TimeRangePicker } from './TimeRangePicker'
 import type { TimeRange } from './TimeRangePicker'
 
 // Host CPU / RAM / disk over time, Grafana style: one line per chart (host total) and, for
@@ -12,14 +11,15 @@ import type { TimeRange } from './TimeRangePicker'
 // All three are percentages: RAM and disk of the host's total (shown in the panel title),
 // a container's RAM of the host's total RAM.
 // Time range: presets ending now, an explicit From/To, or a drag-selection on any chart.
+// The page owns the range and shows the picker in its heading, like Overview.
 
-const PRESETS: { value: HostHistoryRange; label: string; title: string; ms: number }[] = [
+export const HOST_PRESETS: { value: HostHistoryRange; label: string; title: string; ms: number }[] = [
   { value: '1h', label: '1H', title: 'Last 1 hour', ms: 3_600_000 },
   { value: '6h', label: '6H', title: 'Last 6 hours', ms: 6 * 3_600_000 },
   { value: '24h', label: '24H', title: 'Last 24 hours', ms: 24 * 3_600_000 },
   { value: '7d', label: '7D', title: 'Last 7 days', ms: 7 * 24 * 3_600_000 },
 ]
-const DEFAULT_RANGE: TimeRange = { kind: 'preset', preset: '1h' }
+export const DEFAULT_HOST_RANGE: TimeRange = { kind: 'preset', preset: '1h' }
 // One line per container; only beyond this many are the lightest summed as "Other containers".
 const MAX_CONTAINER_LINES = 30
 // Seven validated hues x five dash patterns identify up to 35 lines (never extra hues).
@@ -126,8 +126,7 @@ function ResourceChart({ title, subtitle, window: visible, times, maxGapMs, over
   </Panel>
 }
 
-export function HostResourceCharts() {
-  const [range, setRange] = useState<TimeRange>(DEFAULT_RANGE)
+export function HostResourceCharts({ range, onRangeChange }: { range: TimeRange; onRangeChange: (range: TimeRange) => void }) {
   const { data, error } = useHostHistory(range)
   // Overall / By container per chart; survives zooming and range changes.
   const [split, setSplit] = useState<Record<string, boolean>>({})
@@ -159,16 +158,13 @@ export function HostResourceCharts() {
   // Visible window: presets end now; custom ranges are exact.
   const now = Date.now()
   const visible = range.kind === 'custom' ? { from: range.from, to: range.to }
-    : { from: now - (PRESETS.find(item => item.value === range.preset)?.ms ?? PRESETS[1].ms), to: now }
-  const select = (from: number, to: number) => setRange({ kind: 'custom', from, to })
-  const reset = () => setRange(DEFAULT_RANGE)
+    : { from: now - (HOST_PRESETS.find(item => item.value === range.preset)?.ms ?? HOST_PRESETS[0].ms), to: now }
+  const select = (from: number, to: number) => onRangeChange({ kind: 'custom', from, to })
+  const reset = () => onRangeChange(DEFAULT_HOST_RANGE)
   const shared = { window: visible, onSelectRange: select, onReset: reset }
 
   return <div className="resource-charts">
-    <div className="chart-toolbar">
-      <TimeRangePicker presets={PRESETS} value={range} onChange={setRange} precision="datetime"/>
-      {data?.stale && <small className="warning">No new observation since {data.newestAt}</small>}
-    </div>
+    {data?.stale && <small className="warning">No new observation since {data.newestAt}</small>}
     {error && <div className="muted">Resource history unavailable: {error.message}</div>}
     {!error && !data && <div className="muted">Loading resource history…</div>}
     {data && !view && <div className="muted">{data.reason ?? 'No host observations in this range'}</div>}

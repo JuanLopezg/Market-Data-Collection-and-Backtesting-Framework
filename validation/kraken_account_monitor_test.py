@@ -127,11 +127,16 @@ class MonitorTests(unittest.TestCase):
         self.monitor.publish(self.clock)
         self.assertEqual(len(self.events()), 1)
 
-    def account_sample(self, day, equity, quantity='0.01', mark='50000'):
+    def account_sample(self, day, equity, quantity='0.01', mark='50000', btc_collateral=False):
         self.clock = datetime(2026, 10, day, 12, tzinfo=timezone.utc).timestamp()
         bundle = fixture(self.clock)
         bundle['wallets']['accounts']['flex']['marginEquity'] = equity
         bundle['positions']['openPositions'][0]['size'] = quantity
+        if not btc_collateral:
+            # These tests are about other warnings: no BTC, so with only a short position a
+            # fall cannot reach maintenance margin.
+            bundle['wallets']['accounts']['flex']['currencies']['XBT'].update(
+                quantity='0', value='0', collateral='0', available='0')
         market = {'scope': SCOPE, 'environment': 'live', 'complete': True,
             'observed_at': self.clock, 'server_times': [self.clock, self.clock], 'markets': {'BTC': {
                 'symbol': 'PF_XBTUSD', 'trading': True, 'quote_currency': 'USD', 'mark_price': mark}}}
@@ -180,6 +185,31 @@ class MonitorTests(unittest.TestCase):
         bundle, market = self.account_sample(13, '1000')
         self.monitor.observe(bundle, self.clock, market)
         self.assertEqual(self.events()[-1]['transition'], 'RESOLVED')
+
+    def test_maintenance_drop_below_25_percent_warns_and_resolves(self):
+        # BTC collateral 4950 after haircut, a 500 USD short: long exposure 4450.
+        # Maintenance margin 250, so equity 1362.5 is exactly a 25% fall away.
+        bundle, market = self.account_sample(10, '1362.5', btc_collateral=True)
+        self.monitor.observe(bundle, self.clock, market)
+        self.assertEqual(self.events(), [])
+        bundle, market = self.account_sample(11, '1350', btc_collateral=True)
+        self.monitor.observe(bundle, self.clock, market)
+        alert = self.events()[0]['alert']
+        self.assertEqual((alert['eventType'], alert['severity']), ('MAINTENANCE_DROP', 'WARN'))
+        self.assertIn('A fall of 24.7% in BTC and the long positions', alert['detail'])
+        self.assertIn('BTC alone: 22.2%', alert['detail'])
+        self.monitor.observe(bundle, self.clock, market)
+        self.assertEqual(len(self.events()), 1)  # sent once
+        bundle, _ = self.account_sample(12, '2000', btc_collateral=True)
+        self.monitor.observe(bundle, self.clock, None)
+        self.assertEqual(len(self.events()), 1)  # no prices: unknown, not a recovery
+        status = json.loads((self.directory / 'status.json').read_text())
+        self.assertIn('MAINTENANCE_DROP', status['unavailableChecks'])
+        bundle, market = self.account_sample(13, '2000', btc_collateral=True)
+        self.monitor.observe(bundle, self.clock, market)
+        self.assertEqual(self.events()[-1]['transition'], 'RESOLVED')
+        with self.assertRaises(ValueError):
+            AccountAlertMonitor(self.directory / 'other', RELATIVE_POLICY, scope=FIXTURE_SCOPE, maintenance_drop='0')
 
     @unittest.skipUnless(os.environ.get('KRAKEN_MONITOR_DOCKER_TEST') == '1', 'optional Go notifier contract acceptance (image: KRAKEN_MONITOR_DOCKER_IMAGE, default the chain dash-api image)')
     def test_existing_notifier_contract_and_restart(self):

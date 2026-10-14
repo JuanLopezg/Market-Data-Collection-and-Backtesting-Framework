@@ -62,6 +62,13 @@ Reconciler::Reconciler(double cashTolerance, double quantityTolerance)
 }
 
 
+bool Reconciler::sameQuantity(double local, double exchange) const
+{
+    const double scale = std::max(std::abs(local), std::abs(exchange));
+    return sameValue(local, exchange, std::max(quantity_tolerance_, QUANTITY_RELATIVE_TOLERANCE * scale));
+}
+
+
 ReconciliationReport Reconciler::compare(
     const TradingStateSnapshot& local,
     const ExchangeSnapshot& exchange
@@ -96,7 +103,7 @@ ReconciliationReport Reconciler::compare(
         const double localQuantity = localIt == local.account_positions.end() ? 0.0 : localIt->second;
         const double exchangeQuantity = exchangeIt == exchange.positions.end() ? 0.0 : exchangeIt->second;
 
-        if (!sameValue(localQuantity, exchangeQuantity, quantity_tolerance_)) {
+        if (!sameQuantity(localQuantity, exchangeQuantity)) {
             report.issues.push_back({
                 ReconciliationIssueKind::PositionMismatch,
                 coin,
@@ -148,8 +155,8 @@ ReconciliationReport Reconciler::compare(
             exchangeOrder->coin == localOrder.request.coin &&
             exchangeOrder->side == localOrder.request.side;
         const bool quantityMatches =
-            sameValue(exchangeOrder->quantity, localOrder.request.quantity, quantity_tolerance_) &&
-            sameValue(exchangeOrder->filled_quantity, localOrder.filled_quantity, quantity_tolerance_);
+            sameQuantity(exchangeOrder->quantity, localOrder.request.quantity) &&
+            sameQuantity(exchangeOrder->filled_quantity, localOrder.filled_quantity);
 
         if (!metadataMatches || !quantityMatches) {
             report.issues.push_back({

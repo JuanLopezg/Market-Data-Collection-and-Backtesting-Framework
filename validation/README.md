@@ -164,18 +164,18 @@ and an offline audit rederive every saved candle total, complete ranking, active
 venue filters, explicit aliases and per-asset matches/counts. No API calls or trading
 state changes occur during this audit. Replace the snapshot path for later captures.
 
-Run `python3 validation/mobile_access_test.py` under WSL with OpenSSL installed for
-the temporary phone bridge. Six bounded tests check TLS certificate verification
-and reuse, wrong-IP rejection, HTTP authentication status/cookie/body forwarding,
-SSE arrival before upstream closure, peer-IP exclusion, upstream loss and refusal
-of public/wildcard addresses. HTTP authentication here uses an isolated fixture;
-actual phone login/page/logout acceptance is separate. No VPS or private services
-are contacted.
-An optional seventh test uses `MOBILE_TEST_API_PORT` and `MOBILE_TEST_API_PASSWORD`
-for an isolated localhost Go API fixture: real login, authenticated page reads,
-viewer restrictions, CSRF enforcement, logout and session revocation through TLS.
-Use disposable fixture credentials and embedded mock data; never point this logout
-test at the normal dashboard or VPS. The test does not create its API fixture.
+`python3 tools/universe_coverage_history.py --output storage/exchange_coverage/universe-history-<date>`
+(network, public endpoints) replays one year of the strategy's daily top-20 universe
+against the Kraken symbol map and the Hyperliquid listing, counting assets the venue
+cannot trade and those with a 7-day RSI above 50/80. `python3
+validation/universe_coverage_history_test.py` checks its universe, RSI and naming offline.
+
+The superseded LAN phone bridge and its dedicated transport test are retired.
+The current private Tailscale access is documented in deploy/chain/README.md.
+`validation/mobile_dashboard_browser_test.py` checks an isolated mock frontend at
+phone/tablet/desktop sizes, navigation, time-range controls and login layout. Its
+browser fixtures never use a private trading account; actual phone acceptance is
+recorded separately in CURRENT_STATE.md.
 
 Local Telegram preparation is checked by `go test ./...` in `dashboard/dashboard-api`
 under WSL (the cached Go Docker image also works without external network access).
@@ -278,7 +278,7 @@ when its adjacent `fixture.go` exactly matches the embedded source and the binar
 has an ELF header. It does not reuse trading-service binaries. The default fixture
 build allows 600 seconds for compilation on small VPS hosts.
 
-The [paper stack guide](../deploy/paper_trading/README.md) describes
+The [isolated PAPER fixture guide](fixtures/paper/README.md) describes
 `python3 validation/paper_trading_test.py`: bounded internal-network public-API
 fixture, actual downloader, simulated execution, dashboard telemetry and restart.
 It does not run full history or complete VPS/overnight acceptance.

@@ -1,5 +1,8 @@
+import { useState } from 'react'
 import { DataLoadError } from '../components/DataLoadError'
-import { HostResourceCharts } from '../components/HostResourceCharts'
+import { DEFAULT_HOST_RANGE, HOST_PRESETS, HostResourceCharts } from '../components/HostResourceCharts'
+import { TimeRangePicker } from '../components/TimeRangePicker'
+import type { TimeRange } from '../components/TimeRangePicker'
 import { useDashboardResource } from '../hooks/useDashboardResource'
 import type { InfrastructureData, InfrastructureHealth } from '../types/dashboard'
 
@@ -42,13 +45,18 @@ const STATE_LABEL: Record<ComponentState, string> = { UP: 'Up', WARN: 'Degraded'
 
 export function InfrastructurePage() {
   const { data, error, retry } = useDashboardResource('getInfrastructure')
+  // Time range of the CPU/RAM/disk charts, picked in the page heading like Overview.
+  const [range, setRange] = useState<TimeRange>(DEFAULT_HOST_RANGE)
 
   if (error) return <DataLoadError title="Infrastructure data unavailable" error={error} onRetry={retry}/>
   if (!data) return <div className="page-loading">Loading infrastructure…</div>
 
   const rows = components(data)
   return <>
-    <div className="page-heading"><h1>Infrastructure</h1></div>
+    <div className="page-heading">
+      <h1>Infrastructure</h1>
+      <TimeRangePicker presets={HOST_PRESETS} value={range} onChange={setRange} precision="datetime"/>
+    </div>
 
     <section className="component-grid">
       {rows.length === 0 && <div className="empty-cell">No components observed yet</div>}
@@ -58,6 +66,6 @@ export function InfrastructurePage() {
       </div>)}
     </section>
 
-    <HostResourceCharts/>
+    <HostResourceCharts range={range} onRangeChange={setRange}/>
   </>
 }

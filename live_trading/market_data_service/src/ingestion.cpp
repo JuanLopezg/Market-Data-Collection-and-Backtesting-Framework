@@ -4,14 +4,18 @@
 #include "ingestion.h"
 
 #include <algorithm>
+#include <future>
 #include <set>
 #include <stdexcept>
+#include <thread>
 
 #include "service_logging.h"
 #include "time_utils.h"
 
 namespace {
 constexpr auto EMPTY_DATE = std::chrono::year{2000}/1/1;
+// How many times the ranking is re-read while Binance's clock is still before the day end.
+constexpr int MAX_SERVER_CLOCK_WAITS = 30;
 }
 
 MarketDataIngestor::MarketDataIngestor(MarketDataConfig config)
@@ -59,6 +63,26 @@ TrackedMarketData MarketDataIngestor::updateTracker(
     return result;
 }
 
+BinanceUniverseSnapshot MarketDataIngestor::universeAfterDayClose(std::chrono::year_month_day targetDate) const
+{
+    const long long dayEndMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        (std::chrono::sys_days{targetDate} + std::chrono::days{1}).time_since_epoch()).count();
+    for (int attempt = 1; attempt <= MAX_SERVER_CLOCK_WAITS; ++attempt) {
+        BinanceUniverseSnapshot universe = binance_.universeByQuoteVolume(config_.ranking_size);
+        if (universe.ranked_top.empty())
+            return universe; // The caller reports the failed ranking.
+        if (universe.server_time_ms == 0)
+            throw std::runtime_error("Binance exchangeInfo has no serverTime; cannot prove the day is closed");
+        if (universe.server_time_ms >= dayEndMs)
+            return universe;
+        const long long behindMs = dayEndMs - universe.server_time_ms;
+        LG_WARN("Binance clock is {} ms before the end of {}; waiting for its candles to close",
+                behindMs, formatYMD(targetDate));
+        std::this_thread::sleep_for(std::chrono::milliseconds(std::min<long long>(behindMs, 1000) + 50));
+    }
+    throw std::runtime_error("Binance clock did not reach the end of " + formatYMD(targetDate));
+}
+
 MarketDataIngestionSummary MarketDataIngestor::run(std::chrono::year_month_day targetDate)
 {
     LG_INFO("Starting daily download for {}", formatYMD(targetDate));
@@ -70,7 +94,7 @@ MarketDataIngestionSummary MarketDataIngestor::run(std::chrono::year_month_day t
     if (previous.date != EMPTY_DATE && std::chrono::sys_days{previous.date} > std::chrono::sys_days{targetDate})
         throw std::runtime_error("Market-data database is ahead of the requested live target date");
 
-    const BinanceUniverseSnapshot universe = binance_.universeByQuoteVolume(config_.ranking_size);
+    const BinanceUniverseSnapshot universe = universeAfterDayClose(targetDate);
     const auto& ranked = universe.ranked_top;
     if (ranked.size() < config_.active_top_n)
         throw std::runtime_error("Unable to obtain enough ranked Binance USDT perpetuals");
@@ -100,7 +124,26 @@ MarketDataIngestionSummary MarketDataIngestor::run(std::chrono::year_month_day t
     LG_INFO("Download plan for {}: {} ranked symbols, top {}, {} tracked, {} requests",
             formatYMD(targetDate), ranked.size(), config_.active_top_n, tracked.days_since_top_n.size(), plan.size());
 
+    // Opening prices of the next day are downloaded at the same time as the completed candles.
+    std::future<std::unordered_map<Coin, double>> paperPricesDownload;
+    if (config_.publish_paper_execution_prices) {
+        std::vector<std::string> symbols;
+        for (const auto& [symbol, days] : tracked.days_since_top_n) {
+            if (days <= config_.retain_after_top_n_days && universe.eligible_symbols.contains(symbol))
+                symbols.push_back(symbol);
+        }
+        // Opening prices are kept outside completed-bar SQLite and cannot enter
+        // strategy features. Only the simulated exchange receives open(T+1).
+        const auto openDate = std::chrono::year_month_day{std::chrono::sys_days{targetDate} + std::chrono::days{1}};
+        paperPricesDownload = std::async(std::launch::async, [this, openDate, symbols = std::move(symbols)] {
+            return binance_.fetchOpeningPrices(openDate, symbols, config_.max_parallel_requests);
+        });
+    }
+
     const BinanceFetchResult fetched = binance_.fetchDailyBars(plan, config_.max_parallel_requests);
+    std::unordered_map<Coin, double> paperPrices;
+    if (paperPricesDownload.valid())
+        paperPrices = paperPricesDownload.get();
     if (!fetched.failed_symbols.empty()) {
         std::string names;
         for (const auto& symbol : fetched.failed_symbols) {
@@ -114,20 +157,6 @@ MarketDataIngestionSummary MarketDataIngestor::run(std::chrono::year_month_day t
     std::size_t rows = 0;
     for (const auto& [_, byDate] : fetched.bars.data)
         rows += byDate.size();
-
-    std::unordered_map<Coin, double> paperPrices;
-    if (config_.publish_paper_execution_prices) {
-        std::vector<std::string> symbols;
-        for (const auto& [symbol, days] : tracked.days_since_top_n) {
-            if (days <= config_.retain_after_top_n_days && universe.eligible_symbols.contains(symbol))
-                symbols.push_back(symbol);
-        }
-        // Opening prices are kept outside completed-bar SQLite and cannot enter
-        // strategy features. Only the simulated exchange receives open(T+1).
-        paperPrices = binance_.fetchOpeningPrices(
-            std::chrono::year_month_day{std::chrono::sys_days{targetDate} + std::chrono::days{1}},
-            symbols, config_.max_parallel_requests);
-    }
 
     // Important durability boundary: tracker + ranking + OHLCV are committed together.
     // The caller publishes MARKET_DATA_UPDATED only AFTER this commit returns.

@@ -82,9 +82,9 @@ std::chrono::year_month_day newestCompletedBusinessUtcDate(const TimeHandler& ti
 
 std::chrono::system_clock::time_point nextScheduledBusinessRun(
     const TimeHandler& timeHandler,
-    int delaySeconds)
+    int delayMs)
 {
-    return computeNextMidnightUTC(timeHandler.getTime()) + std::chrono::seconds(delaySeconds);
+    return computeNextMidnightUTC(timeHandler.getTime()) + std::chrono::milliseconds(delayMs);
 }
 
 // TECHNICAL wait: used only for retry/backoff. It deliberately follows real wall time
@@ -207,8 +207,8 @@ int main(int argc, char** argv)
             }
 
             const auto scheduled = nextScheduledBusinessRun(
-                timeHandler, config.midnight_delay_seconds);
-            LG_INFO("Next daily run is scheduled {} seconds after the next UTC midnight", config.midnight_delay_seconds);
+                timeHandler, config.midnight_delay_ms);
+            LG_INFO("Next daily run is scheduled {} ms after the next UTC midnight", config.midnight_delay_ms);
             interruptibleBusinessWaitUntil(timeHandler, scheduled);
             if (!running.load())
                 break;

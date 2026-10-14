@@ -9,5 +9,6 @@ risk_sources = files(
     'volatility_target.h',
     'risk_constraints.h',
     'portfolio_risk_engine.cpp',
+    'target_decisions.cpp',
     'manual_portfolio_risk.h'
 )

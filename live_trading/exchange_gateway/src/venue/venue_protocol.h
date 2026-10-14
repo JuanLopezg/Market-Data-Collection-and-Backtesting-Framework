@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "data_types.h"
+#include "execution_messages.h"
 #include "execution_order.h"
 #include "http_transport.h"
 
@@ -36,7 +37,8 @@ enum class Endpoint {
     Fills,
     SendOrder,
     CancelOrder,
-    DeadMansSwitch
+    DeadMansSwitch,
+    AccountLog
 };
 
 const char* endpointName(Endpoint endpoint);
@@ -111,13 +113,34 @@ struct VenueFill {
 struct Position {
     std::string symbol;
     double signed_quantity = 0.0; // Underlying units; negative for short.
+    double entry_price = 0.0;     // Venue average entry price, USD per underlying unit.
 };
 
 struct AccountState {
-    // USD balance of the trading wallet. Collateral valuation (for example BTC backing)
-    // is reported separately by the account monitor; see roadmap step 8.
+    // USD balance of the trading wallet. On a futures venue opening a position does not
+    // move it; it changes with realized PnL, fees, funding, interest and transfers.
     double usd_balance = 0.0;
+    // Non-USD collateral (BTC) valued by the venue after its haircut, in USD.
+    double collateral_usd = 0.0;
     std::vector<Position> positions;
+};
+
+// One USD cash movement read from the venue's account history (fee, funding, interest or
+// capital flow; VenueCostKind). Trade PnL is not one: it follows from the fills.
+struct CashEntry {
+    std::string entry_id;         // Stable and unique per account (the venue log id plus kind).
+    VenueCostKind kind = VenueCostKind::Fee;
+    Timestamp day = 0;            // UTC business day.
+    long long time_ms = 0;
+    std::string symbol;           // Venue contract; empty when the entry names none.
+    std::string venue_fill_id;    // The fill a fee belongs to; empty otherwise.
+    double amount_usd = 0.0;      // Change of the USD balance: negative = paid.
+};
+
+struct AccountLog {
+    std::vector<CashEntry> entries;
+    std::vector<std::string> unaccounted; // USD balance changes of unknown kind: not booked.
+    std::vector<std::string> not_cash;    // Changes of BTC or another wallet: collateral only.
 };
 
 struct RateBudget {
@@ -163,6 +186,10 @@ public:
     virtual HttpRequest accountsRequest() = 0;
     virtual HttpRequest positionsRequest() = 0;
     virtual AccountState parseAccount(const HttpResponse& accounts, const HttpResponse& positions) const = 0;
+
+    // Recent account history (newest entries), for fees and funding.
+    virtual HttpRequest accountLogRequest() = 0;
+    virtual AccountLog parseAccountLog(const HttpResponse& response) const = 0;
 
     // Venue-side cancel-on-silence timer. Empty when the venue has none.
     virtual std::optional<HttpRequest> deadMansSwitchRequest(int timeoutSeconds) = 0;

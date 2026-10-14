@@ -65,6 +65,19 @@ int main() {
     assert(evaluation.volatility_state == "NOT_APPLICABLE");
     near(decision.strategies[0].target_notional_usd.at("BTC"), 196);
 
+    // Kraken LIVE: BTC collateral after haircut counts in the sizing capital (not cash).
+    AccountSnapshot collateralized = account;
+    collateralized.collateral_usd = 500;
+    auto withCollateral = engine(std::make_unique<EqualWeightSizer>(0.5));
+    const auto larger = withCollateral.onSignals(signals, market, collateralized, &evaluations);
+    near(evaluations[0].reference_capital, 1480);
+    near(larger.strategies[0].target_notional_usd.at("BTC"), 296);
+    collateralized.collateral_usd = -1;
+    bool rejected = false;
+    try { engine(std::make_unique<EqualWeightSizer>(0.5)).onSignals(signals, market, collateralized); }
+    catch (const std::invalid_argument&) { rejected = true; }
+    assert(rejected);
+
     auto zeroCap = engine(std::make_unique<EqualWeightSizer>(0.5), 0);
     const auto flattened = zeroCap.onSignals(signals, market, account, &evaluations);
     assert(flattened.strategies[0].target_notional_usd.at("ETH") == 0);

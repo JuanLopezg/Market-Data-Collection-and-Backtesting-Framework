@@ -29,6 +29,9 @@ struct ExchangeOpenOrderSnapshot {
 struct ExchangeSnapshot {
     Timestamp timestamp = 0;
     double cash = 0.0;
+    // USD value of non-USD collateral after the venue's haircut (Kraken Multi-M BTC).
+    // Margin only: it is not cash and reconciliation does not compare it. 0 = none.
+    double collateral_usd = 0.0;
     std::unordered_map<Coin, double> positions;
     std::vector<ExchangeOpenOrderSnapshot> open_orders;
 };

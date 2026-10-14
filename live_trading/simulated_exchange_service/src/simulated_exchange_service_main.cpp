@@ -1221,6 +1221,16 @@ private:
             exchange_.submitOrder(command.order);
             captureExchangeEvents();
 
+            if (command.order.fill_at_reference_price) {
+                // A manual order confirmed during the day: fill it now at the market price
+                // it was planned with, not at a daily open.
+                exchange_.fillAtPrice(command.order.order_id, command.order.active_from,
+                                      command.order.reference_price);
+                captureExchangeEvents();
+                LG_INFO("Filled manual order {} at once at {}", command.order.order_id,
+                        FormatQuantity(command.order.reference_price));
+            }
+
             // In distributed replay the T+1 open commonly arrives before the resulting
             // SubmitOrder command. Use the order's exact active_from price, never a newer
             // "latest" price, so transport latency cannot change backtest semantics.

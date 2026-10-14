@@ -15,7 +15,7 @@ backfills `ohlcv_data.quote_volume` for completed candles; invalid quote data pr
 publication. The strategy refuses missing required quote history. Ordinary LIVE and
 the canonical historical profile keep their existing configuration. Existing PAPER
 upgrades require a backed-up, checked configuration-identity migration preserving
-completed checkpoints; see `deploy/paper_trading/README.md`.
+completed checkpoints; see `deploy/chain/README.md`.
 
 ## Start here
 
@@ -40,7 +40,7 @@ service does not submit private orders. The gateway is an optional transport-onl
 profile. Treat the downstream chain as a component responsibility map, not proof
 that the default LIVE deployment has exchange execution connected.
 
-The separate [paper deployment](../deploy/paper_trading/README.md) connects these
+The [chain PAPER deployment](../deploy/chain/README.md) connects these
 services to the simulated exchange using current public data. Opt-in ingestion
 publishes only open(T+1) for execution, outside completed feature bars. It does not
 enable private orders in default LIVE.
@@ -79,6 +79,18 @@ The exact contract types and subjects are defined outside this directory. Do not
 contract from a filename: follow the concrete message type and `MessageSubjects` value used
 by the service.
 
+Manual Control (chain only, `--manual-dir`): the dashboard writes a target portfolio to
+a request folder (`execution_state_service/src/manual_requests.h`). Execution-state checks
+it (reconciliation, open orders, daily-cycle window, risk limits from `--portfolio-config`),
+prices it with the current Binance last prices (`binance_prices.*`), plans it with the
+normal `NotionalOrderPlanner` and submits it through the same exchange path, outside the
+daily cycle (`ExecutionEngine::applyManualOrders` leaves the daily markers alone). The
+orders carry `fill_at_reference_price`, so the simulated exchange fills them at once at
+that price; a real venue ignores it. The next daily `AccountSnapshot` carries
+`resync_to_targets` and portfolio risk then moves every strategy back to its approved
+weights (`lib/src/risk/target_decisions.*`, shared with the replay). Operator view:
+deploy/chain/README.md, "Manual Control".
+
 ## What each service owns
 
 | Service | Main responsibility | Important inputs | Important outputs |
@@ -88,7 +100,7 @@ by the service.
 | `strategy_service` | Strategy evaluation | `MarketDataUpdated` + canonical history | `StrategyIntentBatch` |
 | `portfolio_risk_service` | Portfolio sizing/risk decisions | Strategy intents + account snapshot + history | `DecisionBatch` |
 | `order_planner_service` | Order-plan construction | `NotionalOrderPlanningRequest` | `NotionalOrderPlan` |
-| `execution_state_service` | Durable execution/account state | decisions, plans, market updates, exchange events | account snapshots, planning requests, execution-cycle completion |
+| `execution_state_service` | Durable execution/account state | decisions, plans, market updates, exchange events, manual requests | account snapshots, planning requests, execution-cycle completion, manual orders |
 | `exchange_gateway` | Exchange boundary | submit/cancel/snapshot commands | normalized order/fill/snapshot events |
 | `simulated_exchange_service` | Durable simulated backend | execution prices + backend commands | backend order/fill/snapshot events |
 | `execution_service` | Direct execution-engine path | decisions, prices, order updates, fills | persisted trading state / exchange actions |
@@ -296,8 +308,13 @@ LONG and SHORT USD marked notionals, never netting opposite sides or substitutin
 entry prices; pending orders are not confirmed exposure. Missing pricing/nonpositive
 equity is unavailable rather than a fabricated ratio/recovery. Those checks retain
 existing active alerts when unavailable; status.json lists unavailableChecks.
-Defaults --daily-equity-drop-fraction=0.10 and --gross-exposure-warning=5 are
-configurable. Observer/read failures and margin warnings do not issue any stop or
+MAINTENANCE_DROP (user request 2026-10-14) warns when a fall smaller than 25% of BTC
+and the net long positions together would reach the maintenance margin (headroom /
+(BTC collateral after haircut + net long marked notional); a linear estimate with the
+maintenance margin taken as fixed). Without fresh marks for open positions it is
+unavailable; with no long exposure it cannot trigger.
+Defaults --daily-equity-drop-fraction=0.10, --gross-exposure-warning=5 and
+--maintenance-drop-warning=0.25 are configurable. Observer/read failures and margin warnings do not issue any stop or
 liquidation/closing command. Existing strategy constraints remain independent:
 pure_rsi_equal_weight.json targets 10% per full signal and scales gross targets to
 1.5x. The new 5x venue-account warning does not change historical sizing/economics.
@@ -374,6 +391,13 @@ Within `market_data_service/src/`, filenames describe their local responsibility
 | `ingestion.h/.cpp` | One daily refresh, validation and commit coordination |
 | `market_store.h/.cpp` | Canonical SQLite transactions and tracked-symbol history |
 | `update_publisher.h/.cpp` | Durable notification after a successful commit |
+
+Daily timing: the run starts `midnight_delay_ms` (100 ms) after UTC midnight. Before reading
+the day's candles the ingestor checks `serverTime` from Binance exchangeInfo and waits if
+Binance's clock has not yet passed the day end, so a host clock running slightly ahead can
+never store a still-open candle. Downloads run on `max_parallel_requests` (16) worker
+threads, each reusing one HTTPS connection; the next day's opening prices download alongside
+the completed candles, and a new candle with no trade yet is polled for up to 30 s.
 
 The historical feed shares `market_store` so both writers use the same schema and commit
 rules. The HTTP simulator keeps its own candle store and HTTP server; it serves requests

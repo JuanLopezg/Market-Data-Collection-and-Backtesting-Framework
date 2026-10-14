@@ -1,7 +1,8 @@
 # ---- Include directory for this folder ----
 account_inc = include_directories('.')
 
-# ---- Header-only account state ----
+# ---- Account state (header-only) and the runtime position ledger ----
 account_sources = files(
-    'account.h'
+    'account.h',
+    'position_ledger.cpp'
 )
