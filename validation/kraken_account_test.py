@@ -10,6 +10,7 @@ import hmac
 import io
 import json
 from pathlib import Path
+import socket
 import sys
 import tempfile
 import time
@@ -50,6 +51,21 @@ def fixture(now):
         'preferences': {**success, 'preferences': [{'symbol': 'PF_XBTUSD', 'pnlCurrency': 'USD'}]}}
 
 
+# Synthetic account-history rows in the shape of GET /api/history/v2/account-log.
+ACCOUNT_LOG = [
+    {'id': 9001, 'date': '2026-10-15T08:00:01.000Z', 'asset': 'usd', 'info': 'futures trade',
+     'booking_uid': 'synthetic-booking-uid', 'margin_account': 'flex', 'contract': 'pf_xbtusd',
+     'old_balance': 252.43, 'new_balance': 252.18, 'realized_pnl': 0.0, 'fee': 0.25,
+     'execution': 'synthetic-execution-id'},
+    {'id': 9002, 'date': '2026-10-15T08:00:00.000Z', 'asset': 'usd', 'info': 'funding rate change',
+     'margin_account': 'flex', 'old_balance': 252.43, 'new_balance': 252.43},
+    {'id': 9003, 'date': '2026-10-15T07:00:00.000Z', 'asset': 'xbt', 'info': 'conversion',
+     'margin_account': 'flex', 'old_balance': 0.0224, 'new_balance': 0.0200},
+    {'id': 9004, 'date': '2026-10-15T06:00:00.000Z', 'asset': 'usd', 'info': 'transfer',
+     'margin_account': 'flex', 'old_balance': 2.18, 'new_balance': 252.18},
+]
+
+
 class Transport:
     def __init__(self, bundle, permissions=None):
         self.bundle = bundle
@@ -60,7 +76,8 @@ class Transport:
     def open(self, request, timeout):
         self.calls.append(request)
         assert timeout == 10
-        route = next(name for name, paths in account.ROUTES.items() if request.full_url.endswith(paths[0]))
+        path = request.full_url.split('?')[0]
+        route = next(name for name, paths in account.ROUTES.items() if path.endswith(paths[0]))
         value = self.permissions if route == 'permissions' else self.bundle[route]
         return io.BytesIO(json.dumps(value).encode())
 
@@ -307,6 +324,66 @@ class AccountTest(unittest.TestCase):
             self.assertNotIn(secret, rendered)
         with self.assertRaises(ValueError):
             reader._get('sendorder')
+
+    def test_account_log_is_permission_checked_and_signs_its_query(self):
+        reader = account.KrakenAccountReader(TEST_KEY, TEST_SECRET)
+        transport = Transport({'account_log': {'accountUid': 'synthetic-account', 'logs': ACCOUNT_LOG}})
+        reader.client = transport
+        self.assertEqual(reader.account_log(), json.loads(json.dumps(ACCOUNT_LOG), parse_float=account.Decimal))
+        self.assertEqual([call.full_url for call in transport.calls], [
+            account.HOSTS['live'] + '/api/auth/v1/api-keys/v3/check',
+            account.HOSTS['live'] + '/api/history/v2/account-log?count=500'])
+        # Same message as the gateway: postData (the query) + empty nonce + path.
+        expected = base64.b64encode(hmac.new(base64.b64decode(TEST_SECRET), hashlib.sha256(
+            b'count=500/api/history/v2/account-log').digest(), hashlib.sha512).digest()).decode()
+        self.assertEqual(transport.calls[1].get_header('Authent'), expected)
+        self.assertIsNone(transport.calls[1].data)
+        # Without a read-only key the history is never requested.
+        reader = account.KrakenAccountReader(TEST_KEY, TEST_SECRET)
+        reader.client = Transport({}, {'apiKey': TEST_KEY, 'accountUid': 'x',
+                                       'permissions': {'general': 'FULL_ACCESS', 'transfer': 'NO_ACCESS'}})
+        with self.assertRaises(account.AccountReadError):
+            reader.account_log()
+        self.assertEqual(len(reader.client.calls), 1)
+        reader = account.KrakenAccountReader(TEST_KEY, TEST_SECRET)
+        reader.client = Transport({'account_log': {'logs': 'not a list'}})
+        with self.assertRaises(account.AccountReadError):
+            reader.account_log()
+
+    def test_account_log_summary_keeps_no_ids(self):
+        summary = account.account_log_summary(json.loads(json.dumps(ACCOUNT_LOG), parse_float=account.Decimal),
+                                              self.now)
+        rendered = json.dumps(summary)
+        for identifier in ('9001', 'synthetic-execution-id', 'synthetic-booking-uid'):
+            self.assertNotIn(identifier, rendered)
+        self.assertEqual(summary['entries'], 4)
+        self.assertEqual(summary['infoCounts'], {'conversion': 1, 'futures trade': 1,
+                                                 'funding rate change': 1, 'transfer': 1})
+        self.assertEqual(summary['fieldNames']['id'], 4)
+        self.assertEqual(summary['fieldNames']['execution'], 1)
+        self.assertEqual(summary['fieldTypes']['id'], ['integer'])
+        self.assertEqual(summary['fieldTypes']['fee'], ['number'])
+        trade = summary['rows'][0]
+        self.assertEqual((trade['info'], trade['fee'], trade['has_execution']), ('futures trade', '0.25', True))
+        self.assertNotIn('execution', trade)
+        self.assertEqual(summary['rows'][3]['new_balance'], '252.18')
+
+    def test_read_failures_name_the_cause_without_details(self):
+        cases = ((urllib.error.HTTPError('https://x/' + TEST_KEY, 503, TEST_SECRET, {}, io.BytesIO(TEST_KEY.encode())),
+                  'Kraken HTTP 503 at permissions'),
+                 (urllib.error.URLError(socket.timeout(TEST_SECRET)), 'Kraken timeout at permissions'),
+                 (urllib.error.URLError(socket.gaierror(TEST_SECRET)), 'Kraken DNS failure at permissions'),
+                 (ConnectionResetError(TEST_SECRET), 'Kraken connection failure at permissions'),
+                 (OSError(TEST_SECRET), 'Kraken network failure at permissions'))
+        for raised, message in cases:
+            class FailedTransport:
+                def open(self, request, timeout):
+                    raise raised
+            reader = account.KrakenAccountReader(TEST_KEY, TEST_SECRET)
+            reader.client = FailedTransport()
+            with self.assertRaises(account.AccountReadError) as error:
+                reader.snapshot()
+            self.assertEqual(str(error.exception), message)
 
     def test_permissions_checked_before_other_reads(self):
         for permissions in ({'general': 'FULL_ACCESS', 'transfer': 'NO_ACCESS'},

@@ -7,7 +7,7 @@ submits orders, changes settlement preferences or writes trading account state.
 import argparse
 import logging
 import base64
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 import hashlib
 import hmac
@@ -15,7 +15,9 @@ import html
 import json
 from pathlib import Path
 import re
+import socket
 import sqlite3
+import ssl
 import time
 import urllib.request
 import urllib.error
@@ -33,7 +35,11 @@ ROUTES = {
     'positions': ('/derivatives/api/v3/openpositions', '/api/v3/openpositions'),
     'orders': ('/derivatives/api/v3/openorders', '/api/v3/openorders'),
     'preferences': ('/derivatives/api/v3/pnlpreferences', '/api/v3/pnlpreferences'),
+    # History API, outside /derivatives. Read separately from the snapshot bundle.
+    'account_log': ('/api/history/v2/account-log', '/api/history/v2/account-log'),
 }
+# The only query any route may carry; it is signed as postData, as the gateway does.
+ROUTE_QUERIES = {'account_log': 'count=500'}
 
 
 class CredentialError(ValueError):
@@ -42,6 +48,24 @@ class CredentialError(ValueError):
 
 class AccountReadError(ValueError):
     """A bounded endpoint/status diagnostic, never exchange bodies or headers."""
+
+
+class JournalError(ValueError):
+    """Our own journal refused an observation (other account/policy, order, changed sample)."""
+
+
+def network_failure_kind(error):
+    """Short kind of a transport failure; never the URL, headers or exception text."""
+    reason = getattr(error, 'reason', error)
+    if isinstance(reason, (TimeoutError, socket.timeout)):
+        return 'timeout'
+    if isinstance(reason, socket.gaierror):
+        return 'DNS failure'
+    if isinstance(reason, ssl.SSLError):
+        return 'TLS failure'
+    if isinstance(reason, ConnectionError):
+        return 'connection failure'
+    return 'network failure'
 
 
 def reader_from_credentials(path, environment='live'):
@@ -96,7 +120,7 @@ def read_only_permissions(response):
 
 
 class KrakenAccountReader:
-    """Five fixed GET routes. No generic HTTP request or mutation interface."""
+    """Six fixed GET routes. No generic HTTP request or mutation interface."""
 
     def __init__(self, api_key, api_secret, environment='live'):
         if not isinstance(api_key, str) or not re.fullmatch(r'[A-Za-z0-9+/=_-]{8,256}', api_key):
@@ -118,11 +142,12 @@ class KrakenAccountReader:
         if route not in ROUTES or (route != 'permissions' and self._permissions is None):
             raise ValueError('Only permission-checked account reads are permitted')
         path, signing_path = ROUTES[route]
-        # These GETs have no query/body. Kraken permits omitting nonce. Therefore
-        # postData and nonce are both empty, including after a client restart.
-        hashed = hashlib.sha256(signing_path.encode()).digest()
+        # Kraken permits omitting nonce, so it is empty, including after a client restart.
+        # postData is the route's fixed query (empty for all but the account history).
+        query = ROUTE_QUERIES.get(route, '')
+        hashed = hashlib.sha256((query + signing_path).encode()).digest()
         signature = base64.b64encode(hmac.new(self._secret, hashed, hashlib.sha512).digest()).decode()
-        request = urllib.request.Request(self._host + path, method='GET',
+        request = urllib.request.Request(self._host + path + ('?' + query if query else ''), method='GET',
             headers={'APIKey': self._key, 'Authent': signature, 'Accept': 'application/json',
                      'User-Agent': 'algoTrading-read-only-account'})
         try:
@@ -141,12 +166,16 @@ class KrakenAccountReader:
             if error.code == 401:
                 raise AccountReadError('Kraken rejected authentication/access (HTTP ' + str(error.code) + ') at ' + route +
                     '; check Futures keys, permissions and IP restrictions') from None
-            raise AccountReadError('Kraken HTTP failure at ' + route) from None
-        except (OSError, ValueError):
-            # HTTP/JSON errors may embed keys, headers or response bodies.
-            raise AccountReadError('Kraken account read unavailable or invalid at ' + route) from None
+            raise AccountReadError('Kraken HTTP ' + str(error.code) + ' at ' + route) from None
+        except OSError as error:
+            # Only the kind: the exception text may embed the URL or connection details.
+            raise AccountReadError('Kraken ' + network_failure_kind(error) + ' at ' + route) from None
+        except ValueError:
+            # JSON errors may embed response bodies.
+            raise AccountReadError('Kraken invalid response at ' + route) from None
 
-    def snapshot(self):
+    def check_permissions(self):
+        """Confirm before any account read that the key is still read-only."""
         self._permissions = None
         checked = self._get('permissions')
         if not isinstance(checked.get('apiKey'), str) or not hmac.compare_digest(checked['apiKey'], self._key):
@@ -155,7 +184,21 @@ class KrakenAccountReader:
             self._permissions = read_only_permissions(checked)
         except (KeyError, ValueError, TypeError, AttributeError):
             raise AccountReadError('Set General API to Read Only and Withdrawal API to No Access') from None
-        permission_time = time.time()
+        return time.time()
+
+    def account_log(self):
+        """The newest account-history rows (fees, funding, transfers...), permission-checked.
+
+        Read on its own, outside the snapshot bundle and its five-second clock rule.
+        """
+        self.check_permissions()
+        rows = self._get('account_log').get('logs')
+        if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+            raise AccountReadError('Kraken invalid response at account_log')
+        return rows
+
+    def snapshot(self):
+        permission_time = self.check_permissions()
         responses = {route: self._get(route) for route in ('wallets', 'positions', 'orders', 'preferences')}
         bundle = {'scope': PRIVATE_SCOPE, 'environment': self.environment, 'observed_at': time.time(),
                   'permission_checked_at': permission_time, 'permissions': self._permissions, **responses}
@@ -367,6 +410,44 @@ def normalize_account(bundle, policy, now):
         'live_account_acceptance': False}
 
 
+ACCOUNT_LOG_FIELDS = ('date', 'info', 'asset', 'margin_account', 'contract',
+                      'old_balance', 'new_balance', 'fee', 'realized_funding', 'realized_pnl')
+
+
+def account_log_summary(rows, observed_at):
+    """What the account history says, without ids: lets us check the gateway's parser.
+
+    Per entry only the fields in ACCOUNT_LOG_FIELDS plus whether an execution id is present
+    (not its value). Separately, every field name seen and how often each `info` appears.
+    """
+    def plain(value):
+        return str(value) if isinstance(value, Decimal) else value
+
+    def json_type(value):
+        if value is None:
+            return 'null'
+        if isinstance(value, bool):
+            return 'boolean'
+        if isinstance(value, int):
+            return 'integer'
+        return 'number' if isinstance(value, Decimal) else type(value).__name__
+    entries, field_names, field_types, info_counts = [], {}, {}, {}
+    for row in rows:
+        for name, value in row.items():
+            field_names[name] = field_names.get(name, 0) + 1
+            field_types.setdefault(name, set()).add(json_type(value))
+        info = str(row.get('info'))
+        info_counts[info] = info_counts.get(info, 0) + 1
+        entry = {name: plain(row.get(name)) for name in ACCOUNT_LOG_FIELDS if name in row}
+        entry['has_execution'] = bool(row.get('execution'))
+        entries.append(entry)
+    return {'version': 'kraken-account-log-summary-v1', 'observedAt': datetime.fromtimestamp(
+                observed_at, timezone.utc).isoformat(),
+            'entries': len(entries), 'fieldNames': dict(sorted(field_names.items())),
+            'fieldTypes': {name: sorted(types) for name, types in sorted(field_types.items())},
+            'infoCounts': dict(sorted(info_counts.items())), 'rows': entries}
+
+
 class AccountJournal:
     """Persist observations only; bind account/environment/scope and reserve policy."""
 
@@ -386,7 +467,7 @@ class AccountJournal:
 
     def observe(self, bundle, now):
         if bundle['scope'] != self.scope or bundle['environment'] != self.environment:
-            raise ValueError('Account journal source/environment mismatch')
+            raise JournalError('Account journal source/environment mismatch')
         result = normalize_account(bundle, self.policy, now)
         identity = canonical({'account': result['account_identity_hash'], 'scope': self.scope,
                               'environment': self.environment, 'policy': self.policy})
@@ -394,17 +475,17 @@ class AccountJournal:
         with self.db:
             context = self.db.execute('SELECT identity FROM context WHERE id=1').fetchone()
             if context and context[0] != identity:
-                raise ValueError('Account journal belongs to another account, source or reserve policy')
+                raise JournalError('Account journal belongs to another account, source or reserve policy')
             if not context:
                 self.db.execute('INSERT INTO context VALUES (1,?)', (identity,))
             existing = self.db.execute('SELECT result FROM samples WHERE id=?', (sample_id,)).fetchone()
             if existing:
                 if existing[0] != canonical(result):
-                    raise ValueError('Captured account observation changed')
+                    raise JournalError('Captured account observation changed')
                 return json.loads(existing[0])
             latest = self.db.execute('SELECT max(observed_at) FROM samples').fetchone()[0]
             if latest is not None and bundle['observed_at'] < latest:
-                raise ValueError('Out-of-order account sample')
+                raise JournalError('Out-of-order account sample')
             self.db.execute('INSERT INTO samples VALUES (?,?,?)', (sample_id, bundle['observed_at'], canonical(result)))
         return result
 

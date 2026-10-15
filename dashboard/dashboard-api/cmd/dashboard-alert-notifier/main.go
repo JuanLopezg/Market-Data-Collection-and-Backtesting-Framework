@@ -23,7 +23,17 @@ const maxSecretFileBytes = 8 * 1024
 
 func main() {
 	testMessage := flag.Bool("test-message", false, "send one explicit Telegram setup test and exit")
+	testSeverity := flag.String("test-severity", "INFO", "severity of the explicit setup test: INFO, WARN or CRITICAL")
 	flag.Parse()
+	severity := strings.ToUpper(strings.TrimSpace(*testSeverity))
+	if severity != "INFO" && severity != "WARN" && severity != "CRITICAL" {
+		fmt.Fprintln(os.Stderr, "test-severity must be INFO, WARN or CRITICAL")
+		os.Exit(1)
+	}
+	if !*testMessage && severity != "INFO" {
+		fmt.Fprintln(os.Stderr, "test-severity requires test-message")
+		os.Exit(1)
+	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg, err := loadConfig()
 	if err != nil {
@@ -41,7 +51,7 @@ func main() {
 	case "TEST_FILE":
 		sink, err = notifier.NewTestFileSink(cfg.testSinkFile)
 	case "TELEGRAM":
-		sink, err = notifier.NewTelegramSink(cfg.telegramBotToken, cfg.telegramChatID, cfg.telegramReceiptFile, cfg.telegramRequestTimeout)
+		sink, err = notifier.NewTelegramSink(cfg.telegramBotToken, cfg.telegramChatID, cfg.telegramCriticalChatID, cfg.telegramReceiptFile, cfg.telegramRequestTimeout)
 	default:
 		err = fmt.Errorf("unsupported notifier sink %q", cfg.sink)
 	}
@@ -60,7 +70,7 @@ func main() {
 		identity := "telegram-test:" + time.Now().UTC().Format(time.RFC3339Nano)
 		_, err := sink.Deliver(ctx, notifier.Notification{
 			NotificationID: identity, SourceEventID: identity, AlertID: "telegram-setup-test",
-			Severity: "INFO", Transition: "TEST", Service: "AlertNotifier",
+			Severity: severity, Transition: "TEST", Service: "AlertNotifier",
 			Title: "algoTrading Telegram setup test", Detail: "Manual setup test only. No trading order or alert lifecycle state was changed.",
 		})
 		if err != nil {
@@ -77,6 +87,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	sourceMonitor, err := notifier.NewSourceMonitor(store, sink, cfg.sourceName, cfg.sourceStaleWarning)
+	if err != nil {
+		logger.Error("configure notifier source monitor", "error", err)
+		os.Exit(1)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	logger.Info("dashboard alert notifier starting",
@@ -91,21 +106,20 @@ func main() {
 
 	sweep := func() {
 		now := time.Now().UTC()
-		events, err := readFreshAlertEvents(cfg.alertStoreDir, cfg.sourceMaxBytes, now)
-		if err != nil {
-			_ = store.RecordFailure(now, 0, sink.Name(), cfg.minSeverity, cfg.cooldown, err)
-			logger.Warn("notifier source replay failed", "error", err)
-			return
-		}
 		sweepCtx, cancel := context.WithTimeout(ctx, cfg.sweepTimeout)
 		defer cancel()
-		stats, err := engine.Process(sweepCtx, events)
+		stats, err := processSourceSweep(sweepCtx, cfg, now, sourceMonitor, engine)
 		if err != nil {
-			_ = store.RecordFailure(now, len(events), sink.Name(), cfg.minSeverity, cfg.cooldown, err)
-			logger.Error("notifier sweep failed", "error", err, "sourceEvents", len(events), "sink", sink.Name())
+			_ = store.RecordFailure(now, stats.SourceEvents, sink.Name(), cfg.minSeverity, cfg.cooldown, err)
+			var failure sourceReadError
+			if errors.As(err, &failure) {
+				logger.Warn("notifier source replay failed", "error", err)
+			} else {
+				logger.Error("notifier sweep failed", "error", err, "sourceEvents", stats.SourceEvents, "sink", sink.Name())
+			}
 			return
 		}
-		if err := store.RecordSuccess(now, len(events), sink.Name(), cfg.minSeverity, cfg.cooldown); err != nil {
+		if err := store.RecordSuccess(now, stats.SourceEvents, sink.Name(), cfg.minSeverity, cfg.cooldown); err != nil {
 			logger.Error("notifier heartbeat persistence failed", "error", err)
 			return
 		}
@@ -133,19 +147,56 @@ func main() {
 	}
 }
 
+func processSourceSweep(ctx context.Context, cfg config, now time.Time, source *notifier.SourceMonitor, engine *notifier.Engine) (notifier.SweepStats, error) {
+	events, readErr := readFreshAlertEvents(cfg.alertStoreDir, cfg.sourceMaxBytes, now)
+	var failure sourceReadError
+	if readErr != nil && !errors.As(readErr, &failure) {
+		return notifier.SweepStats{}, readErr
+	}
+	if err := source.Observe(ctx, now, failure.reason); err != nil {
+		return notifier.SweepStats{}, err
+	}
+	if readErr != nil {
+		// Only our own health notification is eligible while source evidence is bad.
+		return notifier.SweepStats{}, readErr
+	}
+	return engine.Process(ctx, events)
+}
+
+type sourceReadError struct{ reason notifier.SourceFailure }
+
+func (e sourceReadError) Error() string { return "alert source unavailable: " + string(e.reason) }
+
 func readFreshAlertEvents(dir string, maxBytes int64, now time.Time) ([]alertstore.LifecycleEvent, error) {
 	heartbeat, err := alertstore.ReadHeartbeat(dir)
 	if err != nil {
-		return nil, err
+		reason := notifier.SourceError
+		if errors.Is(err, os.ErrNotExist) {
+			reason = notifier.SourceMissing
+		}
+		return nil, sourceReadError{reason}
+	}
+	if heartbeat.LastSuccessAt == "" {
+		return nil, sourceReadError{notifier.SourceMissing}
 	}
 	lastSuccess, err := time.Parse(time.RFC3339Nano, heartbeat.LastSuccessAt)
-	if err != nil || now.Sub(lastSuccess) > 90*time.Second || lastSuccess.Sub(now) > 30*time.Second {
-		return nil, errors.New("alert watchdog heartbeat is missing, stale or ahead of the host clock")
+	if err != nil {
+		return nil, sourceReadError{notifier.SourceError}
+	}
+	if now.Sub(lastSuccess) > 90*time.Second {
+		return nil, sourceReadError{notifier.SourceStale}
+	}
+	if lastSuccess.Sub(now) > 30*time.Second {
+		return nil, sourceReadError{notifier.SourceAhead}
 	}
 	if heartbeat.LastError != "" {
-		return nil, errors.New("alert watchdog last sweep failed; waiting for healthy source evidence")
+		return nil, sourceReadError{notifier.SourceError}
 	}
-	return alertstore.ReadLifecycleEvents(dir, maxBytes)
+	events, err := alertstore.ReadLifecycleEvents(dir, maxBytes)
+	if err != nil {
+		return nil, sourceReadError{notifier.SourceError}
+	}
+	return events, nil
 }
 
 type config struct {
@@ -158,8 +209,11 @@ type config struct {
 	cooldown               time.Duration
 	sweepTimeout           time.Duration
 	sourceMaxBytes         int64
+	sourceName             string
+	sourceStaleWarning     time.Duration
 	telegramBotToken       string
 	telegramChatID         string
+	telegramCriticalChatID string
 	telegramReceiptFile    string
 	telegramRequestTimeout time.Duration
 }
@@ -180,6 +234,10 @@ func loadConfig() (config, error) {
 		testSinkFile:  strings.TrimSpace(envOr("DASHBOARD_NOTIFIER_TEST_SINK_FILE", "/data/notifier/test-sink.jsonl")),
 		sink:          sinkName,
 		minSeverity:   strings.ToUpper(strings.TrimSpace(envOr("DASHBOARD_NOTIFIER_MIN_SEVERITY", "WARN"))),
+		sourceName:    strings.TrimSpace(envOr("DASHBOARD_NOTIFIER_SOURCE_NAME", "Watchdog")),
+	}
+	if !notifier.ValidSourceName(cfg.sourceName) {
+		return config{}, errors.New("invalid DASHBOARD_NOTIFIER_SOURCE_NAME")
 	}
 	if cfg.alertStoreDir == "" || cfg.storeDir == "" {
 		return config{}, fmt.Errorf("notifier source/store paths must be configured")
@@ -211,12 +269,21 @@ func loadConfig() (config, error) {
 		return config{}, err
 	}
 
+	warningSeconds, err := int64Env("DASHBOARD_NOTIFIER_SOURCE_STALE_WARNING_SECONDS", 300, 1, 86400)
+	if err != nil {
+		return config{}, err
+	}
+	cfg.sourceStaleWarning = time.Duration(warningSeconds) * time.Second
 	if cfg.sink == "TELEGRAM" {
 		cfg.telegramBotToken, err = secretEnvOrFile("DASHBOARD_TELEGRAM_BOT_TOKEN", "DASHBOARD_TELEGRAM_BOT_TOKEN_FILE")
 		if err != nil {
 			return config{}, err
 		}
 		cfg.telegramChatID, err = secretEnvOrFile("DASHBOARD_TELEGRAM_CHAT_ID", "DASHBOARD_TELEGRAM_CHAT_ID_FILE")
+		if err != nil {
+			return config{}, err
+		}
+		cfg.telegramCriticalChatID, err = secretEnvOrFile("DASHBOARD_TELEGRAM_CRITICAL_CHAT_ID", "DASHBOARD_TELEGRAM_CRITICAL_CHAT_ID_FILE")
 		if err != nil {
 			return config{}, err
 		}

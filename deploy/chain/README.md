@@ -1,8 +1,19 @@
 # Chain: runtime layout and launcher
 
 One installation per machine. Every runtime file lives under one root folder:
-`/` on the VPS, any Linux folder locally (for example `~/algotrading-runtime` in WSL;
+`/algoTrading` for the preferred VPS layout, any Linux folder locally (for example `~/algotrading-runtime` in WSL;
 not `/mnt/c`, because PostgreSQL needs real file ownership).
+
+The VPS was relocated from `/` to `/algoTrading` on 2026-10-14 with state preserved.
+The operating examples below use the deployed root.
+`algo install` renders host systemd, logging and AppArmor templates for the selected
+root. Docker mount destinations keep their existing container paths. Linux-owned
+paths such as `/etc`, `/usr` and `/run`, and Tailscale state, remain OS-managed.
+
+Installing at a new root does not migrate an existing installation. Any later
+authorized relocation must preserve all eight application folders, replace the
+installed host units/AppArmor rules and rebase absolute host paths in the active
+comparison study/manifest before restarting. Historical evidence stays intact.
 
 ```text
 <root>/
@@ -210,17 +221,22 @@ sets `LOG_MODE=local` there: `compose.local.yml` keeps Docker's json-file logs a
 `monitor.py` writes `data/telemetry/host.json` for the dashboard Infrastructure page and
 appends `data/telemetry/history.jsonl` (one row every 30 s, seven days kept) for its CPU/RAM/disk
 charts. It is started detached (`setsid`) and `algo` waits for its first sample.
+Each container's square on that page is Docker's health check: `nats` asks its
+`/healthz` (server and JetStream ready), the C++ trading services check that their
+executable is running (`pgrep` on argv[0]; no in-loop heartbeat yet, so this means alive,
+not trading correctly), PostgreSQL and the dashboard containers have their own checks.
+"Degraded" = running but the check is failing or still starting; "Down" = stopped or unhealthy.
 
 ## VPS installation (from scratch, when authorized)
 
 ```bash
-sudo deploy/chain/algo install /
-sudo cp /chain/logging/algotrading-logs.service /chain/logging/algotrading-log-cleanup.* /etc/systemd/system/
-sudo chown syslog:adm /logs /data/receiver && sudo chmod 0750 /logs
-sudo cp /chain/logging/rsyslog.apparmor /etc/apparmor.d/rsyslog.d/algotrading && sudo apparmor_parser -r /etc/apparmor.d/usr.sbin.rsyslogd
+sudo deploy/chain/algo install /algoTrading
+sudo cp /algoTrading/chain/logging/algotrading-logs.service /algoTrading/chain/logging/algotrading-log-cleanup.* /etc/systemd/system/
+sudo chown syslog:adm /algoTrading/logs /algoTrading/data/receiver && sudo chmod 0750 /algoTrading/logs
+sudo cp /algoTrading/chain/logging/rsyslog.apparmor /etc/apparmor.d/rsyslog.d/algotrading && sudo apparmor_parser -r /etc/apparmor.d/usr.sbin.rsyslogd
 sudo systemctl daemon-reload && sudo systemctl enable --now algotrading-logs.service algotrading-log-cleanup.timer
 # loads the release's images, installs its chain files and starts (section "Releases"):
-sudo /releases/<version>/algo activate /releases/<version> /
+sudo /algoTrading/releases/<version>/algo activate /algoTrading/releases/<version> /algoTrading
 ```
 
 This replaced the previous `deploy/paper_trading` + `deploy/live/logging` installation
@@ -238,11 +254,11 @@ stops `risk` ("belongs to a different portfolio/config identity"). To switch on 
 (for example equal weight -> `pure_rsi_vol_target.json`), away from 00:00 UTC:
 
 ```bash
-sudo /chain/algo backup
+sudo /algoTrading/chain/algo backup
 # chain.env: PORTFOLIO_FILE=pure_rsi_vol_target.json and RISK_ADOPT_PORTFOLIO_CONFIG=yes
-sudo /chain/algo up                      # risk logs one ALERT "Portfolio config changed on purpose"
+sudo /algoTrading/chain/algo up                      # risk logs one ALERT "Portfolio config changed on purpose"
 # chain.env: RISK_ADOPT_PORTFOLIO_CONFIG=no
-sudo /chain/algo up                      # risk restarts with the adopted configuration
+sudo /algoTrading/chain/algo up                      # risk restarts with the adopted configuration
 sudo systemctl restart algotrading-comparison
 ```
 
@@ -264,7 +280,15 @@ is missing or its date/strategy identities differ, observation stays unavailable
 signals are never inferred from holdings or taken from a later day. The baseline
 cache (`fast-input.sha256`) tracks economic inputs/configuration, so a corrected
 seed triggers recomputation even when the cycle count is unchanged. These changes
-were prepared locally on 2026-10-14; VPS deployment remains pending.
+were deployed on 2026-10-14; all five retained rows have zero signal differences.
+
+Telegram severity routing uses optional `DASHBOARD_TELEGRAM_CRITICAL_CHAT_ID` in
+`secrets/chain.env`: CRITICAL alerts and their recoveries go to that group; other
+messages keep the original chat. INFO/resolved updates are silent; WARN/CRITICAL
+use normal notifications, controlled by phone/chat settings. The Kraken notifier
+is active in TELEGRAM mode; the general watchdog sink remains TEST_FILE. Explicit
+tests use `docker exec kraken-notifier /dashboard-alert-notifier --test-message
+--test-severity CRITICAL` (sends a real TEST-labelled message).
 
 ## Telegram setup message
 
@@ -283,9 +307,32 @@ use `algo down notifier`. Earlier ignored Telegram files and receipts are not
 deleted by retiring the older deployment. The Kraken account notifier is separate
 and uses the `kraken` profile described below.
 
+Both chain notifiers independently warn when their alert source fails continuously
+for `DASHBOARD_NOTIFIER_SOURCE_STALE_WARNING_SECONDS` (integer seconds, default 300,
+range 1..86400; optional in `chain.env`). The notifier sends one WARN titled
+"Alert source stopped" and one resolved notification on recovery, using its existing
+sink. Display names come from `DASHBOARD_NOTIFIER_SOURCE_NAME`: `Watchdog` for the
+general notifier and `Kraken` for kraken-notifier, set in Compose. The warning states
+when failure was first observed and only a safe reason (missing, stale, ahead of
+clock, source error). WARN is yellow with normal notification; resolved is green
+and silent; both use the normal Telegram chat even with a critical group configured.
+The general notifier remains TEST_FILE. Keep each store's `source-health.json`,
+decision journal and sink receipts together for restart deduplication and retained
+timers. No source alerts are replayed while its evidence is unhealthy. This local
+feature requires an authorized deployment; the existing healthcheck is unchanged
+and remains unhealthy when source evidence fails.
+
 ## Kraken account monitor and Telegram
 
 Warning-only watch of the real Kraken account, independent of PAPER trading:
+
+Notifier source-health contract (`status.json`, step43-v1): `lastSuccessAt` means the
+monitor successfully published its own state; `lastError` reports internal monitor
+failure. A Kraken API outage is reported separately by the monitor's alert lifecycle
+(task 1), while its own heartbeat continues. A missing heartbeat, success older than
+90 seconds, success more than 30 seconds ahead or internal error blocks source-alert
+delivery and starts the notifier's five-minute source-failure timer described above.
+The two changes can be developed independently; deployment should include both.
 
 ```text
 algotrading-kraken.service (host, python3)          kraken-notifier (container, profile "kraken")
@@ -309,6 +356,22 @@ algotrading-kraken.service (host, python3)          kraken-notifier (container, 
   Headroom, Drop to Maintenance and Net Deposits; older than 5 minutes it is flagged stale.
   Drop to maintenance is a linear estimate (maintenance margin taken as fixed): "BTC" is
   the fall of BTC alone, "all" the fall of BTC and the net long positions together.
+- Kraken not answering (maintenance, HTTP 5xx, network): the cause goes to
+  `journalctl -u algotrading-kraken` when it starts, changes and recovers (for example
+  "Kraken account read failed: Kraken HTTP 503 at wallets"), never bodies or keys. After
+  `--unreadable-warning-minutes` (10) of failed reads one WARN "Kraken account unreadable"
+  (KRAKEN_UNREADABLE) goes to Telegram with the cause and the last good read; the next good
+  read resolves it. A failed read never changes or resolves the other warnings.
+- `status.json` (step43-v1): `lastSuccessAt` is the last sweep in which the monitor itself
+  worked and published, whether or not Kraken answered; `lastError` only reports the
+  monitor's own failures (journal, disk). A `lastSuccessAt` that stops moving means the
+  monitor is stopped. (Before 2026-10-15 a Kraken failure set `lastError`, and the
+  notifier then sent nothing.)
+- `data/kraken_account/account-log-summary.json` (at start and hourly, retried after 5 min
+  on failure): the newest 500 account-history rows without ids (date, info, asset, wallet,
+  contract, balances, fee, realized PnL/funding, whether an execution id is present), plus
+  every field name with its JSON types and how often each `info` appears. It is for checking
+  the gateway's account-history parser; a failure there opens no alert.
 - It never places, cancels or closes anything. Raw samples are kept 3 days; alert history
   and per-day portfolio snapshots stay. A failed read never reports a recovery.
 - The key must be a Kraken Derivatives key with **General API: Read Only** and
@@ -318,14 +381,14 @@ Enable it on the VPS (only when authorized; the key file is created by you, neve
 
 ```bash
 # 1. Read-only key: exactly KRAKEN_API_KEY=... and KRAKEN_API_SECRET=...
-sudo install -m 0600 /dev/null /secrets/kraken_readonly.env && sudo nano /secrets/kraken_readonly.env
-# 2. Telegram bot settings in /secrets/chain.env (DASHBOARD_TELEGRAM_BOT_TOKEN, DASHBOARD_TELEGRAM_CHAT_ID)
+sudo install -m 0600 /dev/null /algoTrading/secrets/kraken_readonly.env && sudo nano /algoTrading/secrets/kraken_readonly.env
+# 2. Telegram bot settings in /algoTrading/secrets/chain.env (DASHBOARD_TELEGRAM_BOT_TOKEN, DASHBOARD_TELEGRAM_CHAT_ID)
 # 3. chain.env: COMPOSE_PROFILES=kraken   (KRAKEN_NOTIFIER_SINK=TEST_FILE to try without Telegram)
-sudo cp /chain/systemd/algotrading-kraken.service /etc/systemd/system/ && sudo systemctl daemon-reload
+sudo cp /algoTrading/chain/systemd/algotrading-kraken.service /etc/systemd/system/ && sudo systemctl daemon-reload
 sudo systemctl enable --now algotrading-kraken
-sudo /chain/algo up
-sudo /chain/algo ps        # "kraken account monitor: running", kraken-notifier Up
-cat /data/kraken_account/status.json   # lastSuccessAt every ~30 s, no lastError
+sudo /algoTrading/chain/algo up
+sudo /algoTrading/chain/algo ps        # "kraken account monitor: running", kraken-notifier Up
+cat /algoTrading/data/kraken_account/status.json   # lastSuccessAt every ~30 s, no lastError
 ```
 
 Changing the thresholds binds a new journal: stop the unit, move `data/kraken_account`
@@ -353,10 +416,10 @@ Each release folder holds:
 Deploy on the VPS (only when authorized, outside 23:30-00:30 UTC):
 
 ```bash
-# from the PC: copy storage/releases/<version>/ to /releases/<version>/ on the VPS
-sudo /releases/<version>/algo activate /releases/<version> /
-sudo /chain/algo releases          # current and previous
-sudo /chain/algo rollback          # back to the previous release, same steps
+# from the PC: copy storage/releases/<version>/ to /algoTrading/releases/<version>/ on the VPS
+sudo /algoTrading/releases/<version>/algo activate /algoTrading/releases/<version> /algoTrading
+sudo /algoTrading/chain/algo releases          # current and previous
+sudo /algoTrading/chain/algo rollback          # back to the previous release, same steps
 ```
 
 `activate` checks before touching anything: checksums, that each image in `images.tar`
@@ -372,10 +435,10 @@ Not done automatically:
 
 - Host units: `activate` prints a NOTE for every unit in `/etc/systemd/system/` that
   differs from the release; copy it and run `systemctl daemon-reload`.
-- Configuration in `/config` is kept as it is. A release that needs a config change says
+- Configuration in `/algoTrading/config` is kept as it is. A release that needs a config change says
   so in CURRENT_STATE.md (for example `market_data.json` for the faster 00:00 download).
-- Old releases stay in `/releases/` and as `<name>:<version>` images. Remove one with
-  `rm -r /releases/<version>` and `docker image rm algotrading-{runtime,dash-api,dash-web}:<version>`;
+- Old releases stay in `/algoTrading/releases/` and as `<name>:<version>` images. Remove one with
+  `rm -r /algoTrading/releases/<version>` and `docker image rm algotrading-{runtime,dash-api,dash-web}:<version>`;
   keep the current and previous ones.
 
 State format: `STATE_FORMAT` in `algo` is the format of the durable state a release
@@ -393,13 +456,16 @@ image IDs. `activate` accepts them, checked by `SHA256SUMS` only, keeps their im
 VPS, record that release as current so `rollback` can return to it:
 
 ```bash
-echo <version of the 2026-10-13 release> | sudo tee /releases/current
+echo <version of the 2026-10-13 release> | sudo tee /algoTrading/releases/current
 ```
 
 Its own launcher has no `rollback`; to move forward again from it, use the newer
-release's copy: `sudo /releases/<newer>/algo activate /releases/<newer> /`.
+release's copy: `sudo /algoTrading/releases/<newer>/algo activate /algoTrading/releases/<newer> /algoTrading`.
 
 ## Moving the VPS PAPER study into the chain (keeps its history)
+
+Historical runbook for the completed 2026-10-13 migration at root `/`. These
+commands are not a relocation procedure for the current installation.
 
 `chain/migrate_paper.py` copies the old `algotrading-paper` stack into the installation:
 its Docker volumes (PostgreSQL, NATS, market SQLite, watchdog/notifier/audit/alerts),

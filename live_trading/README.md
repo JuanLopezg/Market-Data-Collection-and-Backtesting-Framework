@@ -393,9 +393,10 @@ Within `market_data_service/src/`, filenames describe their local responsibility
 | `update_publisher.h/.cpp` | Durable notification after a successful commit |
 
 Daily timing: the run starts `midnight_delay_ms` (100 ms) after UTC midnight. Before reading
-the day's candles the ingestor checks `serverTime` from Binance exchangeInfo and waits if
-Binance's clock has not yet passed the day end, so a host clock running slightly ahead can
-never store a still-open candle. Downloads run on `max_parallel_requests` (16) worker
+the day's candles the ingestor reads Binance's clock (`GET /fapi/v1/time`) and waits if it
+has not yet passed the day end, so a host clock running slightly ahead can never store a
+still-open candle. The `serverTime` inside exchangeInfo is not used: that document is cached
+and was about 30 minutes old on 2026-10-15, which held the first run back for a minute. Downloads run on `max_parallel_requests` (16) worker
 threads, each reusing one HTTPS connection; the next day's opening prices download alongside
 the completed candles, and a new candle with no trade yet is polled for up to 30 s.
 

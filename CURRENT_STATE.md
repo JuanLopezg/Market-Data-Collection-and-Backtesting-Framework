@@ -1,6 +1,347 @@
 # Current state
 
-Last synchronized: 2026-10-14. Current source and test output take precedence.
+Last synchronized: 2026-10-15. Current source and test output take precedence.
+
+## VPS release 20261015_090303-d11699d-dirty (2026-10-15, deployed)
+
+User explicitly authorized build, release and deployment. Contents beyond the running
+20261014_201725 release (checked file by file against its source.tar.gz): the
+`/fapi/v1/time` day-close guard, task 1 (Kraken monitor) and task 2 (notifier source
+warning), plus docs. Pre-release checks: go vet + all Go tests (offline container), Kraken
+Python tests 29/19+1/6, venue adapter 110 checks, chain_installation_root_test 1/1, Step59
+PASS `94fdf8d8…`. New images runtime `fe1ec77c…` and dash-api `f5f5f9e0…` (09:02 UTC);
+dash-web unchanged in content. release.json IDs match the fresh builds; SHA256SUMS OK on
+the VPS. `activate` at 09:12 UTC (backup, install, `:chain` moved; previous =
+20261014_201725 for `algo rollback`). Only differing host unit: algotrading-kraken.service
+(`--unreadable-warning-minutes 10`); copied, daemon-reload, monitor restarted 09:15.
+- 09:17 UTC: all 14 containers healthy on the new images. Ledger before/after identical:
+  23 fills, 3 open / 8 closed positions (same hashes), simulated cash 83,017.75 USD and
+  positions; startup reconciliation clean. Services restored their checkpoints (strategy/
+  risk 2026-10-14, execution 83,017.75 USD, sim-exchange); no service warnings or errors.
+- Kraken monitor: account history read (38 entries) into account-log-summary.json;
+  status lastSuccessAt fresh, lastError empty; kraken-notifier healthy. The 09:00 UTC daily
+  portfolio was delivered to Telegram at 09:00:14 (receipt DAILY_PORTFOLIO:2026-10-15) by
+  the previous monitor; the restart did not duplicate it.
+- The general notifier logged 5 "context deadline exceeded" sweeps at startup while
+  catching up 14,8xx source events (once also after yesterday's activation); normal since.
+- Finding (pre-existing, not from this release): on every ExecutionState restart the
+  redelivered market update of the last completed day calls `recordEquityDay` with the
+  live account, which already includes the next open's fills, and overwrites that day's
+  `trading_equity_daily` row. 20261014 went 91,699.43 -> 91,694.59 USD (cash 83,017.75 after
+  the 10-15 sells + 3 positions at the 10-14 closes); 20261013 was already overwritten at the
+  2026-10-14 20:21 restart (cash 77,252.91 instead of 45,535.43). Fills, positions, cash and
+  trading are unaffected (risk skips the already decided day). Not fixed: needs an
+  accounting change (keep the first row of a day) and repair of the two rows.
+- Pending: tonight's 00:00 cycle without the one-minute wait; first hourly account-history
+  refresh.
+
+## Task 1: Kraken monitor failure cause, KRAKEN_UNREADABLE and account history (2026-10-15, local)
+
+Task 1 of storage/kraken_tasks_20261015.txt (task 2 below is a separate session). Not deployed.
+- `kraken_account.py`: failures name their cause without bodies/keys: "Kraken HTTP 503 at
+  wallets", "Kraken timeout|DNS failure|TLS failure|connection failure|network failure at
+  <route>", "Kraken invalid response at <route>" (401/403 wording unchanged). Journal refusals
+  are `JournalError`. New sixth fixed GET `account_log`
+  (`/api/history/v2/account-log?count=500`, query signed as postData like the gateway),
+  permission-checked, read apart from the snapshot and its 5 s rule; `account_log_summary()`
+  keeps no ids (only whether an execution id exists) plus field names/types and `info` counts.
+- `kraken_account_monitor.py`: cause logged on first failure, cause change and recovery.
+  Heartbeat contract: `lastSuccessAt` = the monitor worked and published (Kraken answering or
+  not), `lastError` only for journal/storage failures. After `--unreadable-warning-minutes`
+  (10, explicit in `algotrading-kraken.service`) of failed reads, one WARN KRAKEN_UNREADABLE
+  (cause, failing since, last good read); the next good read resolves it; a failed read never
+  touches the other alerts. Its alert id is bound to the journal's scope/environment/policy,
+  not the account hash, so it works before the first good read and across restarts (journal
+  context unchanged; no need to move data/kraken_account). Account history at start and
+  hourly (retry after 5 min) into `account-log-summary.json`; its failure opens nothing.
+- Real read (user-authorized, read-only key consumed by the program, `--once` from WSL at
+  07:55 UTC after Kraken's maintenance, output storage/kraken_shadow/account-log-check-20261015/):
+  signing accepted, 38 history rows (the user's small PF_XBTUSD/PF_HYPEUSD shorts of
+  2026-10-07 and two BTC transfers). Confirmed: every row carries all 22 fields (null when
+  unused); `info` "futures trade" (30), "conversion" (6), "cross-exchange transfer" (2);
+  `old_balance`/`new_balance` = balance of the row's asset (usd, xbt or the contract's signed
+  size); each trade has a USD row and a contract row; USD new = old + realized_pnl - fee +
+  realized_funding (fee paid in USD, positive; funding positive = received, +0.0106 and
+  +0.0028 USD on reduced shorts; realized PnL settles at once; opening moves USD only by the
+  fee). With an empty USD balance Kraken itself converts BTC to pay the fee ("conversion"
+  usd +x / xbt -y, same timestamp): the parser books CAPITAL_FLOW +x and Fee -x, net zero.
+  Not confirmed: interest and plain USD deposit words, `id` integer type (summary now
+  records types), `execution` = `/fills` id, `openPositions[].price` = average entry,
+  periodic funding rows while open, scaled-asset units.
+- New gateway parser test "real account history shape (2026-10-15)" (synthetic ids, real
+  words/amounts): 4 booked entries, 2 collateral-only, none unaccounted, booked + realized
+  PnL = balance changes. Parser logic unchanged; its comments lose UNCONFIRMED where confirmed.
+- Checks (WSL): kraken_account_test 29/29 (new: account_log signing/permission/shape,
+  summary without ids with types, five failure causes); kraken_account_monitor_test 19 pass
+  + 1 optional (new: 9.5 min no warning, 10 min one warning, resolved by a good read,
+  reopened later, before the first read + restart without duplicate, cause logged only on
+  change and recovery, journal failure sets lastError and stops lastSuccessAt, hourly
+  history and a failed history changes nothing); the optional Docker contract test with the
+  real Go notifier (TEST_FILE, --network none) also delivers KRAKEN_UNREADABLE and its
+  resolution; kraken_portfolio_summary_test 6/6; full meson build; venue adapter 110 checks
+  (21/21 tests); Step59 PASS with the unchanged fingerprint `94fdf8d8…` (RealTest 25/25).
+
+## Task 2: notifier warns when its alert source stops (2026-10-15, local)
+
+Local-only Go/Compose/documentation change requested independently of the Python
+Kraken monitor task. The notifier now owns a separate source-health incident:
+missing heartbeat/success, success older than 90 s, success more than 30 s ahead,
+lastError, or unreadable/invalid source evidence starts a continuous-failure timer.
+At 300 s it sends one WARN "Alert source stopped", naming Watchdog or Kraken,
+the first observed failure time and a fixed safe reason (missing, stale,
+ahead of clock, source error). Raw source errors/paths never enter that message.
+Recovery sends one resolved notification; short interruptions send nothing.
+
+`DASHBOARD_NOTIFIER_SOURCE_STALE_WARNING_SECONDS` accepts integer seconds
+1..86400, default 300; Compose passes it to both notifiers. Display-name setting
+`DASHBOARD_NOTIFIER_SOURCE_NAME` defaults to Watchdog; Compose sets Kraken on
+kraken-notifier. General sink remains TEST_FILE; Kraken keeps its existing sink.
+Own operational WARN bypasses the producer-alert severity filter/cooldown and uses
+existing yellow/normal and green/silent priority policy in the normal Telegram chat.
+No changes to Telegram routing/formatting implementation or the healthcheck:
+notifier status remains failed/unhealthy while its source is failed, even after
+successful delivery of its own source warning.
+
+`internal/notifier/source_health.go` owns a separate, atomically replaced and
+file-synced source-health.json in the notifier store, preserving incident sequence,
+first failure time and pending opening/recovery before delivery. Existing durable
+decisions and sink receipts deduplicate confirmed notifications after restart,
+including receipt success followed by failed decision persistence. Telegram's
+pre-receipt remote-acceptance crash window still exists. While the source is bad,
+its lifecycle is never replayed or bootstrapped; normal bootstrap/replay resumes
+only after healthy evidence returns. Retain source-health.json with its store.
+The shared step43-v1 contract is consumed independently of task 1's implementation:
+lastSuccessAt describes monitor publication, not a successful Kraken API response;
+lastError describes internal source failure. No monitor journal identity changes.
+
+WSL / existing golang:1.23-alpine with --network none: go vet ./... and full
+go test -count=1 ./... PASS. New tests cover the 299/300-second boundary, all four
+failure categories, changes of cause without resetting the incident, short failure
+reset, restart during the delay and after warning, recovery, new incident identity,
+failed sends/pending recovery, safe reasons/configuration, and preserved source
+bootstrap with no old alerts sent while unhealthy. Telegram HTTP loopback verifies
+normal-chat routing with a critical group configured, yellow/audible WARN,
+green/silent recovery and receipt deduplication after losing the decision append.
+Validation output/scripts: storage/notifier_source_validation/. All four Compose
+render cases PASS (PAPER/LIVE, default 300 s / override 600 s), preserving sinks,
+source names and existing healthchecks. They use only fixture settings and
+--env-file /dev/null; no credential files are loaded. WSL whitespace validation
+accepts this Windows checkout's CRLF as line endings (cr-at-eol).
+
+No VPS access/change/restart, real Telegram messages, API keys, real orders,
+commits, pushes or releases in this task. Python/task-1 files and pre-existing
+local changes preserved. Step59 not needed for this notifier-only change.
+Pending: complete task 1 and deploy both in a separate explicitly authorized
+release, then accept the actual source-failure/recovery notifications on the VPS.
+
+## Market-data day-close guard reads GET /fapi/v1/time (2026-10-15, local)
+
+User request after the first cycle check below. `BinanceMarketDataClient::serverTimeMs()`
+reads `GET /fapi/v1/time` (0 when unavailable); `MarketDataIngestor::waitForBinanceDayClose`
+waits on it (at most 30 reads, about 1 s apart; unavailable time or no close throws, so the
+cycle retries after `retry_after_failure_seconds`), then ranks the universe once. The
+`serverTime` of exchangeInfo is no longer read. The PAPER test's Go Binance fixture now
+serves `/fapi/v1/time` (the C++ simulator already did); that Docker test was not rerun.
+- Real Binance at 07:33 UTC: `/fapi/v1/time` within 0.3 s of the host clock, exchangeInfo
+  `serverTime` frozen 808-814 s behind across three reads.
+- Full meson build PASS. New binary `--run-once` against real Binance into a scratch
+  database: no wait, 50 symbols / 4,939 rows in 2.9 s (then the expected NATS connect error,
+  no NATS in the test). Against the C++ Binance simulator: clock 2026-10-14 00:00 -> 30
+  waits then "Binance clock did not reach the end of 2026-10-14"; clock 2026-10-15 00:00 ->
+  no wait (the run then stops at the simulator's missing 24h ticker, unrelated).
+- `market_data_time_handler_audit.sh` and `live_runtime_clock_audit.sh` PASS. Step59 PASS
+  with the unchanged fingerprint `94fdf8d8…` (RealTest 25/25, 50 fills, restart/dashboard/pacing).
+- Deployment needs the user's authorization (new runtime image, release, activate).
+
+## First 00:00 UTC cycle on release 20261014_201725 (2026-10-15, read-only check)
+
+Checked at 07:00-07:10 UTC without changing anything on the VPS.
+- Market-data started 00:00:00.152 (100 ms delay works), but the new `serverTime` guard
+  waited until 00:01:02.955: 27 warnings "Binance clock is ~1798005 ms before the end of
+  2026-10-14". The value stayed constant, so `exchangeInfo.serverTime` is a cached document
+  (about 30 min old), not Binance's clock. It passed on about attempt 28 of
+  `MAX_SERVER_CLOCK_WAITS = 30`; a slower cache refresh would throw and retry the cycle
+  300 s later. Once allowed, the download took 2.9 s (97 requests, 16 workers; was 15.8 s).
+  Orders reached the simulated exchange at 00:01:12.5 (00:00:28 the day before).
+  Fixed locally the same day (next section); not deployed.
+- Cycle: 3 active signals, 2 decisions, SELL AVAXUSDT and SELL ONDOUSDT filled at the open
+  (net PnL -775.59 and -1,213.33 USD), cash 83,017.75 USD, 3 positions. 23 fills, 23 distinct
+  ids; ledger positions equal `simulated_exchange_positions`; 0 open orders. Duplicate
+  2026-10-13 updates/snapshots at 00:00:00 were ignored by strategy/risk as before.
+- `trading_reconciliation_daily`: 20261014 CLEAN 6 checks (last 23:50), 20261015 CLEAN 7
+  checks (hourly 01:00-07:00). `trading_equity_daily` has 20261014 (91,699.43 USD), so the
+  Overview Close loop has data for that day (CLEAN); `/api/overview` served 200 with no
+  close-loop warning. Visual confirmation of the green day is left to the user.
+- PAPER comparison: 6 rows, zero signal differences; 2026-10-15 equity 91,693.999 vs
+  expected 91,694.050 USD. Collector refreshes every minute.
+- From 06:59:55 UTC every Kraken read failed (API 503, Kraken scheduled "Website and API
+  Maintenance", then cancel-only/post-only verification). The monitor keeps sweeping,
+  `lastError` "Account observation unavailable or invalid"; `kraken-notifier` is
+  unhealthy because its heartbeat source has no recent success. No Telegram message tells
+  the user this; the monitor also does not log why a read failed. External cause.
+- 09:00 UTC daily Kraken Telegram summary: not yet due at the time of the check.
+- Last successful account read (06:59:55): `currencies.BTC.collateral` 1,792.1116 =
+  `value` 1,810.2137 x (1 - 0.0099999796), i.e. Kraken's post-haircut USD value with a
+  1% haircut; `marginEquity` 1,794.2911 = BTC collateral + USD 2.1795. Wallet currency
+  fields are `quantity`, `available`, `value`, `collateral`. The monitor does not read
+  `account-log`, so history `info` words and `old_balance`/`new_balance` stay UNCONFIRMED;
+  no positions/fills yet, so the fee currency too. USD_RESERVE warning active (2.18 USD).
+
+Independent concurrent-session corroboration at 07:05-07:08 UTC: read-only SQL and
+logs agree with the cycle, equity, reconciliation and latest comparison figures
+above. Cycle completion logged at 00:01:14.173; fills 22/23 fully filled, no pending
+plans or active simulated orders. Five retained Telegram receipts include the
+2026-10-14 startup daily summary and three setup tests; no 2026-10-15 summary yet.
+Deployed source archive hashes match local OverviewPage, CloseLoopTimeline,
+real_overview.go, kraken_account.py and ingestion.cpp; served JS contains the Close
+loop panel and green-state rendering. This session did not read login credentials
+or exercise authenticated API/browser rendering. At 07:07:33 the monitor still
+reported failed observations, last success 06:59:55.144953; 13/14 containers healthy,
+all five host services active. Its generic stored error alone does not identify
+the upstream cause; the maintenance attribution above belongs to the concurrent
+session's separate evidence. No remote changes, restarts, new API reads or orders;
+no secret files opened. Existing documentation was being edited concurrently and
+was preserved. Documentation-only update: no build/Step59/browser campaign needed.
+
+## Full VPS release and /algoTrading relocation accepted (2026-10-14)
+
+User explicitly authorized deployment of all new work, superseding earlier local
+deferrals. Final release: 20261014_201725-d11699d-dirty, source + three runtime/API/web
+images and base images with manifest IDs/checksums verified on destination.
+All eight application folders moved from / to /algoTrading, keeping configuration,
+credentials, trading/message state, logs, reports, backups and earlier releases.
+Active comparison study/manifest and Kraken report pointers were rebased; original
+documents retained in a protected backup. Historical archives were not rewritten.
+
+Before stopping the old stack, archived its actual running images (including the
+mobile dashboard) as pre-root-20261014_201026. Its old source host templates were
+adapted only for /algoTrading so rollback can operate at the new root. It remains
+releases/previous; backup/restore files and image archives retained. Rollback was
+prepared and checksummed, not exercised against running trading state.
+
+WSL validation: full Go suite PASS; notifier/command tests (including routing and
+test severity) PASS; installation-root regression 1/1, comparison 14/14, logging
+8/8 PASS; all nine C++ runtime executables and shared library rebuilt. Bundle has
+38 libraries, runtime ldd resolves all dependencies, procps supplies pgrep for new
+process checks. Step59 PASS with accepted fingerprint
+94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2,
+107 days, 50 fills, RealTest 25/25, deterministic/restart/dashboard/pacing parity.
+A competing local build was observed; stopped our duplicate Ninja process and
+packaged only after the shared C++ build completed. Final independent image builds
+and exported image IDs were verified.
+
+During relocation, restrictive umask made the new root 0700 and blocked the syslog
+user. Corrected root to 0755; installer now explicitly protects public traversal
+and template/helper readability while secrets remain 0700/0600. Regression test
+covers umask 077. Rsyslog's omprog needed permission to enumerate its own inherited
+descriptors; narrowly allowed owner /proc/[0-9]*/fd/ read in AppArmor. Dashboard
+access was restored. Kraken notifier inherited the API healthcheck; now shares a
+notifier-specific status check respecting its explicit store directory.
+
+Final verification 20:22:42 / 20:24:01 UTC: all 14 containers healthy, zero container
+restarts, all bind mounts under /algoTrading, all five host services active. HTTP
+anonymous API 401, viewer login 200, Overview/Positions/Reconciliation/Live vs Expected
+200. Tailnet HTTPS certificate/HTTP 200 checked with explicit node-IP resolution;
+VPS does not resolve MagicDNS locally, existing phone/Tailscale setup unchanged.
+Kraken lastSuccessAt 20:22:41 UTC, empty lastError; MODE=paper, no private gateway.
+Daily reconciliation history is CLEAN, 0 issues, 2 checks on 20261014.
+Five retained comparison rows are OBSERVING with zero signal differences.
+No credential matches in current service logs; no file exceeds 50 MiB; logs fresh
+at 20:24:00 UTC. Actual UTC rollover/multi-day observation remains separate.
+
+SQL economic hashes/counts, excluding write metadata, match before migration and
+after both restarts: 21 fills, 5 open positions, 6 closed positions, runtime state,
+simulated cash/positions, funding and venue-cost tables all unchanged. No real orders
+or Manual Control trades submitted. Critical-only Telegram routing and colored/silent
+policy deployed; INFO and CRITICAL setup messages accepted, 5 receipts total (3 tests).
+Kraken uses TELEGRAM; the general watchdog notifier preserves its TEST_FILE sink.
+
+Evidence: /algoTrading/reports/{root-migration,deploy-verification,final-release-evidence}.json,
+protected SQL-hash/config/comparison backups in /algoTrading/backups, release manifests
+in /algoTrading/releases. Local orchestration/logs/artifacts in ignored
+storage/root_migration/. First scheduled daily Telegram summary, hourly reconciliation,
+multi-day PAPER/shadow and real-money lifecycle acceptance remain pending.
+
+## Critical-only Telegram destination prepared (2026-10-14, local only)
+
+User created algoTrading CRITICAL. Exact-title lookup using the existing bot's
+getUpdates and getChatMember identified one group and confirmed member status;
+no offset was advanced, credentials/other messages were not printed. Identifier
+evidence is ignored storage/telegram_priority/critical_group.json.
+Optional DASHBOARD_TELEGRAM_CRITICAL_CHAT_ID (including command _FILE support)
+routes CRITICAL events and their recoveries to that group. WARN/INFO/unknown
+events stay in the primary chat; unset option preserves single-chat behavior.
+Both chain notifier services pass the optional setting through Compose.
+Resolved critical alerts remain silent and green in the critical group.
+Prior receipted events are not replayed on a destination change. No VPS
+configuration/image rollout or real message sends for this preparation.
+WSL Go tests pass for internal/notifier and cmd/dashboard-alert-notifier in the
+existing golang:1.23-alpine container with --network none. Loopback payload tests
+cover critical/recovery routing, other severities, normalized labels, optional
+configuration, original single-chat fallback and receipt dedup across routing
+changes; existing redaction and retry tests remain passing.
+
+## Telegram priority markers and sound policy (2026-10-14, local only)
+
+Shared notifier adds red CRITICAL/URGENT, yellow WARN, blue INFO and green resolved
+markers. INFO/daily portfolios and resolved alerts use Bot API
+disable_notification=true; WARN/CRITICAL request normal notifications, subject
+to user chat/phone settings. Unknown severity stays audible by default. No custom
+tone is selected by the bot; Telegram configures tones per chat.
+
+WSL validation with existing golang:1.23-alpine image and --network none:
+go test ./internal/notifier ./cmd/dashboard-alert-notifier PASS. Six loopback HTTP
+cases verify actual color/text and silence payload for critical, warning, info,
+critical recovery, normalized labels and unknown severity; existing durable receipt
+deduplication, bounded plain messages, rate limits and secret-redaction tests pass.
+No real Telegram sends or VPS/container changes for this work; rollout pending.
+
+## Kraken read-only monitor and Telegram activated on VPS (2026-10-14)
+
+User explicitly authorized this activation only. Existing locally configured
+Kraken and Telegram credentials were consumed internally and transferred over
+SSH without printing their values. Kraken accepted a permission-checked account
+snapshot: General READ_ONLY and transfer NO_ACCESS. The dedicated VPS key file
+/secrets/kraken_readonly.env is root-owned mode 0600. Existing chain credentials
+were preserved; their pre-change backup remains protected in /secrets.
+
+At the current installation root /, enabled algotrading-kraken.service with
+30-second reads, raw sample retention 3 days and 09:00 UTC daily summaries.
+Set COMPOSE_PROFILES=kraken, KRAKEN_NOTIFIER_SINK=TELEGRAM and added only
+kraken-notifier via algo up --no-deps. The first observation and explicit Telegram
+setup message passed. Verification at 18:56:58 UTC: monitor active/enabled,
+lastSuccessAt 18:56:49.760128 UTC, empty lastError and three Telegram delivery
+receipts. All 13 original container IDs remained unchanged; MODE stays paper,
+gateway-kraken is absent and no private orders were submitted.
+
+Evidence on VPS: /reports/kraken-monitor-activation.json and container identity
+snapshots /reports/kraken-activation-containers-{before,after}.txt. Protected
+credential/config backups retained; local orchestration in ignored
+storage/kraken_activation/. First scheduled daily summary and restart deduplication
+acceptance are still pending. This activation does not deploy other local work,
+migrate the root to /algoTrading or confirm Kraken trading/account-history fields.
+
+## Installation root /algoTrading (2026-10-14, local only)
+
+The user changed the requested VPS root from / to /algoTrading, then explicitly
+cancelled deployment. No VPS migration or remote writes were started in this task.
+algo install now renders installed systemd, rsyslog and AppArmor host paths for
+the selected root. Compose container destinations and OS-owned paths stay fixed.
+All eight application folders live under that root; existing configuration,
+credentials and data are preserved on reinstallation. Operating examples now
+use /algoTrading; the running VPS still uses /.
+
+WSL validation: chain_installation_root_test.py passes (1 test), covering host
+paths, fixed container/OS paths, preserved configuration/state and idempotent
+reinstall; comparison tests pass (14), daily log tests pass (8). Runtime bundle
+(9 executables, 38 libraries), runtime/API/web Docker builds and local release
+export succeeded. No images or release were activated on the VPS.
+Canonical Step59 passes: 107 days, 50 fills, RealTest 25/25, no differences;
+determinism, system/dashboard restart and pacing checks retain fingerprint
+94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2.
+Future relocation needs state preservation, replacement of installed host
+units/AppArmor and rebasing active comparison study/manifest host paths;
+installing at another root alone does not migrate state.
 
 ## Superseded PAPER deployment retired (2026-10-14, local only)
 
@@ -195,6 +536,41 @@ ROADMAP 21. Public data only, nothing deployed.
 - Checks: `validation/exchange_coverage_test.py --snapshot .../20261014T155526Z` 5 tests and
   COVERAGE-AUDIT PASS (all candles, ranking, filters, aliases, three counts); the new tool's
   2 offline tests; the tool reproduced the exploratory script's numbers exactly.
+
+## Container health checks and the real close loop (2026-10-14, local)
+
+User request after the deployment: Infrastructure showed nats and the 7 trading
+containers as "Degraded" (they had no Docker health check; `monitor.py` reports a running
+container without one as WARN) and Overview had no Close loop panel in PAPER/LIVE (the real
+provider never filled `closeLoop`, only the replay did; not a regression).
+- `deploy/chain/compose.yml`: `nats` checks `wget http://127.0.0.1:8222/healthz` (server
+  and JetStream ready); market-data, strategy, risk, planner, execution, gateway,
+  sim-exchange and gateway-kraken check `pgrep -f '^<executable>( |$)'` (anchor `x-process-check`,
+  30 s, 2 retries, 20 s start period). That means "alive", not "trading correctly": the
+  services have no in-loop heartbeat. Startup order (`depends_on`) unchanged.
+- Close loop: ExecutionState records every reconciliation against the exchange snapshot in
+  the new `trading_reconciliation_daily` (date of the snapshot, CLEAN/BLOCKED, issues,
+  checks); a day stays BLOCKED once any check found issues. Not a column of
+  `trading_equity_daily` because that row is written only once reconciled, so it would
+  always say clean. A failed write is logged and never stops trading. dash-api reads it
+  (`CloseLoop`, empty before the table exists) and sets `closeLoop` per equity day; days
+  before the history began stay without it (not assumed clean), so the panel appears from
+  the first equity day after deployment.
+- Checks: both health checks tried in throwaway containers (own name matches under
+  docker-init, other names and prefixes do not; NATS /healthz OK); compose config for
+  paper and live; upsert/read SQL on PostgreSQL 16 (CLEAN twice -> CLEAN 2 checks; CLEAN,
+  BLOCKED, CLEAN -> BLOCKED); Go vet + tests (new close loop case in
+  `runtime_accounting_test.go`); full meson build; 15/15 component tests; step59 PASS with
+  the unchanged fingerprint `94fdf8d8…` (RealTest 25/25). Deployed inside the full release
+  `20261014_201725-d11699d-dirty` (see "Full VPS release and /algoTrading relocation" above).
+  Checked on the VPS at 20:47 UTC: every container (healthy) with the new checks,
+  `trading_reconciliation_daily` written (2026-10-14 CLEAN, 2 checks), logs flowing under
+  /algoTrading/logs; the local tree differs from that release only in docs and a comment
+  indentation in rsyslog.apparmor, so no further deployment was needed. A first release attempt
+  (`20261014_194814-d11699d-dirty`) was deleted unused: a Docker credential-helper error
+  stopped the runtime image build and the release would have packed the old runtime image.
+  `pgrep` is present in plain ubuntu:24.04, so the process checks do not depend on the
+  `procps` line added to `deploy/live/runtime.Dockerfile`.
 
 ## VPS deployment of the 2026-10-14 local work (2026-10-14)
 

@@ -79,4 +79,9 @@ public:
     // identical.
     double fixDailyCollateral(Timestamp day, double current);
     std::optional<double> dailyCollateral(Timestamp day) const;
+
+    // Close loop: result of every reconciliation against the exchange on one UTC day.
+    // A day stays BLOCKED once any check of that day found issues, even if a later check
+    // is clean, so the dashboard shows that the loop broke that day.
+    void recordReconciliation(Timestamp day, bool clean, std::size_t issues);
 };

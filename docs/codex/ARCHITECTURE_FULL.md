@@ -354,6 +354,12 @@ trim older entries before a file exceeds 50 MiB;
 VPS installation, initial PAPER cycle, boot recovery and receiver restart pass;
 multi-day/fault/capacity acceptance and private venue readiness remain pending.
 
+The chain installation root is configurable. The preferred VPS root is now
+`/algoTrading`, now deployed on the VPS (2026-10-14).
+`algo install` renders host units, receiver configuration and AppArmor paths;
+Compose container paths and OS-owned paths remain fixed. Installing elsewhere
+does not move existing state or rewrite persisted comparison host paths.
+
 `deploy/chain/` in PAPER mode is the current-public-data stack with virtual funds
 and the durable simulated exchange. Ingestion opt-in fetches only open(T+1), publishes
 the execution-price contract before the completed T update, and keeps unfinished
@@ -407,7 +413,8 @@ the exact-date strategy intent plus execution cash/holdings.
 Signals are not read from execution snapshots. Old missing seed
 intents are recovered from historical strategy checkpoints with prior evidence
 preserved; economic-input/configuration hashes invalidate the fast cache.
-This correction is local and awaiting deployment (CURRENT_STATE.md).
+This correction is deployed; retained comparison rows have zero signal differences
+(CURRENT_STATE.md). Multi-day and execution-price/sizing acceptance remain separate.
 CURRENT TradingEngine,
 PureRSI, sizing and fill accounting own baseline decisions; no Python trading engine
 is introduced. The activity overlay keeps original account/message volumes and

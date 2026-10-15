@@ -189,21 +189,34 @@ Rate budget: 500 units per 10 s; sendorder/cancelorder 10, reads 2, dead man's s
 - `sendorder` response for `mkt` orders: status (`placed` vs `filled`) and events.
 - Whether `clientOrderIdAlreadyExist` applies only to open orders (treated as `UNKNOWN`).
 - `cancelallordersafter` path, parameter and response (keep disabled until then).
-- Account history (fees and funding): path, the query string as signed `postData`
-  (no nonce), the `info` values ("futures trade", "funding rate change"), that `fee` is
-  positive and in USD for the Multi-M wallet (`asset` "usd"), that `execution` equals the
-  `fill_id` of `/fills`, and the sign of `realized_funding` (taken as the change of the USD
-  balance: negative = paid). Entries in another currency, or other balance changes
-  (transfers, conversions, interest), are logged once as not booked.
-- Other account-history entries: the `info` words for interest, transfers and conversions
-  ("interest", "transfer", "conversion" are matched), that `old_balance`/`new_balance` are
-  the entry asset's balance in the named `margin_account`, and that a conversion lists its
-  USD and BTC sides as separate entries.
-- Snapshot cash: the USD balance minus the open positions' entry value, assuming Kraken
-  settles realized PnL into the USD balance at once and that `openPositions[].price` is
-  the average entry price. Collateral: that `accounts.flex.currencies.XBT.collateral` is the
-  post-haircut USD value Kraken counts as margin (the read-only account check of
-  2026-10-10 showed the field; its value with a funded BTC balance is not yet observed).
+Confirmed on 2026-10-15 with the read-only key: the account monitor read the account
+history (38 rows, including the user's own small PF_XBTUSD/PF_HYPEUSD trades of
+2026-10-07) and one account snapshot. The parser test "real account history shape" uses
+that row shape with synthetic ids.
+- Account history path and signing (query `count=500` as `postData`, no nonce); body `logs`.
+  Every row has all fields, `null` when unused.
+- `info` words seen: "futures trade", "conversion", "cross-exchange transfer" (BTC moved
+  in/out of the spot wallet; contains "transfer", so a USD one becomes CAPITAL_FLOW).
+- `old_balance`/`new_balance` are the balance of the row's `asset` before/after: "usd",
+  "xbt", or the contract (e.g. "pf_xbtusd"), whose balance is the signed position size.
+- A trade has a USD row and a contract row. On the USD row `fee` is positive and paid in USD,
+  `execution` is set, and new = old + `realized_pnl` - `fee` + `realized_funding`: realized
+  PnL settles into the USD balance at once, and `realized_funding` is the change of the USD
+  balance (positive = received; seen +0.0106 USD on a reduced short). Opening a position
+  moves the USD balance only by its fee.
+- With no USD, Kraken converts a little BTC itself to pay a fee: a "conversion" pair (USD +x,
+  XBT -y) at the same time as the fee. Booked as CAPITAL_FLOW +x and Fee -x (net zero); the
+  BTC side changes only the collateral.
+- Collateral: `accounts.flex.currencies.XBT.collateral` = `value` x (1 - 1% haircut); margin
+  equity = BTC collateral + USD.
+
+Still open:
+- Interest and plain USD deposit/withdrawal words (none in the history yet); that `id` is an
+  integer (the monitor's `account-log-summary.json` now records field types).
+- That `execution` equals the `fill_id` of `/fills`, and that `openPositions[].price` is the
+  average entry price (no open position yet).
+- Periodic funding rows ("funding rate change") while a position stays open: the history
+  shows funding realized only when the position was reduced.
 
 ## Run and test
 

@@ -679,6 +679,62 @@ void testInterestAndCapitalFlowsFromAccountLog()
     CHECK(h.events.costs.size() == 4);
 }
 
+// Shape of the real account history read on 2026-10-15 (read-only key): every row has all
+// fields, null when unused; each trade has a USD row (fee, realized PnL and funding change
+// the USD balance) and a row for the contract's position size; with no USD, Kraken converts
+// BTC itself to pay a fee. Ids and uids are synthetic; amounts and words are the real ones.
+std::string realLogRow(int id, const std::string& date, const std::string& info, const std::string& asset,
+                       const std::string& contract, const std::string& oldBalance, const std::string& newBalance,
+                       const std::string& fee, const std::string& realizedPnl, const std::string& funding,
+                       bool execution)
+{
+    return R"({"id":)" + std::to_string(id) + R"(,"date":")" + date + R"(","asset":")" + asset +
+           R"(","info":")" + info + R"(","booking_uid":"synthetic-b-)" + std::to_string(id) +
+           R"(","margin_account":"flex","old_balance":)" + oldBalance + R"(,"new_balance":)" + newBalance +
+           R"(,"old_average_entry_price":null,"new_average_entry_price":null,"trade_price":null,)"
+           R"("mark_price":null,"realized_pnl":)" + realizedPnl + R"(,"fee":)" + fee +
+           R"(,"execution":)" + (execution ? "\"synthetic-e-" + std::to_string(id) + "\"" : std::string("null")) +
+           R"(,"collateral":null,"funding_rate":null,"realized_funding":)" + funding +
+           R"(,"conversion_spread_percentage":null,"liquidation_fee":null,"position_uid":null,"contract":)" +
+           (contract.empty() ? std::string("null") : "\"" + contract + "\"") + "}";
+}
+
+void testRealAccountLogShape()
+{
+    const std::string rows =
+        // BTC moved in from the spot wallet: collateral only.
+        realLogRow(1, "2026-10-07T10:55:19.012Z", "cross-exchange transfer", "xbt", "", "0.0", "0.22404114", "0.0", "null", "null", false) + "," +
+        // Opening a short with no USD: Kraken sells a little BTC, the USD pays the fee.
+        realLogRow(2, "2026-10-07T11:04:53.870Z", "conversion", "xbt", "", "0.224036644", "0.2240284352", "null", "null", "null", false) + "," +
+        realLogRow(3, "2026-10-07T11:04:53.870Z", "conversion", "usd", "", "0.0", "0.6859", "null", "null", "null", false) + "," +
+        realLogRow(4, "2026-10-07T11:04:53.870Z", "futures trade", "usd", "pf_xbtusd", "0.6859", "0.0", "0.6859", "0.0", "null", true) + "," +
+        realLogRow(5, "2026-10-07T11:04:53.870Z", "futures trade", "pf_xbtusd", "pf_xbtusd", "0.0", "-0.0234", "null", "null", "null", true) + "," +
+        // Reducing a short: realized PnL and the received funding are added to USD at once.
+        realLogRow(6, "2026-10-07T11:23:04.857Z", "futures trade", "usd", "pf_hypeusd", "0.1631", "0.9818", "0.15", "0.9581", "0.0106", true) + "," +
+        realLogRow(7, "2026-10-07T11:23:04.857Z", "futures trade", "pf_hypeusd", "pf_hypeusd", "-12.0", "-7.2", "null", "null", "null", true);
+
+    // Kraken's USD balance: new = old + realized_pnl - fee + realized_funding.
+    CHECK(near(0.1631 + 0.9581 - 0.15 + 0.0106, 0.9818) && near(0.6859 + 0.0 - 0.6859, 0.0));
+
+    KrakenFuturesProtocol protocol("https://futures.kraken.com", CREDENTIALS);
+    const AccountLog log = protocol.parseAccountLog(ok(accountLog(rows)));
+    std::map<std::string, CashEntry> byId;
+    for (const CashEntry& entry : log.entries)
+        byId[entry.entry_id] = entry;
+    CHECK(log.entries.size() == 4 && log.unaccounted.empty() && log.not_cash.size() == 2);
+    CHECK(byId.contains("3:flow") && byId["3:flow"].kind == VenueCostKind::CapitalFlow && near(byId["3:flow"].amount_usd, 0.6859));
+    CHECK(byId.contains("4:fee") && byId["4:fee"].kind == VenueCostKind::Fee && near(byId["4:fee"].amount_usd, -0.6859) &&
+          byId["4:fee"].venue_fill_id == "synthetic-e-4" && byId["4:fee"].day == 20261007);
+    CHECK(byId.contains("6:fee") && near(byId["6:fee"].amount_usd, -0.15));
+    CHECK(byId.contains("6:funding") && byId["6:funding"].kind == VenueCostKind::Funding &&
+          near(byId["6:funding"].amount_usd, 0.0106) && byId["6:funding"].symbol == "pf_hypeusd");
+    // Booked USD changes plus the fill-derived realized PnL equal the balance changes.
+    double booked = 0.0;
+    for (const CashEntry& entry : log.entries)
+        booked += entry.amount_usd;
+    CHECK(near(booked + 0.9581, (0.6859 - 0.0) + (0.0 - 0.6859) + (0.9818 - 0.1631)));
+}
+
 void testPermissions()
 {
     const std::string readOnly = R"({"apiKey":"testkey12345","accountUid":"x","permissions":{"general":"READ_ONLY","transfer":"NO_ACCESS"}})";
@@ -777,6 +833,7 @@ int main(int argc, char** argv)
         {"snapshot", testSnapshot},
         {"fees and funding from the account history", testFeesAndFundingFromAccountLog},
         {"interest and capital flows from the account history", testInterestAndCapitalFlowsFromAccountLog},
+        {"real account history shape (2026-10-15)", testRealAccountLogShape},
         {"permissions", testPermissions},
     };
     for (const auto& [name, test] : tests) {

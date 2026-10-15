@@ -38,6 +38,7 @@ type TelegramSink struct {
 	mu             sync.Mutex
 	botToken       string
 	chatID         string
+	criticalChatID string
 	receiptPath    string
 	baseURL        string
 	client         *http.Client
@@ -46,9 +47,10 @@ type TelegramSink struct {
 }
 
 type telegramSendMessageRequest struct {
-	ChatID             string                     `json:"chat_id"`
-	Text               string                     `json:"text"`
-	LinkPreviewOptions telegramLinkPreviewOptions `json:"link_preview_options"`
+	ChatID              string                     `json:"chat_id"`
+	Text                string                     `json:"text"`
+	DisableNotification bool                       `json:"disable_notification"`
+	LinkPreviewOptions  telegramLinkPreviewOptions `json:"link_preview_options"`
 }
 
 type telegramLinkPreviewOptions struct {
@@ -67,7 +69,7 @@ type telegramAPIResponse struct {
 	} `json:"parameters,omitempty"`
 }
 
-func NewTelegramSink(botToken, chatID, receiptPath string, timeout time.Duration) (*TelegramSink, error) {
+func NewTelegramSink(botToken, chatID, criticalChatID, receiptPath string, timeout time.Duration) (*TelegramSink, error) {
 	if timeout < time.Second || timeout > time.Minute {
 		return nil, errors.New("telegram request timeout must be between 1s and 1m")
 	}
@@ -77,7 +79,18 @@ func NewTelegramSink(botToken, chatID, receiptPath string, timeout time.Duration
 			return http.ErrUseLastResponse
 		},
 	}
-	return newTelegramSink(botToken, chatID, receiptPath, telegramAPIBaseURL, client)
+	criticalChatID = strings.TrimSpace(criticalChatID)
+	if criticalChatID != "" {
+		if err := validateTelegramChatID(criticalChatID); err != nil {
+			return nil, errors.New("invalid Telegram critical chat id")
+		}
+	}
+	sink, err := newTelegramSink(botToken, chatID, receiptPath, telegramAPIBaseURL, client)
+	if err != nil {
+		return nil, err
+	}
+	sink.criticalChatID = criticalChatID
+	return sink, nil
 }
 
 func newTelegramSink(botToken, chatID, receiptPath, baseURL string, client *http.Client) (*TelegramSink, error) {
@@ -144,9 +157,16 @@ func (s *TelegramSink) Deliver(ctx context.Context, n Notification) (DeliveryRes
 		return DeliveryResult{}, fmt.Errorf("Telegram delivery deferred until %s after rate limiting", s.retryNotBefore.UTC().Format(time.RFC3339))
 	}
 
+	chatID := s.chatID
+	// Resolutions keep the original severity, so a critical alert's recovery goes
+	// to the same group. Changing routing never replays previously receipted events.
+	if s.criticalChatID != "" && strings.EqualFold(strings.TrimSpace(n.Severity), "CRITICAL") {
+		chatID = s.criticalChatID
+	}
 	payload := telegramSendMessageRequest{
-		ChatID: s.chatID,
-		Text:   telegramMessage(n),
+		ChatID:              chatID,
+		Text:                telegramMessage(n),
+		DisableNotification: telegramSilent(n),
 		LinkPreviewOptions: telegramLinkPreviewOptions{
 			IsDisabled: true,
 		},
@@ -192,7 +212,8 @@ func (s *TelegramSink) Deliver(ctx context.Context, n Notification) (DeliveryRes
 		return DeliveryResult{}, fmt.Errorf("Telegram sendMessage returned invalid JSON (HTTP %d)", resp.StatusCode)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 || !api.OK {
-		desc := redactTelegramSecrets(api.Description, s.botToken, s.chatID)
+		desc := redactTelegramSecrets(api.Description, s.botToken, chatID)
+		desc = redactTelegramSecrets(desc, s.botToken, s.chatID)
 		if len([]rune(desc)) > 240 {
 			desc = string([]rune(desc)[:240]) + "…"
 		}
@@ -228,14 +249,31 @@ func (s *TelegramSink) Deliver(ctx context.Context, n Notification) (DeliveryRes
 	return DeliveryResult{}, nil
 }
 
+// Informational updates and recoveries do not request sound. Unknown severities
+// keep normal notifications so an unsupported label cannot hide an alert.
+func telegramSilent(n Notification) bool {
+	return strings.EqualFold(strings.TrimSpace(n.Transition), "RESOLVED") ||
+		strings.EqualFold(strings.TrimSpace(n.Severity), "INFO")
+}
+
 func telegramMessage(n Notification) string {
 	severity := strings.ToUpper(strings.TrimSpace(n.Severity))
 	transition := strings.ToUpper(strings.TrimSpace(n.Transition))
+	marker := "⚪"
+	switch severity {
+	case "CRITICAL":
+		marker = "🔴"
+	case "WARN":
+		marker = "🟡"
+	case "INFO":
+		marker = "🔵"
+	}
 	if severity == "CRITICAL" {
 		severity = "URGENT"
 	}
 	if transition == "RESOLVED" {
 		severity = "INFO"
+		marker = "🟢"
 	}
 	if severity == "" {
 		severity = "UNKNOWN"
@@ -260,7 +298,7 @@ func telegramMessage(n Notification) string {
 	} else if strings.TrimSpace(n.Service) == "" {
 		owner = "System: algoTrading"
 	}
-	lines := []string{fmt.Sprintf("[%s] %s", severity, owner), truncateRunes(title, 160)}
+	lines := []string{fmt.Sprintf("%s [%s] %s", marker, severity, owner), truncateRunes(title, 160)}
 	if v := cleanTelegramField(n.Detail); v != "" {
 		// Daily portfolios need room for positions; operational alerts stay short.
 		if n.EventType != "DAILY_PORTFOLIO" {

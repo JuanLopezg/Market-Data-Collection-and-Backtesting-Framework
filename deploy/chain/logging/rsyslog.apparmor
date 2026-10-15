@@ -8,6 +8,8 @@
 /logs/ rw,
 /logs/** rwk,
 network inet stream,
+# omprog enumerates its own inherited descriptors before starting the writer.
+owner /proc/[0-9]*/fd/ r,
 
 # omprog runs the bounded writer under the same rsyslog profile.
 /usr/bin/python3{,.[0-9],.1[0-9]} ix,

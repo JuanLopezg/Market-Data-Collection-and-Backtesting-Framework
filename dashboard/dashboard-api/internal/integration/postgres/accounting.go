@@ -65,6 +65,49 @@ const accountingSQL = `SELECT json_build_object(
 // "SELECT *" so a database without the 2026-10-14 columns (older execution-state) still
 // reads; the missing fields decode as 0.
 
+// CloseLoopDay is the reconciliation result of one UTC day (ExecutionState,
+// trading_reconciliation_daily since 2026-10-14): BLOCKED if any check that day found issues.
+type CloseLoopDay struct {
+	Date   uint64 `json:"date"`
+	State  string `json:"state"`
+	Issues int    `json:"issues"`
+	Checks int    `json:"checks"`
+}
+
+const closeLoopPresentSQL = `SELECT json_build_object('present', to_regclass('trading_reconciliation_daily') IS NOT NULL);`
+
+const closeLoopSQL = `SELECT coalesce(json_agg(json_build_object('date', d.date, 'state', d.state, 'issues', d.issues, 'checks', d.checks)
+  ORDER BY d.date), '[]'::json) FROM trading_reconciliation_daily d;`
+
+// CloseLoop reads the daily close loop. Empty (no error) before the table exists.
+func (r *Reader) CloseLoop(ctx context.Context) ([]CloseLoopDay, error) {
+	if r.dsn == "" {
+		return nil, errors.New("PostgreSQL DSN is not configured")
+	}
+	raw, err := r.query(ctx, closeLoopPresentSQL)
+	if err != nil {
+		return nil, err
+	}
+	var present struct {
+		Present bool `json:"present"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(raw))), &present); err != nil {
+		return nil, fmt.Errorf("decode close loop table check: %w", err)
+	}
+	if !present.Present {
+		return nil, nil
+	}
+	raw, err = r.query(ctx, closeLoopSQL)
+	if err != nil {
+		return nil, err
+	}
+	var days []CloseLoopDay
+	if err := json.Unmarshal(raw, &days); err != nil {
+		return nil, fmt.Errorf("decode close loop: %w", err)
+	}
+	return days, nil
+}
+
 // Accounting reads the runtime-owned position and equity tables.
 func (r *Reader) Accounting(ctx context.Context) (Accounting, error) {
 	var result Accounting

@@ -42,6 +42,15 @@ x-runtime: &runtime
     ALGOTRADING_LOG_QUIET: "0"
     ALGOTRADING_LOG_DIR: ""
 
+# Health of a C++ trading service: its executable is running. The pattern is anchored at
+# argv[0], so neither the docker-init parent nor the check itself matches. The services
+# have no in-loop heartbeat yet, so "healthy" means alive, not "trading correctly".
+x-process-check: &process_check
+  interval: 30s
+  timeout: 5s
+  retries: 2
+  start_period: 20s
+
 # Dashboard read model settings shared by dash-api and watchdog.
 x-dashboard-environment: &dashboard_environment
   DASHBOARD_DATA_PROVIDER: real
@@ -108,6 +117,13 @@ services:
     logging: *logging
     networks: [chain]
     command: ["-js", "-m", "8222", "--store_dir", "/data"]
+    # /healthz answers 200 only when the server and JetStream are ready.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8222/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
     volumes:
       - ${ALGO_STATE}/nats:/data
 
@@ -145,6 +161,9 @@ services:
     <<: *runtime
     container_name: market-data
     command: [algotrading_market_data_service, --config, /config/market_data.json]
+    healthcheck:
+      <<: *process_check
+      test: ["CMD", "pgrep", "-f", "^algotrading_market_data_service( |$$)"]
     volumes:
       - ${ALGO_STATE}/market:/data/market
       - ${ALGO_CONFIG:?run through ./algo}/market_data.json:/config/market_data.json:ro
@@ -156,6 +175,9 @@ services:
   strategy:
     <<: *runtime
     container_name: strategy
+    healthcheck:
+      <<: *process_check
+      test: ["CMD", "pgrep", "-f", "^algotrading_strategy_service( |$$)"]
     command:
       - algotrading_strategy_service
       - --nats-url
@@ -185,6 +207,9 @@ services:
   risk:
     <<: *runtime
     container_name: risk
+    healthcheck:
+      <<: *process_check
+      test: ["CMD", "pgrep", "-f", "^algotrading_portfolio_risk_service( |$$)"]
     command:
       - algotrading_portfolio_risk_service
       - --nats-url
@@ -213,6 +238,9 @@ services:
   planner:
     <<: *runtime
     container_name: planner
+    healthcheck:
+      <<: *process_check
+      test: ["CMD", "pgrep", "-f", "^algotrading_order_planner_service( |$$)"]
     command:
       - algotrading_order_planner_service
       - --nats-url
@@ -228,6 +256,9 @@ services:
   execution:
     <<: *runtime
     container_name: execution
+    healthcheck:
+      <<: *process_check
+      test: ["CMD", "pgrep", "-f", "^algotrading_execution_state_service( |$$)"]
     command:
       - algotrading_execution_state_service
       - --nats-url
@@ -273,6 +304,9 @@ services:
   gateway:
     <<: *runtime
     container_name: gateway
+    healthcheck:
+      <<: *process_check
+      test: ["CMD", "pgrep", "-f", "^algotrading_exchange_gateway( |$$)"]
     profiles: [paper]
     command:
       - algotrading_exchange_gateway
@@ -295,6 +329,9 @@ services:
   sim-exchange:
     <<: *runtime
     container_name: sim-exchange
+    healthcheck:
+      <<: *process_check
+      test: ["CMD", "pgrep", "-f", "^algotrading_simulated_exchange_service( |$$)"]
     profiles: [paper]
     command:
       - algotrading_simulated_exchange_service
@@ -322,6 +359,9 @@ services:
   gateway-kraken:
     <<: *runtime
     container_name: gateway-kraken
+    healthcheck:
+      <<: *process_check
+      test: ["CMD", "pgrep", "-f", "^algotrading_exchange_gateway( |$$)"]
     profiles: [live]
     command:
       - algotrading_exchange_gateway
@@ -467,9 +507,12 @@ services:
     environment:
       DASHBOARD_ALERT_STORE_DIR: /data/watchdog
       DASHBOARD_NOTIFIER_TEST_SINK_FILE: /data/notifier/test-sink.jsonl
+      DASHBOARD_NOTIFIER_SOURCE_NAME: Watchdog
+      DASHBOARD_NOTIFIER_SOURCE_STALE_WARNING_SECONDS: ${DASHBOARD_NOTIFIER_SOURCE_STALE_WARNING_SECONDS:-300}
       DASHBOARD_NOTIFIER_SINK: ${NOTIFIER_SINK:-TEST_FILE}
       DASHBOARD_TELEGRAM_BOT_TOKEN: ${DASHBOARD_TELEGRAM_BOT_TOKEN:-}
       DASHBOARD_TELEGRAM_CHAT_ID: ${DASHBOARD_TELEGRAM_CHAT_ID:-}
+      DASHBOARD_TELEGRAM_CRITICAL_CHAT_ID: ${DASHBOARD_TELEGRAM_CRITICAL_CHAT_ID:-}
       DASHBOARD_NOTIFIER_MIN_SEVERITY: WARN
       DASHBOARD_NOTIFIER_INTERVAL: 5s
       DASHBOARD_NOTIFIER_COOLDOWN: 5m
@@ -483,12 +526,13 @@ services:
     tmpfs: ["/tmp:size=8m,noexec,nosuid,nodev"]
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
-    healthcheck:
+    healthcheck: &notifier_check
       # Healthy after one successful sweep without an error (store differs per sink).
       test:
         - CMD-SHELL
         - >-
-          store=/data/notifier; if [ "$${DASHBOARD_NOTIFIER_SINK:-TEST_FILE}" = TELEGRAM ]; then store=/data/notifier/telegram; fi;
+          store="$${DASHBOARD_NOTIFIER_STORE_DIR:-}";
+          if [ -z "$$store" ]; then store=/data/notifier; if [ "$${DASHBOARD_NOTIFIER_SINK:-TEST_FILE}" = TELEGRAM ]; then store=/data/notifier/telegram; fi; fi;
           test -s "$$store/status.json" && grep -q '"lastSuccessAt"' "$$store/status.json" && ! grep -q '"lastError"' "$$store/status.json"
       interval: 30s
       timeout: 3s
@@ -503,6 +547,7 @@ services:
   # with COMPOSE_PROFILES=kraken in chain.env. Warning-only: nothing here trades.
   kraken-notifier:
     image: ${DASH_API_IMAGE}
+    healthcheck: *notifier_check
     container_name: kraken-notifier
     profiles: [kraken]
     entrypoint: [/dashboard-alert-notifier]
@@ -514,10 +559,13 @@ services:
     environment:
       DASHBOARD_ALERT_STORE_DIR: /source
       DASHBOARD_NOTIFIER_STORE_DIR: /data/notifier
+      DASHBOARD_NOTIFIER_SOURCE_NAME: Kraken
+      DASHBOARD_NOTIFIER_SOURCE_STALE_WARNING_SECONDS: ${DASHBOARD_NOTIFIER_SOURCE_STALE_WARNING_SECONDS:-300}
       DASHBOARD_NOTIFIER_TEST_SINK_FILE: /data/notifier/test-sink.jsonl
       DASHBOARD_NOTIFIER_SINK: ${KRAKEN_NOTIFIER_SINK:-TELEGRAM}
       DASHBOARD_TELEGRAM_BOT_TOKEN: ${DASHBOARD_TELEGRAM_BOT_TOKEN:-}
       DASHBOARD_TELEGRAM_CHAT_ID: ${DASHBOARD_TELEGRAM_CHAT_ID:-}
+      DASHBOARD_TELEGRAM_CRITICAL_CHAT_ID: ${DASHBOARD_TELEGRAM_CRITICAL_CHAT_ID:-}
       DASHBOARD_TELEGRAM_RECEIPT_FILE: /data/notifier/telegram-receipts.jsonl
       # INFO carries the daily portfolio summary.
       DASHBOARD_NOTIFIER_MIN_SEVERITY: INFO

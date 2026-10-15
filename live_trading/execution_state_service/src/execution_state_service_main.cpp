@@ -506,6 +506,18 @@ private:
         }
     }
 
+    // Close loop history for the dashboard: one row per UTC day of the exchange snapshot.
+    // Like the other projections, a failure is logged and never stops trading.
+    void recordCloseLoop(Timestamp snapshotTimestamp, const ReconciliationReport& report)
+    {
+        try {
+            store_->recordReconciliation(dayOf(snapshotTimestamp), report.clean(), report.issues.size());
+        }
+        catch (const std::exception& error) {
+            LG_ERROR("Could not record the close loop of {}: {}", FormatDayKey(snapshotTimestamp), error.what());
+        }
+    }
+
     // Days without an equity row since the first fill (for example right after this table
     // was added) are rebuilt by replaying the fills from the initial cash. Skipped when that
     // replay does not end at the current account (state restored from another source).
@@ -1347,6 +1359,7 @@ private:
             venue_collateral_usd_ = value.snapshot.collateral_usd;
 
             const ReconciliationReport report = reconciler_.compare(snapshot(), value.snapshot);
+            recordCloseLoop(value.snapshot.timestamp, report);
             if (!report.clean()) {
                 reconciled_ = false;
                 LG_ALERT("Reconciliation with the exchange snapshot of {} found {} issues; trading is paused",

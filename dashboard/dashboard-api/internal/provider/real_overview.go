@@ -97,7 +97,11 @@ func (p *Real) overview(ctx context.Context) (realOverviewData, error) {
 	}
 	var equityDays []pgstore.EquityDay
 	if accounting, err := p.postgres.Accounting(ctx); err == nil && accounting.Available {
-		addRuntimeEquity(&overview, accounting.Equity)
+		closeLoop, closeLoopErr := p.postgres.CloseLoop(ctx)
+		if closeLoopErr != nil {
+			overview.SourceWarnings = append(overview.SourceWarnings, "Close loop history unavailable: "+closeLoopErr.Error())
+		}
+		addRuntimeEquity(&overview, accounting.Equity, closeLoop)
 		equityDays = accounting.Equity
 	}
 	p.addKrakenCollateral(&overview, positions, equityDays)
@@ -107,13 +111,19 @@ func (p *Real) overview(ctx context.Context) (realOverviewData, error) {
 // addRuntimeEquity draws the equity curve from ExecutionState's daily equity (account
 // marked at each close), the runtime-owned history. Live vs Expected keeps the PAPER
 // comparison, which pairs live and backtest values at the same execution open.
-func addRuntimeEquity(overview *realOverviewData, days []pgstore.EquityDay) {
+// Each day carries its close loop (CLEAN/BLOCKED) when ExecutionState recorded one; days
+// before that history began stay without it rather than being assumed clean.
+func addRuntimeEquity(overview *realOverviewData, days []pgstore.EquityDay, closeLoop []pgstore.CloseLoopDay) {
 	if len(days) == 0 {
 		return
 	}
+	loopByDay := make(map[uint64]string, len(closeLoop))
+	for _, day := range closeLoop {
+		loopByDay[day.Date] = day.State
+	}
 	curve := make([]realEquityPoint, 0, len(days))
 	for _, day := range days {
-		curve = append(curve, realEquityPoint{Label: formatTradingTimestamp(day.Date), Equity: day.Equity})
+		curve = append(curve, realEquityPoint{Label: formatTradingTimestamp(day.Date), Equity: day.Equity, CloseLoop: loopByDay[day.Date]})
 	}
 	overview.EquityCurve, overview.EquityAvailable = curve, true
 	if overview.Stats[0].Value == "Not available" {

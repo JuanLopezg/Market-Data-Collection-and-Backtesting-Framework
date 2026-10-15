@@ -671,7 +671,7 @@ HttpRequest KrakenFuturesProtocol::accountLogRequest()
 {
     // History API (outside /derivatives): GET with a query string, signed with the query as
     // postData and no nonce, like the other GETs. The newest 500 entries; the adapter keeps
-    // the ids it has seen. UNCONFIRMED until the first read with a real key.
+    // the ids it has seen. Path and signing confirmed with the read-only key on 2026-10-15.
     const std::string query = "count=500";
     HttpRequest request;
     request.method = "GET";
@@ -700,8 +700,11 @@ AccountLog KrakenFuturesProtocol::parseAccountLog(const HttpResponse& response) 
         const auto optionalNumber = [&](const char* name) -> double {
             return row.contains(name) && !row.at(name).is_null() ? number(row, name, endpoint) : 0.0;
         };
-        const double fee = optionalNumber("fee");                    // Paid, positive.
-        const double funding = optionalNumber("realized_funding");   // Balance change. UNCONFIRMED sign.
+        // Confirmed 2026-10-15 on real rows: on a trade's USD row new_balance = old_balance +
+        // realized_pnl - fee + realized_funding, so fee is paid (positive, in USD) and
+        // realized_funding is the balance change (positive = received).
+        const double fee = optionalNumber("fee");
+        const double funding = optionalNumber("realized_funding");
         const std::string currency = upper(optionalText(row, "asset"));
         const bool usd = currency.empty() || currency == "USD";
         const std::string wallet = optionalText(row, "margin_account");
@@ -728,7 +731,9 @@ AccountLog KrakenFuturesProtocol::parseAccountLog(const HttpResponse& response) 
         }
 
         // Other USD changes of the Multi-M wallet: the change of its USD balance. Kinds are
-        // recognised by words in "info" (UNCONFIRMED: Kraken does not list them).
+        // recognised by words in "info"; Kraken does not list them. Seen on 2026-10-15:
+        // "conversion" (also Kraken selling BTC itself to pay a fee when USD is empty) and
+        // "cross-exchange transfer". The interest word is still UNCONFIRMED.
         const double change = optionalNumber("new_balance") - optionalNumber("old_balance");
         if (change == 0.0)
             continue;

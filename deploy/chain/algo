@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # algoTrading chain launcher.
 #
-# Installed layout (ALGO_ROOT is "/" on the VPS, any folder locally):
+# Installed layout (preferred VPS ALGO_ROOT is "/algoTrading", any Linux folder locally):
 #   chain/    this script, compose.yml, chain.env, monitor.py, logging/
 #   config/   non-secret configuration     secrets/  credentials (0700)
 #   data/     durable state                logs/     <service>/YYYYMMDD.log
@@ -87,6 +87,8 @@ install_chain() {
     mkdir -p "$chain/logging" "$chain/systemd" "$chain/tools" "$config" "$secrets" "$data/telemetry" "$data/receiver" \
              "$(under "$root" logs)" "$(under "$root" reports)" "$(under "$root" backups)" "$(under "$root" releases)"
     chmod 0700 "$secrets"
+    # The unprivileged host log receiver must traverse the application root.
+    chmod 0755 "$root" "$chain" "$chain/logging" "$chain/systemd"
 
     # Chain files always follow the repository version.
     cp "$repo/deploy/chain/compose.yml" "$repo/deploy/chain/compose.local.yml" "$repo/deploy/chain/algo" \
@@ -94,6 +96,23 @@ install_chain() {
        "$repo/deploy/chain/README.md" "$chain/"
     find "$repo/deploy/chain/logging" -maxdepth 1 -type f -exec cp {} "$chain/logging/" \;
     cp "$repo"/deploy/chain/systemd/*.service "$chain/systemd/"
+    # Host units and receiver/AppArmor paths follow the selected installation root.
+    # Container mount destinations and Linux-owned /etc, /run, /usr paths stay fixed.
+    python3 - "$root" "$chain" <<'PY'
+from pathlib import Path
+import re
+import sys
+root, chain = sys.argv[1], Path(sys.argv[2])
+pattern = re.compile(r'(?<![A-Za-z0-9_])/(chain|data|config|secrets|logs|reports|backups|releases)(?=/|\b)')
+for folder in (chain / 'systemd', chain / 'logging'):
+    for path in folder.iterdir():
+        if path.suffix not in ('.service', '.timer', '.conf', '.apparmor'):
+            continue
+        content = path.read_text()
+        path.write_text(pattern.sub(lambda match: root.rstrip('/') + match.group(0), content))
+        path.chmod(0o644)
+PY
+    chmod 0644 "$chain/logging/clean_daily_logs.py"
     # Public Kraken plan observation used by comparison.py (no account access), and the
     # read-only Kraken account monitor run by algotrading-kraken.service.
     cp "$repo/live_trading/kraken_shadow.py" "$repo/live_trading/shadow_observer.py" \

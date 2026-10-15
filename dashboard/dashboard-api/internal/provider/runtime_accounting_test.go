@@ -32,9 +32,14 @@ func TestRuntimeAccountingFeedsPositionsAndEquity(t *testing.T) {
 	}
 
 	overview := realOverviewData{Stats: []realOverviewMetric{{Value: "Not available"}, {}, {}}}
-	addRuntimeEquity(&overview, accounting.Equity)
+	// Close loop recorded only for the second day: the first stays without one (not assumed clean).
+	closeLoop := []pgstore.CloseLoopDay{{Date: 20261013, State: "BLOCKED", Issues: 1, Checks: 3}}
+	addRuntimeEquity(&overview, accounting.Equity, closeLoop)
 	if !overview.EquityAvailable || len(overview.EquityCurve) != 2 || overview.EquityCurve[1].Label != "2026-10-13" ||
 		overview.EquityCurve[1].Equity != 99900.5 || overview.Stats[0].Value != formatUSD(99900.5) {
 		t.Fatalf("equity: %+v stats=%+v", overview.EquityCurve, overview.Stats)
+	}
+	if overview.EquityCurve[0].CloseLoop != "" || overview.EquityCurve[1].CloseLoop != "BLOCKED" {
+		t.Fatalf("close loop: %+v", overview.EquityCurve)
 	}
 }

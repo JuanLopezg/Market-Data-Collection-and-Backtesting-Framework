@@ -8,6 +8,32 @@ The dashboard supports real reads, canonical replay observation, durable watchdo
 operator acknowledgements, notification adapters and audited manual-intent admission.
 Actual private exchange submission remains disabled.
 
+## Telegram alert priority
+
+Telegram priority presentation (deployed on the VPS): CRITICAL
+uses a red circle and URGENT label, WARN yellow, INFO blue, resolved alerts green.
+INFO updates (including daily portfolios) and resolved alerts request silent
+notifications; WARN/CRITICAL keep normal notifications. Phone/chat settings
+control audible playback. Unknown severity keeps normal notification behavior.
+The Bot API supports silence per message, not a custom tone per severity; different
+tones require separate destination chats with sounds configured in Telegram.
+See [Bot API](https://core.telegram.org/bots/api#sendmessage) and
+[Telegram notification sounds](https://telegram.org/blog/notifications-bots).
+Receipt identity, retries and deduplication are unchanged.
+
+Optional `DASHBOARD_TELEGRAM_CRITICAL_CHAT_ID` (or its `_FILE` counterpart in the
+notifier command) selects a separate group for CRITICAL events and their resolved
+messages. Other messages keep `DASHBOARD_TELEGRAM_CHAT_ID`; without the optional
+setting, all messages keep the original destination. Both chain notifiers receive
+the optional group setting from installation credentials. The user-created group
+`algoTrading CRITICAL` has been identified and bot membership verified; routing
+is enabled on the VPS. The Kraken notifier uses TELEGRAM; the general watchdog
+notifier retains its TEST_FILE sink. Existing receipts prevent
+replaying earlier alerts when this setting is added.
+
+Explicit setup tests accept `--test-message --test-severity INFO|WARN|CRITICAL`.
+Only a TEST-labelled message is sent; CRITICAL tests exercise the configured group.
+
 ## Mobile viewing
 
 Below 900px the desktop sidebar becomes a Menu drawer; panels stack and wide data
@@ -176,6 +202,24 @@ Continuous polling requires a successful watchdog heartbeat no older than 90 sec
 no more than 30 seconds ahead, and no failed last sweep. A stopped/stale watchdog
 leaves delivery waiting; an old alert journal is not treated as current evidence.
 PAPER notifier healthchecks reject recorded errors even after an earlier success.
+
+The notifier also watches its source independently. After 300 seconds of continuously
+missing, stale, future-dated or failed source evidence it sends its own WARN,
+"Alert source stopped", with the display name, first observed failure time and a
+short safe reason. A healthy source produces one resolved notification. Source alerts
+remain blocked throughout the failure; the notifier's own incident does not consume
+their initial replay/bootstrap. Short interruptions send neither warning nor recovery.
+`DASHBOARD_NOTIFIER_SOURCE_STALE_WARNING_SECONDS` accepts integer seconds (1..86400,
+default 300); `DASHBOARD_NOTIFIER_SOURCE_NAME` defaults to `Watchdog`, with `Kraken`
+configured for the chain's Kraken notifier. This operational WARN is independent of
+the source-alert severity filter and cooldown. It uses the existing sink: yellow and
+normal notification for WARN, green and silent for resolved, both in the normal chat.
+The general chain notifier keeps TEST_FILE. `source-health.json` in each notifier's
+store preserves the incident timer/sequence and pending recovery across restart;
+existing decisions and sink receipts deduplicate confirmed deliveries. Retain it
+with that store. The existing crash window before a Telegram receipt remains as
+described below. This feature is local pending an authorized deployment; health
+checks still report source failures even if the notifier delivered its own warning.
 
 The chain uses its configured dash-api image for the notifier. Earlier local
 Telegram evidence and credential files remain in ignored storage. To stop only

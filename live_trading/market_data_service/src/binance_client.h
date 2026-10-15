@@ -18,8 +18,6 @@
 struct BinanceUniverseSnapshot {
     std::set<std::string> eligible_symbols;
     std::vector<std::pair<std::string, double>> ranked_top;
-    // Binance's own clock when exchangeInfo was answered (Unix milliseconds).
-    long long server_time_ms = 0;
 };
 
 // Daily bars plus the symbols that could not be downloaded successfully.
@@ -32,6 +30,11 @@ struct BinanceFetchResult {
 class BinanceMarketDataClient {
 public:
     explicit BinanceMarketDataClient(std::string baseUrl);
+
+    // Binance's current clock from GET /fapi/v1/time (Unix milliseconds), or 0 when it
+    // cannot be read. exchangeInfo also carries a serverTime, but that document is
+    // served from a cache and can be about 30 minutes old, so it cannot prove a day closed.
+    long long serverTimeMs() const;
 
     BinanceUniverseSnapshot universeByQuoteVolume(std::size_t rankingLimit) const;
 

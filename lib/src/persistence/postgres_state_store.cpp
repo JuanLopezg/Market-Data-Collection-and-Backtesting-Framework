@@ -308,6 +308,13 @@ struct PostgresStateStore::Impl {
             "date BIGINT PRIMARY KEY,"
             "collateral_usd DOUBLE PRECISION NOT NULL,"
             "recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW());"
+            // Close loop per UTC day: CLEAN or BLOCKED (worst reconciliation of the day).
+            "CREATE TABLE IF NOT EXISTS trading_reconciliation_daily ("
+            "date BIGINT PRIMARY KEY,"
+            "state TEXT NOT NULL CHECK(state IN ('CLEAN','BLOCKED')),"
+            "issues INTEGER NOT NULL,"
+            "checks INTEGER NOT NULL,"
+            "checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW());"
             // Funding payments confirmed by a real venue (none in the PAPER simulation).
             "CREATE TABLE IF NOT EXISTS trading_funding ("
             "payment_id TEXT PRIMARY KEY,"
@@ -723,6 +730,24 @@ std::optional<double> PostgresStateStore::dailyCollateral(Timestamp day) const
         stored = std::strtod(PQgetvalue(result, 0, 0), nullptr);
     clear(result);
     return stored;
+}
+
+
+void PostgresStateStore::recordReconciliation(Timestamp day, bool clean, std::size_t issues)
+{
+    const std::string date = std::to_string(day);
+    const std::string state = clean ? "CLEAN" : "BLOCKED";
+    const std::string count = std::to_string(issues);
+    const std::array<const char*, 3> values{date.c_str(), state.c_str(), count.c_str()};
+    clear(execParams(
+        impl_->connection,
+        "INSERT INTO trading_reconciliation_daily(date,state,issues,checks) VALUES($1,$2,$3,1) "
+        "ON CONFLICT(date) DO UPDATE SET "
+        "state=CASE WHEN trading_reconciliation_daily.state='BLOCKED' THEN 'BLOCKED' ELSE EXCLUDED.state END,"
+        "issues=GREATEST(trading_reconciliation_daily.issues,EXCLUDED.issues),"
+        "checks=trading_reconciliation_daily.checks+1,"
+        "checked_at=NOW();",
+        static_cast<int>(values.size()), values.data()));
 }
 
 

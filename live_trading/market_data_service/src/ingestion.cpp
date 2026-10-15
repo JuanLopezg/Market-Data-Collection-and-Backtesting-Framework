@@ -63,19 +63,17 @@ TrackedMarketData MarketDataIngestor::updateTracker(
     return result;
 }
 
-BinanceUniverseSnapshot MarketDataIngestor::universeAfterDayClose(std::chrono::year_month_day targetDate) const
+void MarketDataIngestor::waitForBinanceDayClose(std::chrono::year_month_day targetDate) const
 {
     const long long dayEndMs = std::chrono::duration_cast<std::chrono::milliseconds>(
         (std::chrono::sys_days{targetDate} + std::chrono::days{1}).time_since_epoch()).count();
     for (int attempt = 1; attempt <= MAX_SERVER_CLOCK_WAITS; ++attempt) {
-        BinanceUniverseSnapshot universe = binance_.universeByQuoteVolume(config_.ranking_size);
-        if (universe.ranked_top.empty())
-            return universe; // The caller reports the failed ranking.
-        if (universe.server_time_ms == 0)
-            throw std::runtime_error("Binance exchangeInfo has no serverTime; cannot prove the day is closed");
-        if (universe.server_time_ms >= dayEndMs)
-            return universe;
-        const long long behindMs = dayEndMs - universe.server_time_ms;
+        const long long serverTimeMs = binance_.serverTimeMs();
+        if (serverTimeMs == 0)
+            throw std::runtime_error("Binance server time is unavailable; cannot prove the day is closed");
+        if (serverTimeMs >= dayEndMs)
+            return;
+        const long long behindMs = dayEndMs - serverTimeMs;
         LG_WARN("Binance clock is {} ms before the end of {}; waiting for its candles to close",
                 behindMs, formatYMD(targetDate));
         std::this_thread::sleep_for(std::chrono::milliseconds(std::min<long long>(behindMs, 1000) + 50));
@@ -94,7 +92,8 @@ MarketDataIngestionSummary MarketDataIngestor::run(std::chrono::year_month_day t
     if (previous.date != EMPTY_DATE && std::chrono::sys_days{previous.date} > std::chrono::sys_days{targetDate})
         throw std::runtime_error("Market-data database is ahead of the requested live target date");
 
-    const BinanceUniverseSnapshot universe = universeAfterDayClose(targetDate);
+    waitForBinanceDayClose(targetDate);
+    const BinanceUniverseSnapshot universe = binance_.universeByQuoteVolume(config_.ranking_size);
     const auto& ranked = universe.ranked_top;
     if (ranked.size() < config_.active_top_n)
         throw std::runtime_error("Unable to obtain enough ranked Binance USDT perpetuals");

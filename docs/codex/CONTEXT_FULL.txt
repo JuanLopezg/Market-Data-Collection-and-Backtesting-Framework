@@ -29,25 +29,71 @@ First vol-target cycle's four signal differences are a baseline-seed bug:
 comparison.py copied empty signals from the execution snapshot rather than the
 strategy checkpoint at the seed date. Isolated replay with only those signals
 restored gives zero differences and equity within USD 0.00122 of PAPER.
-Original VPS collector/study and trading state remain unchanged. The local fix
-now seeds PAPER/LIVE from the exact strategy checkpoint, preserves pre-repair
-evidence and invalidates fast cache on economic-input/configuration changes.
-Fourteen focused WSL tests and Step59 pass with the accepted fingerprint;
-rollout remains explicitly deferred by the user.
+The correction is deployed on the VPS: PAPER/LIVE seeds use the exact strategy
+checkpoint, preserve pre-repair evidence and invalidate fast cache on economic
+input/configuration changes. All five retained comparison rows show zero signal
+differences. Fourteen focused WSL tests and Step59 pass with the accepted fingerprint.
 CURRENT_STATE.md owns exact evidence. Superseded deployment source has now been
-retired locally at the user's request; multi-day acceptance and VPS baseline
-deployment remain pending. Do not call the running baseline accepted.
+retired and included in the deployed release; multi-day PAPER acceptance remains
+pending. Zero signal differences do not establish exact sizing/PnL parity.
 
 USER PREFERENCES
 ================
-Latest local-only authorization: finish the baseline seed fix and retire the
-superseded PAPER deployment source without deployment. Ten deploy/paper_trading
+Latest explicit authorization: deploy all new work to the VPS (2026-10-14).
+Completed as release 20261014_201725-d11699d-dirty; superseded on 2026-10-15 by the
+authorized release 20261015_090303-d11699d-dirty (market-data clock guard, Kraken monitor
+warnings/history, notifier source warning; see CURRENT_STATE.md). All eight runtime folders now
+live under /algoTrading; old root-level folders are gone. Host units/logging,
+AppArmor and active comparison paths are updated; config and credentials retained.
+The economic ledger is identical before migration and after both restarts:
+21 fills, 5 open positions, 6 closed positions. All 14 containers are healthy,
+dashboard login/API/private HTTPS pass, Kraken reads are fresh and error-free.
+Rollback target pre-root-20261014_201026 contains the actual former running images
+and host templates adapted for /algoTrading. CURRENT_STATE.md owns full evidence.
+MODE remains paper; no private trading gateway or real order submission enabled.
+
+Critical-only Telegram group (2026-10-14): user created algoTrading CRITICAL;
+matched its exact title through the existing bot and verified bot membership.
+Optional DASHBOARD_TELEGRAM_CRITICAL_CHAT_ID routing is deployed for both
+chain notifiers: CRITICAL and their recoveries go to that group, WARN/INFO stay in
+the original chat. Unset option preserves the original single-chat behavior;
+existing receipts prevent replay after routing changes. Real INFO and CRITICAL
+setup tests accepted. Kraken notifier uses TELEGRAM; the general watchdog notifier
+retains its existing TEST_FILE sink. Future sink changes require their own scope.
+Group identifier retained only in ignored storage/telegram_priority/.
+
+Telegram priority update (2026-10-14, deployed): shared notifier now prefixes
+CRITICAL/WARN/INFO/resolved messages with red/yellow/blue/green markers. INFO
+(including daily portfolios) and recoveries set disable_notification=true;
+WARN/CRITICAL and unknown levels retain normal notifications. Telegram chat/phone
+settings own tones; the Bot API cannot select a per-message custom sound.
+Notifier and command tests pass with loopback HTTP payload checks. Both real setup
+messages have delivery receipts; monitor history/receipt state survived relocation.
+
+Latest authorization (2026-10-14): activate private read-only Kraken monitoring
+and Telegram on the existing VPS. Completed at the current root /: existing
+local credentials transferred internally over SSH, Kraken permissions checked
+as READ_ONLY / NO_ACCESS, persistent algotrading-kraken host unit enabled,
+COMPOSE_PROFILES=kraken and KRAKEN_NOTIFIER_SINK=TELEGRAM configured, only the
+kraken-notifier container added. First account observation and Telegram setup
+message pass; three delivery receipts and subsequent fresh polling verified.
+PAPER and all existing container IDs are unchanged; no private trading gateway
+is running. First scheduled 09:00 UTC summary/restart acceptance remain pending.
+This authorization does not deploy other local work or relocate /algoTrading.
+CURRENT_STATE.md owns evidence; keys were never printed.
+
+Runtime root /algoTrading is deployed. algo install renders host units, logging
+and AppArmor for its root; container paths and OS-owned directories stay fixed.
+Existing configuration, credentials and data survive reinstallation. Earlier
+local-only deferrals were superseded by the explicit full deployment request.
+
+Source cleanup is deployed: ten deploy/paper_trading
 tracked files are retired; its useful Compose/logging topology is now an isolated
 validation/fixtures/paper fixture. Bundling/builds use deploy/chain/.runtime_bundle.
 Ignored old bundles, credentials and run evidence remain untouched. Bundle/image
 builds, isolated PAPER/recovery/shadow, component tests and canonical Step59 pass
-(accepted fingerprint). Evidence is in CURRENT_STATE.md; VPS baseline/multi-day acceptance is
-still separate and pending.
+(accepted fingerprint). Evidence is in CURRENT_STATE.md; multi-day PAPER acceptance
+is still separate and pending.
 
 Latest authorized scope: deploy a separate VPS PAPER forward study with PureRSI(7)
 entry > 50 / exit < 40 and show simulated-live versus CURRENT fast baseline in the

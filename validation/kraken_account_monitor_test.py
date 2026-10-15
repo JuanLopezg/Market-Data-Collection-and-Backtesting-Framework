@@ -13,9 +13,28 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'live_trading'))
 from kraken_account_monitor import AccountAlertMonitor
-from kraken_account_test import fixture, RELATIVE_POLICY
-from kraken_account import FIXTURE_SCOPE
+from kraken_account_test import ACCOUNT_LOG, fixture, RELATIVE_POLICY
+from kraken_account import AccountReadError, FIXTURE_SCOPE
 from kraken_shadow import SCOPE
+
+
+class Reader:
+    """Stands in for KrakenAccountReader: a snapshot or an error, and the account history."""
+
+    def __init__(self, bundle=None, error=None, rows=None):
+        self.bundle, self.error, self.rows = bundle, error, rows
+        self.log_reads = 0
+
+    def snapshot(self):
+        if self.error:
+            raise self.error
+        return self.bundle
+
+    def account_log(self):
+        self.log_reads += 1
+        if self.rows is None:
+            raise AccountReadError('Kraken HTTP 503 at account_log')
+        return self.rows
 
 
 class MonitorTests(unittest.TestCase):
@@ -75,19 +94,116 @@ class MonitorTests(unittest.TestCase):
         self.observe()
         self.assertEqual(len(self.events()), 1)
 
-    def test_failure_retains_active_alert_and_blocks_fresh_heartbeat(self):
+    def status(self):
+        return json.loads((self.directory / 'status.json').read_text())
+
+    def fail_for(self, seconds, reader=None, step=30):
+        """Failed polls every `step` seconds for `seconds` (the clock moves with them)."""
+        reader = reader or Reader(error=AccountReadError('Kraken HTTP 503 at wallets'))
+        end = self.clock + seconds
+        while self.clock < end:
+            self.clock += step
+            self.assertIsNone(self.monitor.poll(reader, lambda: self.clock))
+
+    def test_failure_keeps_other_alerts_and_a_fresh_heartbeat_without_error(self):
         self.observe()
-        class FailedReader:
-            def snapshot(self):
-                raise ValueError('synthetic sensitive upstream error')
-        self.assertIsNone(self.monitor.poll(FailedReader(), lambda: self.clock + 1))
-        status = json.loads((self.directory / 'status.json').read_text())
-        self.assertTrue(status['lastError'])
-        self.assertNotIn('sensitive', status['lastError'])
+        reader = Reader(error=ValueError('synthetic sensitive upstream error'))
+        self.assertIsNone(self.monitor.poll(reader, lambda: self.clock + 1))
+        status = self.status()
+        # Contract: Kraken failing is not a monitor failure.
+        self.assertEqual(status['lastError'], '')
+        self.assertEqual(status['lastSuccessAt'], status['lastSweepAt'])
+        self.assertNotIn('sensitive', json.dumps(status))
         self.assertEqual(status['activeCount'], 1)
         self.assertEqual(len(self.events()), 1)
         self.observe(False)
         self.assertEqual(self.events()[-1]['transition'], 'RESOLVED')
+
+    def test_unreadable_warning_after_ten_minutes_once_then_resolved(self):
+        self.observe()  # USD_RESERVE active before Kraken stops answering
+        self.fail_for(9 * 60 + 29)
+        self.assertEqual(len(self.events()), 1)  # less than 10 minutes: no warning
+        self.fail_for(60)
+        unreadable = [e for e in self.events() if e['alert']['eventType'] == 'KRAKEN_UNREADABLE']
+        self.assertEqual(len(unreadable), 1)
+        alert = unreadable[0]['alert']
+        self.assertEqual((alert['severity'], alert['title']), ('WARN', 'Kraken account unreadable'))
+        self.assertIn('Cause: Kraken HTTP 503 at wallets', alert['detail'])
+        self.assertIn('Failing since: ', alert['detail'])
+        self.assertIn('Last good read: ', alert['detail'])
+        self.fail_for(30 * 60)
+        self.assertEqual(len(self.events()), 2)  # opened once; USD_RESERVE untouched
+        self.assertEqual(self.status()['activeCount'], 2)
+        self.observe()  # a good read, USD still low
+        resolved = self.events()[-1]
+        self.assertEqual((resolved['transition'], resolved['alert']['id']), ('RESOLVED', alert['id']))
+        self.assertEqual(resolved['alert']['eventType'], 'KRAKEN_UNREADABLE')
+        self.assertEqual([e['alert']['eventType'] for e in self.events()].count('USD_RESERVE'), 1)
+        self.fail_for(11 * 60)  # a new outage opens a new warning
+        reopened = self.events()[-1]
+        self.assertEqual((reopened['transition'], reopened['eventId']), ('OPENED', alert['id'] + ':3'))
+
+    def test_unreadable_before_any_good_read_and_restart_without_duplicate(self):
+        self.fail_for(11 * 60)
+        self.assertEqual(len(self.events()), 1)
+        self.assertIn('Last good read: none', self.events()[0]['alert']['detail'])
+        self.monitor.close()
+        self.monitor = AccountAlertMonitor(self.directory, RELATIVE_POLICY, scope=FIXTURE_SCOPE)
+        self.fail_for(20 * 60)
+        self.assertEqual(len(self.events()), 1)
+        self.observe(False)
+        self.assertEqual([e['transition'] for e in self.events()], ['OPENED', 'RESOLVED'])
+        self.assertEqual(self.events()[0]['alert']['id'], self.events()[1]['alert']['id'])
+
+    def test_cause_logged_only_when_it_changes_and_on_recovery(self):
+        with self.assertLogs(level='INFO') as logs:
+            self.fail_for(90)
+            self.fail_for(60, Reader(error=AccountReadError('Kraken timeout at permissions')))
+            self.observe(False)
+        lines = [record.getMessage() for record in logs.records]
+        self.assertEqual(lines, ['Kraken account read failed: Kraken HTTP 503 at wallets',
+                                 'Kraken account read still failing, now: Kraken timeout at permissions',
+                                 'Kraken account read recovered after 5 failed reads (failing since ' +
+                                 lines[2].split('since ')[1]])
+
+    def test_monitor_journal_failure_sets_last_error_and_stops_success(self):
+        self.observe()
+        before = self.status()['lastSuccessAt']
+        self.monitor.close()
+        self.monitor = AccountAlertMonitor(self.directory, RELATIVE_POLICY, scope=FIXTURE_SCOPE)
+        self.clock -= 10  # older than the last stored sample: our journal refuses it
+        self.assertIsNone(self.monitor.poll(Reader(bundle=fixture(self.clock)), lambda: self.clock))
+        status = self.status()
+        self.assertEqual(status['lastError'], 'Monitor journal or storage failed; recovery not inferred')
+        self.assertEqual(status['lastSuccessAt'], '')  # stale: the notifier reports a stopped monitor
+        self.assertNotEqual(before, '')
+        self.assertFalse(any(e['alert']['eventType'] == 'KRAKEN_UNREADABLE' for e in self.events()))
+
+    def test_account_log_summary_hourly_and_its_failure_changes_nothing_else(self):
+        reader = Reader(rows=ACCOUNT_LOG)
+        self.clock += 1
+        reader.bundle = fixture(self.clock)
+        self.assertIsNotNone(self.monitor.poll(reader, lambda: self.clock))
+        summary = json.loads((self.directory / 'account-log-summary.json').read_text())
+        self.assertEqual((summary['entries'], reader.log_reads), (4, 1))
+        self.assertNotIn('9001', json.dumps(summary))
+        for _ in range(3):  # within the hour: not read again
+            self.clock += 30
+            reader.bundle = fixture(self.clock)
+            self.monitor.poll(reader, lambda: self.clock)
+        self.assertEqual(reader.log_reads, 1)
+        self.clock += 3600
+        reader.bundle, reader.rows = fixture(self.clock), None  # history read now fails
+        with self.assertLogs(level='WARNING') as logs:
+            self.assertIsNotNone(self.monitor.poll(reader, lambda: self.clock))
+        self.assertIn('Kraken account history read failed: Kraken HTTP 503 at account_log', logs.output[0])
+        self.assertEqual(self.status()['lastError'], '')
+        self.assertFalse(any(e['alert']['eventType'] == 'KRAKEN_UNREADABLE' for e in self.events()))
+        self.assertEqual(json.loads((self.directory / 'account-log-summary.json').read_text())['entries'], 4)
+        self.clock += 300  # retried after five minutes
+        reader.bundle, reader.rows = fixture(self.clock), ACCOUNT_LOG[:2]
+        self.monitor.poll(reader, lambda: self.clock)
+        self.assertEqual(json.loads((self.directory / 'account-log-summary.json').read_text())['entries'], 2)
 
     def test_stale_invalid_observation_cannot_resolve(self):
         self.observe()
@@ -216,7 +332,8 @@ class MonitorTests(unittest.TestCase):
         # TEST_FILE only, network disabled and no credential file passed to Docker.
         with tempfile.TemporaryDirectory(dir=ROOT / 'storage', prefix='kraken-alert-contract-') as location:
             directory = Path(location)
-            monitor = AccountAlertMonitor(directory, RELATIVE_POLICY, scope=FIXTURE_SCOPE)
+            # A short unreadable delay so the real notifier sees KRAKEN_UNREADABLE in seconds.
+            monitor = AccountAlertMonitor(directory, RELATIVE_POLICY, scope=FIXTURE_SCOPE, unreadable_minutes=0.01)
             name = 'kraken-alert-contract-' + str(os.getpid())
             def docker(*args):
                 return subprocess.run(['docker', *args], capture_output=True, text=True, check=True, timeout=30).stdout
@@ -246,6 +363,18 @@ class MonitorTests(unittest.TestCase):
                 wait_delivered(2)
                 docker('restart', name)
                 wait_delivered(2)
+                # Kraken failing keeps a fresh heartbeat without lastError, so the notifier
+                # delivers the monitor's own warning (on 2026-10-15 nothing was sent).
+                failing = Reader(error=AccountReadError('Kraken HTTP 503 at wallets'))
+                monitor.poll(failing)
+                time.sleep(1)
+                monitor.poll(failing)
+                self.assertEqual(json.loads((directory / 'events.jsonl').read_text().splitlines()[-1])
+                                 ['alert']['eventType'], 'KRAKEN_UNREADABLE')
+                wait_delivered(3)
+                self.clock = time.time()
+                monitor.observe(self.bundle(False), self.clock)
+                wait_delivered(4)
             finally:
                 subprocess.run(['docker', 'rm', '-f', name], capture_output=True, timeout=30)
                 monitor.close()

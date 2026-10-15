@@ -9,19 +9,38 @@ import json
 import os
 from pathlib import Path
 import signal
+import sqlite3
 import subprocess
 import threading
 import time
 
-from kraken_account import AccountJournal, PRIVATE_SCOPE, ROOT, reader_from_credentials
+from kraken_account import (AccountJournal, AccountReadError, CredentialError, JournalError, PRIVATE_SCOPE,
+                            ROOT, account_log_summary, reader_from_credentials)
 from kraken_portfolio_summary import DailyPortfolio, collateral_risk, dollars, percent, position_values
 from kraken_shadow import KrakenPublicReader
-from shadow_observer import number
+from shadow_observer import digest, number
 from readable_log import setup_logging
+
+# Opened by the monitor itself when Kraken cannot be read for a while (the other alerts
+# come from account observations). Resolved by the next good read.
+UNREADABLE = 'KRAKEN_UNREADABLE'
+ACCOUNT_LOG_INTERVAL_SECONDS = 3600
+ACCOUNT_LOG_RETRY_SECONDS = 300
 
 
 def utc(timestamp):
     return datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
+
+
+def utc_minute(timestamp):
+    return datetime.fromtimestamp(timestamp, timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+
+
+def failure_cause(error):
+    """Our own bounded wording only: the reader's diagnostics never carry bodies or keys."""
+    if isinstance(error, (AccountReadError, CredentialError)):
+        return str(error)
+    return 'Kraken invalid account data'
 
 
 def atomic_text(path, value):
@@ -141,11 +160,25 @@ class AccountAlertMonitor:
 
     def __init__(self, directory, policy, environment='live', scope=PRIVATE_SCOPE,
                  account_name='Kraken', summary_hour_utc=None, decline_fraction='0.10', gross_limit='5',
-                 retention_days=None, maintenance_drop='0.25'):
+                 retention_days=None, maintenance_drop='0.25', unreadable_minutes=10):
         self.decline_fraction, self.gross_limit = number(decline_fraction), number(gross_limit)
         self.maintenance_drop = number(maintenance_drop)
         if not 0 < self.decline_fraction <= 1 or self.gross_limit <= 0 or not 0 < self.maintenance_drop <= 1:
             raise ValueError('Invalid account warning thresholds')
+        if not 0 < unreadable_minutes <= 1440:
+            raise ValueError('Invalid unreadable-account warning delay')
+        # Consecutive failed reads; kept in memory (after a restart the delay starts again,
+        # while an already open KRAKEN_UNREADABLE stays open in alert_state).
+        self.unreadable_seconds = unreadable_minutes * 60
+        self.failing_since = None
+        self.failure_cause = None
+        self.failed_reads = 0
+        # Heartbeat: last sweep in which the monitor itself worked and published.
+        self.last_monitor_success = None
+        self.next_account_log = 0.0
+        # Not bound to the account hash: Kraken may be unreadable before the first good read.
+        self.unreadable_alert_id = ('kraken-account:' + digest({'scope': scope, 'environment': environment,
+                                    'policy': policy}) + ':' + UNREADABLE)
         if retention_days is not None and retention_days < 2:
             raise ValueError('Keep at least two days of account samples')
         # Raw account samples (one every poll) older than this are deleted. Alert state,
@@ -178,7 +211,7 @@ class AccountAlertMonitor:
         with self.db:
             previous = self.db.execute('SELECT observed_at FROM alert_clock WHERE id=1').fetchone()
             if previous and timestamp < previous[0]:
-                raise ValueError('Out-of-order alert observation')
+                raise JournalError('Out-of-order alert observation')
             states = {row[0]: row[1:] for row in self.db.execute('SELECT * FROM alert_state')}
             for name in sorted(set(states) | set(desired)):
                 if name in unavailable:
@@ -189,7 +222,9 @@ class AccountAlertMonitor:
                     continue
                 severity, title, detail = desired[name] if active else old[2:]
                 sequence = old[1] + 1
-                alert_id = 'kraken-account:' + result['account_identity_hash'] + ':' + name
+                # A good read is never "desired" to be unreadable, so this resolves it.
+                alert_id = (self.unreadable_alert_id if name == UNREADABLE else
+                            'kraken-account:' + result['account_identity_hash'] + ':' + name)
                 transition = 'OPENED' if active else 'RESOLVED'
                 event = {'eventId': alert_id + ':' + str(sequence), 'recordedAt': utc(timestamp),
                     'transition': transition, 'alert': {'id': alert_id, 'timestamp': utc(timestamp),
@@ -206,10 +241,50 @@ class AccountAlertMonitor:
                 if summary:
                     self.db.execute('INSERT INTO alert_events(payload) VALUES (?)', (json.dumps(summary),))
         self.unavailable_checks = sorted(unavailable)
+        self.note_good_read()
         self.prune(timestamp)
         self.publish_account(result, market, now)
         self.publish(now)
         return result
+
+    def note_good_read(self):
+        if self.failing_since is not None:
+            logging.info('Kraken account read recovered after %d failed reads (failing since %s)',
+                         self.failed_reads, utc_minute(self.failing_since))
+        self.failing_since, self.failure_cause, self.failed_reads = None, None, 0
+
+    def note_failed_read(self, now, cause):
+        """Log the cause when it changes; after the delay open KRAKEN_UNREADABLE once.
+
+        Never touches the other alerts: only a good read may change or resolve them.
+        """
+        self.failed_reads += 1
+        if self.failing_since is None:
+            self.failing_since = now
+            logging.warning('Kraken account read failed: %s', cause)
+        elif cause != self.failure_cause:
+            logging.warning('Kraken account read still failing, now: %s', cause)
+        self.failure_cause = cause
+        if now - self.failing_since < self.unreadable_seconds:
+            return
+        with self.db:
+            state = self.db.execute('SELECT active, sequence FROM alert_state WHERE id=?', (UNREADABLE,)).fetchone()
+            if state and state[0]:
+                return
+            sequence = (state[1] if state else 0) + 1
+            last = self.db.execute('SELECT observed_at FROM alert_clock WHERE id=1').fetchone()
+            title = 'Kraken account unreadable'
+            detail = ('Failing since: ' + utc_minute(self.failing_since) + '\nCause: ' + cause +
+                      '\nLast good read: ' + (utc_minute(last[0]) if last else 'none'))
+            event = {'eventId': self.unreadable_alert_id + ':' + str(sequence), 'recordedAt': utc(now),
+                'transition': 'OPENED', 'alert': {'id': self.unreadable_alert_id, 'timestamp': utc(now),
+                'severity': 'WARN', 'status': 'ACTIVE', 'service': 'KrakenAccountReadOnly',
+                'account': self.account_name, 'eventType': UNREADABLE, 'title': title, 'detail': detail}}
+            self.db.execute('INSERT INTO alert_events(payload) VALUES (?)', (json.dumps(event),))
+            self.db.execute('INSERT OR REPLACE INTO alert_state VALUES (?,?,?,?,?,?)',
+                            (UNREADABLE, 1, sequence, 'WARN', title, detail))
+        logging.warning('Kraken account unreadable for %s minutes; warning opened',
+                        format(self.unreadable_seconds / 60, 'g'))
 
     def publish_account(self, result, market, now):
         """Latest successful observation for the dashboard: collateral, margin, drop to maintenance."""
@@ -232,13 +307,19 @@ class AccountAlertMonitor:
         self.last_prune = observed_at
 
     def publish(self, now, error=''):
-        # Publish history before heartbeat. A failed/stale read never emits recovery.
+        """Events first, then the heartbeat.
+
+        lastSuccessAt is the last sweep in which the monitor itself worked and published,
+        whether or not Kraken answered (an unreadable Kraken is the KRAKEN_UNREADABLE alert).
+        lastError is set only for the monitor's own failures (journal, storage).
+        """
         history = ''.join(row[0] + '\n' for row in self.db.execute('SELECT payload FROM alert_events ORDER BY sequence'))
         atomic_text(self.directory / 'events.jsonl', history)
-        last = self.db.execute('SELECT observed_at FROM alert_clock WHERE id=1').fetchone()
+        if not error:
+            self.last_monitor_success = now
         active = list(self.db.execute('SELECT severity FROM alert_state WHERE active=1'))
         heartbeat = {'version': 'step43-v1', 'lastSweepAt': utc(now),
-            'lastSuccessAt': utc(last[0]) if last else '', 'lastError': error,
+            'lastSuccessAt': utc(self.last_monitor_success) if self.last_monitor_success else '', 'lastError': error,
             'unavailableChecks': self.unavailable_checks,
             'activeCount': len(active), 'activeCritical': sum(row[0] == 'CRITICAL' for row in active),
             'activeWarnings': sum(row[0] == 'WARN' for row in active),
@@ -248,17 +329,47 @@ class AccountAlertMonitor:
     def poll(self, reader, now=time.time, public_reader=None):
         try:
             bundle = reader.snapshot()
-            market = None
-            if self.summary and public_reader and bundle['positions']['openPositions']:
-                try:
-                    market = public_reader.snapshot()
-                except Exception:
-                    pass  # Missing price evidence is shown explicitly in the summary.
-            return self.observe(bundle, now(), market)
-        except Exception:
+        except Exception as error:
             # No upstream body, URL, credential, exception text or traceback escapes.
-            self.publish(now(), 'Account observation unavailable or invalid; recovery not inferred')
+            self.note_failed_read(now(), failure_cause(error))
+            self.publish(now())
             return None
+        market = None
+        if self.summary and public_reader and bundle['positions']['openPositions']:
+            try:
+                market = public_reader.snapshot()
+            except Exception:
+                pass  # Missing price evidence is shown explicitly in the summary.
+        try:
+            result = self.observe(bundle, now(), market)
+        except (JournalError, sqlite3.Error, OSError):
+            # Our own journal/storage: the heartbeat goes stale, which the notifier reports.
+            logging.error('Monitor journal or storage refused the observation; recovery not inferred')
+            self.publish(now(), 'Monitor journal or storage failed; recovery not inferred')
+            return None
+        except Exception as error:
+            self.note_failed_read(now(), failure_cause(error))  # Kraken answered with invalid data.
+            self.publish(now())
+            return None
+        self.poll_account_log(reader, now())
+        return result
+
+    def poll_account_log(self, reader, now):
+        """At start and then hourly: summarize the account history for checking the gateway parser.
+
+        Separate from the snapshot: a failure here only retries later and opens no alert.
+        """
+        if now < self.next_account_log:
+            return
+        try:
+            rows = reader.account_log()
+            atomic_text(self.directory / 'account-log-summary.json',
+                        json.dumps(account_log_summary(rows, now), indent=2) + '\n')
+            self.next_account_log = now + ACCOUNT_LOG_INTERVAL_SECONDS
+            logging.info('Kraken account history read: %d entries', len(rows))
+        except Exception as error:
+            self.next_account_log = now + ACCOUNT_LOG_RETRY_SECONDS
+            logging.warning('Kraken account history read failed: %s', failure_cause(error))
 
 
 def main():
@@ -274,6 +385,8 @@ def main():
     parser.add_argument('--gross-exposure-warning', default='5')
     parser.add_argument('--maintenance-drop-warning', default='0.25',
                         help='Warn when a fall of BTC and the long positions smaller than this fraction reaches maintenance margin')
+    parser.add_argument('--unreadable-warning-minutes', type=float, default=10,
+                        help='Warn (KRAKEN_UNREADABLE) after the account cannot be read for this many minutes')
     parser.add_argument('--policy', type=Path, default=ROOT / 'storage/kraken_shadow/account-policy.json')
     parser.add_argument('--credentials', type=Path, default=ROOT / 'storage/kraken_shadow/.env',
                         help='File with KRAKEN_API_KEY and KRAKEN_API_SECRET (read-only key); read internally, never shown')
@@ -308,7 +421,8 @@ def main():
             account_name=args.account_name.strip(), summary_hour_utc=args.summary_hour_utc,
             decline_fraction=args.daily_equity_drop_fraction, gross_limit=args.gross_exposure_warning,
             maintenance_drop=args.maintenance_drop_warning,
-            retention_days=args.retention_days or None)
+            retention_days=args.retention_days or None,
+            unreadable_minutes=args.unreadable_warning_minutes)
         public_reader = KrakenPublicReader(args.environment, directory / 'public-prices')
         atomic_text(directory / 'monitor.pid', str(os.getpid()) + '\n')
         notifier_started = False

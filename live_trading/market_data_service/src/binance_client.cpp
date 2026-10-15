@@ -138,6 +138,25 @@ bool BinanceMarketDataClient::httpGet(
     return false;
 }
 
+long long BinanceMarketDataClient::serverTimeMs() const
+{
+    const CurlHandle curl;
+    std::string response;
+    if (!httpGet(curl.get(), base_url_ + "/fapi/v1/time", response, "time"))
+        return 0;
+    try {
+        const json body = json::parse(response);
+        if (body.is_object() && body.contains("serverTime") && body.at("serverTime").is_number_integer())
+            return body.at("serverTime").get<long long>();
+    }
+    catch (const std::exception& error) {
+        LG_ERROR("Could not parse Binance server time: {}", error.what());
+        return 0;
+    }
+    LG_ERROR("Binance server time has an unexpected shape");
+    return 0;
+}
+
 BinanceUniverseSnapshot
 BinanceMarketDataClient::universeByQuoteVolume(std::size_t limit) const
 {
@@ -169,9 +188,6 @@ BinanceMarketDataClient::universeByQuoteVolume(std::size_t limit) const
         LG_ERROR("Binance exchange info has an unexpected shape");
         return {};
     }
-    if (exchangeInfo.contains("serverTime") && exchangeInfo.at("serverTime").is_number_integer())
-        snapshot.server_time_ms = exchangeInfo.at("serverTime").get<long long>();
-
     for (const auto& item : exchangeInfo.at("symbols")) {
         try {
             if (item.at("contractType").get<std::string>() == "PERPETUAL" &&

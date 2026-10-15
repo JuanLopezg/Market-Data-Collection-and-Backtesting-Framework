@@ -74,6 +74,8 @@ func TestTelegramSinkSendMessageAndDurableReceiptDedup(t *testing.T) {
 		t.Fatalf("message exposed credentials or technical identity: %q", got.Text)
 	}
 
+	// Enabling a new destination must not resend previously receipted events.
+	sink.criticalChatID = "-1009876543210"
 	second, err := sink.Deliver(context.Background(), n)
 	if err != nil || !second.AlreadyDelivered {
 		t.Fatalf("second delivery=%+v err=%v", second, err)
@@ -104,7 +106,7 @@ func TestTelegramReadableAccountsSeverityAndResolution(t *testing.T) {
 	n := testNotification()
 	n.Account = "Kraken"
 	text := telegramMessage(n)
-	if !strings.HasPrefix(text, "[URGENT] Account: Kraken\nPosition divergence") {
+	if !strings.HasPrefix(text, "🔴 [URGENT] Account: Kraken\nPosition divergence") {
 		t.Fatalf("unexpected compact message: %q", text)
 	}
 	for _, technical := range []string{n.AlertID, n.NotificationID, "event=", "source_time=", "correlation="} {
@@ -113,13 +115,59 @@ func TestTelegramReadableAccountsSeverityAndResolution(t *testing.T) {
 		}
 	}
 	n.Transition = "RESOLVED"
-	if !strings.HasPrefix(telegramMessage(n), "[INFO] Account: Kraken\nResolved: ") {
+	if !strings.HasPrefix(telegramMessage(n), "🟢 [INFO] Account: Kraken\nResolved: ") {
 		t.Fatal("resolution remains labelled urgent")
 	}
 	n.Account = ""
 	n.Transition = "OPENED"
-	if !strings.HasPrefix(telegramMessage(n), "[URGENT] System: Reconciliation") {
+	if !strings.HasPrefix(telegramMessage(n), "🔴 [URGENT] System: Reconciliation") {
 		t.Fatal("system alert is mislabelled as a trading account")
+	}
+}
+
+func TestTelegramPriorityAndSoundPayload(t *testing.T) {
+	for _, test := range []struct {
+		name, severity, transition, prefix string
+		silent                             bool
+	}{
+		{"critical", "CRITICAL", "OPENED", "🔴 [URGENT]", false},
+		{"warning", "WARN", "OPENED", "🟡 [WARN]", false},
+		{"daily information", "INFO", "OPENED", "🔵 [INFO]", true},
+		{"critical recovery", "CRITICAL", "RESOLVED", "🟢 [INFO]", true},
+		{"normalized recovery", " critical ", " resolved ", "🟢 [INFO]", true},
+		{"unknown severity", "NEW_LEVEL", "OPENED", "⚪ [NEW_LEVEL]", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var payload telegramSendMessageRequest
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Errorf("decode request: %v", err)
+				}
+				_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":77}}`))
+			}))
+			defer server.Close()
+			sink, err := newTelegramSink(testTelegramToken, testTelegramChatID,
+				filepath.Join(t.TempDir(), "receipts.jsonl"), server.URL, server.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+			n := testNotification()
+			sink.criticalChatID = "-1009876543210"
+			n.Severity, n.Transition = test.severity, test.transition
+			if _, err := sink.Deliver(context.Background(), n); err != nil {
+				t.Fatal(err)
+			}
+			if payload.DisableNotification != test.silent || !strings.HasPrefix(payload.Text, test.prefix) {
+				t.Fatalf("unexpected notification policy: silent=%v text=%q", payload.DisableNotification, payload.Text)
+			}
+			wantChat := testTelegramChatID
+			if strings.EqualFold(strings.TrimSpace(test.severity), "CRITICAL") {
+				wantChat = sink.criticalChatID
+			}
+			if payload.ChatID != wantChat {
+				t.Fatalf("wrong priority destination: got %q want %q", payload.ChatID, wantChat)
+			}
+		})
 	}
 }
 
@@ -188,13 +236,13 @@ func TestTelegramSinkTimeoutIsBounded(t *testing.T) {
 }
 
 func TestTelegramCredentialsValidation(t *testing.T) {
-	if _, err := NewTelegramSink("", testTelegramChatID, filepath.Join(t.TempDir(), "r"), 5*time.Second); err == nil {
+	if _, err := NewTelegramSink("", testTelegramChatID, "", filepath.Join(t.TempDir(), "r"), 5*time.Second); err == nil {
 		t.Fatal("empty token accepted")
 	}
-	if _, err := NewTelegramSink("123:bad/token", testTelegramChatID, filepath.Join(t.TempDir(), "r"), 5*time.Second); err == nil {
+	if _, err := NewTelegramSink("123:bad/token", testTelegramChatID, "", filepath.Join(t.TempDir(), "r"), 5*time.Second); err == nil {
 		t.Fatal("unsafe token accepted")
 	}
-	if _, err := NewTelegramSink(testTelegramToken, "bad\nchat", filepath.Join(t.TempDir(), "r"), 5*time.Second); err == nil {
+	if _, err := NewTelegramSink(testTelegramToken, "bad\nchat", "", filepath.Join(t.TempDir(), "r"), 5*time.Second); err == nil {
 		t.Fatal("unsafe chat id accepted")
 	}
 }

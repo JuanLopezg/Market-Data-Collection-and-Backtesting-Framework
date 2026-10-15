@@ -29,6 +29,8 @@ func main(){
  http.HandleFunc("/",func(w http.ResponseWriter,r *http.Request){
   w.Header().Set("Content-Type","application/json")
   switch r.URL.Path {
+  case "/fapi/v1/time":
+   json.NewEncoder(w).Encode(map[string]any{"serverTime":time.Now().UnixMilli()})
   case "/fapi/v1/exchangeInfo":
    json.NewEncoder(w).Encode(map[string]any{"serverTime":time.Now().UnixMilli(),"symbols":[]any{
     map[string]string{"symbol":"BTCUSDT","contractType":"PERPETUAL","status":"TRADING","quoteAsset":"USDT"},
