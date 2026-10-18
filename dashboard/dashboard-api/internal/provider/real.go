@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	hldiag "control-dashboard-api/internal/integration/hyperliquid"
 	krakenpublic "control-dashboard-api/internal/integration/kraken"
 	natsdiag "control-dashboard-api/internal/integration/nats"
 	pgstore "control-dashboard-api/internal/integration/postgres"
@@ -19,47 +18,64 @@ import (
 // RealConfig configures read-only source access. No command/control endpoint is
 // exposed by this provider.
 type RealConfig struct {
-	HostMetricsFile        string
-	HostMetricsProject     string
-	PostgreSQLDSN          string
-	NATSURL                string
-	NATSMonitorURL         string
-	NATSStream             string
-	MarketDataDB           string
-	RuntimeMode            string
-	MarketTopN             int
-	MarketHistoryDays      int
-	QuoteVolume            bool
-	PaperComparisonFile    string
-	RSIEntry               float64
-	RSIExit                float64
-	QuoteVolumeFrom        string
-	StrategyUniverseN      int
-	ProbeTimeout           time.Duration
-	ExecutionVenue         string
-	VenueTargetEnvironment string
-	ExchangeGatewayMode    string
-	VenuePublicInfoURL     string
-	VenuePublicTimeout     time.Duration
+	HostMetricsFile     string
+	HostMetricsProject  string
+	PostgreSQLDSN       string
+	NATSURL             string
+	NATSMonitorURL      string
+	NATSStream          string
+	MarketDataDB        string
+	RuntimeMode         string
+	MarketTopN          int
+	MarketHistoryDays   int
+	QuoteVolume         bool
+	PaperComparisonFile string
+	RSIEntry            float64
+	RSIExit             float64
+	QuoteVolumeFrom     string
+	StrategyUniverseN   int
+	// The live strategy's --strategy-config file; its PureRSI parameters override the
+	// RSI/universe settings above (see applyStrategyConfigFile).
+	StrategyConfigFile string
+	StrategyConfigNote string
+	RSILength          int
+	MaxActiveSignals   int
+	LiquidityLength    int
+	ProbeTimeout       time.Duration
+	// SIMULATED (PAPER chain) or KRAKEN (LIVE chain).
+	ExecutionVenue string
 	// Binance -> Kraken symbol table and the public Kraken tickers it is checked against.
 	SymbolMapFile    string
 	KrakenTickersURL string
-	// Deferred Step 37 compatibility fields.
-	// Step 37A does not require or consume private credentials, but keeping the
-	// public account/agent addresses in the config shape makes cumulative
-	// dashboard upgrades robust if Step 37 read-only probe files are still
-	// present from an earlier extraction. No private key is accepted here.
-	VenueAccountAddress   string
-	VenueAPIWalletAddress string
-	AlertStoreDir         string
-	ManualAuditDir        string
-	AlertAckDir           string
+	AlertStoreDir    string
+	ManualAuditDir   string
+	AlertAckDir      string
 	// Manual Control of the trading chain: folder shared with execution-state (empty =
 	// disabled) and the Kraken LIVE submission switch (anything but "enabled" blocks it).
 	ManualRequestDir    string
 	LiveOrderSubmission string
 	// account.json of the read-only Kraken account monitor (collateral, margin); empty = none.
 	KrakenAccountFile string
+}
+
+// ValidateChainBoundary accepts exactly the two trading-chain setups the real provider
+// reads: PAPER (SIMULATED venue, PAPER environment, backend gateway) and the chain's
+// MODE=live (KRAKEN venue, LIVE environment, venue gateway).
+func ValidateChainBoundary(runtimeMode, venue, environment, gatewayMode string) error {
+	switch {
+	case runtimeMode == "PAPER":
+		if venue != "SIMULATED" || environment != "PAPER" || gatewayMode != "backend" {
+			return fmt.Errorf("PAPER requires SIMULATED venue, PAPER environment and backend gateway")
+		}
+	case runtimeMode == "LIVE" && venue == "KRAKEN":
+		if environment != "LIVE" || gatewayMode != "venue" {
+			return fmt.Errorf("KRAKEN requires LIVE runtime, LIVE environment and venue gateway")
+		}
+	default:
+		return fmt.Errorf("the real provider (dashboard-api and watchdog) reads the trading chain only: DASHBOARD_RUNTIME_MODE=PAPER with "+
+			"the SIMULATED venue, or LIVE with KRAKEN (got runtime %q, venue %q)", runtimeMode, venue)
+	}
+	return nil
 }
 
 type Real struct {
@@ -70,7 +86,6 @@ type Real struct {
 	jetstream   *natsdiag.JetStreamReader
 	subscriber  *natsdiag.SubjectSubscriber
 	marketData  *sqlitemarket.Reader
-	venuePublic *hldiag.PublicClient
 	kraken      *krakenpublic.PublicClient
 
 	// Step 44.5: several dashboard read models depend on the same relatively
@@ -83,6 +98,9 @@ type Real struct {
 	infraCache  readModelInfraCache
 	alertsCache readModelAlertsCache
 	symbolCache symbolMapCache
+	// Kraken LIVE position marks and funding (real_kraken_marks.go).
+	krakenMarkCache    krakenMarksCache
+	positionStopAlerts positionStopAlertState
 }
 
 type readModelMarketCache struct {
@@ -113,6 +131,7 @@ type readModelAlertsCache struct {
 const dashboardReadCoalesceTTL = 2 * time.Second
 
 func NewReal(cfg RealConfig) *Real {
+	cfg = applyStrategyConfigFile(cfg)
 	return &Real{
 		cfg: cfg,
 		prober: sourceprobe.New(sourceprobe.Config{
@@ -133,8 +152,7 @@ func NewReal(cfg RealConfig) *Real {
 			IncludeQuoteVolume: cfg.QuoteVolume,
 			Timeout:            maxDuration(cfg.ProbeTimeout, 2*time.Second),
 		}),
-		venuePublic: hldiag.NewPublicClient(cfg.VenuePublicInfoURL, cfg.VenuePublicTimeout),
-		kraken:      krakenpublic.NewPublicClient(cfg.KrakenTickersURL, 5*time.Second),
+		kraken: krakenpublic.NewPublicClient(cfg.KrakenTickersURL, 5*time.Second),
 	}
 }
 

@@ -1,6 +1,6 @@
 import type { DashboardDataSource } from './dashboardDataSource'
 import { runtimeConfig } from '../config/runtime'
-import type { AlertAcknowledgementInput, AlertAcknowledgementResult, AlertsAuditData, DashboardDiagnostics, ExecutionData, InfrastructureData, LiveVsExpectedData, ManualControlData, MarketDataData, OverviewData, PipelineData, Position, PositionsData, ReconciliationData, RiskData, ShellStatus, ProviderStatus, SafetyGateData, GlobalReadinessData, VenueFoundationData, VenuePublicData, VenueSymbolMappingData, VenueTradingRulesData, SymbolMapData, LedgerData, HostHistoryData, HostHistoryQuery } from '../types/dashboard'
+import type { AlertAcknowledgementInput, AlertAcknowledgementResult, AlertsAuditData, DashboardDiagnostics, ExecutionData, InfrastructureData, LiveVsExpectedData, ManualControlData, MarketDataData, OverviewData, PipelineData, Position, PositionsData, ReconciliationData, RiskData, ShellStatus, ProviderStatus, SafetyGateData, GlobalReadinessData, SymbolMapData, LedgerData, HostHistoryData, HostHistoryQuery } from '../types/dashboard'
 
 const wait = (ms = runtimeConfig.mockLatencyMs) => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -20,66 +20,6 @@ const diagnosticsData: DashboardDiagnostics = {
 }
 
 const providerStatus: ProviderStatus = { name: 'frontend-local-mocks', mode: 'mock', ready: true, detail: 'Direct Vite mock data', resourceCount: 12 }
-
-const venueFoundationData: VenueFoundationData = {
-  status: 'MOCK_ONLY',
-  foundationReady: false,
-  venue: 'MOCK',
-  targetEnvironment: 'MOCK',
-  gatewayMode: 'mock',
-  publicConnectivity: 'NOT_CHECKED',
-  privateAuth: 'DISABLED',
-  orderRouting: 'DISABLED',
-  symbolMapping: 'NOT_CONFIGURED',
-  exchangeFilters: 'NOT_LOADED',
-  secretsRequired: false,
-  capitalRequired: false,
-  readOnly: true,
-  sourceContract: 'mock provider',
-  note: 'Mock mode cannot satisfy the Step 33 testnet foundation gate.',
-}
-
-const venuePublicData: VenuePublicData = {
-  status: 'MOCK_ONLY',
-  connected: false,
-  venue: 'MOCK',
-  targetEnvironment: 'MOCK',
-  endpoint: '',
-  metadataStatus: 'NOT_CHECKED',
-  midsStatus: 'NOT_CHECKED',
-  universeCount: 0,
-  midCount: 0,
-  matchedMidCount: 0,
-  sampleSymbols: [],
-  latencyMs: 0,
-  checkedAt: 'mock',
-  privateAuth: 'DISABLED',
-  orderRouting: 'DISABLED',
-  symbolMapping: 'NOT_CONFIGURED',
-  exchangeFilters: 'NOT_APPLIED',
-  secretsUsed: false,
-  capitalUsed: false,
-  readOnly: true,
-  note: 'Mock mode does not contact Hyperliquid and cannot satisfy the Step 34 public venue connectivity gate.',
-}
-
-const venueSymbolMappingData: VenueSymbolMappingData = {
-  status: 'MOCK_ONLY', validated: false, executionCoverageComplete: false, venue: 'MOCK', targetEnvironment: 'MOCK', policy: 'EXPLICIT_ONLY',
-  mappingArtifactSha256: '', mappingEntryCount: 0, unsupportedCatalogEntryCount: 0, classificationEntryCount: 0,
-  requiredSymbolCount: 0, classifiedRequiredCount: 0, mappedRequiredCount: 0, unsupportedRequiredCount: 0,
-  missingInternalSymbols: [], missingVenueSymbols: [], unsupportedInternalSymbols: [], rows: [], metadataLatencyMs: 0, checkedAt: 'mock',
-  privateAuth: 'DISABLED', orderRouting: 'DISABLED', exchangeFilters: 'NOT_APPLIED', readOnly: true,
-  note: 'Mock mode cannot satisfy the Step 35 explicit symbol classification gate.',
-}
-
-const venueTradingRulesData: VenueTradingRulesData = {
-  status: 'MOCK_ONLY', validated: false, venue: 'MOCK', targetEnvironment: 'MOCK',
-  supportedMappingCount: 0, nonRoutableMappingCount: 0, validatedRuleCount: 0, blockedRuleCount: 0,
-  priceMaxSignificantFigures: 5, perpMaxDecimals: 6, integerPricesAlwaysAllowed: true, minOrderNotionalUsd: 10, rows: [], metadataLatencyMs: 0, checkedAt: 'mock',
-  privateAuth: 'DISABLED', orderRouting: 'DISABLED', readOnly: true, ruleSource: 'mock provider',
-  note: 'Mock mode cannot satisfy the Step 36 public venue trading-rules gate.',
-}
-
 
 const symbolMapData: SymbolMapData = {
   status: 'WARN', venue: 'kraken-futures', tableGeneratedAt: '2026-10-13T17:31:09Z', tableEntries: 161,
@@ -143,7 +83,7 @@ const globalReadinessData: GlobalReadinessData = {
   blockers: ['Real read-only provider: frontend mock mode cannot satisfy the Step 44 contract.'],
   warnings: [],
   deferred: [
-    'Hyperliquid private API wallet authentication',
+    'Private venue API authentication',
     'Private account snapshot',
     'Private order lifecycle',
     'Trading-service liveness',
@@ -156,7 +96,7 @@ const globalReadinessData: GlobalReadinessData = {
   ],
   checkedAt: 'mock',
   nextSafeStep: 'STEP_46_MANUAL_CONTROL_SAFE_ROUTING',
-  futureReplayBoundary: 'HyperliquidAdapter and future MockExchangeAdapter share the canonical venue adapter contract.',
+  futureReplayBoundary: 'The live venue adapter and a future MockExchangeAdapter share the canonical venue adapter contract.',
   note: 'Mock frontend mode is useful for UI work only and cannot satisfy the real Step 44 readiness contract.',
 }
 
@@ -839,22 +779,6 @@ export const mockDashboardDataSource: DashboardDataSource = {
   async getGlobalReadiness() {
     await wait(40)
     return globalReadinessData
-  },
-  async getVenueFoundation() {
-    await wait(40)
-    return venueFoundationData
-  },
-  async getVenuePublic() {
-    await wait(40)
-    return venuePublicData
-  },
-  async getVenueSymbolMapping() {
-    await wait(40)
-    return venueSymbolMappingData
-  },
-  async getVenueTradingRules() {
-    await wait(40)
-    return venueTradingRulesData
   },
   async getSymbolMap() {
     await wait(40)

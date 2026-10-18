@@ -58,13 +58,17 @@ struct Permissions {
     bool withdraw = false;
 };
 
-// Market order in venue units, already rounded to the venue quantity step.
+enum class VenueOrderType { Market, PositionStop };
+
+// Order in venue units, already rounded to the instrument's size/price increments.
 struct OrderRequest {
     OrderID local_order_id = 0;
     std::string client_order_id;
     std::string symbol;
     OrderSide side = OrderSide::Buy;
     double quantity = 0.0;
+    VenueOrderType type = VenueOrderType::Market;
+    double stop_price = 0.0; // USD per venue unit; only for PositionStop.
 };
 
 enum class SubmitOutcome {

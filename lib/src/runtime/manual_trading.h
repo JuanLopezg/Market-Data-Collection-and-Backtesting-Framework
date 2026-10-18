@@ -396,19 +396,20 @@ private:
 
     void onFill(const VenueContracts::V1::Fill& fill)
     {
-        Fill legacy;
-        legacy.fill_id = fillIdHash(fill.native_references.native_fill_id);
-        legacy.order_id = fill.local_order_id;
-        legacy.strategy_id = fill.strategy_id;
-        legacy.timestamp = fill.timestamp;
-        legacy.coin = fill.instrument.market.canonical_asset;
-        legacy.side = fill.side == VenueContracts::V1::Side::Buy ? OrderSide::Buy : OrderSide::Sell;
-        legacy.quantity = fill.quantity;
-        legacy.price = fill.price;
-        legacy.commission = 0.0;
-        if (!order_manager_.onFill(legacy))
+        // The venue fill as the execution layer's Fill (order manager, positions, accounting).
+        Fill executionFill;
+        executionFill.fill_id = fillIdHash(fill.native_references.native_fill_id);
+        executionFill.order_id = fill.local_order_id;
+        executionFill.strategy_id = fill.strategy_id;
+        executionFill.timestamp = fill.timestamp;
+        executionFill.coin = fill.instrument.market.canonical_asset;
+        executionFill.side = fill.side == VenueContracts::V1::Side::Buy ? OrderSide::Buy : OrderSide::Sell;
+        executionFill.quantity = fill.quantity;
+        executionFill.price = fill.price;
+        executionFill.commission = 0.0;
+        if (!order_manager_.onFill(executionFill))
             return;
-        strategy_positions_.at(kManualStrategyId).add(legacy.coin, legacy.signedQuantity());
+        strategy_positions_.at(kManualStrategyId).add(executionFill.coin, executionFill.signedQuantity());
     }
 };
 

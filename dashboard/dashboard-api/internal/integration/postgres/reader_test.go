@@ -93,6 +93,7 @@ func TestReaderRuntimeStateDecodesVerifiedSnapshot(t *testing.T) {
 
 func TestReaderFillsForOrdersUsesBoundedNumericFilter(t *testing.T) {
 	runner := &fakeRunner{responses: [][]byte{
+		[]byte(`{"present":true}`),
 		[]byte(`{"totalRows":3,"totalCommission":1.25,"rows":[{"fill_id":10,"order_id":7,"strategy_id":1,"timestamp":20260924,"coin":"BTC","side":0,"quantity":0.1,"price":50000,"commission":0.5}]}`),
 	}}
 	reader := NewReader(Config{DSN: "host=postgres dbname=algotrading user=algotrading password=x", Timeout: time.Second, Runner: runner})
@@ -103,8 +104,43 @@ func TestReaderFillsForOrdersUsesBoundedNumericFilter(t *testing.T) {
 	if window.TotalRows != 3 || window.TotalCommission != 1.25 || len(window.Rows) != 1 || window.Rows[0].OrderID != 7 {
 		t.Fatalf("unexpected fill window: %+v", window)
 	}
-	if len(runner.queries) != 1 || !strings.Contains(runner.queries[0], "order_id IN (7,9)") || !strings.Contains(runner.queries[0], "LIMIT 25") {
+	if len(runner.queries) != 2 || !strings.Contains(runner.queries[1], "order_id IN (7,9)") || !strings.Contains(runner.queries[1], "LIMIT 25") {
 		t.Fatalf("expected bounded numeric fill query, got %v", runner.queries)
+	}
+}
+
+func TestRuntimeStatePlanningReferenceIsOptional(t *testing.T) {
+	for _, field := range []string{"", `,"reference_price":0.0063`} {
+		raw := `{"schema_version":1,"account_cash":100,"orders":[{"order_id":1,"coin":"1000PEPEUSDT","quantity":1000` + field + `}]}`
+		state, err := tradingwire.DecodeTradingStateSnapshot([]byte(raw))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := 0.0
+		if field != "" {
+			want = 0.0063
+		}
+		if len(state.Orders) != 1 || state.Orders[0].ReferencePrice != want {
+			t.Fatalf("unexpected reference decode: %+v", state.Orders)
+		}
+	}
+}
+
+func TestFillReadersChooseFeeJoinOrLegacySchema(t *testing.T) {
+	for _, present := range []bool{true, false} {
+		presence, _ := json.Marshal(map[string]bool{"present": present})
+		runner := &fakeRunner{responses: [][]byte{presence, []byte(`{"totalRows":0,"rows":[]}`)}}
+		reader := NewReader(Config{DSN: "host=fixture dbname=fixture", Runner: runner})
+		if _, err := reader.TradeHistoryFills(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if len(runner.queries) != 2 {
+			t.Fatalf("expected presence probe plus bounded read: %v", runner.queries)
+		}
+		query := runner.queries[1]
+		if strings.Contains(query, "LEFT JOIN venue_fees") != present || !strings.Contains(query, "LIMIT 200000") {
+			t.Fatalf("wrong fee source for present=%v: %s", present, query)
+		}
 	}
 }
 
@@ -161,6 +197,7 @@ func TestLatestStrategyCheckpointKeepsUpdateAndIntentAligned(t *testing.T) {
 
 func TestReaderLedgerFillsReturnsFullAggregatesAndBoundedRows(t *testing.T) {
 	runner := &fakeRunner{responses: [][]byte{
+		[]byte(`{"present":false}`),
 		[]byte(`{"totalRows":12,"distinctFillIds":12,"invalidRows":0,"totalCommission":3.5,"grossBuyNotional":1000,"grossSellNotional":1200,"latestFillId":99,"latestFillTimestamp":20260926,"rows":[{"fill_id":99,"order_id":77,"strategy_id":1,"timestamp":20260926,"coin":"BTCUSDT","side":1,"quantity":0.1,"price":12000,"commission":0.5}]}`),
 	}}
 	reader := NewReader(Config{DSN: "host=postgres dbname=algotrading user=algotrading password=x", Timeout: time.Second, Runner: runner})
@@ -171,7 +208,7 @@ func TestReaderLedgerFillsReturnsFullAggregatesAndBoundedRows(t *testing.T) {
 	if window.TotalRows != 12 || window.DistinctFillIDs != 12 || window.InvalidRows != 0 || window.LatestFillID != 99 || len(window.Rows) != 1 {
 		t.Fatalf("unexpected ledger window: %+v", window)
 	}
-	if len(runner.queries) != 1 || !strings.Contains(runner.queries[0], "count(DISTINCT fill_id)") || !strings.Contains(runner.queries[0], "LIMIT 25") {
+	if len(runner.queries) != 2 || !strings.Contains(runner.queries[1], "count(DISTINCT fill_id)") || !strings.Contains(runner.queries[1], "LIMIT 25") {
 		t.Fatalf("ledger query must be aggregate + bounded detail: %v", runner.queries)
 	}
 }

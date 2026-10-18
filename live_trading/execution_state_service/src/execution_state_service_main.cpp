@@ -1,10 +1,15 @@
 // Owns durable execution/account state, reconciliation, planning handoff, and exchange-event
 // processing.
 //
-// 1. Restore durable execution state and reconcile it with the exchange snapshot.
+// 1. Restore durable execution state and reconcile it with the exchange snapshot (at startup
+//    and, with --periodic-reconciliation, hourly plus 23:50 UTC).
 // 2. Turn portfolio decisions into planning requests and consume notional plans.
 // 3. Track orders/fills, publish account snapshots, and close each execution cycle only when
-// state is complete.
+//    state is complete.
+// 4. Keep the accounting projection the dashboard reads (positions, daily equity, close
+//    loop); the daily equity rules are in equity_history.*.
+// 5. Execute Manual Control requests from the dashboard (files and limits in manual_requests.*,
+//    current prices in binance_prices.*).
 
 #include <algorithm>
 #include <atomic>
@@ -34,7 +39,9 @@
 
 #include "account.h"
 #include "binance_prices.h"
+#include "equity_history.h"
 #include "manual_requests.h"
+#include "position_stops.h"
 #include "planning/notional_order_planner.h"
 #include "target_decisions.h"
 #include "canonical_market_data_reader.h"
@@ -126,6 +133,9 @@ struct Options {
     // Cash difference accepted by reconciliation. The simulated exchange matches to the
     // cent's millionth; a real venue rounds balances and entry prices (chain LIVE: 0.50).
     double cash_tolerance_usd = 1e-6;
+    // LIVE long stop-loss (position_stops.h): a resting venue stop at (1 - fraction) x the
+    // latest daily close for every long; 0 = off (PAPER and tests by default).
+    double long_stop_fraction = 0.0;
 };
 
 
@@ -145,67 +155,6 @@ std::chrono::system_clock::time_point nextReconciliationAfter(std::chrono::syste
         if (slot > now)
             return slot;
     return day + days(1) + hours(1);
-}
-
-
-// Manual Control limits from the portfolio-risk config. A manual weight applies to every
-// strategy (each on its own share of equity), so the account limits are the strictest
-// strategy's, as in the replay. A request above them is rejected, never clipped.
-struct ManualRiskConfig {
-    std::unordered_map<StrategyID, double> allocation;
-    double max_gross_leverage = 0.0;
-    double max_asset_weight = 0.0;
-};
-
-ManualRiskConfig loadManualRiskConfig(
-    const std::string& path,
-    const std::vector<ExecutionStrategyDescriptor>& strategies)
-{
-    std::ifstream input(path);
-    if (!input)
-        throw std::runtime_error("Cannot open portfolio config: " + path);
-    const nlohmann::json root = nlohmann::json::parse(input);
-
-    ManualRiskConfig config;
-    bool first = true;
-    for (const auto& strategy : root.at("strategies")) {
-        const auto id = static_cast<StrategyID>(strategy.at("id").get<unsigned long>());
-        const double allocation = strategy.at("allocation_weight").get<double>();
-        const double gross = strategy.at("risk").at("max_gross_leverage").get<double>();
-        const double asset = strategy.at("risk").at("max_asset_weight").get<double>();
-        if (!std::isfinite(allocation) || allocation < 0.0 || !std::isfinite(gross) || gross <= 0.0 ||
-            !std::isfinite(asset) || asset <= 0.0)
-            throw std::invalid_argument("Invalid allocation or risk limits in " + path);
-        config.allocation[id] = allocation;
-        config.max_gross_leverage = first ? gross : std::min(config.max_gross_leverage, gross);
-        config.max_asset_weight = first ? asset : std::min(config.max_asset_weight, asset);
-        first = false;
-    }
-    for (const auto& strategy : strategies)
-        if (!config.allocation.contains(strategy.strategy_id))
-            throw std::invalid_argument("Portfolio config has no strategy " + std::to_string(strategy.strategy_id));
-    return config;
-}
-
-
-// No manual orders from 23:45 to 00:15 UTC: the daily cycle reconciles, decides and sends
-// its orders then.
-bool inDailyCycleWindow(std::chrono::system_clock::time_point now)
-{
-    using namespace std::chrono;
-    const auto sinceMidnight = duration_cast<minutes>(now - floor<days>(now));
-    return sinceMidnight >= hours(23) + minutes(45) || sinceMidnight < minutes(15);
-}
-
-// "2026-10-14T12:00:00Z" -> time point; nothing when the text has another shape.
-std::optional<std::chrono::system_clock::time_point> parseUtcSeconds(const std::string& text)
-{
-    std::tm utc{};
-    std::istringstream input(text);
-    input >> std::get_time(&utc, "%Y-%m-%dT%H:%M:%SZ");
-    if (input.fail())
-        return std::nullopt;
-    return std::chrono::system_clock::from_time_t(timegm(&utc));
 }
 
 
@@ -264,6 +213,8 @@ Options parseOptions(int argc, char** argv)
             options.price_url = requireValue("--price-url");
         else if (arg == "--cash-tolerance-usd")
             options.cash_tolerance_usd = std::stod(requireValue("--cash-tolerance-usd"));
+        else if (arg == "--long-stop-fraction")
+            options.long_stop_fraction = std::stod(requireValue("--long-stop-fraction"));
         else if (arg == "--help") {
             std::cout
                 << "Usage: algotrading_execution_state_service [options]\n"
@@ -279,7 +230,8 @@ Options parseOptions(int argc, char** argv)
                 << "  --manual-dir PATH           enable Manual Control with this request folder\n"
                 << "  --portfolio-config PATH     risk limits/allocations for Manual Control\n"
                 << "  --price-url URL             Binance futures API for current prices\n"
-                << "  --cash-tolerance-usd VALUE  cash difference accepted by reconciliation, default 1e-6\n";
+                << "  --cash-tolerance-usd VALUE  cash difference accepted by reconciliation, default 1e-6\n"
+                << "  --long-stop-fraction VALUE  venue stop-loss this fraction below the last daily close, 0 = off\n";
             std::exit(0);
         }
         else
@@ -289,6 +241,9 @@ Options parseOptions(int argc, char** argv)
     if (!std::isfinite(options.cash_tolerance_usd) || options.cash_tolerance_usd < 0.0 ||
         options.cash_tolerance_usd > 100.0)
         throw std::invalid_argument("--cash-tolerance-usd must be between 0 and 100");
+    if (!std::isfinite(options.long_stop_fraction) || options.long_stop_fraction < 0.0 ||
+        options.long_stop_fraction >= 1.0)
+        throw std::invalid_argument("--long-stop-fraction must be in [0, 1)");
     if (!options.manual_dir.empty() && options.portfolio_config.empty())
         throw std::invalid_argument("--manual-dir needs --portfolio-config (risk limits)");
 
@@ -345,6 +300,9 @@ private:
     std::optional<ActiveExecutionCycle> active_execution_cycle_;
     Timestamp last_decision_timestamp_ = 0;
     bool reconciled_ = false;
+    // Position stops already reported as rejected / coins already reported without a close.
+    std::unordered_set<OrderID> rejected_stop_alerted_;
+    std::set<std::pair<Timestamp, Coin>> stop_close_warned_;
     // Latest venue collateral after haircut (Kraken BTC) from the exchange snapshots; part
     // of the sizing equity (user decision 2026-10-14). Always 0 with the simulated exchange.
     double venue_collateral_usd_ = 0.0;
@@ -419,11 +377,6 @@ private:
     // derived from them. A failure here is logged and never stops trading: the next
     // restart rebuilds everything from the fills.
 
-    static Timestamp dayOf(Timestamp timestamp)
-    {
-        return timestamp >= 100000000 ? timestamp / 10 : timestamp; // strip a replay phase digit
-    }
-
     void recordFillInLedger(const Fill& fill)
     {
         try {
@@ -442,64 +395,46 @@ private:
         }
     }
 
-    // Account value at close(day): cash plus every position marked at its exact close.
-    // Interest and capital flows up to that day, and the day's venue collateral, are
-    // recorded beside it (real venues only).
-    std::optional<EquityDay> markEquity(
-        Timestamp day,
-        double cash,
-        const std::unordered_map<Coin, double>& positions,
-        const PositionLedger& ledger,
-        const std::vector<VenueCostEvent>& accountMovements,
-        double collateralUsd
-    ) const
+    // Exact closes of `coins` at close(day) from the market database; nothing (and a
+    // warning) when the database cannot provide them, so that day's equity is not recorded.
+    std::optional<std::unordered_map<Coin, double>> loadDayCloses(Timestamp day, const std::set<Coin>& coins) const
     {
-        std::set<Coin> coins;
-        for (const auto& [coin, quantity] : positions)
-            if (quantity != 0.0)
-                coins.insert(coin);
-        std::unordered_map<Coin, double> closes;
         try {
-            closes = market_reader_.loadExactClosingPrices(day, coins);
+            return market_reader_.loadExactClosingPrices(day, coins);
         }
         catch (const std::exception& error) {
             LG_WARN("Equity for {} not recorded: {}", FormatDayKey(day), error.what());
             return std::nullopt;
         }
-
-        EquityDay row;
-        row.date = day;
-        row.cash = cash;
-        for (const auto& [coin, quantity] : positions)
-            if (quantity != 0.0)
-                row.positions_value += quantity * closes.at(coin);
-        row.equity = row.cash + row.positions_value;
-        row.realized_gross_pnl = ledger.realizedGrossPnl();
-        row.fees = ledger.fees();
-        row.funding = ledger.funding();
-        row.open_positions = ledger.openPositions().size();
-        for (const VenueCostEvent& movement : accountMovements) {
-            if (dayOf(movement.timestamp) > day)
-                break;
-            (movement.kind == VenueCostKind::CapitalFlow ? row.capital_flows : row.interest) += movement.amount_usd;
-        }
-        row.collateral_usd = collateralUsd;
-        return row;
     }
 
+    // Called when the market update of day T arrives: the account then holds T's open
+    // execution but not yet T+1's, so it is the account at close(T). The row is written
+    // once; a redelivery of the same update after a restart (when the account may already
+    // hold the next open's fills) keeps the first row (see insertEquityDay).
     void recordEquityDay(Timestamp day, double collateralUsd)
     {
         try {
-            if (const auto row = markEquity(day, engine_.account().cash(), engine_.account().positions().values(), ledger_,
-                                            store_->loadAccountCashMovements(), collateralUsd)) {
-                store_->saveEquityDay(*row);
-                LG_INFO("Equity at the close of {}: {} (cash {}, positions {})",
-                        FormatDayKey(day), FormatUsd(row->equity), FormatUsd(row->cash), FormatUsd(row->positions_value));
-                if (row->collateral_usd > 0.0 || row->capital_flows != 0.0)
-                    LG_INFO("Beside the equity of {}: venue collateral {} after haircut, net capital flows {}, interest {}",
-                            FormatDayKey(day), FormatUsd(row->collateral_usd), FormatUsd(row->capital_flows),
-                            FormatUsd(row->interest));
+            const Account& account = engine_.account();
+            std::set<Coin> coins;
+            for (const auto& [coin, quantity] : account.positions().values())
+                if (quantity != 0.0)
+                    coins.insert(coin);
+            const auto closes = loadDayCloses(day, coins);
+            if (!closes)
+                return;
+            const EquityDay row = markEquityDay(day, account.cash(), account.positions().values(), *closes, ledger_,
+                                                store_->loadAccountCashMovements(), collateralUsd);
+            if (!store_->insertEquityDay(row)) {
+                LG_INFO("Equity at the close of {} is already recorded; kept the first row", FormatDayKey(day));
+                return;
             }
+            LG_INFO("Equity at the close of {}: {} (cash {}, positions {})",
+                    FormatDayKey(day), FormatUsd(row.equity), FormatUsd(row.cash), FormatUsd(row.positions_value));
+            if (row.collateral_usd > 0.0 || row.capital_flows != 0.0)
+                LG_INFO("Beside the equity of {}: venue collateral {} after haircut, net capital flows {}, interest {}",
+                        FormatDayKey(day), FormatUsd(row.collateral_usd), FormatUsd(row.capital_flows),
+                        FormatUsd(row.interest));
         }
         catch (const std::exception& error) {
             LG_ERROR("Could not record the equity for {}: {}", FormatDayKey(day), error.what());
@@ -511,7 +446,7 @@ private:
     void recordCloseLoop(Timestamp snapshotTimestamp, const ReconciliationReport& report)
     {
         try {
-            store_->recordReconciliation(dayOf(snapshotTimestamp), report.clean(), report.issues.size());
+            store_->recordReconciliation(tradingDayOf(snapshotTimestamp), report.clean(), report.issues.size());
         }
         catch (const std::exception& error) {
             LG_ERROR("Could not record the close loop of {}: {}", FormatDayKey(snapshotTimestamp), error.what());
@@ -519,62 +454,27 @@ private:
     }
 
     // Days without an equity row since the first fill (for example right after this table
-    // was added) are rebuilt by replaying the fills from the initial cash. Skipped when that
-    // replay does not end at the current account (state restored from another source).
+    // was added, or rows deleted to rebuild them) are rebuilt by replaying the fills from the
+    // initial cash. Skipped when that replay does not end at the current account (state
+    // restored from another source).
     void backfillEquityHistory(const std::vector<Fill>& fills, const std::vector<FundingPayment>& funding)
     {
         if (fills.empty())
             return;
-
         const std::vector<VenueCostEvent> movements = store_->loadAccountCashMovements();
-        Account replayed(options_.initial_cash);
-        for (const Fill& fill : fills)
-            replayed.applyFill(fill);
-        for (const FundingPayment& payment : funding)
-            replayed.applyCashMovement(payment.amount);
-        for (const VenueCostEvent& movement : movements)
-            replayed.applyCashMovement(movement.amount_usd);
-        const auto& live = engine_.account().positions().values();
-        bool matches = std::abs(replayed.cash() - engine_.account().cash()) <= 1e-6 * std::max(1.0, std::abs(replayed.cash()));
-        for (const auto& [coin, quantity] : replayed.positions().values()) {
-            const auto found = live.find(coin);
-            const double current = found == live.end() ? 0.0 : found->second;
-            matches = matches && std::abs(current - quantity) <= 1e-9 * std::max(1.0, std::abs(quantity));
-        }
-        if (!matches) {
+        if (!fillsReachAccount(fills, funding, movements, options_.initial_cash, engine_.account())) {
             LG_WARN("Equity history not backfilled: replaying the fills from the initial cash does not reach the current account");
             return;
         }
 
-        const std::set<Timestamp> existing = store_->equityDays();
-        const Timestamp lastDay = newestCompletedUtcDate(time_handler_);
-        Account account(options_.initial_cash);
-        PositionLedger ledger;
-        std::size_t nextFill = 0;
-        std::size_t nextFunding = 0;
-        std::size_t nextMovement = 0;
+        const std::vector<EquityDay> rows = equityDaysFromFills(
+            fills, funding, movements, options_.initial_cash, newestCompletedUtcDate(time_handler_),
+            store_->equityDays(),
+            [this](Timestamp day, const std::set<Coin>& coins) { return loadDayCloses(day, coins); },
+            [this](Timestamp day) { return store_->dailyCollateral(day).value_or(0.0); });
         std::size_t written = 0;
-        for (Timestamp day = dayOf(fills.front().timestamp); day <= lastDay;
-             day = static_cast<Timestamp>(nextDay(static_cast<unsigned int>(day)))) {
-            while (nextFunding < funding.size() && dayOf(funding[nextFunding].timestamp) <= day) {
-                account.applyCashMovement(funding[nextFunding].amount);
-                ledger.applyFunding(funding[nextFunding++]);
-            }
-            while (nextMovement < movements.size() && dayOf(movements[nextMovement].timestamp) <= day)
-                account.applyCashMovement(movements[nextMovement++].amount_usd);
-            while (nextFill < fills.size() && dayOf(fills[nextFill].timestamp) <= day) {
-                account.applyFill(fills[nextFill]);
-                ledger.applyFill(fills[nextFill]);
-                ++nextFill;
-            }
-            if (existing.contains(day))
-                continue;
-            if (const auto row = markEquity(day, account.cash(), account.positions().values(), ledger, movements,
-                                            store_->dailyCollateral(day).value_or(0.0))) {
-                store_->saveEquityDay(*row);
-                ++written;
-            }
-        }
+        for (const EquityDay& row : rows)
+            written += store_->insertEquityDay(row) ? 1 : 0;
         if (written > 0)
             LG_INFO("Backfilled {} days of equity history from the fills", written);
     }
@@ -653,7 +553,8 @@ private:
         // must also have its complete fill quantity recorded locally.
         for (const auto& [orderId, order] : engine_.orderManager().orders()) {
             (void)orderId;
-            if (order.isOpen())
+            // A resting position stop stays open across days; it is not part of the cycle.
+            if (order.isOpen() && !order.request.isPositionStop())
                 return;
             if (order.status == ExecutionOrderStatus::Filled &&
                 order.remainingQuantity() > 1e-12)
@@ -856,6 +757,76 @@ private:
                  request.state.state_revision, request.state.next_order_id, request.metadata.message_id);
     }
 
+    // The daily plan is requested but not applied yet: a new order id now would change the
+    // planning revision the plan was built for, so position stops wait for the plan.
+    bool dailyPlanPending() const
+    {
+        const bool decisionNotExecuted = last_decision_timestamp_ != 0 &&
+            engine_.lastExecutionTimestamp() < static_cast<Timestamp>(
+                nextDay(static_cast<unsigned int>(last_decision_timestamp_)));
+        return pending_decision_.has_value() || decisionNotExecuted;
+    }
+
+    // LIVE long stop-loss (position_stops.h): bring the resting venue stop of every long to
+    // (1 - fraction) x the latest completed daily close and the current position size.
+    // Called after fills, order updates, the applied daily plan and a clean reconciliation.
+    void maintainPositionStops(const char* reason)
+    {
+        if (options_.long_stop_fraction <= 0.0 || !reconciled_ || dailyPlanPending())
+            return;
+
+        const Timestamp newestCompleted = newestCompletedUtcDate(time_handler_);
+        const std::optional<Timestamp> closeDay = market_reader_.latestRankingDateAtOrBefore(newestCompleted);
+        std::unordered_map<Coin, double> closes;
+        if (closeDay) {
+            for (const auto& [strategyId, positions] : engine_.strategyPositions()) {
+                (void)strategyId;
+                for (const auto& [coin, quantity] : positions.values()) {
+                    if (quantity <= 0.0 || closes.count(coin))
+                        continue;
+                    try {
+                        const auto found = market_reader_.loadExactClosingPrices(*closeDay, {coin});
+                        if (const auto close = found.find(coin); close != found.end())
+                            closes[coin] = close->second;
+                    }
+                    catch (const std::exception&) {
+                        // Reported below as a held coin without a close.
+                    }
+                }
+            }
+        }
+
+        const Timestamp today = static_cast<Timestamp>(nextDay(static_cast<unsigned int>(newestCompleted)));
+        const PositionStopChanges changes = planPositionStops(engine_.strategyPositions(),
+            engine_.orderManager().orders(), closes, options_.long_stop_fraction, today, engine_.nextOrderId());
+
+        for (const Coin& coin : changes.missing_closes) {
+            if (stop_close_warned_.insert({newestCompleted, coin}).second)
+                LG_WARN("No daily close of {} for its stop-loss on {}; its stop is left as it is",
+                        coin, FormatDayKey(closeDay.value_or(newestCompleted)));
+        }
+        for (const OrderID orderId : changes.rejected_stops) {
+            if (rejected_stop_alerted_.insert(orderId).second) {
+                const TrackedOrder* stop = engine_.orderManager().find(orderId);
+                LG_ALERT("Stop-loss order {} for {} was rejected ({}); the position keeps its previous stop, if any",
+                         orderId, stop ? stop->request.coin : std::string("?"),
+                         stop ? stop->last_message : std::string());
+            }
+        }
+        if (changes.submits.empty() && changes.cancels.empty())
+            return;
+
+        engine_.applyPositionStopChanges(changes.submits, changes.cancels, changes.next_order_id, today,
+            [this](const std::optional<Fill>& fill) { persist(fill); });
+        for (const ExecutionOrder& stop : changes.submits)
+            LG_INFO("Stop-loss order {}: SELL {} {} if the mark falls to {} ({:.0f}% below the {} close {}; {})",
+                    stop.order_id, FormatQuantity(stop.quantity), stop.coin, FormatQuantity(stop.position_stop_price),
+                    options_.long_stop_fraction * 100.0, FormatDayKey(closeDay.value_or(newestCompleted)),
+                    FormatQuantity(stop.reference_price), reason);
+        for (const OrderID orderId : changes.cancels)
+            LG_INFO("Stop-loss order {} cancel requested ({})", orderId, reason);
+    }
+
     void handoffPendingDecisionIfReady()
     {
         if (!reconciled_ || !pending_decision_)
@@ -1011,6 +982,7 @@ private:
                     FormatDayKey(executionTimestamp),
                     executable.submit_orders.size(),
                     plan.cancel_order_ids.size());
+            maintainPositionStops("daily close"); // moves the stop of every held long to the new close
             LG_DEBUG("Applied plan state revision {}, next order id {}, message id {}",
                      plan.state_revision, plan.next_order_id, plan.metadata.message_id);
 
@@ -1066,7 +1038,7 @@ private:
 
         const bool ordersOpen = std::any_of(
             engine_.orderManager().orders().begin(), engine_.orderManager().orders().end(),
-            [](const auto& entry) { return entry.second.isOpen(); });
+            [](const auto& entry) { return entry.second.isOpen() && !entry.second.request.isPositionStop(); });
         if (active_execution_cycle_ || ordersOpen) {
             LG_INFO("Skipped the scheduled reconciliation: an execution cycle or open orders are in flight");
             return;
@@ -1100,7 +1072,7 @@ private:
         try {
             if (replay_bootstrap_completed_date_.has_value())
                 throw std::invalid_argument("not available in a historical replay");
-            manual_risk_ = loadManualRiskConfig(options_.portfolio_config, options_.strategies);
+            manual_risk_ = loadManualRiskConfig(options_.portfolio_config, strategy_ids_);
             manual_folder_ = std::make_unique<ManualRequestFolder>(options_.manual_dir);
             price_source_ = std::make_unique<BinanceLastPrices>(options_.price_url);
             LG_INFO("Manual Control enabled: requests in {}, limits {:.0f}% in total and {:.0f}% per asset",
@@ -1158,7 +1130,7 @@ private:
             throw ManualRejected("The daily cycle is still running; try again when its orders are filled");
         for (const auto& [orderId, order] : engine_.orderManager().orders()) {
             (void)orderId;
-            if (order.isOpen())
+            if (order.isOpen() && !order.request.isPositionStop()) // stop-losses keep resting
                 throw ManualRejected("Orders are still open at the exchange");
         }
 
@@ -1398,6 +1370,7 @@ private:
                 value.metadata.message_id
             );
             handoffPendingDecisionIfReady();
+            maintainPositionStops("reconciliation"); // e.g. the first start with stops enabled
             maybePublishExecutionCycleComplete();
             return DurableMessageDisposition::Ack;
         }
@@ -1577,6 +1550,7 @@ private:
                     FormatDayKey(value.update.timestamp),
                     value.update.message.empty() ? std::string{} : " - " + value.update.message);
             LG_DEBUG("Order {} exchange order id {}", value.update.order_id, value.update.exchange_order_id);
+            maintainPositionStops("order update");
             maybePublishExecutionCycleComplete();
             return DurableMessageDisposition::Ack;
         }
@@ -1626,6 +1600,7 @@ private:
                         FormatUsd(engine_.account().cash()),
                         engine_.account().positions().values().size());
                 LG_DEBUG("Processed fill count is now {}", processedAfter);
+                maintainPositionStops("fill");
             }
 
             maybePublishExecutionCycleComplete();

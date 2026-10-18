@@ -38,6 +38,12 @@ public:
 
     TrackedMarketData loadTracked() const;
 
+    // Number of symbols in the stored volume ranking of one completed day.
+    int countRankedFor(std::chrono::year_month_day date) const;
+
+    // Symbols with a stored completed candle on this day.
+    std::vector<std::string> symbolsWithBarOn(std::chrono::year_month_day date) const;
+
     std::vector<MarketDataDownloadRequest> buildDownloadPlan(
         const TrackedMarketData& tracked,
         std::chrono::year_month_day targetDate,

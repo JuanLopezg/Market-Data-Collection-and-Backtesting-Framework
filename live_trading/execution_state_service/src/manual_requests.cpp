@@ -9,6 +9,10 @@
 #include <sstream>
 #include <stdexcept>
 
+#include <iomanip>
+
+#include <nlohmann/json.hpp>
+
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -217,4 +221,51 @@ bool ManualRequestFolder::resyncForDay(Timestamp day) const
         return true;
     }
     return state == "applied=" + std::to_string(day);
+}
+
+
+ManualRiskConfig loadManualRiskConfig(const std::string& path, const std::vector<StrategyID>& strategies)
+{
+    std::ifstream input(path);
+    if (!input)
+        throw std::runtime_error("Cannot open portfolio config: " + path);
+    const nlohmann::json root = nlohmann::json::parse(input);
+
+    ManualRiskConfig config;
+    bool first = true;
+    for (const auto& strategy : root.at("strategies")) {
+        const auto id = static_cast<StrategyID>(strategy.at("id").get<unsigned long>());
+        const double allocation = strategy.at("allocation_weight").get<double>();
+        const double gross = strategy.at("risk").at("max_gross_leverage").get<double>();
+        const double asset = strategy.at("risk").at("max_asset_weight").get<double>();
+        if (!std::isfinite(allocation) || allocation < 0.0 || !std::isfinite(gross) || gross <= 0.0 ||
+            !std::isfinite(asset) || asset <= 0.0)
+            throw std::invalid_argument("Invalid allocation or risk limits in " + path);
+        config.allocation[id] = allocation;
+        config.max_gross_leverage = first ? gross : std::min(config.max_gross_leverage, gross);
+        config.max_asset_weight = first ? asset : std::min(config.max_asset_weight, asset);
+        first = false;
+    }
+    for (const StrategyID strategy : strategies)
+        if (!config.allocation.contains(strategy))
+            throw std::invalid_argument("Portfolio config has no strategy " + std::to_string(strategy));
+    return config;
+}
+
+
+bool inDailyCycleWindow(std::chrono::system_clock::time_point now)
+{
+    using namespace std::chrono;
+    const auto sinceMidnight = duration_cast<minutes>(now - floor<days>(now));
+    return sinceMidnight >= hours(23) + minutes(45) || sinceMidnight < minutes(15);
+}
+
+std::optional<std::chrono::system_clock::time_point> parseUtcSeconds(const std::string& text)
+{
+    std::tm utc{};
+    std::istringstream input(text);
+    input >> std::get_time(&utc, "%Y-%m-%dT%H:%M:%SZ");
+    if (input.fail())
+        return std::nullopt;
+    return std::chrono::system_clock::from_time_t(timegm(&utc));
 }

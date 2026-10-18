@@ -136,10 +136,6 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("GET /api/infrastructure/history", s.authRequired(http.HandlerFunc(s.hostHistory)))
 	mux.Handle("GET /api/safety-gate", s.authRequired(http.HandlerFunc(s.safetyGate)))
 	mux.Handle("GET /api/global-readiness", s.authRequired(http.HandlerFunc(s.globalReadiness)))
-	mux.Handle("GET /api/venue-foundation", s.authRequired(http.HandlerFunc(s.venueFoundation)))
-	mux.Handle("GET /api/venue-public", s.authRequired(http.HandlerFunc(s.venuePublic)))
-	mux.Handle("GET /api/venue-symbol-map", s.authRequired(http.HandlerFunc(s.venueSymbolMap)))
-	mux.Handle("GET /api/venue-rules", s.authRequired(http.HandlerFunc(s.venueRules)))
 	mux.Handle("GET /api/symbol-map", s.authRequired(http.HandlerFunc(s.symbolMap)))
 	mux.Handle("GET /api/ledger", s.authRequired(http.HandlerFunc(s.ledger)))
 	mux.Handle("GET /api/stream", s.authRequired(http.HandlerFunc(s.stream)))
@@ -803,59 +799,6 @@ func newManualRouteCorrelationID() (string, error) {
 func (s *Server) providerStatus(w http.ResponseWriter, r *http.Request) {
 	health := s.provider.Health(r.Context())
 	s.writeJSON(w, http.StatusOK, health)
-}
-
-func (s *Server) venueFoundation(w http.ResponseWriter, r *http.Request) {
-	reader, ok := s.provider.(interface {
-		VenueFoundation(context.Context) provider.VenueFoundation
-	})
-	if !ok {
-		s.writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "venue foundation is not implemented by this provider"})
-		return
-	}
-	s.writeJSON(w, http.StatusOK, reader.VenueFoundation(r.Context()))
-}
-
-func (s *Server) venuePublic(w http.ResponseWriter, r *http.Request) {
-	reader, ok := s.provider.(interface {
-		VenuePublicStatus(context.Context) provider.VenuePublicStatus
-	})
-	if !ok {
-		s.writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "public venue status is not implemented by this provider"})
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.ResourceTimeout)
-	defer cancel()
-	result := reader.VenuePublicStatus(ctx)
-	// Reachability failure is represented explicitly in the payload. The endpoint
-	// itself remains readable so operators can see the fail-closed reason.
-	s.writeJSON(w, http.StatusOK, result)
-}
-
-func (s *Server) venueSymbolMap(w http.ResponseWriter, r *http.Request) {
-	reader, ok := s.provider.(interface {
-		VenueSymbolMappingStatus(context.Context) provider.VenueSymbolMappingStatus
-	})
-	if !ok {
-		s.writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "venue symbol mapping is not implemented by this provider"})
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.ResourceTimeout)
-	defer cancel()
-	s.writeJSON(w, http.StatusOK, reader.VenueSymbolMappingStatus(ctx))
-}
-
-func (s *Server) venueRules(w http.ResponseWriter, r *http.Request) {
-	reader, ok := s.provider.(interface {
-		VenueTradingRulesStatus(context.Context) provider.VenueTradingRulesStatus
-	})
-	if !ok {
-		s.writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "venue trading rules are not implemented by this provider"})
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.ResourceTimeout)
-	defer cancel()
-	s.writeJSON(w, http.StatusOK, reader.VenueTradingRulesStatus(ctx))
 }
 
 func (s *Server) symbolMap(w http.ResponseWriter, r *http.Request) {

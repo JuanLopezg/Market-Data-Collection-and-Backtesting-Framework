@@ -39,9 +39,8 @@ in frontend state. `VITE_*` settings are public bundle data.
 Real trading reads are bounded/read-only; isolated manual-audit and acknowledgement
 writes do not grant trading database mutation.
 
-Public Hyperliquid TESTNET probes use fixed public metadata/mid-price bodies, no key or
-signature. The configured HTTPS endpoint is validated, redirects disabled, and requests
-go through the authenticated API rather than directly from the browser.
+Public venue reads (Kraken tickers for the Symbol Mapping page) use fixed public URLs, no
+key or signature, and go through the authenticated API rather than directly from the browser.
 
 Before future capital-moving LIVE controls, revisit per-endpoint authorization and
 appropriate strong identity/MFA. Private signing/control delivery remains separate

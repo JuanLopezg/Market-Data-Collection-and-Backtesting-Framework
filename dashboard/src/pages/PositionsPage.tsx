@@ -11,6 +11,8 @@ import { StatePill } from '../components/StatePill'
 // Current W. = position value / equity; Target W. = latest approved risk target / equity;
 // Δ Weight = what the next rebalance would still change. Fees and funding belong to the
 // position they were paid on; Net PnL = PnL - fees + funding (funding + = received).
+// Kraken LIVE marks are Kraken's current mark prices; Funding Rate is the market's current
+// rate (+ = longs pay shorts), red when this position pays it.
 
 const valued = (position: Position) => position.valuationAvailable !== false && Number.isFinite(position.currentPrice) && position.currentPrice > 0
 const targeted = (position: Position) => valued(position) && position.targetAvailable !== false
@@ -24,7 +26,19 @@ const price = (value: number) => `${new Intl.NumberFormat('en-US', { maximumSign
 const quantity = (value: number) => new Intl.NumberFormat('en-US', { maximumSignificantDigits: 8 }).format(value)
 const notional = (position: Position) => valued(position) ? usd(position.quantity * position.currentPrice) : '—'
 const tone = (value: number) => value > 0 ? 'positive' : value < 0 ? 'negative' : ''
+// What the position receives at the current rate: a long receives a negative rate.
+const fundingTone = (position: Position) => tone((position.side === 'Short' ? 1 : -1) * (position.fundingRateAnnualPct ?? 0))
+const fundingRate = (position: Position) => position.fundingRateAvailable
+  ? <span title={`${(position.fundingRateHourlyPct ?? 0).toFixed(5)}% per hour; + = longs pay shorts`}>{signedPercent(position.fundingRateAnnualPct ?? 0)}/y</span>
+  : '—'
 const PAGE = 20
+
+function StopLoss({ position }: { position: Position }) {
+  const stop = position.stopLoss
+  if (!stop) return <>—</>
+  const detail = `${quantity(stop.quantity)} units; ${stop.status}; moves to 70% of each daily close${stop.replacementInProgress ? '; replacement in progress' : ''}`
+  return <span title={detail}>{price(stop.price)}{stop.distancePct !== undefined && ` (${signedPercent(stop.distancePct)})`}{stop.replacementInProgress && <small> · replacing</small>}</span>
+}
 
 function PositionRow({ position, showFunding }: { position: Position; showFunding: boolean }) {
   const delta = targeted(position) ? position.targetWeightPct - position.currentWeightPct : null
@@ -38,11 +52,13 @@ function PositionRow({ position, showFunding }: { position: Position; showFundin
     <td>{notional(position)}</td>
     <td>{valued(position) && position.entryPrice > 0 ? price(position.entryPrice) : '—'}</td>
     <td>{valued(position) ? price(position.currentPrice) : '—'}</td>
+    <td><StopLoss position={position}/></td>
     <td>{valued(position) ? percent(position.currentWeightPct) : '—'}</td>
     <td>{targeted(position) ? percent(position.targetWeightPct) : '—'}</td>
     <td className={delta === null || Math.abs(delta) < 0.05 ? 'muted' : delta > 0 ? 'positive' : 'negative'}>{delta === null ? '—' : signedPercent(delta)}</td>
     <td className={!pnlKnown(position) ? 'muted' : tone(position.pnlUsd)}>{pnlKnown(position) ? signedUsd(position.pnlUsd) : '—'}</td>
     <td>{position.feesAvailable ? usd(position.feesUsd ?? 0) : '—'}</td>
+    {showFunding && <td className={fundingTone(position)}>{fundingRate(position)}</td>}
     {showFunding && <td className={tone(position.fundingUsd ?? 0)}>{position.fundingAvailable ? signedUsd(position.fundingUsd ?? 0) : '—'}</td>}
     <td className={netKnown ? tone(net!) : 'muted'}>{netKnown ? signedUsd(net!) : '—'}</td>
     <td><StatePill state={position.status}/></td>
@@ -81,6 +97,7 @@ export function PositionsPage() {
   const allClosed = data.closedPositions ?? []
   const realized = allClosed.reduce((sum, position) => sum + position.netPnl, 0)
   const fees = allClosed.reduce((sum, position) => sum + position.fees, 0) + data.positions.reduce((sum, position) => sum + (position.feesUsd ?? 0), 0)
+  const funding = allClosed.reduce((sum, position) => sum + position.funding, 0) + data.positions.reduce((sum, position) => sum + (position.fundingUsd ?? 0), 0)
   const stats = [
     { label: 'Active Positions', value: String(data.activePositions), tone: '' },
     { label: 'Gross Exposure', value: displayAmount(data.grossExposure), tone: '' },
@@ -89,6 +106,7 @@ export function PositionsPage() {
     ...(data.closedAvailable ? [
       { label: 'Realized PnL (net)', value: signedUsd(realized), tone: tone(realized) },
       { label: 'Total Fees', value: usd(fees), tone: '' },
+      ...(showFunding ? [{ label: 'Total Funding', value: signedUsd(funding), tone: tone(funding) }] : []),
     ] : []),
   ]
 
@@ -100,11 +118,11 @@ export function PositionsPage() {
     </section>
 
     <section className="positions-layout">
-      <Panel title="Active Positions" right={<label className="search-box"><Search size={14}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Filter asset" /></label>}>
+      <Panel title={data.priceSource ? `Active Positions · marks: ${data.priceSource}` : 'Active Positions'} right={<label className="search-box"><Search size={14}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Filter asset" /></label>}>
         <div className="table-wrap"><table className="wide-table"><thead><tr>
-          <th>Asset</th><th>Side</th><th>Opened</th><th>Qty</th><th>Notional</th><th>Entry</th><th>Mark</th><th>Current W.</th><th>Target W.</th><th>Δ Weight</th><th>PnL</th><th>Fees</th>{showFunding && <th>Funding</th>}<th>Net PnL</th><th>Status</th>
+          <th>Asset</th><th>Side</th><th>Opened</th><th>Qty</th><th>Notional</th><th>Entry</th><th>Mark</th><th>Stop-Loss</th><th>Current W.</th><th>Target W.</th><th>Δ Weight</th><th>PnL</th><th>Fees</th>{showFunding && <th>Funding Rate</th>}{showFunding && <th>Funding</th>}<th>Net PnL</th><th>Status</th>
         </tr></thead><tbody>
-          {filtered.length === 0 && <tr><td colSpan={showFunding ? 15 : 14} className="empty-cell">{data.positions.length ? 'No positions match the filter' : 'No open positions'}</td></tr>}
+          {filtered.length === 0 && <tr><td colSpan={showFunding ? 17 : 15} className="empty-cell">{data.positions.length ? 'No positions match the filter' : 'No open positions'}</td></tr>}
           {filtered.map(position => <PositionRow key={position.asset} position={position} showFunding={showFunding}/>)}
         </tbody></table></div>
       </Panel>

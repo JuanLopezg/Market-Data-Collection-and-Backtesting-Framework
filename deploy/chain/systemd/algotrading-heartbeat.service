@@ -1,0 +1,25 @@
+[Unit]
+Description=algoTrading off-host heartbeat (one "VPS alive" ping to healthchecks.io)
+After=network-online.target
+Wants=network-online.target
+# Only once the ping URL is in place; see deploy/chain/README.md "Off-host heartbeat".
+ConditionPathExists=/secrets/heartbeat.curl
+
+[Service]
+Type=oneshot
+# /secrets/heartbeat.curl holds the ping URL (bare, or as url = "https://hc-ping.com/<uuid>").
+# The URL is the only secret: whoever has it could send pings that hide a real outage.
+# It reaches heartbeat_ping.sh as a systemd credential and curl on stdin, never a command
+# line, the environment or the logs.
+# Nothing else is sent (empty GET). When pings stop (host down, frozen or offline)
+# healthchecks.io sends the Telegram alert; this host cannot report its own death.
+LoadCredential=heartbeat:/secrets/heartbeat.curl
+ExecStart=/bin/sh /chain/heartbeat_ping.sh
+DynamicUser=yes
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=32M

@@ -3,8 +3,10 @@ executable(
     'algotrading_execution_state_service',
     [
         'execution_state_service_main.cpp',
+        'equity_history.cpp',
         'manual_requests.cpp',
         'binance_prices.cpp',
+        'position_stops.cpp',
     ],
     include_directories: include_directories('.'),
     dependencies: [

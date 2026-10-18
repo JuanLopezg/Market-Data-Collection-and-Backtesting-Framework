@@ -65,6 +65,11 @@ TESTS=(
     "order_manager_stale_update_test.cpp c++20"
     "reconciler_quantity_tolerance_test.cpp c++20"
     "position_ledger_test.cpp c++20"
+    "relative_threshold_rebalance_test.cpp c++20"
+    "position_stop_contract_test.cpp c++20 lib/src/transport/message_json.cpp"
+    "position_stop_simulated_exchange_test.cpp c++20"
+    "position_stops_test.cpp c++20 live_trading/execution_state_service/src/position_stops.cpp lib/src/execution/execution_engine.cpp lib/src/execution/planning/quantity_order_planner.cpp lib/src/execution/planning/planning_state.cpp"
+    "equity_history_test.cpp c++20 live_trading/execution_state_service/src/equity_history.cpp lib/src/utils/time_utils.cpp"
     "manual_chain_test.cpp c++20 lib/src/transport/message_json.cpp lib/src/execution/execution_engine.cpp lib/src/execution/planning/quantity_order_planner.cpp lib/src/execution/planning/planning_state.cpp live_trading/execution_state_service/src/manual_requests.cpp"
 )
 INCLUDES+=("-I$ROOT/live_trading/execution_state_service/src")

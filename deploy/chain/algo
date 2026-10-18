@@ -92,10 +92,10 @@ install_chain() {
 
     # Chain files always follow the repository version.
     cp "$repo/deploy/chain/compose.yml" "$repo/deploy/chain/compose.local.yml" "$repo/deploy/chain/algo" \
-       "$repo/deploy/chain/monitor.py" "$repo/deploy/chain/comparison.py" "$repo/deploy/chain/migrate_paper.py" \
+       "$repo/deploy/chain/monitor.py" "$repo/deploy/chain/heartbeat_ping.sh" "$repo/deploy/chain/comparison.py" "$repo/deploy/chain/migrate_paper.py" \
        "$repo/deploy/chain/README.md" "$chain/"
     find "$repo/deploy/chain/logging" -maxdepth 1 -type f -exec cp {} "$chain/logging/" \;
-    cp "$repo"/deploy/chain/systemd/*.service "$chain/systemd/"
+    cp "$repo"/deploy/chain/systemd/*.service "$repo"/deploy/chain/systemd/*.timer "$chain/systemd/"
     # Host units and receiver/AppArmor paths follow the selected installation root.
     # Container mount destinations and Linux-owned /etc, /run, /usr paths stay fixed.
     python3 - "$root" "$chain" <<'PY'
@@ -112,7 +112,7 @@ for folder in (chain / 'systemd', chain / 'logging'):
         path.write_text(pattern.sub(lambda match: root.rstrip('/') + match.group(0), content))
         path.chmod(0o644)
 PY
-    chmod 0644 "$chain/logging/clean_daily_logs.py"
+    chmod 0644 "$chain/logging/clean_daily_logs.py" "$chain/heartbeat_ping.sh"
     # Public Kraken plan observation used by comparison.py (no account access), and the
     # read-only Kraken account monitor run by algotrading-kraken.service.
     cp "$repo/live_trading/kraken_shadow.py" "$repo/live_trading/shadow_observer.py" \
@@ -164,6 +164,9 @@ LIVE_INITIAL_CASH=
 LIVE_ACCOUNT_NAMESPACE=
 LIVE_ORDER_SUBMISSION=disabled
 LIVE_DEAD_MANS_SWITCH_SECONDS=0
+# MODE=live only: a reduce-only Kraken stop this fraction below each long's latest daily
+# close, moved at every close (0.30 = 30% below; 0 = off). README "Stop-loss".
+LIVE_LONG_STOP_FRACTION=0
 # Fee rate of the expected run in the Kraken LIVE comparison (taker, lowest tier).
 LIVE_COMMISSION_RATE=0.0005
 EOF
@@ -389,7 +392,7 @@ PY
     "$chain/algo" up
     # Host units are not replaced automatically; say which ones changed.
     local unit installed
-    for unit in "$chain"/systemd/*.service "$chain"/logging/*.service "$chain"/logging/*.timer; do
+    for unit in "$chain"/systemd/*.service "$chain"/systemd/*.timer "$chain"/logging/*.service "$chain"/logging/*.timer; do
         installed="/etc/systemd/system/$(basename "$unit")"
         [[ -f "$unit" && -f "$installed" ]] || continue
         cmp -s "$unit" "$installed" || echo "NOTE: $installed differs from this release's $unit; copy it and run systemctl daemon-reload"
@@ -470,6 +473,8 @@ select_mode() {
             # Kraken rounds balances and entry prices; reconciliation accepts 0.50 USD of cash.
             # PAPER_COMPARISON_FILE stays as set: data/live/comparison is the Kraken LIVE study.
             export INITIAL_CASH="$live_cash" CASH_TOLERANCE_USD=0.5
+            # Venue stop-loss below each long's last daily close (README "Stop-loss"); 0 = off.
+            export LONG_STOP_FRACTION="$(setting LIVE_LONG_STOP_FRACTION)"
             mkdir -p "$ALGO_STATE" ;;
         *) echo "ERROR: MODE must be paper or live, got '$MODE'" >&2; exit 1 ;;
     esac
@@ -607,7 +612,10 @@ main() {
                        || systemd_unit_active algotrading-monitor.service; then echo "host monitor: running"; else echo "host monitor: STOPPED"; fi
                     if systemd_unit_active algotrading-kraken.service; then echo "kraken account monitor: running"
                     elif [[ -f "$(under "$ALGO_ROOT" secrets)/kraken_readonly.env" ]]; then echo "kraken account monitor: STOPPED"
-                    else echo "kraken account monitor: not configured (no secrets/kraken_readonly.env)"; fi ;;
+                    else echo "kraken account monitor: not configured (no secrets/kraken_readonly.env)"; fi
+                    if systemd_unit_active algotrading-heartbeat.timer; then echo "off-host heartbeat: running (every minute)"
+                    elif [[ -f "$(under "$ALGO_ROOT" secrets)/heartbeat.curl" ]]; then echo "off-host heartbeat: STOPPED"
+                    else echo "off-host heartbeat: not configured (no secrets/heartbeat.curl)"; fi ;;
                 logs)
                     service="${1:?Usage: algo logs <service> [-n N]}"; shift
                     lines=50; [[ "${1:-}" == "-n" ]] && lines="${2:?}"

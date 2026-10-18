@@ -193,6 +193,52 @@ void ExecutionEngine::validateSubmitOrders(
 }
 
 
+// Position stops (LIVE stop-loss) outside the daily cycle. Every submit must be a position
+// stop and every cancel an open, not yet cancelled position stop; all intents are durable
+// before the first command leaves, and the daily-cycle markers are left alone. New stops are
+// sent before the cancels so a replaced position is never left without a stop on the way.
+void ExecutionEngine::applyPositionStopChanges(
+    const std::vector<ExecutionOrder>& submits,
+    const std::vector<OrderID>& cancels,
+    OrderID nextOrderId,
+    Timestamp at,
+    const PersistCallback& persist
+)
+{
+    if (at == 0)
+        throw std::invalid_argument("Position stop timestamp must be non-zero");
+    if (nextOrderId == 0 || nextOrderId < next_order_id_)
+        throw std::invalid_argument("Position stops regress the next order id");
+    for (const ExecutionOrder& order : submits) {
+        if (!order.isPositionStop())
+            throw std::invalid_argument("Only position stops can be placed outside the daily plan");
+    }
+    std::unordered_set<OrderID> cancelIds;
+    for (const OrderID orderId : cancels) {
+        const TrackedOrder* tracked = order_manager_.find(orderId);
+        if (!cancelIds.insert(orderId).second || !tracked || !tracked->request.isPositionStop() ||
+            !tracked->isOpen() || tracked->cancel_requested)
+            throw std::invalid_argument("Invalid position stop cancel intent");
+    }
+    validateSubmitOrders(submits, nextOrderId);
+
+    next_order_id_ = nextOrderId;
+    for (const ExecutionOrder& order : submits)
+        order_manager_.track(order);
+    for (const OrderID orderId : cancels)
+        order_manager_.markCancelRequested(orderId, at);
+    persist(std::nullopt);
+
+    for (const ExecutionOrder& order : submits) {
+        exchange_.submitOrder(order);
+        order_manager_.markSubmitted(order.order_id, at);
+        persist(std::nullopt);
+    }
+    for (const OrderID orderId : cancels)
+        exchange_.cancelOrder(orderId);
+}
+
+
 // Manual orders outside the daily cycle. Same staging contract as applyOrderPlan (all
 // orders durable before the first command leaves), but the daily-cycle markers
 // (last execution timestamp, global target) are left alone: a manual rebalance must not

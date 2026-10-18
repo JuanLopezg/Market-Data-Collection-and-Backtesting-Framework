@@ -6,6 +6,9 @@
 #include <optional>
 #include <stdexcept>
 
+#include <boost/multiprecision/cpp_dec_float.hpp>
+#include <fmt/format.h>
+
 #include "logger.h"
 
 namespace Venue {
@@ -37,6 +40,17 @@ std::optional<ExecutionOrderStatus> reportedStatus(OrderState state)
 double roundDownToStep(double quantity, double step)
 {
     return std::floor(quantity / step + QUANTITY_EPSILON) * step;
+}
+
+double roundDownStopPrice(double sourcePrice, double unitScale, double tick)
+{
+    // Use decimal arithmetic at the price boundary: binary 0.1 must not turn an
+    // exact tick into the preceding tick, or serialize an off-tick multiplication.
+    using Decimal = boost::multiprecision::cpp_dec_float_50;
+    const Decimal decimalPrice(fmt::format("{}", sourcePrice));
+    const Decimal decimalScale(fmt::format("{}", unitScale));
+    const Decimal decimalTick(fmt::format("{}", tick));
+    return (floor(decimalPrice / decimalScale / decimalTick) * decimalTick).convert_to<double>();
 }
 
 const char* sideName(OrderSide side)
@@ -198,7 +212,9 @@ void LiveVenueAdapter::submitOrder(const SubmitOrderCommand& command)
 
     if (const auto existing = journal_.order(request.order_id)) {
         if (existing->coin != request.coin || existing->side != request.side ||
-            std::abs(existing->source_quantity - request.quantity) > QUANTITY_EPSILON)
+            std::abs(existing->source_quantity - request.quantity) > QUANTITY_EPSILON ||
+            existing->type != (request.isPositionStop() ? VenueOrderType::PositionStop : VenueOrderType::Market) ||
+            existing->position_stop_price != request.position_stop_price)
             throw std::invalid_argument("Order id " + std::to_string(request.order_id) +
                                         " was already journaled with different terms");
         LG_INFO("Order {} is already journaled ({}); duplicate command ignored",
@@ -213,7 +229,11 @@ void LiveVenueAdapter::submitOrder(const SubmitOrderCommand& command)
     order.coin = request.coin;
     order.side = request.side;
     order.source_quantity = request.quantity;
-    order.active_from = request.active_from;
+    order.type = request.isPositionStop() ? VenueOrderType::PositionStop : VenueOrderType::Market;
+    // A protective stop works immediately; it never waits for the next daily open.
+    order.active_from = request.isPositionStop() ? request.created_at : request.active_from;
+    if (std::isfinite(request.position_stop_price) && request.position_stop_price > 0.0)
+        order.position_stop_price = request.position_stop_price;
     order.updated_at_ms = now_ms_();
 
     if (!options_.order_submission_enabled) {
@@ -222,6 +242,11 @@ void LiveVenueAdapter::submitOrder(const SubmitOrderCommand& command)
     }
     if (request.entry_stop_price != 0.0 || request.protective_stop_price != 0.0 || request.parent_order_id != 0) {
         rejectLocally(order, "conditional orders are not supported by the live venue adapter");
+        return;
+    }
+    if (request.isPositionStop() && (!std::isfinite(request.position_stop_price) ||
+        request.position_stop_price <= 0.0 || request.side != OrderSide::Sell || request.fill_at_reference_price)) {
+        rejectLocally(order, "INVALID_POSITION_STOP: requires a positive finite price and a SELL without reference-price filling");
         return;
     }
 
@@ -238,6 +263,10 @@ void LiveVenueAdapter::submitOrder(const SubmitOrderCommand& command)
         return;
     }
     const Market& market = found->second;
+    if (request.isPositionStop() && (!std::isfinite(market.tick_size) || market.tick_size <= 0.0)) {
+        rejectLocally(order, "INVALID_STOP_TICK: the instrument has no usable price tick");
+        return;
+    }
     if (!market.trading) {
         rejectLocally(order, "MARKET_NOT_TRADING: " + market.symbol + " " + market.unavailable_reason);
         return;
@@ -280,12 +309,34 @@ void LiveVenueAdapter::submitOrder(const SubmitOrderCommand& command)
         return;
     }
 
+    if (request.isPositionStop()) {
+        const double venuePrice = request.position_stop_price / order.unit_scale;
+        if (!std::isfinite(venuePrice) || venuePrice <= 0.0) {
+            rejectLocally(order, "INVALID_STOP_PRICE: the converted stop price must be finite and positive");
+            return;
+        }
+        const double roundedPrice = roundDownStopPrice(request.position_stop_price, order.unit_scale, market.tick_size);
+        if (!std::isfinite(roundedPrice) || roundedPrice <= 0.0) {
+            rejectLocally(order, "INVALID_STOP_PRICE: the converted stop price is unusable after rounding down to tick");
+            return;
+        }
+        if (roundedPrice >= mark->second) {
+            rejectLocally(order, "STOP_NOT_BELOW_MARK: the venue stop price must be below the current venue mark");
+            return;
+        }
+        order.venue_stop_price = roundedPrice;
+    }
+
     journal_.insertOrder(order);
     LG_INFO("Journaled order {}: {} {} {} on {} (requested {} {}, about {}), active from {}",
             order.local_order_id, sideName(order.side), FormatQuantity(order.venue_quantity), mapping->asset,
             order.symbol, FormatQuantity(order.source_quantity), order.coin, FormatUsd(venueUsd),
             FormatDayKey(order.active_from));
     LG_DEBUG("Order {} client order id {}", order.local_order_id, order.client_order_id);
+    if (order.type == VenueOrderType::PositionStop)
+        LG_INFO("Position stop {}: reduce-only SELL triggered by mark at {} USD per venue unit "
+                "({} USD per source unit requested)", order.local_order_id,
+                FormatQuantity(order.venue_stop_price), FormatQuantity(order.position_stop_price));
 }
 
 
@@ -341,8 +392,9 @@ void LiveVenueAdapter::requestSnapshot(const ExchangeSnapshotRequest& request)
     event.snapshot.timestamp = today;
     // Execution-state keeps cash as on a spot account (a buy spends its value). On the
     // venue opening a perpetual position leaves the USD balance unchanged, so the balance
-    // minus the open positions' entry value is the comparable number. UNCONFIRMED: that
-    // Kraken settles realized PnL into the USD balance at once.
+    // minus the open positions' entry value is the comparable number. Kraken settles
+    // realized PnL into the USD balance at once (confirmed on the account history,
+    // 2026-10-15); that `price` is the average entry price is still UNCONFIRMED.
     double entryValue = 0.0;
     for (const Position& position : account.positions) {
         const auto [coin, scale] = coinAndScale(position.symbol);
@@ -354,7 +406,7 @@ void LiveVenueAdapter::requestSnapshot(const ExchangeSnapshotRequest& request)
     for (const OpenOrder& open : protocol_.parseOpenOrders(openOrders)) {
         const auto [coin, scale] = coinAndScale(open.symbol);
         ExchangeOpenOrderSnapshot row;
-        if (const auto known = journal_.orderByClientId(open.client_order_id); known && !open.client_order_id.empty())
+        if (const auto known = findOrder(open.client_order_id, open.venue_order_id))
             row.local_order_id = known->local_order_id;
         row.exchange_order_id = open.venue_order_id;
         row.coin = coin;
@@ -437,7 +489,8 @@ void LiveVenueAdapter::sendOrder(JournalOrder order)
 {
     loadMarketsIfDue();
     const HttpRequest request = protocol_.submitRequest(
-        {order.local_order_id, order.client_order_id, order.symbol, order.side, order.venue_quantity});
+        {order.local_order_id, order.client_order_id, order.symbol, order.side, order.venue_quantity,
+         order.type, order.venue_stop_price});
     if (!rate_limiter_.tryTake(protocol_.cost(Endpoint::SendOrder), now_ms_()))
         throw RateBudgetExhausted(Endpoint::SendOrder);
 
@@ -527,9 +580,15 @@ void LiveVenueAdapter::sendCancels()
 
 void LiveVenueAdapter::checkVenue()
 {
-    if (journal_.ordersIn({OrderState::Open, OrderState::Unknown}).empty())
+    const std::vector<JournalOrder> working = journal_.ordersIn({OrderState::Open, OrderState::Unknown});
+    if (working.empty())
         return;
-    if (last_venue_check_ms_ != 0 && now_ms_() - last_venue_check_ms_ < options_.working_poll_interval_ms)
+    // Accepted stop-losses rest at the venue for days: look for their fills less often.
+    const bool onlyRestingStops = std::all_of(working.begin(), working.end(), [](const JournalOrder& order) {
+        return order.type == VenueOrderType::PositionStop && order.state == OrderState::Open && !order.cancel_requested;
+    });
+    const long long interval = onlyRestingStops ? options_.resting_poll_interval_ms : options_.working_poll_interval_ms;
+    if (last_venue_check_ms_ != 0 && now_ms_() - last_venue_check_ms_ < interval)
         return;
     last_venue_check_ms_ = now_ms_();
 
@@ -548,9 +607,12 @@ void LiveVenueAdapter::applyFills(const std::vector<VenueFill>& fills)
         if (journal_.knowsFill(fill.venue_fill_id))
             continue;
 
-        std::optional<JournalOrder> order;
-        if (!fill.client_order_id.empty() && protocol_.isOurClientOrderId(options_.account_namespace, fill.client_order_id))
-            order = journal_.orderByClientId(fill.client_order_id);
+        auto order = findOrder(fill.client_order_id, fill.venue_order_id);
+        // A venue-id fallback still needs matching symbol and side; unrelated manual
+        // trades must not become our fills because of inconsistent venue evidence.
+        if (order && fill.client_order_id.empty() &&
+            (fill.side != order->side || fill.symbol != order->symbol))
+            order.reset();
         // A fill cannot precede the order. One that does means a client id was reused
         // (for example a reset journal with the same account namespace).
         constexpr long long CLOCK_TOLERANCE_MS = 60000;
@@ -607,21 +669,35 @@ void LiveVenueAdapter::applyFills(const std::vector<VenueFill>& fills)
 }
 
 
+std::optional<JournalOrder> LiveVenueAdapter::findOrder(const std::string& clientId, const std::string& venueId) const
+{
+    if (!clientId.empty()) {
+        if (protocol_.isOurClientOrderId(options_.account_namespace, clientId))
+            return journal_.orderByClientId(clientId);
+        return std::nullopt;
+    }
+    // The REST examples omit cliOrdId. Use only an id already bound to this journal,
+    // never a symbol lookup: daily replacement intentionally has two stops per symbol.
+    return journal_.orderByVenueId(venueId);
+}
+
+
 void LiveVenueAdapter::applyOpenOrders(const std::vector<OpenOrder>& openOrders)
 {
-    std::map<std::string, OpenOrder> ours;
+    std::map<OrderID, OpenOrder> ours;
     for (const OpenOrder& open : openOrders) {
-        if (open.client_order_id.empty() || !protocol_.isOurClientOrderId(options_.account_namespace, open.client_order_id))
-            continue;
-        if (!journal_.orderByClientId(open.client_order_id))
+        if (const auto known = findOrder(open.client_order_id, open.venue_order_id)) {
+            ours[known->local_order_id] = open;
+        }
+        else if (protocol_.isOurClientOrderId(options_.account_namespace, open.client_order_id)) {
             LG_ALERT("Venue lists an open order with our client id prefix that is not journaled ({} {})",
                      open.symbol, sideName(open.side));
-        ours[open.client_order_id] = open;
+        }
     }
 
     const long long now = now_ms_();
     for (JournalOrder order : journal_.ordersIn({OrderState::Open, OrderState::Unknown})) {
-        const auto listed = ours.find(order.client_order_id);
+        const auto listed = ours.find(order.local_order_id);
         long long lastEvidence = order.sent_at_ms;
         if (const auto seen = last_evidence_ms_.find(order.local_order_id); seen != last_evidence_ms_.end())
             lastEvidence = std::max(lastEvidence, seen->second);

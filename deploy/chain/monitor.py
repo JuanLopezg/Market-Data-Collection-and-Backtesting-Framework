@@ -2,6 +2,7 @@
 """Publish bounded, non-secret Linux host and project-container telemetry for the dashboard."""
 import argparse
 import importlib.util
+import hashlib
 from datetime import datetime, timedelta, timezone
 import json
 import os
@@ -11,14 +12,17 @@ import signal
 import subprocess
 import time
 
-# Short service names of chain/compose.yml (default selection).
+# Short service names of chain/compose.yml (default selection). MODE=live replaces the PAPER
+# gateway and simulated exchange with gateway-kraken (see default_services).
 CHAIN_SERVICES = ('nats', 'postgres', 'market-data', 'strategy', 'risk', 'execution', 'planner',
                   'gateway', 'sim-exchange', 'dash-api', 'dash-web', 'watchdog', 'notifier')
+LIVE_CHAIN_SERVICES = ('nats', 'postgres', 'market-data', 'strategy', 'risk', 'execution', 'planner',
+                       'gateway-kraken', 'dash-api', 'dash-web', 'watchdog', 'notifier')
 # Service names retained by the isolated PAPER validation fixture.
 LEGACY_SERVICES = ('nats', 'postgres', 'market-data', 'strategy', 'portfolio-risk',
                    'execution-state', 'order-planner', 'exchange-gateway', 'simulated-exchange',
                    'dashboard-api', 'dashboard-web', 'dashboard-watchdog', 'dashboard-alert-notifier')
-SERVICES = tuple(dict.fromkeys(CHAIN_SERVICES + LEGACY_SERVICES))
+SERVICES = tuple(dict.fromkeys(CHAIN_SERVICES + LIVE_CHAIN_SERVICES + LEGACY_SERVICES))
 SECRET = re.compile(r'(?i)(password|passwd|secret|token|api[_-]?key|authorization)[" \x27]*[:=]|[a-z]+://[^ /]+:[^ /]+@|bot\d+:[a-z0-9_-]+|-----BEGIN')
 
 
@@ -29,6 +33,7 @@ TRADING_PROCESSES = {
     'execution': 'algotrading_execution_state_service',
     'planner': 'algotrading_order_planner_service',
     'gateway': 'algotrading_exchange_gateway',
+    'gateway-kraken': 'algotrading_exchange_gateway',
     'sim-exchange': 'algotrading_simulated_exchange_service',
     'portfolio-risk': 'algotrading_portfolio_risk_service',
     'execution-state': 'algotrading_execution_state_service',
@@ -36,6 +41,18 @@ TRADING_PROCESSES = {
     'exchange-gateway': 'algotrading_exchange_gateway',
     'simulated-exchange': 'algotrading_simulated_exchange_service',
 }
+
+
+def default_services(chain_env=Path(__file__).resolve().parent / 'chain.env'):
+    """Chain services of the installed mode: MODE in the chain.env next to this script."""
+    mode = 'paper'
+    try:
+        for line in chain_env.read_text().splitlines():
+            if line.startswith('MODE='):
+                mode = line.split('=', 1)[1].strip()
+    except OSError:
+        pass  # A checkout or fixture without chain.env watches the PAPER chain.
+    return LIVE_CHAIN_SERVICES if mode == 'live' else CHAIN_SERVICES
 
 
 def clock_status():
@@ -61,8 +78,11 @@ def trading_process(service, container_id, running):
     try:
         # comm excludes arguments, including database credentials. Linux comm is limited to 15 characters.
         output = command(['docker', 'top', container_id, '-eo', 'pid,comm,stat'])
-        states = [line.split()[2] for line in output.splitlines()[1:]
-                  if len(line.split()) == 3 and line.split()[1] == TRADING_PROCESSES[service][:15]]
+        states = []
+        for line in output.splitlines()[1:]:
+            fields = line.split()
+            if len(fields) == 3 and fields[1] == TRADING_PROCESSES[service][:15]:
+                states.append(fields[2])
         if not states:
             return dict(row, processState='MISSING', processRunning=False, detail='Trading executable absent; container alone is not sufficient')
         if any(state[0] not in 'ZXTt' for state in states):
@@ -95,7 +115,6 @@ def capture_logs(project, root):
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         latest = cursor['timestamp']
         hashes = list(cursor['hashes'])
-        import hashlib
         for raw in process.stdout:
             text = raw.decode('utf-8', errors='replace').rstrip('\r\n')
             timestamp, _, content = text.partition(' ')
@@ -106,7 +125,6 @@ def capture_logs(project, root):
                 continue
             if timestamp[:10] < (datetime.now(timezone.utc).date()).isoformat():
                 # The receiver retains yesterday as well; older backlog is unnecessary.
-                from datetime import timedelta
                 if timestamp[:10] < (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat():
                     continue
             content = '[REDACTED: credential-bearing diagnostic]' if SECRET.search(content) else content
@@ -149,6 +167,33 @@ def memory_mib(text):
     return float(match[1]) * scale[match[2]] / 1024**2
 
 
+def container_observation(name, container):
+    """Describe Docker health separately from the trading executable probe."""
+    state = container['State']
+    running = bool(state['Running'])
+    check = state.get('Health', {}).get('Status')
+    if not running or check == 'unhealthy':
+        health = 'CRITICAL'
+    elif check == 'healthy':
+        health = 'HEALTHY'
+    else:
+        health = 'WARN'
+    if running:
+        lifecycle = 'RUNNING'
+    elif state.get('Restarting'):
+        lifecycle = 'RESTARTING'
+    else:
+        lifecycle = 'STOPPED'
+    row = {'name': name, 'state': lifecycle, 'health': health,
+           'restartCount': container['RestartCount'],
+           'uptimeLabel': 'Started ' + state['StartedAt'][:19] + ' UTC' if running else 'Stopped',
+           'cpuPct': -1, 'ramMb': -1,
+           'lastHeartbeat': 'Container observed; no application heartbeat' if running else 'Container not running'}
+    if name in TRADING_PROCESSES:
+        row['process'] = trading_process(name, container['Id'], running)
+    return row
+
+
 def containers(project, expected):
     identifiers = command(['docker', 'ps', '-aq', '--filter', f'label=com.docker.compose.project={project}']).split()
     rows = {}
@@ -165,17 +210,7 @@ def containers(project, expected):
             if running:
                 running_ids.append(item['Id'])
                 names[item['Name'].lstrip('/')] = name
-            check = state.get('Health', {}).get('Status')
-            health = 'HEALTHY' if running and check == 'healthy' else 'WARN' if running else 'CRITICAL'
-            if check == 'unhealthy':
-                health = 'CRITICAL'
-            rows[name] = {'name': name, 'state': 'RUNNING' if running else 'RESTARTING' if state.get('Restarting') else 'STOPPED',
-                          'health': health, 'restartCount': item['RestartCount'],
-                          'uptimeLabel': 'Started ' + state['StartedAt'][:19] + ' UTC' if running else 'Stopped',
-                          'cpuPct': -1, 'ramMb': -1,
-                          'lastHeartbeat': 'Container observed; no application heartbeat' if running else 'Container not running'}
-            if name in TRADING_PROCESSES:
-                rows[name]['process'] = trading_process(name, item['Id'], running)
+            rows[name] = container_observation(name, item)
         # A terminated container can return no stats; absence remains unknown.
         output = command(['docker', 'stats', '--no-stream', '--format', '{{json .}}', *running_ids]) if running_ids else ''
         for line in output.splitlines():
@@ -280,7 +315,7 @@ def main():
     parser.add_argument('--project', required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--disk-path', type=Path, default=Path('/'))
-    parser.add_argument('--services', default=','.join(CHAIN_SERVICES))
+    parser.add_argument('--services', help='Comma-separated services (default: the chain services of MODE in chain.env)')
     parser.add_argument('--interval', type=float, default=10)
     parser.add_argument('--once', action='store_true')
     parser.add_argument('--log-root', type=Path, help='Capture local diagnostics with the two-day/50-MiB policy')
@@ -297,7 +332,7 @@ def main():
     # 'dashboard' is the local replay dashboard project (research/replay.py dashboard).
     if not re.fullmatch(r'algotrading|algotrading-paper(?:-[a-f0-9]{12})?|dashboard', args.project) or args.interval < 5:
         parser.error('Use the chain, a paper or the local dashboard project and an interval of at least five seconds')
-    expected = args.services.split(',')
+    expected = args.services.split(',') if args.services else list(default_services())
     if not expected or any(name not in SERVICES for name in expected):
         parser.error('Unknown service in telemetry selection')
     args.output.parent.mkdir(parents=True, exist_ok=True)

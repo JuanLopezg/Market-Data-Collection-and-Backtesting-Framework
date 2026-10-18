@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'live_trading'))
 from kraken_account_monitor import AccountAlertMonitor
 from kraken_account import FIXTURE_SCOPE
-from kraken_portfolio_summary import collateral_risk, dollars, percent, position_lines
+from kraken_portfolio_summary import collateral_risk, dollars, percent, position_lines, position_table
 from kraken_shadow import SCOPE
 from kraken_account_test import fixture, RELATIVE_POLICY
 
@@ -52,7 +52,8 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(summary['severity'], 'INFO')
         self.assertIn('Balance: $7,000.00', summary['detail'])
         self.assertIn('Equity: $6,849.00', summary['detail'])
-        self.assertIn('BTC SHORT: $600.00 (8.76% equity)', summary['detail'])
+        self.assertRegex(summary['detail'], r'BTC +SHORT +\$600\.00 +8\.76%')
+        self.assertRegex(summary['detail'], r'Asset +Side +USD +% Eq')
         self.assertIn('unavailable (no snapshot)', summary['detail'])
         self.observe(10, 10)
         self.assertEqual(len(self.summaries()), 1)
@@ -68,7 +69,7 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(summary['transition'], 'UPDATED')
         self.assertIn('Active positions (USD exposure):\nNone', summary['alert']['detail'])
         self.assertIn('2026-10-10 23:00 UTC', summary['alert']['detail'])
-        self.assertIn('BTC SHORT: $700.00 (10.22% equity)', summary['alert']['detail'])
+        self.assertRegex(summary['alert']['detail'], r'BTC +SHORT +\$700\.00 +10\.22%')
         self.observe(11, 10)
         self.assertEqual(len(self.summaries()), 2)
 
@@ -77,6 +78,25 @@ class SummaryTests(unittest.TestCase):
         self.observe(12, 9)
         self.assertEqual(len(self.summaries()), 2)
         self.assertIn('unavailable (no snapshot)', self.summaries()[-1]['alert']['detail'])
+
+    def test_table_reads_legacy_snapshots_and_preserves_unknown_values(self):
+        rows = position_table(['BTC LONG: $1,200.00 (60.00% equity)',
+                               'NEAR LONG: USD value unavailable',
+                               'ETH SHORT: $25.00 (equity % unavailable)'])
+        self.assertRegex(rows[2], r'BTC +LONG +\$1,200\.00 +60\.00%')
+        self.assertRegex(rows[3], r'NEAR +LONG +N/A +N/A')
+        self.assertRegex(rows[4], r'ETH +SHORT +\$25\.00 +N/A')
+        self.assertEqual(position_table([]), ['None'])
+        self.assertEqual(position_table(['old unknown layout']), ['old unknown layout'])
+
+    def test_today_and_yesterday_have_independent_mark_valuations(self):
+        self.observe(10, 23, mark='70000')
+        self.observe(11, 9, mark='60000')
+        detail = self.summaries()[-1]['alert']['detail']
+        today, yesterday = detail.split("Yesterday's positions", 1)
+        self.assertRegex(today, r'BTC +SHORT +\$600\.00 +8\.76%')
+        self.assertRegex(yesterday, r'BTC +SHORT +\$700\.00 +10\.22%')
+        self.assertNotIn('$600.00', yesterday)
 
     def test_missing_stale_prices_never_use_entry_price_as_current_value(self):
         result, market, now = self.observe(10, 9)

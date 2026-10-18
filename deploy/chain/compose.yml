@@ -67,6 +67,8 @@ x-dashboard-environment: &dashboard_environment
   DASHBOARD_QUOTE_VOLUME_FROM: ${QUOTE_VOLUME_FROM:-}
   DASHBOARD_RSI_ENTRY: ${RSI_ENTRY:-80}
   DASHBOARD_RSI_EXIT: ${RSI_EXIT:-70}
+  # The live strategy file: RSI length/thresholds, universe and liquidity measure (overrides the two above).
+  DASHBOARD_STRATEGY_CONFIG: /config/strategies/${STRATEGY_FILE:-}
   DASHBOARD_SOURCE_PROBE_TIMEOUT: 1s
   DASHBOARD_EXECUTION_VENUE: ${DASHBOARD_EXECUTION_VENUE:?run through ./algo}
   DASHBOARD_VENUE_TARGET_ENVIRONMENT: ${DASHBOARD_VENUE_TARGET_ENVIRONMENT:?run through ./algo}
@@ -290,6 +292,9 @@ services:
       # Cash difference accepted by reconciliation: exact in PAPER, 0.50 USD in LIVE (./algo).
       - --cash-tolerance-usd
       - ${CASH_TOLERANCE_USD:-0.000001}
+      # LIVE stop-loss: resting reduce-only venue stop below each long's last close (./algo).
+      - --long-stop-fraction
+      - ${LONG_STOP_FRACTION:-0}
     volumes:
       - ${ALGO_STATE}/market:/data/market
       - ${ALGO_STATE}/manual:/data/manual
@@ -438,6 +443,7 @@ services:
       - ${ALGO_STATE}/comparison:/data/comparison:ro
       - ${ALGO_STATE}/manual:/data/manual
       - ./config/venues/kraken_futures/symbol_map.json:/config/symbol_map.json:ro
+      - ${ALGO_CONFIG}/strategies:/config/strategies:ro
     depends_on:
       data-init: {condition: service_completed_successfully}
 
@@ -477,6 +483,7 @@ services:
       - ${ALGO_STATE}/dashboard/watchdog:/data/watchdog
       - ${ALGO_STATE}/comparison:/data/comparison:ro
       - ./config/venues/kraken_futures/symbol_map.json:/config/symbol_map.json:ro
+      - ${ALGO_CONFIG}/strategies:/config/strategies:ro
     mem_limit: 64m
     cpus: 0.2
     pids_limit: 64
@@ -516,6 +523,8 @@ services:
       DASHBOARD_NOTIFIER_MIN_SEVERITY: WARN
       DASHBOARD_NOTIFIER_INTERVAL: 5s
       DASHBOARD_NOTIFIER_COOLDOWN: 5m
+      # A CRITICAL alert is sent only once it has lasted 5 minutes (restarts stay silent).
+      DASHBOARD_NOTIFIER_CRITICAL_DELAY: 5m
     volumes:
       - ${ALGO_STATE}/dashboard/watchdog:/data/watchdog:ro
       - ${ALGO_STATE}/dashboard/notifier:/data/notifier

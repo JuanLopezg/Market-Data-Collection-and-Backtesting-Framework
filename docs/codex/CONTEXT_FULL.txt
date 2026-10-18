@@ -1,6 +1,22 @@
 ALGOTRADING - CURRENT HANDOFF
-Updated: 2026-10-14
+Updated: 2026-10-15
 Build environment: WSL. Repository source and current test output are authoritative.
+
+REPO CLEANUP AND EQUITY FIX (2026-10-15, local, not deployed)
+=============================================================
+Tasks A/B1/C/B2/D of storage/cleanup_tasks_20261015.txt are done locally; notes in
+storage/cleanup_notes/. A removed ~2 GB of old storage evidence/releases and six
+unused tracked helpers (config/database/*, three tools/historical_replay/apply/cleanup
+scripts). B1 fixed the daily equity row being overwritten on every ExecutionState
+restart (first row of a day now wins) and moved its rules to equity_history.*; it also
+removed the gateway hyperliquid-dry-run mode and the dashboard Hyperliquid TESTNET path
+(the real provider accepts only the PAPER or Kraken LIVE chain boundary). C tidied the
+Kraken monitor and chain Python. B2 merged the duplicated research study code into
+research/src/common/{parameter_sweep,sensitivity_study,plotly_chart_html}.* with
+byte-identical reports. Pending: an authorized release with the equity fix, then the
+repair of the VPS rows 20261013/20261014 (procedure in CURRENT_STATE.md).
+research/replay.py fast currently fails locally because it prepends the stale
+deploy/historical_replay/.runtime_bundle/lib (2026-10-11 libalgolib); see CURRENT_STATE.md.
 
 READING AND DOCUMENT OWNERSHIP
 =============================
@@ -135,9 +151,9 @@ contracts/ groups market/execution messages; VenueContracts::V1 is a wire-contra
 version, not an obsolete source-file naming convention.
 PureRSI is the sole supported strategy in strategy/validated/. Ignored on_hold/
 experiments use old interfaces and need migration/validation before activation.
-Supported lib files: 188 including README/build files; source/header/catalog: 159.
+Supported lib files: 192 including README/build files; source/header/catalog: 163.
 
-live_trading/ contains ten service sections, 38 files, and 26 C++/header files.
+live_trading/ contains ten service sections, 64 files, and 45 C++/header files.
 Service src/meson.build files are entered directly; binary output paths stayed
 unchanged. Market-data components are config, binance_client, ingestion,
 market_store and update_publisher. The historical writer shares market_store.
@@ -158,7 +174,9 @@ private routing is active. execution_service is an alternative direct route.
 Durability order is service-specific:
 - ingestion: SQLite COMMIT, then update notification;
 - strategy/risk/planner: deterministic output publish, checkpoint, input ACK;
-- execution: persist local order/cancel intent before outbound commands;
+- execution: persist local order/cancel intent before outbound commands; the daily
+  equity row (trading_equity_daily) is written once per day and never rewritten
+  (insertEquityDay, ON CONFLICT DO NOTHING; rules in equity_history.*);
 - simulated backend with persistence: account/order state plus durable outbox
   in one transaction, then publish the outbox.
 Preserve these crash contracts, IDs, ordering and duplicate handling.
@@ -247,7 +265,12 @@ Statistics retain logs and in-memory metrics. Both default to a bounded daily st
 The BTC study retains its original SMA 10..200 step-5 axis for each strategy,
 CSV metadata/run counters and HTML reports. Defaults are bounded baseline-only;
 full sweeps require explicit selection. No separate filter toggle exists in source.
-Scenario report embedding/correlations live in research/src/common/scenario_reports.*.
+Scenario index/correlation pages live in research/src/common/scenario_reports.*;
+plotly_chart_html.* reads and patches the generated Plotly chart HTML.
+The HTML, BTC and XH studies share the study driver research/src/common/sensitivity_study.*
+(per-run CSV with invalid/failed rows, baseline exports, grid/metadata CSVs, study loop);
+those three and the initial-parameter study share parameter_sweep.* (grid values,
+Cartesian walk, per-value medians, progress bar).
 Defaults retain the original three enabled strategies, daily CMC and a cold bounded
 window. Other strategies/datasets are explicit selections. Intraday files may use
 synthetic daily-shaped keys; preserve them and express annualization in bar counts.
@@ -519,8 +542,9 @@ the current uncommitted source, matching replay inputs, configured build/toolcha
 non-secret deployment settings and actual VPS evidence; local checks alone cannot
 accept a VPS. The public Kraken/Hyperliquid coverage study is complete; refresh
 it before integration and verify BTC collateral/account eligibility before selection.
-Kraken is the likely first live venue; Hyperliquid is not the initial integration
-priority. Refresh authoritative venue rules when performing the analysis/integration.
+Kraken Multi-M (BTC/USD collateral) is the selected venue for the initial small live
+test; the Hyperliquid TESTNET gateway mode and dashboard endpoints were removed on
+2026-10-15. Refresh authoritative venue rules when performing the analysis/integration.
 Unavailable intended perpetual markets must be skipped without unsupported fallback.
 Proceed through private integration (small authorized real-money tests), shadow, readiness and an explicitly
 authorized small live test; increase capital gradually only after acceptance.

@@ -92,130 +92,6 @@ export interface SafetyGateData {
 }
 
 
-export interface VenueFoundationData {
-  status: string
-  foundationReady: boolean
-  venue: string
-  targetEnvironment: string
-  gatewayMode: string
-  publicConnectivity: string
-  privateAuth: string
-  orderRouting: string
-  symbolMapping: string
-  exchangeFilters: string
-  secretsRequired: boolean
-  capitalRequired: boolean
-  readOnly: boolean
-  sourceContract: string
-  note: string
-}
-
-
-export interface VenuePublicData {
-  status: string
-  connected: boolean
-  venue: string
-  targetEnvironment: string
-  endpoint: string
-  metadataStatus: string
-  midsStatus: string
-  universeCount: number
-  midCount: number
-  matchedMidCount: number
-  sampleSymbols: string[]
-  latencyMs: number
-  checkedAt: string
-  privateAuth: string
-  orderRouting: string
-  symbolMapping: string
-  exchangeFilters: string
-  secretsUsed: boolean
-  capitalUsed: boolean
-  readOnly: boolean
-  error?: string
-  note: string
-}
-
-export interface VenueSymbolMappingRow {
-  internal: string
-  venue: string
-  state: string
-  reason?: string
-}
-
-export interface VenueSymbolMappingData {
-  status: string
-  validated: boolean
-  executionCoverageComplete: boolean
-  venue: string
-  targetEnvironment: string
-  policy: string
-  mappingArtifactSha256: string
-  mappingEntryCount: number
-  unsupportedCatalogEntryCount: number
-  classificationEntryCount: number
-  requiredSymbolCount: number
-  classifiedRequiredCount: number
-  mappedRequiredCount: number
-  unsupportedRequiredCount: number
-  missingInternalSymbols: string[]
-  missingVenueSymbols: string[]
-  unsupportedInternalSymbols: string[]
-  rows: VenueSymbolMappingRow[]
-  metadataLatencyMs: number
-  checkedAt: string
-  privateAuth: string
-  orderRouting: string
-  exchangeFilters: string
-  readOnly: boolean
-  error?: string
-  note: string
-}
-
-export interface VenueTradingRuleRow {
-  internal: string
-  venue: string
-  state: string
-  sizeDecimals: number
-  sizeStepLabel: string
-  priceMaxSignificantFigures: number
-  priceMaxDecimals: number
-  maxLeverage: number
-  onlyIsolated: boolean
-  marginMode?: string
-  isDelisted: boolean
-  midPrice: string
-  minOrderNotionalUsd: number
-  estimatedMinOrderSizeLabel: string
-  estimatedMinOrderNotionalUsd: number
-  reason?: string
-}
-
-export interface VenueTradingRulesData {
-  status: string
-  validated: boolean
-  venue: string
-  targetEnvironment: string
-  supportedMappingCount: number
-  nonRoutableMappingCount: number
-  validatedRuleCount: number
-  blockedRuleCount: number
-  priceMaxSignificantFigures: number
-  perpMaxDecimals: number
-  integerPricesAlwaysAllowed: boolean
-  minOrderNotionalUsd: number
-  rows: VenueTradingRuleRow[]
-  metadataLatencyMs: number
-  checkedAt: string
-  privateAuth: string
-  orderRouting: string
-  readOnly: boolean
-  ruleSource: string
-  error?: string
-  note: string
-}
-
-
 export interface SymbolMapAlarm {
   severity: Severity
   eventType: string
@@ -258,6 +134,7 @@ export interface SymbolMapData {
 export interface LedgerEntry {
   entryId: string
   fillId: string
+  feesPending?: boolean
   orderId: string
   strategyId: number
   timestamp: string
@@ -331,6 +208,14 @@ export interface EquityPoint {
 }
 
 export interface Position {
+  stopLoss?: {
+    orderId: string
+    price: number
+    quantity: number
+    distancePct?: number
+    status: string
+    replacementInProgress: boolean
+  }
   asset: string
   side: 'Long' | 'Short'
   quantity: number
@@ -359,6 +244,10 @@ export interface Position {
   openedAt?: string
   feesUsd?: number          // fees paid by this position so far
   fundingUsd?: number       // funding so far (+ received)
+  // Kraken LIVE: the market's current funding rate (+ = longs pay shorts), per hour and per year.
+  fundingRateHourlyPct?: number
+  fundingRateAnnualPct?: number
+  fundingRateAvailable?: boolean
   netPnlUsd?: number        // unrealized + realized so far - fees + funding
   feesAvailable?: boolean
   fundingAvailable?: boolean
@@ -429,6 +318,7 @@ export interface PositionsData {
   closedPositions?: ClosedPosition[]
   closedAvailable?: boolean   // whole fill history was read
   fundingAvailable?: boolean  // funding payments are recorded by this source
+  priceSource?: string        // Kraken LIVE: "Kraken mark price" or the Binance close fallback
 }
 
 // One asset: our books (local) against the exchange; pending = signed open-order remainder.
@@ -453,6 +343,8 @@ export interface ReconciliationRow {
 }
 
 export interface OpenOrderSummary {
+  orderType?: 'STOP'
+  positionStopPrice?: number
   orderId: string
   asset: string
   side: 'BUY' | 'SELL'
@@ -552,15 +444,18 @@ export interface WhyTraceMarket {
 
 export interface WhyTraceStrategy {
   rsi: string
+  rule?: string           // the strategy's entry/exit rule with its live parameters
   signal: string
   transition: string
   intent: string
 }
 
 export interface WhyTracePortfolio {
+  sizer?: string          // equal weight or volatility target, as configured
   rawTarget: string
-  volTarget: string
+  volTarget: string       // empty when the sizer is not a volatility target
   riskChanges: string[]
+  rebalance?: string      // why the position is entered, resized, held or closed
   approvedTarget: string
 }
 
@@ -660,6 +555,8 @@ export interface ExecutionLifecycleEvent {
 }
 
 export interface ExecutionOrder {
+  orderType?: 'STOP'
+  positionStopPrice?: number
   orderId: string
   strategyId?: number
   exchangeOrderId: string
@@ -673,6 +570,7 @@ export interface ExecutionOrder {
   state: ExecutionOrderState
   age: string
   expectedPriceLabel: string
+  expectedPriceSource?: string
   avgFillPriceLabel: string
   feesLabel: string
   slippageBps: number
@@ -731,6 +629,7 @@ export interface ExecutionData {
   bestSlippageBpsLabel: string
   worstSlippageBpsLabel: string
   totalFeesLabel: string
+  feesPendingCount?: number
   rejectRateLabel: string
   orders: ExecutionOrder[]
   partialFills: PartialFill[]
@@ -741,6 +640,8 @@ export interface ExecutionData {
   sourceNote?: string
   latencyAvailable?: boolean
   slippageAvailable?: boolean
+  slippageBasis?: string
+  slippageFillCount?: number
   // Daily notional-weighted slippage in bps (positive = adverse); absent when not measurable.
   slippageHistory?: { label: string; bps: number; fills: number }[]
   orderWindowTruncated?: boolean
@@ -1288,7 +1189,6 @@ export interface ManualControlData {
   executionBoundary?: string
   exchangeConstraintsValidated?: boolean
   symbolMapCheckedAt?: string
-  venueRulesCheckedAt?: string
   tradingControlSink?: string
   privateAuth?: string
   orderLifecycle?: string
@@ -1396,7 +1296,7 @@ export interface DashboardDiagnostics {
 
 // Host resource history (GET /api/infrastructure/history). CPU is percent of host
 // capacity (containers included on the same scale); RAM in MiB; disk in GiB.
-export type HostHistoryRange = '1h' | '6h' | '24h' | '7d'
+export type HostHistoryRange = '1h' | '6h' | '24h' | '7d' | 'all'
 // Either a preset ending now or an explicit UTC window (RFC 3339).
 export type HostHistoryQuery = { range: HostHistoryRange } | { from: string; to: string }
 
@@ -1416,6 +1316,7 @@ export interface HostHistoryData {
   reason?: string
   range: string
   bucketSeconds: number
+  oldestAt?: string
   newestAt?: string
   stale: boolean
   containers: string[]

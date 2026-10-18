@@ -6,7 +6,7 @@
 #include <cmath>
 #include <utility>
 
-// Research-only Donchian experiment using CURRENT close-signal/next-open economics.
+// Research-only Donchian experiment: signal at close(T), fill at open(T+1).
 // This is not an addition to the library's validated strategy catalog.
 class DonchianSignalStrategy final : public Strategy {
 public:
@@ -53,8 +53,8 @@ public:
             if (bar != bars.end() && std::isfinite(midpoint) && bar->second.close < midpoint)
                 exits.push_back(coin);
         }
-        // Filters gate entries only. Exits are intents executed by CURRENT Backtester
-        // at the next available open, unlike the frozen experiment's same-close fills.
+        // Filters gate entries only. Exits are intents the Backtester fills at the next
+        // available open, not at the close that produced them.
         for (const auto& coin : exits)
             signals.set(coin, 0);
         if (signals.activeCount() >= maxActiveSignals_ || !marketFiltersPass(market, ts, indicators))

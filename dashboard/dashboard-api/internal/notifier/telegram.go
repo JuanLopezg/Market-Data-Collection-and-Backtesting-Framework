@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"os"
@@ -47,6 +48,7 @@ type TelegramSink struct {
 }
 
 type telegramSendMessageRequest struct {
+	ParseMode           string                     `json:"parse_mode,omitempty"`
 	ChatID              string                     `json:"chat_id"`
 	Text                string                     `json:"text"`
 	DisableNotification bool                       `json:"disable_notification"`
@@ -163,23 +165,50 @@ func (s *TelegramSink) Deliver(ctx context.Context, n Notification) (DeliveryRes
 	if s.criticalChatID != "" && strings.EqualFold(strings.TrimSpace(n.Severity), "CRITICAL") {
 		chatID = s.criticalChatID
 	}
+	text, parseMode := telegramMessage(n), ""
+	if n.EventType == "DAILY_PORTFOLIO" {
+		// Telegram HTML pre preserves the portfolio table's column alignment.
+		text, parseMode = "<pre>"+html.EscapeString(text)+"</pre>", "HTML"
+	}
+	messageID, err := s.sendMessage(ctx, chatID, text, telegramSilent(n), parseMode)
+	if err != nil {
+		return DeliveryResult{}, err
+	}
+
+	receipt := TelegramReceipt{
+		Version:        TelegramReceiptVersion,
+		NotificationID: n.NotificationID,
+		SourceEventID:  n.SourceEventID,
+		SentAt:         time.Now().UTC().Format(time.RFC3339Nano),
+		MessageID:      messageID,
+	}
+	if err := appendTelegramReceipt(s.receiptPath, receipt); err != nil {
+		return DeliveryResult{}, err
+	}
+	return DeliveryResult{}, nil
+}
+
+// sendMessage posts one text to a chat; the caller holds s.mu. A Telegram flood-control
+// answer (retry_after) defers every later message of this sink.
+func (s *TelegramSink) sendMessage(ctx context.Context, chatID, text string, silent bool, parseMode string) (int64, error) {
 	payload := telegramSendMessageRequest{
+		ParseMode:           parseMode,
 		ChatID:              chatID,
-		Text:                telegramMessage(n),
-		DisableNotification: telegramSilent(n),
+		Text:                text,
+		DisableNotification: silent,
 		LinkPreviewOptions: telegramLinkPreviewOptions{
 			IsDisabled: true,
 		},
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return DeliveryResult{}, errors.New("encode Telegram sendMessage request")
+		return 0, errors.New("encode Telegram sendMessage request")
 	}
 
 	endpoint := s.baseURL + "/bot" + s.botToken + "/sendMessage"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return DeliveryResult{}, errors.New("build Telegram sendMessage request")
+		return 0, errors.New("build Telegram sendMessage request")
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "algoTrading-control-dashboard-notifier/step46c")
@@ -187,29 +216,29 @@ func (s *TelegramSink) Deliver(ctx context.Context, n Notification) (DeliveryRes
 	resp, err := s.client.Do(req)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return DeliveryResult{}, errors.New("Telegram sendMessage request timed out")
+			return 0, errors.New("Telegram sendMessage request timed out")
 		}
 		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
-			return DeliveryResult{}, context.Canceled
+			return 0, context.Canceled
 		}
 		// net/http transport errors frequently include the full request URL. The
 		// bot token is part of that URL, so the raw error must never be returned
 		// to logs/status.json.
-		return DeliveryResult{}, errors.New("Telegram sendMessage transport failure")
+		return 0, errors.New("Telegram sendMessage transport failure")
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxTelegramResponseBody+1))
 	if err != nil {
-		return DeliveryResult{}, errors.New("read Telegram sendMessage response")
+		return 0, errors.New("read Telegram sendMessage response")
 	}
 	if int64(len(raw)) > maxTelegramResponseBody {
-		return DeliveryResult{}, errors.New("Telegram sendMessage response exceeded bounded read limit")
+		return 0, errors.New("Telegram sendMessage response exceeded bounded read limit")
 	}
 
 	var api telegramAPIResponse
 	if err := json.Unmarshal(raw, &api); err != nil {
-		return DeliveryResult{}, fmt.Errorf("Telegram sendMessage returned invalid JSON (HTTP %d)", resp.StatusCode)
+		return 0, fmt.Errorf("Telegram sendMessage returned invalid JSON (HTTP %d)", resp.StatusCode)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 || !api.OK {
 		desc := redactTelegramSecrets(api.Description, s.botToken, chatID)
@@ -223,30 +252,19 @@ func (s *TelegramSink) Deliver(ctx context.Context, n Notification) (DeliveryRes
 			// Guard duration conversion against an invalid overflowing remote value.
 			seconds := int64(api.Parameters.RetryAfter)
 			if seconds > int64((1<<63-1)/int64(time.Second)) {
-				return DeliveryResult{}, errors.New("Telegram retry delay exceeds supported duration")
+				return 0, errors.New("Telegram retry delay exceeds supported duration")
 			}
 			s.retryNotBefore = s.now().Add(time.Duration(seconds) * time.Second)
 		}
 		if desc != "" {
 			suffix += ": " + desc
 		}
-		return DeliveryResult{}, fmt.Errorf("Telegram sendMessage rejected (HTTP %d error_code=%d)%s", resp.StatusCode, api.ErrorCode, suffix)
+		return 0, fmt.Errorf("Telegram sendMessage rejected (HTTP %d error_code=%d)%s", resp.StatusCode, api.ErrorCode, suffix)
 	}
 	if api.Result.MessageID <= 0 {
-		return DeliveryResult{}, errors.New("Telegram sendMessage success response missing message_id")
+		return 0, errors.New("Telegram sendMessage success response missing message_id")
 	}
-
-	receipt := TelegramReceipt{
-		Version:        TelegramReceiptVersion,
-		NotificationID: n.NotificationID,
-		SourceEventID:  n.SourceEventID,
-		SentAt:         time.Now().UTC().Format(time.RFC3339Nano),
-		MessageID:      api.Result.MessageID,
-	}
-	if err := appendTelegramReceipt(s.receiptPath, receipt); err != nil {
-		return DeliveryResult{}, err
-	}
-	return DeliveryResult{}, nil
+	return api.Result.MessageID, nil
 }
 
 // Informational updates and recoveries do not request sound. Unknown severities
@@ -259,18 +277,7 @@ func telegramSilent(n Notification) bool {
 func telegramMessage(n Notification) string {
 	severity := strings.ToUpper(strings.TrimSpace(n.Severity))
 	transition := strings.ToUpper(strings.TrimSpace(n.Transition))
-	marker := "⚪"
-	switch severity {
-	case "CRITICAL":
-		marker = "🔴"
-	case "WARN":
-		marker = "🟡"
-	case "INFO":
-		marker = "🔵"
-	}
-	if severity == "CRITICAL" {
-		severity = "URGENT"
-	}
+	marker := telegramSeverityMarker(severity)
 	if transition == "RESOLVED" {
 		severity = "INFO"
 		marker = "🟢"
@@ -299,14 +306,26 @@ func telegramMessage(n Notification) string {
 		owner = "System: algoTrading"
 	}
 	lines := []string{fmt.Sprintf("%s [%s] %s", marker, severity, owner), truncateRunes(title, 160)}
-	if v := cleanTelegramField(n.Detail); v != "" {
-		// Daily portfolios need room for positions; operational alerts stay short.
-		if n.EventType != "DAILY_PORTFOLIO" {
-			v = truncateRunes(v, 600)
+	// Portfolio reports retain their holdings; alert descriptions remain in the web/journal.
+	if n.EventType == "DAILY_PORTFOLIO" {
+		if v := cleanTelegramField(n.Detail); v != "" {
+			lines = append(lines, "", v)
 		}
-		lines = append(lines, "", v)
 	}
 	return truncateRunes(strings.Join(lines, "\n"), maxTelegramTextRunes)
+}
+
+func telegramSeverityMarker(severity string) string {
+	switch strings.ToUpper(strings.TrimSpace(severity)) {
+	case "CRITICAL":
+		return "🔴"
+	case "WARN":
+		return "🟡"
+	case "INFO":
+		return "🔵"
+	default:
+		return "⚪"
+	}
 }
 
 func cleanTelegramField(v string) string {

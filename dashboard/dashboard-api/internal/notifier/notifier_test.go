@@ -242,3 +242,75 @@ func TestCrashWindowSinkAlreadyDeliveredDecisionMissingRecoversWithoutDuplicate(
 		t.Fatal("crash-window recovery did not persist missing decision")
 	}
 }
+
+func TestCriticalDelayHoldsBriefOutagesAndReportsLongOnes(t *testing.T) {
+	dir := t.TempDir()
+	store, err := OpenStore(filepath.Join(dir, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink, _ := NewTestFileSink(filepath.Join(dir, "events.jsonl"))
+	engine, _ := NewEngine(store, sink, "WARN", 5*time.Minute)
+	if err := engine.SetCriticalDelay(5 * time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Date(2026, 10, 16, 10, 0, 0, 0, time.UTC)
+	at := func(clock string) {
+		now := start.Add(mustDuration(t, clock))
+		engine.now = func() time.Time { return now }
+	}
+	// The first sweep only completes the bootstrap of an empty store.
+	at("0s")
+	if _, err := engine.Process(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// A restart: critical for 30 seconds, then resolved. Nothing is sent.
+	restartOpen := lifecycle("r1", "2026-10-16T10:00:00Z", "OPENED", "process-risk", "CRITICAL", "down")
+	restartDone := lifecycle("r2", "2026-10-16T10:00:30Z", "RESOLVED", "process-risk", "CRITICAL", "up")
+	// A warning is sent at once even with the critical delay.
+	warning := lifecycle("w1", "2026-10-16T10:00:10Z", "OPENED", "market-gaps", "WARN", "gaps")
+	at("20s")
+	stats, err := engine.Process(context.Background(), []alertstore.LifecycleEvent{restartOpen, warning})
+	if err != nil || stats.Delivered != 1 || stats.Deferred != 1 {
+		t.Fatalf("warning must go out, the critical wait: %+v %v", stats, err)
+	}
+	at("40s")
+	stats, err = engine.Process(context.Background(), []alertstore.LifecycleEvent{restartOpen, warning, restartDone})
+	if err != nil || stats.Delivered != 0 || stats.Suppressed != 2 {
+		t.Fatalf("a critical resolved within the delay was reported: %+v %v", stats, err)
+	}
+
+	// A real outage: still critical after five minutes from its start, updates included.
+	outageOpen := lifecycle("o1", "2026-10-16T10:01:00Z", "OPENED", "process-strategy", "CRITICAL", "down")
+	outageUpdate := lifecycle("o2", "2026-10-16T10:04:00Z", "UPDATED", "process-strategy", "CRITICAL", "still down")
+	events := []alertstore.LifecycleEvent{restartOpen, warning, restartDone, outageOpen, outageUpdate}
+	at("5m30s")
+	stats, err = engine.Process(context.Background(), events)
+	if err != nil || stats.Delivered != 0 || stats.Deferred != 2 {
+		t.Fatalf("critical sent before five minutes: %+v %v", stats, err)
+	}
+	at("6m")
+	stats, err = engine.Process(context.Background(), events)
+	if err != nil || stats.Delivered != 1 || stats.Suppressed != 1 {
+		t.Fatalf("five-minute critical not sent once: %+v %v", stats, err)
+	}
+	outageDone := lifecycle("o3", "2026-10-16T10:07:00Z", "RESOLVED", "process-strategy", "CRITICAL", "up")
+	at("7m")
+	stats, err = engine.Process(context.Background(), append(events, outageDone))
+	if err != nil || stats.Delivered != 1 {
+		t.Fatalf("recovery of a reported critical not sent: %+v %v", stats, err)
+	}
+	if engine.SetCriticalDelay(-time.Second) == nil {
+		t.Fatal("negative critical delay accepted")
+	}
+}
+
+func mustDuration(t *testing.T, raw string) time.Duration {
+	t.Helper()
+	value, err := time.ParseDuration(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return value
+}

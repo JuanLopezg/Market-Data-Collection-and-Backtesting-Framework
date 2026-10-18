@@ -8,7 +8,7 @@
 #include <unordered_map>
 
 // Shared holding-period lifecycle for research signals. Filled campaigns come
-// from CURRENT TradeRecorder; this component never creates trades or money.
+// from the library TradeRecorder; this component never creates trades or money.
 class TimedResearchStrategy : public Strategy {
 public:
     bool requiresTradeObservations() const override { return true; }
@@ -81,8 +81,9 @@ protected:
     TimedResearchStrategy(std::string name, unsigned int maxSignals,
         std::unique_ptr<UniverseSelector> universe, std::unique_ptr<Ranker> ranker,
         unsigned int maxRank, unsigned int heldBars, double direction = 1.0,
-        bool excludeEntryExit = false)
-        : Strategy(std::move(name), maxSignals, std::move(universe), std::move(ranker), maxRank),
+        bool excludeEntryExit = false, std::vector<std::unique_ptr<MarketFilter>> marketFilters = {})
+        : Strategy(std::move(name), maxSignals, std::move(universe), std::move(ranker), maxRank,
+                   std::move(marketFilters)),
           heldBars_(heldBars), direction_(direction), excludeEntryExit_(excludeEntryExit)
     {
         if (heldBars == 0)
@@ -106,8 +107,10 @@ class BargainChaserStrategy final : public TimedResearchStrategy {
 public:
     BargainChaserStrategy(unsigned int maxSignals, std::unique_ptr<UniverseSelector> universe,
         std::unique_ptr<Ranker> ranker, unsigned int maxRank, unsigned int heldBars,
-        double fallPercent, unsigned int averageLength)
-        : TimedResearchStrategy("BargainChaser", maxSignals, std::move(universe), std::move(ranker), maxRank, heldBars),
+        double fallPercent, unsigned int averageLength,
+        std::vector<std::unique_ptr<MarketFilter>> marketFilters = {})
+        : TimedResearchStrategy("BargainChaser", maxSignals, std::move(universe), std::move(ranker), maxRank, heldBars,
+                                1.0, false, std::move(marketFilters)),
           average_{IndicatorKind::SMA, PriceField::Close, averageLength}, fallPercent_(fallPercent) {}
 
     std::vector<IndicatorSpec> requiredIndicators() const override
@@ -165,8 +168,10 @@ class RSIMeanReversionStrategy final : public TimedResearchStrategy {
 public:
     RSIMeanReversionStrategy(unsigned int maxSignals, std::unique_ptr<UniverseSelector> universe,
         std::unique_ptr<Ranker> ranker, unsigned int maxRank, unsigned int rsiLength,
-        double entryLevel, unsigned int heldBars)
-        : TimedResearchStrategy("MR_RSILong", maxSignals, std::move(universe), std::move(ranker), maxRank, heldBars),
+        double entryLevel, unsigned int heldBars,
+        std::vector<std::unique_ptr<MarketFilter>> marketFilters = {})
+        : TimedResearchStrategy("MR_RSILong", maxSignals, std::move(universe), std::move(ranker), maxRank, heldBars,
+                                1.0, false, std::move(marketFilters)),
           rsi_{IndicatorKind::RSI, PriceField::Close, rsiLength}, entryLevel_(entryLevel) {}
 
     std::vector<IndicatorSpec> requiredIndicators() const override
@@ -181,7 +186,8 @@ private:
                    const IndicatorEngine& indicators) const override
     {
         const double rsi = indicators.value(coin, ts, rsi_);
-        // The original implementation has no BTC filter despite its old comment.
+        // The original implementation has no BTC filter despite its old comment; the
+        // optional market filter (btcFilterLength) is checked before this by the base class.
         return std::isfinite(rsi) && rsi < entryLevel_;
     }
     IndicatorSpec rsi_;

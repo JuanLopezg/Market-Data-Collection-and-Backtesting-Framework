@@ -64,10 +64,10 @@ All following endpoints use GET and require a valid session.
 | Endpoint | Read model |
 | --- | --- |
 | `/api/shell-status` | Global observed source/data/trading status with blockers and warnings. |
-| `/api/overview` | Runtime account/fill aggregates and timestamped canonical valuation. Stats: Total Equity, Cash, (Unrealized PnL), Leverage (gross position value / equity); Kraken LIVE adds BTC Collateral (after haircut), Sizing Capital (equity + collateral), Margin Headroom and Drop to Maintenance (from `DASHBOARD_KRAKEN_ACCOUNT_FILE`, the account monitor's `account.json`, stale after 5 min) and Net Deposits (`trading_equity_daily.capital_flows`). `equityCurve[]`: `{label, equity, balance?, closeLoop?}` (balance = equity minus open-position PnL; closeLoop = that day's reconciliation state: CLEAN or BLOCKED, BLOCKED if any check that UTC day found issues; real runtime from `trading_reconciliation_daily` since 2026-10-14, earlier days omitted, not assumed clean). `liveExpected[]`: `{label, equity, expected?}` (fast backtest; PAPER from the daily comparison, replay from `expected_equity.csv`). |
+| `/api/overview` | Runtime account/fill aggregates and timestamped canonical valuation. Stats, in this order: Total Equity, Gross Exposure, Net Exposure, Collateral (Kraken LIVE: USD balance + BTC after haircut and the BTC share, from `DASHBOARD_KRAKEN_ACCOUNT_FILE`, the account monitor's `account.json`, stale after 5 min) or Cash elsewhere, Leverage (gross position value / equity), then Net Deposits (`trading_equity_daily.capital_flows`). `equityCurve[]`: `{label, equity, balance?, closeLoop?}` (balance = equity minus open-position PnL; closeLoop = that day's reconciliation state: CLEAN or BLOCKED, BLOCKED if any check that UTC day found issues; real runtime from `trading_reconciliation_daily` since 2026-10-14, earlier days omitted, not assumed clean). `liveExpected[]`: `{label, equity, expected?}` (fast backtest; PAPER from the daily comparison, replay from `expected_equity.csv`). |
 | `/api/positions` | Durable quantities/orders/targets and explicit valuation provenance. |
 | `/api/reconciliation` | Our books compared with the exchange, per asset: `rows[]` `{asset, localQty, exchangeQty, deltaQty (exchange - ours), pendingQty (signed open-order remainder), status}`, `openOrders[]`, `issues[]`, overall `status`. PAPER/LIVE: durable runtime state vs the latest retained exchange snapshot (PENDING when that snapshot is older). Simulation: the reconciler's local ledger (sum of fill position deltas) vs the MOCK account; overall verdict and issues from the C++ reconciler. |
-| `/api/pipeline` | Cycle-aligned Strategy -> Risk -> Planner -> Execution lineage/proof. |
+| `/api/pipeline` | Cycle-aligned Strategy -> Risk -> Planner -> Execution lineage/proof. `traces[cycleId]` is the per-asset Trace: liquidity rank and RSI recomputed from the market SQLite with the live strategy file (`DASHBOARD_STRATEGY_CONFIG`), signal transition against the previous decision checkpoint, `portfolio.sizer`/`rawTarget` (equal weight or volatility target, `volTarget` empty unless volatility-targeted), `riskChanges` (asset and gross caps), `rebalance` (band arithmetic behind HOLD/RESIZE), fees and slippage of the cycle's fills, risk configuration fingerprint. HOLD rows show the approved target as `"<x>$ (hold)"`. |
 | `/api/execution` | Current durable orders and bounded fills; optional `slippageHistory` (`{label, bps, fills}` per day, notional-weighted, positive = adverse) when the expected price is known. `rejects[]` splits the gateway's `CODE: text` message into `code`, `title`, `reason` and `remediation`; `kind` is `SKIPPED` for `MARKET_UNAVAILABLE`, `MARKET_NOT_TRADING` and `BELOW_MINIMUM_QUANTITY` (order state `SKIPPED`, counted in `skippedCount`, not in `rejectCount`) and `REJECTED` otherwise. Alerts: a skip is INFO `ORDER_SKIPPED`, `NOTIONAL_MISMATCH` is CRITICAL, other rejects WARN. |
 | `/api/risk` | Approved decision and exact persisted signals/account inputs; optional page view `summary` (cards with `tone`), `history` (`{label, leverage?, drawdown}`), `strategyLimits` and `exposures`. |
 | `/api/market-data` | Canonical ranking/OHLCV, indicator reconstruction and aligned strategy signals. |
@@ -78,6 +78,12 @@ All following endpoints use GET and require a valid session.
 
 Additional authenticated GET diagnostics:
 
+Infrastructure history also accepts `range=all` (the `ALL` time-selector preset).
+It reads every valid observation still retained in the configured history file,
+returns optional `oldestAt` for chart bounds and averages into at most 720 points.
+File reads retain the 64 MiB bound. The monitor currently keeps seven days;
+ALL does not restore expired observations or change retention.
+
 | Endpoint | Meaning |
 | --- | --- |
 | `/api/diagnostics` | API resource/timeout/read diagnostics. |
@@ -87,10 +93,6 @@ Additional authenticated GET diagnostics:
 | `/api/integration-catalog` | Source ownership/planning metadata; some labels retain historical integration stages. |
 | `/api/safety-gate` | Explicit blockers before trading-control readiness. |
 | `/api/global-readiness` | Aggregate readiness evidence; missing evidence cannot become ready. |
-| `/api/venue-foundation` | Venue identity/config boundary and deferred capabilities. |
-| `/api/venue-public` | Public-only Hyperliquid TESTNET metadata/connectivity status. |
-| `/api/venue-symbol-map` | Explicit canonical-to-venue symbol mapping. |
-| `/api/venue-rules` | Public precision/minimum/rule validation. |
 | `/api/symbol-map` | Binance -> Kraken symbol table checked against current prices (Symbol Mapping page; alerts `SYMBOL_MAP_*`). |
 | `/api/ledger` | Deterministic fill-derived economic projection, not durable cost-basis/PnL. |
 | `/api/stream` | Authenticated SSE invalidations and heartbeat. |
@@ -98,6 +100,36 @@ Additional authenticated GET diagnostics:
 SSE notifications trigger resource refreshes; they do not expose raw NATS messages.
 Disconnect/reconnect does not mutate trading. Browser visibility/polling is technical
 observability time, not the market's economic clock.
+
+Execution quality and fees:
+
+- `/api/execution.orders[].expectedPriceLabel` now uses the persisted optional
+  `reference_price`; position stops use `position_stop_price` instead. Missing or
+  unusable references show `—`. Optional `expectedPriceSource` explains the basis.
+- Slippage is `(fill/reference - 1) * 10000` for BUY, with the sign reversed for SELL.
+  Per-order values compare VWAP with the reference. `slippageHistory[]` groups fills
+  by execution day and weights by actual filled USD notional. `slippageFillCount`
+  reports measured fills; `slippageBasis` explains provenance. No-fill orders and
+  legacy orders without a reference do not contribute. The order/fill window is
+  bounded; a truncated fill window suppresses quality aggregates rather than
+  presenting partial results as complete.
+- This is reference-price slippage, including overnight gaps and Binance/Kraken
+  price differences. The planning reference is normally Binance close (a quote for
+  manual orders); it is not the Kraken mark at submission. Stops measure against
+  the trigger, not their planning close. Gateway latency remains unavailable.
+- Fill commission includes the sum of linked `trading_venue_costs` FEE debits
+  (`-amount`, grouped by `fill_id`), matching execution accounting. These reads are
+  shared by Execution, `/api/ledger` and trade-history fallback. Funding, interest,
+  transfers and unlinked fees are excluded from fill fees. Databases without the
+  venue-cost table retain their original fill-only commission.
+- Fee labels retain up to eight USD decimals. Kraken fills with neither commission
+  nor a recorded FEE event show `Pending`; an explicitly recorded zero fee is zero.
+  `feesPendingCount` counts such fills across the full table in Kraken LIVE only.
+  `/api/ledger.entries[].feesPending` is an optional boolean for that same unknown
+  Kraken fee, including rows outside the current order window.
+  `totalFeesLabel` is the full-table recorded amount, even when details are bounded.
+  Late fees update the read projection and its ledger fingerprint; stored source
+  fills and cost events remain append-only. No trading state is changed by these reads.
 
 ## Operator POST endpoints
 
@@ -158,6 +190,38 @@ cost_basis, proceeds, gross_pnl, fees, funding, net_pnl (USD; year = UTC close y
 `closedPositions[]`, `closedAvailable`, `fundingAvailable` and per open position
 `openedAt`, `feesUsd`, `fundingUsd`, `netPnlUsd`, `feesAvailable`, `fundingAvailable`.
 
+Position stop-loss fields (additive; old runtime orders without `position_stop_price`
+decode as ordinary orders): `/api/positions.positions[]` adds optional `stopLoss`:
+
+| Field | Meaning |
+| --- | --- |
+| `orderId` | Local id of the newest nonterminal SELL position stop for the coin. Newest `created_at` wins; larger order id breaks same-day ties. |
+| `price` | Stop trigger in USD per source unit, as persisted by execution. |
+| `quantity` | Remaining source units (`quantity - filled_quantity`), not venue contract units. |
+| `distancePct` | Optional signed `(price / currentPrice - 1) * 100`, using the position's existing valuation mark (Kraken mark in LIVE, with the existing close fallback). Omitted if that mark is unavailable. |
+| `status` | `CREATED`, `SUBMITTED`, `ACCEPTED`, `PARTIAL` or `PENDING_CANCEL`. A submitted stop is not proof of venue acceptance. |
+| `replacementInProgress` | More than one open stop currently exists for the coin; the newer is shown while the old one is still tracked. |
+
+`stopLoss` is omitted for no open stop or a short position. Terminal stops, fully
+filled orders and ordinary sells do not qualify. Positions shows **Stop-Loss**, for
+example `3.537$ (-29.8%)`, with quantity, status and `moves to 70% of each daily close`
+in its tooltip; `—` means no stop and `replacing` identifies overlap.
+`/api/execution.orders[]` and `/api/reconciliation.openOrders[]` add optional
+`orderType: "STOP"` and `positionStopPrice` for position stops. The UI labels them
+`STOP` (resting stop-loss); they remain open orders but are excluded from pending
+trade quantities. Existing JSON fields and lifecycle states are unchanged.
+
+Kraken LIVE derived alerts add WARN `POSITION_STOP_MISSING`, titled
+`<ASSET>: no stop-loss`, after ten minutes of observed absence of an accepted or
+partially filled open stop on a long position. A cancel-pending accepted old stop
+still protects during replacement; a merely submitted replacement does not. The
+observer starts a fresh grace for newly observed/increased longs, after unavailable
+runtime evidence, and after its process restarts. Accepted protection or a flat/short
+position clears the timer. PAPER has no missing-stop alert. Wall-clock observation
+is independent of daily business timestamps. The existing watchdog persists the
+resulting alert lifecycle and the normal notifier delivers it; these alerts never
+change trading, cancel orders or close positions.
+
 `POST /api/alerts-audit/acknowledge` requires OPERATOR and CSRF, with JSON:
 
 ```json
@@ -176,6 +240,13 @@ is reported. ACK leaves `resolutionState=UNRESOLVED` and
 `tradingStateMutated=false`; it does not remove a readiness blocker.
 
 ## Response and provider rules
+
+REAL Market Data `freshness[].ageLabel` is `Nd`: calendar days between the candle
+date and the previous completed UTC day, floored at zero. An Oct 17 candle shows
+`0d` throughout Oct 18 and `1d` from Oct 19 00:00 UTC. It uses the observation date,
+so age keeps increasing if ingestion stalls. Health classification still compares
+the candle with the canonical database's target day; the age label does not change
+trading or alert policy.
 
 - Successful authenticated reads return JSON with provider identity in
   `X-Dashboard-Data-Provider`.

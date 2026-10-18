@@ -220,7 +220,8 @@ void TradingEngine::persist(const std::optional<Fill>& newFill) const
 
 // Update strategy decision state at one completed market-data slice
 void TradingEngine::onBarClose(
-    const MarketData& marketData,
+    const MarketData& signalData,
+    const MarketData& sizingData,
     Timestamp ts,
     const PriceSnapshot& marks,
     double extraCapital
@@ -241,7 +242,8 @@ void TradingEngine::onBarClose(
         strategy.strategy().observeTrades(ownedTrades);
     }
     decision_engine_.onBarClose(
-        marketData,
+        signalData,
+        sizingData,
         ts,
         execution_engine_.accountEquity(marks) + extraCapital,
         execution_engine_.strategyPositions()

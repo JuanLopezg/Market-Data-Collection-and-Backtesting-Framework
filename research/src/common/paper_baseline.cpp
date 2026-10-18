@@ -8,95 +8,15 @@
 #include "account.h"
 #include "adapters/simulated_exchange.h"
 #include "canonical_market_data_reader.h"
-#include "entry_exit_only_rebalance_policy.h"
-#include "equal_weight_sizer.h"
-#include "indicator_ranker.h"
-#include "liquidity_universe.h"
-#include "sample_covariance_estimator.h"
-#include "threshold_rebalance_policy.h"
+#include "chain_profile.h"
 #include "trade_recorder.h"
 #include "trading_engine.h"
-#include "validated/pure_rsi.h"
-#include "volatility_target_sizer.h"
 
 namespace {
 using json = nlohmann::json;
-
-json readJson(const std::string& path)
-{
-    std::ifstream input(path);
-    if (!input)
-        throw std::runtime_error("Cannot open PAPER baseline input");
-    return json::parse(input);
-}
-
-// Same sizer and rebalance construction as the PAPER portfolio-risk service
-// (live_trading/portfolio_risk_service makeSizer/makeRebalancePolicy).
-std::unique_ptr<PortfolioSizer> makeSizer(const json& value)
-{
-    const std::string type = value.at("type").get<std::string>();
-    if (type == "equal_weight")
-        return std::make_unique<EqualWeightSizer>(value.at("weight_per_full_signal").get<double>());
-    if (type == "volatility_target")
-        return std::make_unique<VolatilityTargetSizer>(
-            std::make_unique<SampleCovarianceEstimator>(
-                value.at("covariance_lookback").get<std::size_t>(),
-                value.at("periods_per_year").get<double>()),
-            value.at("target_volatility").get<double>());
-    throw std::runtime_error("Unsupported PAPER baseline sizer: " + type);
-}
-
-// Days of close history the sizer needs, counted like the risk service
-// (requiredMarketHistoryDays): lookback returns + 1 + 5 buffer days; 0 for equal weight.
-std::size_t sizerHistoryDays(const json& sizer)
-{
-    if (sizer.at("type").get<std::string>() != "volatility_target")
-        return 0;
-    return sizer.at("covariance_lookback").get<std::size_t>() + 1U + 5U;
-}
-
-// The window's MarketData holds only the decision day. The volatility sizer needs the
-// preceding closes too, as the risk service reads them: add the earlier days from the
-// window's raw history. The decision day itself is left exactly as loaded.
-void addSizerHistory(MarketData& marketData, const OHLCVData& raw, Timestamp closeDate, std::size_t historyDays)
-{
-    std::set<Timestamp> dates;
-    for (const auto& [coin, bars] : raw.data)
-        for (const auto& [date, bar] : bars)
-            if (date < closeDate)
-                dates.insert(date);
-    std::vector<Timestamp> recent(dates.begin(), dates.end());
-    const std::size_t keep = historyDays > 0 ? historyDays - 1U : 0U;
-    if (recent.size() > keep)
-        recent.erase(recent.begin(), recent.end() - static_cast<std::ptrdiff_t>(keep));
-    for (const Timestamp date : recent) {
-        CoinBarMap bars;
-        for (const auto& [coin, history] : raw.data) {
-            const auto found = history.find(date);
-            if (found == history.end())
-                continue;
-            BarData bar; // Only the closes matter for the covariance estimate.
-            bar.open = found->second.open;
-            bar.high = found->second.high;
-            bar.low = found->second.low;
-            bar.close = found->second.close;
-            bar.volume = found->second.volume;
-            bar.quote_volume = found->second.quote_volume;
-            bars.emplace(coin, bar);
-        }
-        marketData.emplace(date, std::move(bars));
-    }
-}
-
-std::unique_ptr<RebalancePolicy> makeRebalancePolicy(const json& value)
-{
-    const std::string type = value.at("type").get<std::string>();
-    if (type == "entry_exit_only")
-        return std::make_unique<EntryExitOnlyRebalancePolicy>();
-    if (type == "threshold")
-        return std::make_unique<ThresholdRebalancePolicy>(value.at("threshold").get<double>());
-    throw std::runtime_error("Unsupported PAPER baseline rebalance policy: " + type);
-}
+using chain_profile::addSizerHistory;
+using chain_profile::readJson;
+using chain_profile::sizerHistoryDays;
 }
 
 int runPaperBaseline(const std::string& manifestPath)
@@ -104,29 +24,7 @@ int runPaperBaseline(const std::string& manifestPath)
     const auto input = readJson(manifestPath);
     const auto strategy = readJson(input.at("strategy_config")).at("strategies").at(0);
     const auto portfolio = readJson(input.at("portfolio_config")).at("strategies").at(0);
-    if (strategy.at("type") != "PureRSI" ||
-        strategy.at("universe").at("indicator").at("source") != "QuoteVolume")
-        throw std::runtime_error("Unsupported PAPER baseline profile");
-
-    const auto parameters = strategy.at("parameters");
-    const unsigned rsiLength = parameters.at("rsi_length");
-    StrategyPortfolio strategies;
-    strategies.emplace_back(
-        strategy.at("id").get<unsigned>(),
-        std::make_unique<StrategyPureRSI>(
-            strategy.at("max_active_signals"),
-            std::make_unique<TopNLiquidityUniverse>(
-                IndicatorSpec{IndicatorKind::SMA, PriceField::QuoteVolume, 25},
-                strategy.at("universe").at("count"), true),
-            std::make_unique<IndicatorRanker>(
-                IndicatorSpec{IndicatorKind::RSI, PriceField::Close, rsiLength}, true),
-            strategy.at("max_ranking_position"), rsiLength,
-            parameters.at("rsi_entry"), parameters.at("rsi_exit")),
-        portfolio.at("allocation_weight"),
-        makeSizer(portfolio.at("sizer")),
-        RiskConstraints(portfolio.at("risk").at("max_gross_leverage"),
-                        portfolio.at("risk").at("max_asset_weight")),
-        makeRebalancePolicy(portfolio.at("rebalance")));
+    StrategyPortfolio strategies = chain_profile::makeStrategyPortfolio(strategy, portfolio);
 
     Account account(input.at("initial_cash"));
     // A study that starts mid-run (after a configuration change) begins from the PAPER
@@ -182,7 +80,26 @@ int runPaperBaseline(const std::string& manifestPath)
         }
         MarketData marketData = window.market_data;
         addSizerHistory(marketData, window.raw_data, closeDate, sizerHistoryDays(portfolio.at("sizer")));
-        engine.onBarClose(marketData, closeDate, closes, collateral);
+        // Signals see only today's top-50 entry universe (strategy service). Sizing and
+        // rebalance prices also need close(T) of every signalled or held coin, as the risk
+        // service loads them; otherwise a held coin that left the top 50 has no price.
+        MarketData sizingData = marketData;
+        CoinBarMap& todayBars = sizingData[closeDate];
+        for (const Coin& coin : held) {
+            const auto bars = window.raw_data.data.find(coin);
+            if (bars == window.raw_data.data.end()) continue;
+            const auto found = bars->second.find(closeDate);
+            if (found == bars->second.end()) continue;
+            BarData bar;
+            bar.open = found->second.open;
+            bar.high = found->second.high;
+            bar.low = found->second.low;
+            bar.close = found->second.close;
+            bar.volume = found->second.volume;
+            bar.quote_volume = found->second.quote_volume;
+            todayBars.emplace(coin, bar); // A top-50 coin keeps its existing bar.
+        }
+        engine.onBarClose(marketData, sizingData, closeDate, closes, collateral);
         PriceSnapshot opens;
         CoinBarMap openBars;
         for (const auto& [coin, priceValue] : cycle.at("open_prices").items()) {

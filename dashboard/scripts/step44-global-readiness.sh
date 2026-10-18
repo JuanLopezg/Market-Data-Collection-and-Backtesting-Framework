@@ -108,7 +108,7 @@ import json, sys
 d=json.load(open(sys.argv[1], encoding='utf-8'))
 expected={
  'provider-real','postgres','nats','canonical-market-data','reconciliation',
- 'durable-e2e-proof','venue-foundation','venue-public','venue-rules','symbol-map',
+ 'durable-e2e-proof','symbol-map',
  'ledger','watchdog','critical-alerts','manual-route','production-auth','private-auth',
  'account-snapshot','order-lifecycle','service-liveness','clock-sync','mock-exchange'
 }
@@ -129,7 +129,7 @@ if d.get('manualRouting') != 'DISABLED':
     raise SystemExit('STEP44: FAIL: manual routing must remain DISABLED')
 if d.get('privateAuth') not in ('DEFERRED','DISABLED'):
     raise SystemExit('STEP44: FAIL: private auth must remain deferred/disabled')
-for req_id in ('provider-real','venue-foundation','venue-public','venue-rules','ledger','critical-alerts','manual-route'):
+for req_id in ('provider-real','ledger','critical-alerts','manual-route'):
     if rows[req_id].get('state') != 'PASS':
         raise SystemExit(f'STEP44: FAIL: required current evidence {req_id} is {rows[req_id].get("state")}')
 if 'symbol-map' not in rows:
@@ -223,5 +223,5 @@ echo "============================================================"
 echo "The dashboard now exposes one explicit phase-scoped readiness contract."
 echo "Safe dashboard continuation does NOT imply private TESTNET, trading or LIVE readiness."
 echo "Steps 37-41 remain DEFERRED, routing remains disabled, and no wallet/funds are required."
-echo "Future full-replay support is pinned to a shared HyperliquidAdapter/MockExchangeAdapter contract."
+echo "Future full-replay support is pinned to a shared venue-adapter/MockExchangeAdapter contract."
 echo "Current safe continuation is determined by the phase-scoped readiness contract."

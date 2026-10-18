@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data_types.h"
+#include "plotly_chart_html.h"
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -32,22 +33,8 @@ struct CorrelationChartEntry {
     std::string equityArrayExpression;
 };
 
-struct PlotlyXYExpressions {
-    std::string x;
-    std::string y;
-};
-
-struct BenchmarkPoint {
-    std::string timestamp;
-    double close;
-};
-
 bool ensureDirectoryExists(const std::filesystem::path& path);
 std::string readTextFile(const std::filesystem::path& path);
-std::vector<BenchmarkPoint> makeBenchmarkPoints(const MarketData& market, const std::string& symbol);
-PlotlyXYExpressions extractNamedPlotlyXYExpressions(const std::string& html, const std::string& trace);
-std::string injectBuyAndHoldTraceIntoPlotlyData(std::string html,
-    const std::vector<BenchmarkPoint>& points, const std::string& symbol, double initialBalance);
 void writeStrategyIndexHtml(const std::filesystem::path& path, const std::string& strategy,
     const std::vector<ChartEntry>& charts);
 void write1dCmcCorrelationHtml(const std::filesystem::path& path,

@@ -141,7 +141,7 @@ func (p *Real) applyHostTelemetry(result *realInfrastructure, now time.Time) {
 			for _, row := range snapshot.Containers {
 				switch row.Name {
 				// Chain names first; the previous Compose names remain for older deployments.
-				case "market-data", "strategy", "risk", "execution", "planner", "gateway", "sim-exchange",
+				case "market-data", "strategy", "risk", "execution", "planner", "gateway", "gateway-kraken", "sim-exchange",
 					"portfolio-risk", "execution-state", "order-planner", "exchange-gateway", "simulated-exchange":
 					observed := false
 					for _, process := range snapshot.Processes {

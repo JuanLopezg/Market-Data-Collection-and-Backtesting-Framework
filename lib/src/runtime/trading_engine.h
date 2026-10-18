@@ -63,6 +63,19 @@ public:
         Timestamp ts,
         const PriceSnapshot& marks,
         double extraCapital = 0.0
+    )
+    {
+        onBarClose(marketData, marketData, ts, marks, extraCapital);
+    }
+
+    // Split form (see DecisionEngine::onBarClose): signals from signalData, sizing and
+    // rebalance prices from sizingData.
+    void onBarClose(
+        const MarketData& signalData,
+        const MarketData& sizingData,
+        Timestamp ts,
+        const PriceSnapshot& marks,
+        double extraCapital
     );
 
     // Resolve pending strategy plans at the supplied executable/reference prices.

@@ -36,9 +36,6 @@ func baselineReadinessInputs(now time.Time) globalReadinessInputs {
 	in := globalReadinessInputs{
 		ProviderHealth: provider.Health{Mode: "real", Name: "real-data-provider-step44"},
 		Now:            now,
-		FoundationOK:   true,
-		VenuePublicOK:  true,
-		VenueRulesOK:   true,
 		SymbolMapOK:    true,
 		LedgerOK:       true,
 	}
@@ -58,20 +55,6 @@ func baselineReadinessInputs(now time.Time) globalReadinessInputs {
 	in.Alerts.DurableAlertHistoryAvailable = true
 	in.Alerts.WatchdogState = "HEALTHY"
 	in.Alerts.WatchdogLastSuccessAt = now.Add(-15 * time.Second).Format(time.RFC3339)
-	in.Foundation = provider.VenueFoundation{
-		FoundationReady:   true,
-		Venue:             "HYPERLIQUID",
-		TargetEnvironment: "TESTNET",
-		GatewayMode:       "hyperliquid-dry-run",
-		PrivateAuth:       "DISABLED",
-		OrderRouting:      "DISABLED",
-	}
-	in.VenuePublic = provider.VenuePublicStatus{
-		Connected: true, Venue: "HYPERLIQUID", TargetEnvironment: "TESTNET", UniverseCount: 200, MidCount: 3000,
-	}
-	in.VenueRules.Validated = true
-	in.VenueRules.ValidatedRuleCount = 10
-	in.VenueRules.SupportedMappingCount = 10
 	in.SymbolMap.Status = "OK"
 	in.SymbolMap.StrategyAssets = 20
 	in.SymbolMap.StrategyMapped = 20
@@ -162,8 +145,8 @@ func TestGlobalReadinessSymbolMapProblemWarnsWhileNothingRoutesToKraken(t *testi
 func TestGlobalReadinessTreatsSQLiteBusyAsRetryableReadBlocker(t *testing.T) {
 	now := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
 	in := baselineReadinessInputs(now)
-	in.VenueRules.Validated = false
-	in.VenueRules.Error = "canonical strategy universe unavailable: read-only SQLite query failed: database is locked (5)"
+	in.Shell.DataState = "BLOCKED"
+	in.Shell.DataDetail = "Canonical market-data diagnostics are unavailable: read-only SQLite query failed: database is locked (5)"
 
 	got := buildGlobalReadiness(in)
 	if got.BlockingCount == 0 || got.RetryableBlockingCount == 0 {
@@ -221,13 +204,11 @@ func TestGlobalReadinessAllObservedTransientStep44BlockersRemainFailClosedButRet
 	in.Shell.DataState = "BLOCKED"
 	in.Shell.DataDetail = "Canonical market-data diagnostics are unavailable: read canonical market-data SQLite window: SQLite query timed out after 2s"
 	in.ManualErr = errors.New("read manual-control reference checkpoint: PostgreSQL query timed out after 2s")
-	in.VenueRules.Validated = false
-	in.VenueRules.Error = "canonical strategy universe unavailable: read canonical market-data SQLite window: SQLite query timed out after 2s"
 	in.Infra.NATS.State = "CRITICAL"
 	in.Infra.NATS.AckHealthLabel = "NATS TCP probe failed: dial tcp 172.18.0.4:4222: connection refused"
 
 	got := buildGlobalReadiness(in)
-	if got.BlockingCount != 4 || got.RetryableBlockingCount != 4 {
+	if got.BlockingCount != 3 || got.RetryableBlockingCount != 3 {
 		t.Fatalf("observed transient Step44 blockers should all remain fail-closed but retryable: blocking=%d retryable=%d blockers=%v", got.BlockingCount, got.RetryableBlockingCount, got.Blockers)
 	}
 	if got.SafeToContinueDashboard || got.Status != "BLOCKED" {
@@ -301,8 +282,6 @@ func TestGlobalReadinessUserSnapshotTransientBlockersAreAllRetryable(t *testing.
 	in.Shell.DataState = "BLOCKED"
 	in.Shell.DataDetail = "Canonical market-data diagnostics are unavailable: read canonical market-data SQLite window: SQLite query timed out after 2s"
 	in.PipelineErr = errors.New("read durable pipeline checkpoint: read-only PostgreSQL query failed: psql: timeout expired")
-	in.VenueRules.Validated = false
-	in.VenueRules.Error = "canonical strategy universe unavailable: read canonical market-data SQLite window: SQLite query timed out after 2s"
 	in.Alerts.ActiveCritical = 1
 	in.Alerts.Alerts = []readinessOperationalAlert{{
 		Severity: "CRITICAL", Status: "ACTIVE", Service: "NATS", EventType: "SOURCE_CRITICAL",
@@ -310,7 +289,7 @@ func TestGlobalReadinessUserSnapshotTransientBlockersAreAllRetryable(t *testing.
 	}}
 
 	got := buildGlobalReadiness(in)
-	if got.BlockingCount != 4 || got.RetryableBlockingCount != 4 || got.SafeToContinueDashboard {
-		t.Fatalf("expected exact fail-closed 4/4 retryable snapshot, got blocking=%d retryable=%d safe=%v %+v", got.BlockingCount, got.RetryableBlockingCount, got.SafeToContinueDashboard, got)
+	if got.BlockingCount != 3 || got.RetryableBlockingCount != 3 || got.SafeToContinueDashboard {
+		t.Fatalf("expected exact fail-closed 3/3 retryable snapshot, got blocking=%d retryable=%d safe=%v %+v", got.BlockingCount, got.RetryableBlockingCount, got.SafeToContinueDashboard, got)
 	}
 }

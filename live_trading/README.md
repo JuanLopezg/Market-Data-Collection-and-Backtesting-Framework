@@ -91,6 +91,18 @@ that price; a real venue ignores it. The next daily `AccountSnapshot` carries
 weights (`lib/src/risk/target_decisions.*`, shared with the replay). Operator view:
 deploy/chain/README.md, "Manual Control".
 
+Accounting projection (chain): execution-state keeps `PositionLedger`
+(`lib/src/account/position_ledger.*`) and writes `trading_open_positions`,
+`trading_closed_positions`, `trading_equity_daily` and `trading_reconciliation_daily`; the
+fills plus venue funding/costs are the authority and every start rebuilds from them. A day's
+equity row is the account at close(T), after T's open fills and before T+1's
+(`execution_state_service/src/equity_history.*`). It is written once
+(`PostgresStateStore::insertEquityDay`): the market update of the last completed day is
+redelivered after every restart, when the account may already hold the next open's fills,
+and must not replace the row (fixed 2026-10-15). Missing days are rebuilt from the fills at
+startup, so deleting a wrong row and restarting execution rebuilds it. A failure in this
+projection is logged and never stops trading.
+
 ## What each service owns
 
 | Service | Main responsibility | Important inputs | Important outputs |
@@ -392,13 +404,19 @@ Within `market_data_service/src/`, filenames describe their local responsibility
 | `market_store.h/.cpp` | Canonical SQLite transactions and tracked-symbol history |
 | `update_publisher.h/.cpp` | Durable notification after a successful commit |
 
-Daily timing: the run starts `midnight_delay_ms` (100 ms) after UTC midnight. Before reading
-the day's candles the ingestor reads Binance's clock (`GET /fapi/v1/time`) and waits if it
-has not yet passed the day end, so a host clock running slightly ahead can never store a
-still-open candle. The `serverTime` inside exchangeInfo is not used: that document is cached
-and was about 30 minutes old on 2026-10-15, which held the first run back for a minute. Downloads run on `max_parallel_requests` (16) worker
-threads, each reusing one HTTPS connection; the next day's opening prices download alongside
-the completed candles, and a new candle with no trade yet is polled for up to 30 s.
+Daily timing: 10 s before UTC midnight the service reads the tracker, builds the expected
+plan and opens one HTTP/2 connection to Binance; at midnight (+ `midnight_delay_ms`, 0) it
+sends one multiplexed burst (gzip): exchangeInfo, the 24h tickers and, for every tracked
+symbol, the candles up to the closed day plus the next day's candle. That next candle proves
+the day closed on Binance's own clock (a candle starts only with the first trade after
+midnight), so a host clock running slightly ahead can never store a still-open candle, and it
+gives open(T+1). A symbol without it yet is asked again every 50 ms for up to 30 s, then
+Binance's clock (`GET /fapi/v1/time`) decides. The ranking must come from tickers whose window
+ends after midnight (their `closeTime`). Symbols the ranking adds download after it. The
+`serverTime` inside exchangeInfo is not used: that document is cached (about 30 minutes old on
+2026-10-15). Measured on the VPS (2026-10-18): each request answers in ~0.25 s; 100 klines take
+0.8 s multiplexed on one connection, 2.5 s on 16 connections. Each run logs its timing
+("Daily download ... took").
 
 The historical feed shares `market_store` so both writers use the same schema and commit
 rules. The HTTP simulator keeps its own candle store and HTTP server; it serves requests
@@ -426,7 +444,10 @@ When reading a message handler, look for the return value:
 
 For durable routes, the ordering depends on which state the service owns:
 
-- Market-data ingestion commits SQLite before publishing its update notification.
+- Market-data ingestion commits SQLite before publishing its update notification. A restart
+  that finds the completed day already committed republishes it from SQLite without ranking
+  or downloading candles again (Binance's rolling 24h volume would include hours after the
+  close); only the fixed open(T+1) prices are fetched again when PAPER publishes them.
 - Strategy, portfolio/risk, and order-planner services publish deterministic output, then
   checkpoint, then acknowledge their input. A crash between publish and checkpoint causes
   the same logical message to be published again.

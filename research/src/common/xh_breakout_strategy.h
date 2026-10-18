@@ -8,7 +8,7 @@
 #include <unordered_map>
 
 // Research-only stop-entry experiments. Signals describe desired exposure;
-// CURRENT sizing, order lifecycle, simulated matching and accounting own money.
+// library sizing, order lifecycle, simulated matching and accounting own money.
 class XHBreakoutStrategy final : public Strategy {
 public:
     XHBreakoutStrategy(

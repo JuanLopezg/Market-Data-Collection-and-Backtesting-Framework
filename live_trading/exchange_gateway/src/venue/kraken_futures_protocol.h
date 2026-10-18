@@ -18,6 +18,8 @@
 // - XBT is Kraken's code for BTC; contracts are "PF_<asset>USD" with contractSize 1;
 // - sizes use contractValueTradePrecision decimals; market orders are "mkt"
 //   (immediate-or-cancel with Kraken's 1% price protection);
+// - position stops are "stp", reduceOnly=true, triggerSignal=mark and stopPrice,
+//   without limitPrice (stop-market); sendorder/openorders/fills rechecked 2026-10-17;
 // - client order ids ("cliOrdId", at most 100 characters) are "algo-<namespace>-<order id>";
 // - budget: 500 cost units per 10 seconds (sendorder/cancelorder 10, reads 2).
 namespace Venue {

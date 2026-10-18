@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 
 	pgstore "control-dashboard-api/internal/integration/postgres"
@@ -105,7 +106,25 @@ func (p *Real) overview(ctx context.Context) (realOverviewData, error) {
 		equityDays = accounting.Equity
 	}
 	p.addKrakenCollateral(&overview, positions, equityDays)
+	orderOverviewStats(&overview)
 	return overview, nil
+}
+
+// overviewStatOrder is the card order the user chose; cards not listed keep their order after these.
+var overviewStatOrder = []string{"Total Equity", "Gross Exposure", "Net Exposure", "Collateral", "Cash", "Leverage"}
+
+func orderOverviewStats(overview *realOverviewData) {
+	rank := func(label string) int {
+		for index, known := range overviewStatOrder {
+			if label == known {
+				return index
+			}
+		}
+		return len(overviewStatOrder)
+	}
+	sort.SliceStable(overview.Stats, func(i, j int) bool {
+		return rank(overview.Stats[i].Label) < rank(overview.Stats[j].Label)
+	})
 }
 
 // addRuntimeEquity draws the equity curve from ExecutionState's daily equity (account
@@ -138,6 +157,11 @@ func addPositionValuation(overview *realOverviewData, positions realPositionsDat
 	}
 	overview.Stats[0] = realOverviewMetric{Label: "Total Equity", Value: positions.TotalEquity}
 	overview.Stats[2] = realOverviewMetric{Label: "Leverage", Value: fmt.Sprintf("%.2fx", positions.grossValue/positions.equityValue)}
+	// The same figures as the Positions page cards.
+	overview.Stats = append(overview.Stats,
+		realOverviewMetric{Label: "Gross Exposure", Value: positions.GrossExposure,
+			Detail: "Sum of absolute position values (" + positions.GrossExposurePct + " of Total Equity)"},
+		realOverviewMetric{Label: "Net Exposure", Value: positions.NetExposure, Detail: "Longs minus shorts"})
 }
 
 // addPaperComparison fills equity and Live vs Expected from the daily PAPER comparison:

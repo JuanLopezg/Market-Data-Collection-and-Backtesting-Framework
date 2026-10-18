@@ -62,3 +62,7 @@ dist/
 
 # Unsupported local strategy experiments
 /lib/src/strategy/on_hold/
+
+# Local standby: downloaded market data, plans and the profile copied from the VPS
+standby/run/
+standby/profile/

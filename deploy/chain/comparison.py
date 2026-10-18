@@ -345,7 +345,11 @@ def collect(containers, output, shadow, binary, image=None):
                 raise ValueError('Public plan observation is not complete')
             write_json(marker, {'decisionDate': decision, 'report': str(shadow / 'report.json')})
         except (subprocess.SubprocessError, OSError, ValueError):
-            shadow_note = ' Kraken public plan observation: unavailable; retrying, no private orders.'
+            # One attempt per decision day: every attempt stores a new raw capture of Kraken's
+            # instruments and tickers (about 1 MB), and retrying each minute filled the disk
+            # (2026-10-14..17, about 1.4 GB a day while a plan stayed unobservable).
+            write_json(marker, {'decisionDate': decision, 'unavailable': True})
+            shadow_note = ' Kraken public plan observation: unavailable for this day; no private orders.'
     write_json(output / 'comparison.json', {'contractVersion': 'paper-comparison-v1', 'status': 'OBSERVING',
         'checkedAt': datetime.now(timezone.utc).isoformat(), 'profile': profile_label(),
         'fingerprint': identity, 'note': NOTE + shadow_note, 'rows': previous_rows + rows, 'positions': positions})

@@ -83,14 +83,15 @@ def install_dashboard(sandbox, campaign, replay_dir, runner, replay_command):
             service["ports"] = ["127.0.0.1::80"]
             service["networks"].append("profile-web")
         elif name == "dashboard-watchdog":
+            # The watchdog's real provider accepts only the trading-chain boundaries (the
+            # Hyperliquid TESTNET one was retired on 2026-10-15); this background load uses
+            # the PAPER one over the replay's runtime stream.
             service["environment"] = {"DASHBOARD_POSTGRES_DSN": dsn, "DASHBOARD_NATS_URL": "nats://nats:4222",
                 "DASHBOARD_NATS_MONITOR_URL": "http://nats:8222", "DASHBOARD_NATS_STREAM": "ALGOTRADING_HISTORICAL_RUNTIME",
-                "DASHBOARD_RUNTIME_MODE": "REPLAY", "DASHBOARD_MARKET_DATA_DB": "/data/market/database.db",
+                "DASHBOARD_RUNTIME_MODE": "PAPER", "DASHBOARD_MARKET_DATA_DB": "/data/market/database.db",
                 "DASHBOARD_ALERT_STORE_DIR": "/data/watchdog", "DASHBOARD_WATCHDOG_INTERVAL": "15s",
-                "DASHBOARD_WATCHDOG_SWEEP_TIMEOUT": "8s", "DASHBOARD_EXECUTION_VENUE": "HYPERLIQUID",
-                "DASHBOARD_VENUE_TARGET_ENVIRONMENT": "TESTNET", "DASHBOARD_EXCHANGE_GATEWAY_MODE": "hyperliquid-dry-run",
-                "DASHBOARD_HYPERLIQUID_PUBLIC_INFO_URL": "https://api.hyperliquid-testnet.xyz/info",
-                "DASHBOARD_HYPERLIQUID_PUBLIC_TIMEOUT": "1s"}
+                "DASHBOARD_WATCHDOG_SWEEP_TIMEOUT": "8s", "DASHBOARD_EXECUTION_VENUE": "SIMULATED",
+                "DASHBOARD_VENUE_TARGET_ENVIRONMENT": "PAPER", "DASHBOARD_EXCHANGE_GATEWAY_MODE": "backend"}
             service["volumes"] = ["market-data-db:/data/market", "dashboard-watchdog-data:/data/watchdog"]
         else:
             service["environment"] = {"DASHBOARD_ALERT_STORE_DIR": "/data/watchdog",

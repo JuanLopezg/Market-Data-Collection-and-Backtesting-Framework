@@ -57,6 +57,7 @@ type hostHistory struct {
 	Reason        string             `json:"reason,omitempty"`
 	Range         string             `json:"range"`
 	BucketSeconds int                `json:"bucketSeconds"`
+	OldestAt      string             `json:"oldestAt,omitempty"`
 	NewestAt      string             `json:"newestAt,omitempty"`
 	Stale         bool               `json:"stale"`
 	Containers    []string           `json:"containers"`
@@ -104,6 +105,35 @@ func readHostHistory(path, rangeName string, start, end, now time.Time) (hostHis
 	}
 	defer file.Close()
 
+	if rangeName == "all" {
+		// Find the actual retained span without loading the file into memory.
+		// Rows need not be sorted; malformed and future observations are ignored.
+		var oldest time.Time
+		scan := bufio.NewScanner(file)
+		scan.Buffer(make([]byte, 64*1024), 1<<20)
+		for scan.Scan() {
+			var row historyRow
+			if json.Unmarshal(scan.Bytes(), &row) != nil {
+				continue
+			}
+			observed, err := time.Parse(time.RFC3339Nano, row.Time)
+			if err == nil && !observed.After(end) && (oldest.IsZero() || observed.Before(oldest)) {
+				oldest = observed
+			}
+		}
+		if err := scan.Err(); err != nil {
+			return result, err
+		}
+		start = now
+		if !oldest.IsZero() {
+			start = oldest
+			result.OldestAt = oldest.UTC().Format(time.RFC3339)
+		}
+		if _, err := file.Seek(0, 0); err != nil {
+			return result, err
+		}
+	}
+
 	bucketSize := end.Sub(start) / maxHistoryPoints
 	if bucketSize < 30*time.Second {
 		bucketSize = 30 * time.Second
@@ -127,6 +157,9 @@ func readHostHistory(path, rangeName string, start, end, now time.Time) (hostHis
 			newest = observed
 		}
 		index := int64(observed.Sub(start) / bucketSize)
+		if index >= maxHistoryPoints {
+			index = maxHistoryPoints - 1
+		}
 		bucket := buckets[index]
 		if bucket == nil {
 			bucket = &historyBucket{containerCPU: map[string]*mean{}, containerRAM: map[string]*mean{}}
@@ -195,7 +228,7 @@ func readHostHistory(path, rangeName string, start, end, now time.Time) (hostHis
 	return result, nil
 }
 
-// GET /api/infrastructure/history?range=1h|6h|24h|7d (ending now)
+// GET /api/infrastructure/history?range=1h|6h|24h|7d|all (ending now)
 // or ?from=RFC3339&to=RFC3339 (explicit UTC window within the retained history).
 func (s *Server) hostHistory(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
@@ -215,8 +248,8 @@ func (s *Server) hostHistory(w http.ResponseWriter, r *http.Request) {
 			rangeName = "6h"
 		}
 		window, ok := historyRanges[rangeName]
-		if !ok {
-			s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "range must be 1h, 6h, 24h or 7d"})
+		if !ok && rangeName != "all" {
+			s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "range must be 1h, 6h, 24h, 7d or all"})
 			return
 		}
 		start, end = now.Add(-window), now.Add(time.Minute)

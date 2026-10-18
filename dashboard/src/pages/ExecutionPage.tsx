@@ -2,7 +2,7 @@ import { AlertTriangle, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Panel } from '../components/Panel'
 import { DataLoadError } from '../components/DataLoadError'
-import { LineChart, displayAmount, usd } from '../components/LineChart'
+import { LineChart, usd } from '../components/LineChart'
 import { useDashboardResource } from '../hooks/useDashboardResource'
 import type { ExecutionData, ExecutionOrderState, LedgerEntry } from '../types/dashboard'
 
@@ -24,7 +24,11 @@ function Side({ side }: { side: 'BUY' | 'SELL' }) {
 
 const fmtQty = (value: number) => value.toLocaleString('en-US', { maximumFractionDigits: 6 })
 const price = (value: number) => value > 0 ? `${new Intl.NumberFormat('en-US', { maximumSignificantDigits: 6 }).format(value)}$` : '—'
+const priceLabel = (label: string) => /^\$[\d,.]+$/.test(label) ? price(Number(label.slice(1).replace(/,/g, ''))) : label
 const bps = (value: number) => Math.abs(value) < 0.005 ? '0.00 bps' : `${value > 0 ? '+' : ''}${value.toFixed(2)} bps`
+// Preserve small fees; the generic money formatter intentionally rounds to cents.
+const feeAmount = (value: number) => `${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 8 }).format(value)}$`
+const feeLabel = (label: string) => label.replace(/\$(-?[\d,]+(?:\.\d+)?)/g, (_, amount: string) => feeAmount(Number(amount.replace(/,/g, ''))))
 
 // Replay business time: YYYYMMDD plus a phase digit (1 = open, 9 = close). Other values pass through.
 function businessTime(value: string) {
@@ -53,20 +57,20 @@ function OrdersPanel({ data }: { data: ExecutionData }) {
     <select className="compact-select" value={stateFilter} onChange={event => setStateFilter(event.target.value as 'ALL' | ExecutionOrderState)}><option>ALL</option><option>NEW</option><option>PARTIAL</option><option>FILLED</option><option>PENDING_CANCEL</option><option>CANCELED</option><option>REJECTED</option><option>SKIPPED</option></select>
   </div>}>
     <div className="table-wrap"><table className="wide-table execution-table"><thead><tr>
-      <th>Order ID</th><th>Asset</th><th>Side</th><th>Qty</th><th>Filled</th><th>State</th><th>Expected</th><th>Avg Fill</th><th>Slippage</th><th>Fees</th><th>Submitted</th>
+      <th>Order ID</th><th>Asset</th><th>Side</th><th>Qty</th><th>Filled</th><th>State</th><th title="Persisted planning price, or stop trigger for a stop-loss">Reference</th><th>Avg Fill</th><th title="Fill vs reference; positive is adverse. Includes price gaps and venue differences.">Slippage</th><th>Fees</th><th>Submitted</th>
     </tr></thead><tbody>
       {orders.length === 0 && <tr><td colSpan={11} className="empty-cell">{data.orders.length ? 'No orders match the filters' : 'No orders yet'}</td></tr>}
       {orders.slice(0, limit).map(order => <tr key={order.orderId}>
-        <td className="mono"><strong>{order.orderId}</strong></td>
+        <td className="mono"><strong>{order.orderId}</strong>{order.orderType === 'STOP' && <span title={`Resting stop-loss at ${price(order.positionStopPrice ?? 0)}; moves to 70% of each daily close`}> · STOP</span>}</td>
         <td><strong>{order.asset}</strong></td>
         <td><Side side={order.side}/></td>
         <td>{fmtQty(order.quantity)}</td>
         <td>{fmtQty(order.filledQty)}</td>
         <td><OrderState state={order.state}/></td>
-        <td>{displayAmount(order.expectedPriceLabel)}</td>
-        <td>{displayAmount(order.avgFillPriceLabel)}</td>
+        <td title={order.expectedPriceSource}>{priceLabel(order.expectedPriceLabel)}</td>
+        <td>{priceLabel(order.avgFillPriceLabel)}</td>
         <td className={order.slippageBps > 2 ? 'warning' : order.slippageBps < 0 ? 'positive' : ''}>{order.slippageBpsLabel}</td>
-        <td>{displayAmount(order.feesLabel)}</td>
+        <td>{feeLabel(order.feesLabel)}</td>
         <td>{businessTime(order.submittedAt)}</td>
       </tr>)}
     </tbody></table></div>
@@ -75,10 +79,11 @@ function OrdersPanel({ data }: { data: ExecutionData }) {
 }
 
 // One row per fill: when, which order, what and at what price.
-function FillsPanel() {
+function FillsPanel({ data }: { data: ExecutionData }) {
   const { data: ledger, error, retry } = useDashboardResource('getLedger')
   const [query, setQuery] = useState('')
   const [limit, setLimit] = useState(PAGE)
+  const feesByFill = new Map(data.partialFills.map(fill => [fill.fillId, fill.feesLabel]))
   const fills = useMemo(() => {
     const q = query.trim().toLowerCase()
     return (ledger?.entries ?? []).filter((entry: LedgerEntry) => !q || `${entry.orderId} ${entry.asset}`.toLowerCase().includes(q))
@@ -104,7 +109,7 @@ function FillsPanel() {
           <td>{fmtQty(entry.quantity)}</td>
           <td>{price(entry.price)}</td>
           <td>{usd(entry.price > 0 ? entry.quantity * entry.price : entry.grossNotional)}</td>
-          <td>{usd(entry.commission)}</td>
+          <td>{feeLabel(feesByFill.get(entry.fillId) ?? (entry.feesPending ? 'Pending' : feeAmount(entry.commission)))}</td>
         </tr>)}
       </tbody></table></div>
       <ShowMore shown={Math.min(limit, fills.length)} total={fills.length} onMore={() => setLimit(limit + PAGE)}/>
@@ -123,7 +128,7 @@ export function ExecutionPage() {
     { label: 'Filled Orders', value: String(data.filledOrders), tone: '' },
     { label: 'Rejected', value: String(data.rejectCount), tone: data.rejectCount ? 'negative' : '' },
     { label: 'Skipped by venue', value: String(data.skippedCount ?? 0), tone: data.skippedCount ? 'warning' : '' },
-    { label: 'Total Fees', value: displayAmount(data.totalFeesLabel), tone: '' },
+    { label: 'Recorded Fees', value: feeLabel(data.totalFeesLabel), tone: '' },
   ]
   const slippage = data.slippageHistory ?? []
 
@@ -135,14 +140,18 @@ export function ExecutionPage() {
     </section>
 
     <div className="execution-stack">
-    <Panel title="Average Slippage" right={data.slippageAvailable ? <span className="muted">{data.avgSlippageBpsLabel} overall</span> : undefined}>
+    <Panel title="Slippage vs Reference" right={data.slippageAvailable ? <span className="muted">{data.avgSlippageBpsLabel} · {data.slippageFillCount ?? data.fillCount} fills</span> : undefined}>
       {slippage.length > 0
         ? <LineChart data={slippage} lines={[{ key: 'bps', label: 'Slippage', color: 'var(--series-2)' }]} formatValue={bps} compact/>
-        : <div className="overview-unavailable overview-unavailable--compact"><strong>No slippage data</strong></div>}
+        : <div className="overview-unavailable overview-unavailable--compact"><strong>No measured fills in this window</strong><span>Slippage needs a filled order with a stored reference price.</span></div>}
+      {data.slippageBasis && <p className="muted">{data.slippageBasis}</p>}
     </Panel>
 
+    {!!data.feesPendingCount && <p className="muted">Fees are still pending for {data.feesPendingCount} fill(s). Recorded fees update when Kraken account-history events arrive.</p>}
+    {(data.fillWindowTruncated || data.orderWindowTruncated) && <p className="muted">Order and slippage details use a bounded recent window. Recorded fees cover the full persisted fill history.</p>}
+
     <OrdersPanel data={data}/>
-    <FillsPanel/>
+    <FillsPanel data={data}/>
 
     {data.rejects.length > 0 && <Panel title="Skipped and rejected orders" right={<span className="warning"><AlertTriangle size={12}/> {data.rejects.length}</span>}>
       <div className="reject-list">{data.rejects.map(reject => <div className={`reject-card${reject.kind === 'SKIPPED' ? ' reject-card--skipped' : ''}`} key={reject.orderId}>

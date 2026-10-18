@@ -5,14 +5,20 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
+	"time"
 
+	pgstore "control-dashboard-api/internal/integration/postgres"
 	"control-dashboard-api/internal/tradingwire"
 )
 
 // Position valuation for the PAPER (real) provider.
 //
-// Marks are the latest completed daily closes in the market SQLite; equity is account cash
-// plus marked positions (the PAPER account pays for positions from cash). Target weights
+// PAPER marks are the latest completed daily closes in the market SQLite. Kraken LIVE marks
+// are Kraken's current mark prices in source units (real_kraken_marks.go), falling back to
+// that close for an asset Kraken does not price; LIVE equity also counts the BTC collateral
+// after haircut, the capital the risk service sizes with. Equity is account cash plus marked
+// positions (the account pays for positions from cash). Target weights
 // come from the latest durable PortfolioRisk decision. Entry price and unrealized PnL use
 // the average cost of the persisted fills, and only when the whole fill history fits the
 // bounded read. Anything that cannot be established stays unavailable ("—"), never zero.
@@ -20,11 +26,12 @@ import (
 const valuationFillWindow = 1000
 
 type positionValuationInputs struct {
-	cash    float64
-	marks   map[string]float64 // latest close per asset
-	targets map[string]float64 // approved target notional per asset (USD); nil = unknown
-	entries map[string]float64 // average entry price per asset; nil = unknown
-	status  string             // per-position alignment derived from reconciliation
+	cash       float64
+	collateral float64            // Kraken LIVE: BTC collateral after haircut (0 in PAPER)
+	marks      map[string]float64 // current mark per asset (Kraken LIVE) or latest close
+	targets    map[string]float64 // approved target notional per asset (USD); nil = unknown
+	entries    map[string]float64 // average entry price per asset; nil = unknown
+	status     string             // per-position alignment derived from reconciliation
 }
 
 func (p *Real) valuePositions(ctx context.Context, data *realPositionsData, cash float64) {
@@ -42,6 +49,33 @@ func (p *Real) valuePositions(ctx context.Context, data *realPositionsData, cash
 			}
 		}
 	}
+	var funding map[string]krakenMark
+	if p.krakenLive() {
+		data.PriceSource = "Binance daily close"
+		if kraken, err := p.krakenMarks(ctx); err == nil {
+			if inputs.marks == nil {
+				inputs.marks = map[string]float64{}
+			}
+			for _, asset := range assets {
+				if mark, ok := kraken[asset]; ok {
+					inputs.marks[asset] = mark.Price
+				}
+			}
+			funding = kraken
+			data.PriceSource = "Kraken mark price"
+		} else {
+			data.SourceNote = strings.TrimSpace(data.SourceNote + " Kraken mark prices unavailable (" + err.Error() +
+				"); positions are valued at the latest Binance daily close.")
+		}
+		var days []pgstore.EquityDay
+		if accounting, err := p.postgres.Accounting(ctx); err == nil && accounting.Available {
+			days = accounting.Equity
+		}
+		account, accountErr := p.readKrakenAccount(time.Now().UTC())
+		if collateral, known := latestCollateral(account, accountErr, days); known {
+			inputs.collateral = collateral
+		}
+	}
 	if checkpoint, err := p.postgres.LatestPipelineCheckpoint(ctx); err == nil {
 		inputs.targets = map[string]float64{}
 		for _, strategy := range checkpoint.Decision.Strategies {
@@ -49,6 +83,7 @@ func (p *Real) valuePositions(ctx context.Context, data *realPositionsData, cash
 				inputs.targets[asset] += usd
 			}
 		}
+		addHeldTargets(inputs.targets, checkpoint)
 	}
 	if window, err := p.postgres.LedgerFills(ctx, valuationFillWindow); err == nil && window.TotalRows <= int64(len(window.Rows)) {
 		inputs.entries = averageEntryPrices(window.Rows)
@@ -57,6 +92,45 @@ func (p *Real) valuePositions(ctx context.Context, data *realPositionsData, cash
 		inputs.status = overviewReconciliationCheckState(reconciliation.Status)
 	}
 	applyPositionValuation(data, inputs)
+	applyFundingRates(data, funding)
+}
+
+// addHeldTargets adds the assets risk kept on HOLD (inside the rebalance band). The decision
+// carries no order for them, so it has no target notional; their approved target is still
+// the approved weight of the strategy's reference capital, not zero.
+func addHeldTargets(targets map[string]float64, checkpoint pgstore.PipelineCheckpoint) {
+	if checkpoint.RiskDiagnostics == nil {
+		return
+	}
+	decided := map[uint64]map[string]bool{}
+	for _, strategy := range checkpoint.Decision.Strategies {
+		decided[strategy.StrategyID] = map[string]bool{}
+		for asset := range strategy.TargetNotionalUSD {
+			decided[strategy.StrategyID][asset] = true
+		}
+	}
+	for _, strategy := range checkpoint.RiskDiagnostics.Strategies {
+		for asset, evaluated := range strategy.Assets {
+			if evaluated.Action != "HOLD" || evaluated.ApprovedWeight == nil || decided[strategy.StrategyID][asset] {
+				continue
+			}
+			targets[asset] += *evaluated.ApprovedWeight * strategy.ReferenceCapital
+		}
+	}
+}
+
+// applyFundingRates shows Kraken's current funding rate per open position (LIVE only).
+func applyFundingRates(data *realPositionsData, funding map[string]krakenMark) {
+	for index := range data.Positions {
+		mark, ok := funding[data.Positions[index].Asset]
+		if !ok || !mark.FundingKnown {
+			continue
+		}
+		position := &data.Positions[index]
+		position.FundingRateHourlyPct = mark.FundingHourly * 100
+		position.FundingRateAnnualPct = mark.FundingHourly * 24 * 365 * 100
+		position.FundingRateAvailable = true
+	}
 }
 
 // averageEntryPrices replays fills in time order: adding to a position averages its cost,
@@ -92,6 +166,7 @@ func averageEntryPrices(fills []tradingwire.Fill) map[string]float64 {
 
 func applyPositionValuation(data *realPositionsData, inputs positionValuationInputs) {
 	equity, gross, net, unrealized := inputs.cash, 0.0, 0.0, 0.0
+	equity += inputs.collateral
 	valued := len(data.Positions) == 0 || inputs.marks != nil
 	for _, position := range data.Positions {
 		mark, ok := inputs.marks[position.Asset]
@@ -145,6 +220,7 @@ func applyPositionValuation(data *realPositionsData, inputs positionValuationInp
 	data.NetExposure = formatSignedUSDLabel(net)
 	data.ValuationState = "AVAILABLE"
 	data.equityValue, data.grossValue = equity, gross
+	data.collateralValue = inputs.collateral
 	if pnlComplete {
 		data.UnrealizedPnL = formatSignedUSDLabel(unrealized)
 	}

@@ -18,6 +18,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -28,6 +29,7 @@
 #include <libpq-fe.h>
 
 #include "account.h"
+#include "canonical_market_data_reader.h"
 #include "message_json.h"
 #include "exchange_snapshot_event.h"
 #include "exchange_snapshot_request.h"
@@ -83,6 +85,7 @@ struct Options {
     std::string runtime_stream = "ALGOTRADING_RUNTIME";
     std::string backend_stream = "ALGOTRADING_EXCHANGE_BACKEND";
     std::string postgres;
+    std::string market_data_db; // Optional read-only OHLCV source for PAPER position stops.
     double initial_cash = 100000.0;
     double commission_rate = 0.0;
     int poll_timeout_ms = 250;
@@ -109,6 +112,8 @@ Options parseOptions(int argc, char** argv)
             options.backend_stream = requireValue("--backend-stream");
         else if (arg == "--postgres")
             options.postgres = requireValue("--postgres");
+        else if (arg == "--market-data-db")
+            options.market_data_db = requireValue("--market-data-db");
         else if (arg == "--initial-cash")
             options.initial_cash = std::stod(requireValue("--initial-cash"));
         else if (arg == "--commission-rate")
@@ -122,6 +127,7 @@ Options parseOptions(int argc, char** argv)
                 << "  --stream NAME\n"
                 << "  --backend-stream NAME\n"
                 << "  --postgres CONNECTION_STRING\n"
+                << "  --market-data-db PATH    read closed daily bars after market.data.updated\n"
                 << "  --initial-cash VALUE\n"
                 << "  --commission-rate VALUE\n"
                 << "  --poll-timeout-ms N\n";
@@ -152,7 +158,8 @@ bool sameOrder(const ExecutionOrder& lhs, const ExecutionOrder& rhs)
            lhs.active_from == rhs.active_from &&
            lhs.coin == rhs.coin &&
            lhs.side == rhs.side &&
-           lhs.quantity == rhs.quantity;
+           lhs.quantity == rhs.quantity &&
+           lhs.position_stop_price == rhs.position_stop_price;
 }
 
 
@@ -254,6 +261,7 @@ public:
     struct RecoveryState {
         double cash = 0.0;
         Timestamp latest_timestamp = 0;
+        Timestamp last_position_stop_bar = 0;
         FillID next_fill_id = 1;
         std::unordered_map<Coin, double> positions;
         std::map<Timestamp, std::unordered_map<Coin, double>> execution_prices;
@@ -392,6 +400,10 @@ private:
             ")",
             PGRES_COMMAND_OK
         );
+        exec("ALTER TABLE simulated_exchange_known_orders ADD COLUMN IF NOT EXISTS "
+             "position_stop_price DOUBLE PRECISION NOT NULL DEFAULT 0", PGRES_COMMAND_OK);
+        exec("ALTER TABLE simulated_exchange_state ADD COLUMN IF NOT EXISTS "
+             "last_position_stop_bar BIGINT NOT NULL DEFAULT 0", PGRES_COMMAND_OK);
 
         exec(
             "CREATE TABLE IF NOT EXISTS simulated_exchange_outbox ("
@@ -459,7 +471,7 @@ private:
         if (sideValue != 0 && sideValue != 1)
             throw std::runtime_error("Persisted simulated-exchange order side is invalid");
 
-        return ExecutionOrder(
+        ExecutionOrder order(
             static_cast<OrderID>(orderIdValue),
             static_cast<StrategyID>(strategyIdValue),
             static_cast<Timestamp>(createdAtValue),
@@ -468,6 +480,9 @@ private:
             sideValue == 0 ? OrderSide::Buy : OrderSide::Sell,
             std::stod(PQgetvalue(result, row, columnOffset + 6))
         );
+        order.position_stop_price = std::stod(PQgetvalue(result, row, columnOffset + 7));
+        order.validateConditional();
+        return order;
     }
 
 public:
@@ -506,7 +521,7 @@ public:
         RecoveryState state;
 
         const PgResult stateRow = execParams(
-            "SELECT cash, latest_timestamp, next_fill_id FROM simulated_exchange_state "
+            "SELECT cash, latest_timestamp, next_fill_id, last_position_stop_bar FROM simulated_exchange_state "
             "WHERE state_key = $1",
             {STATE_KEY},
             PGRES_TUPLES_OK
@@ -521,6 +536,10 @@ public:
         if (latestTimestampValue > std::numeric_limits<Timestamp>::max())
             throw std::runtime_error("Persisted simulated-exchange timestamp is out of range");
         state.latest_timestamp = static_cast<Timestamp>(latestTimestampValue);
+        const auto lastBar = std::stoull(PQgetvalue(stateRow.get(), 0, 3));
+        if (lastBar > std::numeric_limits<Timestamp>::max())
+            throw std::runtime_error("Persisted position stop bar timestamp is out of range");
+        state.last_position_stop_bar = static_cast<Timestamp>(lastBar);
 
         state.next_fill_id = static_cast<FillID>(
             std::stoull(PQgetvalue(stateRow.get(), 0, 2))
@@ -559,7 +578,7 @@ public:
         }
 
         const PgResult knownOrders = execParams(
-            "SELECT order_id, strategy_id, created_at, active_from, coin, side, quantity "
+            "SELECT order_id, strategy_id, created_at, active_from, coin, side, quantity, position_stop_price "
             "FROM simulated_exchange_known_orders WHERE state_key = $1 ORDER BY order_id",
             {STATE_KEY},
             PGRES_TUPLES_OK
@@ -605,6 +624,7 @@ public:
         double cash,
         const std::unordered_map<Coin, double>& positions,
         Timestamp latestTimestamp,
+        Timestamp lastPositionStopBar,
         FillID nextFillId,
         const std::unordered_map<OrderID, ExecutionOrder>& activeOrders,
         const std::optional<std::pair<Timestamp, std::unordered_map<Coin, double>>>& newPrices,
@@ -616,13 +636,14 @@ public:
         try {
             execParams(
                 "UPDATE simulated_exchange_state "
-                "SET cash = $2, latest_timestamp = $3, next_fill_id = $4 "
+                "SET cash = $2, latest_timestamp = $3, next_fill_id = $4, last_position_stop_bar = $5 "
                 "WHERE state_key = $1",
                 {
                     STATE_KEY,
                     doubleText(cash),
                     std::to_string(latestTimestamp),
-                    std::to_string(nextFillId)
+                    std::to_string(nextFillId),
+                    std::to_string(lastPositionStopBar)
                 },
                 PGRES_COMMAND_OK
             );
@@ -662,8 +683,8 @@ public:
                 const ExecutionOrder& order = *newKnownOrder;
                 execParams(
                     "INSERT INTO simulated_exchange_known_orders("
-                    "state_key, order_id, strategy_id, created_at, active_from, coin, side, quantity"
-                    ") VALUES($1, $2, $3, $4, $5, $6, $7, $8) "
+                    "state_key, order_id, strategy_id, created_at, active_from, coin, side, quantity, position_stop_price"
+                    ") VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) "
                     "ON CONFLICT(state_key, order_id) DO NOTHING",
                     {
                         STATE_KEY,
@@ -673,7 +694,8 @@ public:
                         std::to_string(order.active_from),
                         order.coin,
                         order.side == OrderSide::Buy ? "0" : "1",
-                        doubleText(order.quantity)
+                        doubleText(order.quantity),
+                        doubleText(order.position_stop_price)
                     },
                     PGRES_COMMAND_OK
                 );
@@ -766,8 +788,11 @@ private:
     std::unordered_map<OrderID, ExecutionOrder> known_orders_;
     std::vector<ExchangeEvent> pending_events_;
     Timestamp latest_timestamp_ = 0;
+    Timestamp last_position_stop_bar_ = 0;
 
     MessageBus::SubscriptionID prices_subscription_ = 0;
+    MessageBus::SubscriptionID bars_subscription_ = 0;
+    MessageBus::SubscriptionID market_update_subscription_ = 0;
     MessageBus::SubscriptionID submit_subscription_ = 0;
     MessageBus::SubscriptionID cancel_subscription_ = 0;
     MessageBus::SubscriptionID snapshot_request_subscription_ = 0;
@@ -1019,6 +1044,7 @@ private:
             account_.cash(),
             account_.positions().values(),
             latest_timestamp_,
+            last_position_stop_bar_,
             exchange_.nextFillId(),
             exchange_.activeOrders(),
             newPrices,
@@ -1048,6 +1074,8 @@ private:
 
     void processOpenIfAvailable(const ExecutionOrder& order)
     {
+        if (order.isPositionStop())
+            return; // A cached open is not a completed bar and must not trigger a stop.
         const auto priceIt = execution_prices_.find(order.active_from);
         if (priceIt == execution_prices_.end())
             return;
@@ -1081,6 +1109,7 @@ private:
         execution_prices_ = std::move(recovered.execution_prices);
         known_orders_ = std::move(recovered.known_orders);
         latest_timestamp_ = recovered.latest_timestamp;
+        last_position_stop_bar_ = recovered.last_position_stop_bar;
 
         LG_INFO("Recovery {}: last day {}, cash {}, {} positions, {} active orders, {} unpublished outbox events",
                 recoveredNonEmpty ? "restored saved state" : "found no saved state",
@@ -1128,6 +1157,112 @@ private:
         return result;
     }
 
+    void processPositionStopBar(Timestamp timestamp, const CoinBarMap& bars, const std::string& messageId)
+    {
+        if (timestamp <= last_position_stop_bar_) {
+            // Retry a failed checkpoint/publication, but never rematch an already closed
+            // bar against stops submitted later (including after a process restart).
+            // A non-triggering bar also advances the cursor, even without events.
+            checkpointTransition(messageId);
+            return;
+        }
+        exchange_.processPositionStopsAtClose(timestamp, bars, account_.positions());
+        captureExchangeEvents();
+        last_position_stop_bar_ = timestamp;
+        latest_timestamp_ = std::max(latest_timestamp_, timestamp);
+        checkpointTransition(messageId);
+    }
+
+    DurableMessageDisposition onBars(const BusMessage& message)
+    {
+        try {
+            const auto slice = MessageJson::decodeMarketSliceSnapshot(message.payload);
+            validateMetadata(slice.metadata);
+            if (slice.timestamp == 0)
+                return DurableMessageDisposition::Terminate;
+            if (!businessTimeReady(slice.metadata.produced_at, "position_stop_bar_metadata") ||
+                !businessTimeReady(slice.timestamp, "position_stop_bar"))
+                return DurableMessageDisposition::Retry;
+            CoinBarMap bars;
+            for (const auto& row : slice.bars) {
+                BarData bar{row.bar.open, row.bar.high, row.bar.low, row.bar.close, row.bar.volume};
+                bar.quote_volume = row.bar.quote_volume;
+                if (row.coin.empty() || !bars.emplace(row.coin, bar).second)
+                    throw std::invalid_argument("Invalid or duplicate coin in position stop bar");
+            }
+            processPositionStopBar(slice.timestamp, bars, slice.metadata.message_id);
+            return DurableMessageDisposition::Ack;
+        }
+        catch (const std::invalid_argument& error) {
+            LG_WARN("Rejected invalid position stop bars: {}", error.what());
+            return DurableMessageDisposition::Terminate;
+        }
+        catch (const std::exception& error) {
+            LG_ERROR("Position stop bar handling failed; will retry: {}", error.what());
+            return DurableMessageDisposition::Retry;
+        }
+    }
+
+    DurableMessageDisposition onMarketUpdate(const BusMessage& message)
+    {
+        try {
+            const auto update = MessageJson::decodeMarketDataUpdated(message.payload);
+            validateMetadata(update.metadata);
+            if (update.completed_through == 0 || update.timeframe != "1d")
+                return DurableMessageDisposition::Terminate;
+            if (!businessTimeReady(update.metadata.produced_at, "position_stop_market_metadata") ||
+                !businessTimeReady(update.completed_through, "position_stop_market_day"))
+                return DurableMessageDisposition::Retry;
+            const Timestamp through = update.completed_through;
+            if (through <= last_position_stop_bar_) {
+                processPositionStopBar(through, {}, update.metadata.message_id);
+                return DurableMessageDisposition::Ack;
+            }
+            std::set<Coin> symbols;
+            Timestamp first = through;
+            for (const auto& [id, order] : exchange_.activeOrders()) {
+                (void)id;
+                if (order.isPositionStop() && order.active_from <= through) {
+                    symbols.insert(order.coin);
+                    first = std::min(first, order.active_from);
+                }
+            }
+            if (!symbols.empty()) {
+                if (last_position_stop_bar_ != 0)
+                    first = std::max(first, static_cast<Timestamp>(nextDay(last_position_stop_bar_)));
+                const auto days = (toUnixMillis(static_cast<int>(through)) -
+                                   toUnixMillis(static_cast<int>(first))) / 86400000 + 1;
+                CanonicalMarketDataReader reader(options_.market_data_db);
+                const auto history = reader.loadMarketDataWindow(through, static_cast<unsigned int>(days), symbols);
+                // Missing bars are unavailable evidence, not a synthetic zero low or a
+                // reason to advance the durable cursor past an unobserved day.
+                for (Timestamp day = first; day <= through; day = static_cast<Timestamp>(nextDay(day))) {
+                    const auto found = history.find(day);
+                    if (found == history.end())
+                        throw std::runtime_error("Missing completed daily bars for position stops");
+                    for (const auto& [id, order] : exchange_.activeOrders()) {
+                        (void)id;
+                        if (order.isPositionStop() && order.active_from <= day && !found->second.contains(order.coin))
+                            throw std::runtime_error("Missing completed position stop coin bar");
+                    }
+                    processPositionStopBar(day, found->second, update.metadata.message_id);
+                }
+            }
+            else {
+                processPositionStopBar(through, {}, update.metadata.message_id);
+            }
+            return DurableMessageDisposition::Ack;
+        }
+        catch (const std::invalid_argument& error) {
+            LG_WARN("Rejected invalid position stop market update: {}", error.what());
+            return DurableMessageDisposition::Terminate;
+        }
+        catch (const std::exception& error) {
+            LG_ERROR("Position stop OHLCV read failed; will retry: {}", error.what());
+            return DurableMessageDisposition::Retry;
+        }
+    }
+
     DurableMessageDisposition onPrices(const BusMessage& message)
     {
         try {
@@ -1151,6 +1286,16 @@ private:
                     return DurableMessageDisposition::Terminate;
                 flushPendingEvents(prices.metadata.message_id);
                 return DurableMessageDisposition::Ack;
+            }
+
+            // With canonical OHLCV configured, settle the preceding close before any
+            // following open can mutate the holdings used by a reduce-only stop.
+            if (!options_.market_data_db.empty() && prices.decision_timestamp > last_position_stop_bar_) {
+                for (const auto& [id, order] : exchange_.activeOrders()) {
+                    (void)id;
+                    if (order.isPositionStop() && order.active_from <= prices.decision_timestamp)
+                        return DurableMessageDisposition::Retry;
+                }
             }
 
             if (latest_timestamp_ != 0 && prices.timestamp < latest_timestamp_)
@@ -1363,6 +1508,18 @@ public:
             ),
             [this](const BusMessage& message) { return onPrices(message); }
         );
+        bars_subscription_ = bus_.subscribe(
+            consumer(options_.runtime_stream, "simulated-exchange-position-stop-bars",
+                     MessageSubjects::MARKET_SLICE_SNAPSHOT),
+            [this](const BusMessage& message) { return onBars(message); }
+        );
+        if (!options_.market_data_db.empty()) {
+            market_update_subscription_ = bus_.subscribe(
+                consumer(options_.runtime_stream, "simulated-exchange-position-stop-market",
+                         MessageSubjects::MARKET_DATA_UPDATED),
+                [this](const BusMessage& message) { return onMarketUpdate(message); }
+            );
+        }
         submit_subscription_ = bus_.subscribe(
             consumer(
                 options_.backend_stream,
@@ -1395,6 +1552,9 @@ public:
         bus_.close(cancel_subscription_);
         bus_.close(submit_subscription_);
         bus_.close(prices_subscription_);
+        bus_.close(bars_subscription_);
+        if (market_update_subscription_ != 0)
+            bus_.close(market_update_subscription_);
     }
 
     void run()
@@ -1406,9 +1566,16 @@ public:
                 FormatDayKey(currentBusinessUtcDate(time_handler_)));
         LG_DEBUG("Runtime stream {}, backend stream {}, poll timeout {} ms",
                  options_.runtime_stream, options_.backend_stream, options_.poll_timeout_ms);
+        LG_INFO("Position stop bars: {}", options_.market_data_db.empty()
+                ? "market.slice.snapshot.v1 (execution opens alone do not carry lows)"
+                : "market.slice.snapshot.v1 and read-only canonical OHLCV on market.data.updated.v1");
         std::cout.flush();
 
         while (running.load()) {
+            // Closed bars first: reduce-only stops see holdings before the following open.
+            bus_.poll(bars_subscription_, 32, options_.poll_timeout_ms);
+            if (market_update_subscription_ != 0)
+                bus_.poll(market_update_subscription_, 32, options_.poll_timeout_ms);
             // Prices first: orders submitted later for the same active_from timestamp are
             // still filled from the stored exact open by onSubmit().
             bus_.poll(prices_subscription_, 32, options_.poll_timeout_ms);

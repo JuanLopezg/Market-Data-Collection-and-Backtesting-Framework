@@ -40,6 +40,7 @@
 #include "sample_covariance_estimator.h"
 #include "service_logging.h"
 #include "target_decisions.h"
+#include "relative_threshold_rebalance_policy.h"
 #include "threshold_rebalance_policy.h"
 #include "time_handler_factory.h"
 #include "time_utils.h"
@@ -505,6 +506,8 @@ std::unique_ptr<RebalancePolicy> makeRebalancePolicy(const json& value)
         return std::make_unique<EntryExitOnlyRebalancePolicy>();
     if (type == "threshold")
         return std::make_unique<ThresholdRebalancePolicy>(value.at("threshold").get<double>());
+    if (type == "relative_threshold")
+        return std::make_unique<RelativeThresholdRebalancePolicy>(value.at("threshold").get<double>());
     throw std::invalid_argument("Unsupported rebalance policy type: " + type);
 }
 

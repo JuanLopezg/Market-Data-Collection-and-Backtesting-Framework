@@ -74,10 +74,6 @@ func TestSimulationProviderReadsCanonicalSnapshot(t *testing.T) {
 	if !ledger.Validated || !ledger.ReadOnly || ledger.OrderRouting != "MOCK_ONLY" {
 		t.Fatalf("unexpected ledger: %+v", ledger)
 	}
-	venue := p.VenueFoundation(context.Background())
-	if !venue.FoundationReady || venue.Venue != "MOCK" || venue.PrivateAuth != "DISABLED" {
-		t.Fatalf("unexpected venue foundation: %+v", venue)
-	}
 }
 
 func TestReplayPipelineShowsDecisionLineage(t *testing.T) {

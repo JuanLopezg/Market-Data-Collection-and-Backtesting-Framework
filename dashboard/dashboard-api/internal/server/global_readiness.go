@@ -127,12 +127,6 @@ type globalReadinessInputs struct {
 	AlertsErr      error
 	Manual         readinessManualSnapshot
 	ManualErr      error
-	Foundation     provider.VenueFoundation
-	FoundationOK   bool
-	VenuePublic    provider.VenuePublicStatus
-	VenuePublicOK  bool
-	VenueRules     provider.VenueTradingRulesStatus
-	VenueRulesOK   bool
 	SymbolMap      provider.SymbolMapStatus
 	SymbolMapOK    bool
 	Ledger         provider.LedgerStatus
@@ -176,33 +170,6 @@ func (s *Server) globalReadiness(w http.ResponseWriter, r *http.Request) {
 		inputs.ManualErr = s.readSafetyResource(ctx, provider.ResourceManualControl, &inputs.Manual)
 	}()
 
-	if reader, ok := s.provider.(interface {
-		VenueFoundation(context.Context) provider.VenueFoundation
-	}); ok {
-		inputs.FoundationOK = true
-		inputs.Foundation = reader.VenueFoundation(ctx)
-	}
-
-	if reader, ok := s.provider.(interface {
-		VenuePublicStatus(context.Context) provider.VenuePublicStatus
-	}); ok {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			inputs.VenuePublic = reader.VenuePublicStatus(ctx)
-			inputs.VenuePublicOK = true
-		}()
-	}
-	if reader, ok := s.provider.(interface {
-		VenueTradingRulesStatus(context.Context) provider.VenueTradingRulesStatus
-	}); ok {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			inputs.VenueRules = reader.VenueTradingRulesStatus(ctx)
-			inputs.VenueRulesOK = true
-		}()
-	}
 	if reader, ok := s.provider.(interface {
 		SymbolMapStatus(context.Context) provider.SymbolMapStatus
 	}); ok {
@@ -307,42 +274,6 @@ func buildGlobalReadiness(in globalReadinessInputs) globalReadinessResponse {
 		}
 	}
 
-	if !in.FoundationOK || !in.Foundation.FoundationReady {
-		detail := "Venue foundation provider is unavailable."
-		if in.FoundationOK {
-			detail = in.Foundation.Note
-		}
-		add("venue-foundation", "Hyperliquid TESTNET foundation", "BLOCKED", true, []string{"DASHBOARD", "PRIVATE_TESTNET"}, "/api/venue-foundation", detail)
-	} else {
-		add("venue-foundation", "Hyperliquid TESTNET foundation", "PASS", true, []string{"DASHBOARD", "PRIVATE_TESTNET"}, "/api/venue-foundation", in.Foundation.Venue+" / "+in.Foundation.TargetEnvironment+" / "+in.Foundation.GatewayMode)
-	}
-
-	if !in.VenuePublicOK || !in.VenuePublic.Connected {
-		detail := "Public venue status provider unavailable."
-		if in.VenuePublicOK {
-			detail = in.VenuePublic.Error
-			if strings.TrimSpace(detail) == "" {
-				detail = in.VenuePublic.Note
-			}
-		}
-		add("venue-public", "Public venue connectivity / metadata", "BLOCKED", true, []string{"DASHBOARD", "PRIVATE_TESTNET"}, "/api/venue-public", detail)
-	} else {
-		add("venue-public", "Public venue connectivity / metadata", "PASS", true, []string{"DASHBOARD", "PRIVATE_TESTNET"}, "/api/venue-public", fmt.Sprintf("%s %s public metadata is reachable; universe=%d mids=%d.", in.VenuePublic.Venue, in.VenuePublic.TargetEnvironment, in.VenuePublic.UniverseCount, in.VenuePublic.MidCount))
-	}
-
-	if !in.VenueRulesOK || !in.VenueRules.Validated {
-		detail := "Venue trading-rules provider unavailable."
-		if in.VenueRulesOK {
-			detail = in.VenueRules.Error
-			if strings.TrimSpace(detail) == "" {
-				detail = in.VenueRules.Note
-			}
-		}
-		add("venue-rules", "Public venue trading rules", "BLOCKED", true, []string{"DASHBOARD", "PRIVATE_TESTNET", "LIVE"}, "/api/venue-rules", detail)
-	} else {
-		add("venue-rules", "Public venue trading rules", "PASS", true, []string{"DASHBOARD", "PRIVATE_TESTNET", "LIVE"}, "/api/venue-rules", fmt.Sprintf("Validated rules %d/%d supported mappings; order routing remains disabled.", in.VenueRules.ValidatedRuleCount, in.VenueRules.SupportedMappingCount))
-	}
-
 	symbolMapFor := []string{"PRIVATE_TESTNET", "LIVE"}
 	switch {
 	case !in.SymbolMapOK:
@@ -425,8 +356,8 @@ func buildGlobalReadiness(in globalReadinessInputs) globalReadinessResponse {
 		add("production-auth", "Production authentication posture", "PASS", false, []string{"LIVE"}, "server config", "Demo credentials are disabled and Secure cookies are enabled.")
 	}
 
-	add("private-auth", "Hyperliquid private API wallet authentication", "DEFERRED", false, []string{"PRIVATE_TESTNET", "LIVE"}, "Step 37", "Deferred until the dashboard is complete; no wallet/funds are required for Steps 44–46.")
-	add("account-snapshot", "Private account / balances / open orders", "DEFERRED", false, []string{"PRIVATE_TESTNET", "LIVE"}, "Steps 38–41", "Requires the deferred private Hyperliquid account boundary.")
+	add("private-auth", "Private venue API authentication", "DEFERRED", false, []string{"PRIVATE_TESTNET", "LIVE"}, "Step 37", "Deferred until the dashboard is complete; no wallet/funds are required for Steps 44–46.")
+	add("account-snapshot", "Private account / balances / open orders", "DEFERRED", false, []string{"PRIVATE_TESTNET", "LIVE"}, "Steps 38–41", "Requires the private venue account boundary (Kraken trading key).")
 	add("order-lifecycle", "Submit / cancel / fills / private reconciliation", "DEFERRED", false, []string{"PRIVATE_TESTNET", "LIVE"}, "Steps 39–41", "No private signing or order command path exists yet; routing must remain disabled.")
 	add("service-liveness", "Common trading-service liveness/control contract", "DEFERRED", false, []string{"PRIVATE_TESTNET", "LIVE", "REPLAY_MOCK"}, "future runtime contract", "Durable state is observed, but process liveness/paused state is not yet independently authoritative.")
 	clockState, clockDetail := "DEFERRED", "Host NTP observation unavailable; clock sync is not inferred from inside the dashboard container."
@@ -437,7 +368,7 @@ func buildGlobalReadiness(in globalReadinessInputs) globalReadinessResponse {
 		}
 	}
 	add("clock-sync", "Host clock synchronization", clockState, false, []string{"LIVE"}, "/api/infrastructure", clockDetail)
-	add("mock-exchange", "Mock exchange adapter for full replay + dashboard", "DEFERRED", false, []string{"REPLAY_MOCK"}, "future Venue Adapter boundary", "After Hyperliquid private lifecycle integration, add MockExchangeAdapter behind the same canonical venue contract; do not create a dashboard-only replay shortcut.")
+	add("mock-exchange", "Mock exchange adapter for full replay + dashboard", "DEFERRED", false, []string{"REPLAY_MOCK"}, "future Venue Adapter boundary", "After private venue lifecycle integration, add MockExchangeAdapter behind the same canonical venue contract; do not create a dashboard-only replay shortcut.")
 
 	for i := range requirements {
 		requirements[i].Retryable = globalReadinessRetryable(requirements[i])
@@ -448,7 +379,7 @@ func buildGlobalReadiness(in globalReadinessInputs) globalReadinessResponse {
 
 	expectedIDs := []string{
 		"provider-real", "postgres", "nats", "canonical-market-data", "reconciliation",
-		"durable-e2e-proof", "venue-foundation", "venue-public", "venue-rules", "symbol-map",
+		"durable-e2e-proof", "symbol-map",
 		"ledger", "watchdog", "critical-alerts", "manual-route", "production-auth", "private-auth",
 		"account-snapshot", "order-lifecycle", "service-liveness", "clock-sync", "mock-exchange",
 	}
@@ -504,14 +435,6 @@ func buildGlobalReadiness(in globalReadinessInputs) globalReadinessResponse {
 
 	orderRouting := "DISABLED"
 	privateAuth := "DEFERRED"
-	if in.FoundationOK {
-		if strings.TrimSpace(in.Foundation.OrderRouting) != "" {
-			orderRouting = in.Foundation.OrderRouting
-		}
-		if strings.TrimSpace(in.Foundation.PrivateAuth) != "" && !strings.EqualFold(in.Foundation.PrivateAuth, "DISABLED") {
-			privateAuth = in.Foundation.PrivateAuth
-		}
-	}
 	manualRouting := "UNKNOWN"
 	if in.ManualErr == nil {
 		if in.Manual.RouteEnabled {
@@ -543,8 +466,8 @@ func buildGlobalReadiness(in globalReadinessInputs) globalReadinessResponse {
 		Requirements:            requirements,
 		CheckedAt:               now.Format(time.RFC3339),
 		NextSafeStep:            "STEP_37_PRIVATE_TESTNET_AUTH",
-		FutureReplayBoundary:    "HyperliquidAdapter and future MockExchangeAdapter must share the same canonical venue adapter contract so replay can drive the full dashboard without a special UI path.",
-		Note:                    "Step 44 readiness now reflects the completed Step 46 dashboard contract. Dashboard observability/control admission is complete for this phase, but private testnet, trading and LIVE readiness remain false until the deferred Hyperliquid private lifecycle and normal trading-control path are actually proven.",
+		FutureReplayBoundary:    "The live venue adapter and a future MockExchangeAdapter must share the same canonical venue adapter contract so replay can drive the full dashboard without a special UI path.",
+		Note:                    "Step 44 readiness now reflects the completed Step 46 dashboard contract. Dashboard observability/control admission is complete for this phase, but private testnet, trading and LIVE readiness remain false until the private venue lifecycle and normal trading-control path are actually proven.",
 	}
 }
 
@@ -580,7 +503,7 @@ func globalReadinessRetryable(req globalReadinessRequirement) bool {
 		return false
 	}
 	switch req.ID {
-	case "postgres", "nats", "canonical-market-data", "durable-e2e-proof", "venue-public", "venue-rules", "ledger", "manual-route":
+	case "postgres", "nats", "canonical-market-data", "durable-e2e-proof", "ledger", "manual-route":
 	default:
 		return false
 	}

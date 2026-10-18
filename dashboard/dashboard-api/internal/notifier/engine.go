@@ -14,7 +14,12 @@ type Engine struct {
 	sink        Sink
 	minSeverity string
 	cooldown    time.Duration
-	now         func() time.Time
+	// criticalDelay holds back a new CRITICAL alert until it has been active this long;
+	// one resolved earlier (a restart, a brief outage) is never sent. 0 sends at once.
+	criticalDelay time.Duration
+	// summarySource names the active-alert summaries (summary.go); empty = no summaries.
+	summarySource string
+	now           func() time.Time
 }
 
 type SweepStats struct {
@@ -22,7 +27,10 @@ type SweepStats struct {
 	Processed    int
 	Delivered    int
 	Suppressed   int
+	Deferred     int
 	Bootstrap    bool
+	Summaries    int
+	SummaryError string // a failed summary never fails the sweep; the next change retries
 }
 
 func NewEngine(store *Store, sink Sink, minSeverity string, cooldown time.Duration) (*Engine, error) {
@@ -42,6 +50,18 @@ func NewEngine(store *Store, sink Sink, minSeverity string, cooldown time.Durati
 	return &Engine{store: store, sink: sink, minSeverity: minSeverity, cooldown: cooldown, now: time.Now}, nil
 }
 
+// SetSummarySource enables active-alert summaries named after the alert source ("Watchdog",
+// "Kraken") when the sink supports them.
+func (e *Engine) SetSummarySource(source string) { e.summarySource = strings.TrimSpace(source) }
+
+func (e *Engine) SetCriticalDelay(delay time.Duration) error {
+	if delay < 0 {
+		return fmt.Errorf("notifier critical delay cannot be negative")
+	}
+	e.criticalDelay = delay
+	return nil
+}
+
 func (e *Engine) Process(ctx context.Context, events []alertstore.LifecycleEvent) (SweepStats, error) {
 	stats := SweepStats{SourceEvents: len(events), Bootstrap: !e.store.BootstrapComplete()}
 	activeLatest := map[string]string{}
@@ -56,7 +76,13 @@ func (e *Engine) Process(ctx context.Context, events []alertstore.LifecycleEvent
 		}
 	}
 
-	for _, event := range events {
+	// Each sweep reads the whole lifecycle log, so a deferred event is simply left
+	// unprocessed and decided again on a later sweep.
+	deferredAlerts := map[string]bool{}
+	summarySink, summaries := e.sink.(SummarySink)
+	summaries = summaries && e.summarySource != ""
+	changedChats := map[bool]bool{} // true: the critical group (when it is a separate chat)
+	for index, event := range events {
 		select {
 		case <-ctx.Done():
 			return stats, ctx.Err()
@@ -66,7 +92,18 @@ func (e *Engine) Process(ctx context.Context, events []alertstore.LifecycleEvent
 			continue
 		}
 
-		action, reason := e.decide(event, stats.Bootstrap, activeLatest)
+		var action, reason string
+		if !stats.Bootstrap {
+			action, reason = e.criticalDelayDecision(events, index, deferredAlerts)
+		}
+		if action == "DEFERRED" {
+			deferredAlerts[event.Alert.ID] = true
+			stats.Deferred++
+			continue
+		}
+		if action == "" {
+			action, reason = e.decide(event, stats.Bootstrap, activeLatest)
+		}
 		decision := Decision{
 			Version:          StoreVersion,
 			DecisionID:       "decision:" + event.EventID,
@@ -115,6 +152,9 @@ func (e *Engine) Process(ctx context.Context, events []alertstore.LifecycleEvent
 		stats.Processed++
 		if action == "DELIVERED" {
 			stats.Delivered++
+			if summaries && event.Alert.EventType != "DAILY_PORTFOLIO" {
+				changedChats[summarySink.SeparateCriticalChat() && decision.Severity == "CRITICAL"] = true
+			}
 		} else {
 			stats.Suppressed++
 		}
@@ -124,7 +164,64 @@ func (e *Engine) Process(ctx context.Context, events []alertstore.LifecycleEvent
 			return stats, err
 		}
 	}
+	if len(changedChats) > 0 {
+		active := e.activeReportedAlerts(events)
+		separate := summarySink.SeparateCriticalChat()
+		for _, critical := range []bool{true, false} {
+			if !changedChats[critical] {
+				continue
+			}
+			if err := summarySink.SendSummary(ctx, critical, summaryText(e.summarySource, active, critical, separate)); err != nil {
+				stats.SummaryError = err.Error()
+				continue
+			}
+			stats.Summaries++
+		}
+	}
 	return stats, nil
+}
+
+// criticalDelayDecision applies the critical delay to a not yet reported alert. It
+// returns "" when the normal decision applies. Later events of a deferred alert wait
+// with it, so the alert is reported in its original order.
+func (e *Engine) criticalDelayDecision(events []alertstore.LifecycleEvent, index int, deferredAlerts map[string]bool) (string, string) {
+	event := events[index]
+	if event.Transition == "RESOLVED" || e.criticalDelay <= 0 {
+		return "", ""
+	}
+	if _, delivered := e.store.LastDelivery(event.Alert.ID); delivered {
+		return "", "" // Already reported: updates follow the cooldown rules.
+	}
+	if deferredAlerts[event.Alert.ID] {
+		return "DEFERRED", ""
+	}
+	if strings.ToUpper(strings.TrimSpace(event.Alert.Severity)) != "CRITICAL" {
+		return "", ""
+	}
+	for _, later := range events[index+1:] {
+		if later.Alert.ID == event.Alert.ID && later.Transition == "RESOLVED" {
+			return "SUPPRESSED", "RESOLVED_WITHIN_CRITICAL_DELAY"
+		}
+	}
+	// Measure from the start of the active episode, not from its latest update.
+	activeSince := event.RecordedAt
+	for previous := index - 1; previous >= 0; previous-- {
+		if events[previous].Alert.ID != event.Alert.ID {
+			continue
+		}
+		if events[previous].Transition == "RESOLVED" {
+			break
+		}
+		activeSince = events[previous].RecordedAt
+	}
+	since, ok := parseEventTime(activeSince)
+	if !ok {
+		return "", "" // An unreadable time never hides a critical alert.
+	}
+	if e.now().Sub(since) < e.criticalDelay {
+		return "DEFERRED", ""
+	}
+	return "", ""
 }
 
 func (e *Engine) decide(event alertstore.LifecycleEvent, bootstrap bool, activeLatest map[string]string) (string, string) {

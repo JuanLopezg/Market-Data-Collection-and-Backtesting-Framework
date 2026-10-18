@@ -4,6 +4,7 @@ import (
 	"math"
 	"testing"
 
+	pgstore "control-dashboard-api/internal/integration/postgres"
 	"control-dashboard-api/internal/tradingwire"
 )
 
@@ -56,5 +57,24 @@ func TestApplyPositionValuationWithoutMarksStaysUnavailable(t *testing.T) {
 	applyPositionValuation(&data, positionValuationInputs{cash: 1000, marks: map[string]float64{}, status: "PENDING"})
 	if data.ValuationState == "AVAILABLE" || data.TotalEquity != "Not valued" || data.Positions[0].ValuationAvailable {
 		t.Fatalf("unexpected valuation: %+v", data)
+	}
+}
+
+func TestHeldAssetsKeepTheirApprovedTarget(t *testing.T) {
+	weight, sold := 0.1, 0.0
+	// NEAR is held inside the rebalance band (no decision); STRK has a real decision.
+	checkpoint := pgstore.PipelineCheckpoint{
+		Decision: tradingwire.DecisionBatch{Strategies: []tradingwire.StrategyDecisionIntent{
+			{StrategyID: 1, TargetNotionalUSD: map[string]float64{"STRKUSDT": 0}}}},
+		RiskDiagnostics: &pgstore.RiskDiagnostics{Strategies: []pgstore.RiskStrategyEvaluation{{
+			StrategyID: 1, ReferenceCapital: 200, Assets: map[string]pgstore.RiskAssetEvaluation{
+				"NEARUSDT": {Action: "HOLD", ApprovedWeight: &weight},
+				"STRKUSDT": {Action: "HOLD", ApprovedWeight: &sold},
+			}}}},
+	}
+	targets := map[string]float64{"STRKUSDT": 0}
+	addHeldTargets(targets, checkpoint)
+	if targets["NEARUSDT"] != 20 || targets["STRKUSDT"] != 0 {
+		t.Fatalf("targets = %v", targets)
 	}
 }

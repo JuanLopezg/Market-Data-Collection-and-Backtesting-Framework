@@ -10,8 +10,12 @@ Actual private exchange submission remains disabled.
 
 ## Telegram alert priority
 
-Telegram priority presentation (deployed on the VPS): CRITICAL
-uses a red circle and URGENT label, WARN yellow, INFO blue, resolved alerts green.
+Telegram priority presentation: CRITICAL uses a red circle and CRITICAL label,
+WARN yellow, INFO blue, resolved alerts green. Operational alerts show the
+account/system header and title only; descriptions remain in the web and journals.
+Active-alert summaries show only a colored circle and short name on each row
+(for example, `🔴 gateway-kraken down`), without bracketed severity labels. Critical-group summaries use
+"Critical alerts". This format change is local pending an authorized deployment.
 INFO updates (including daily portfolios) and resolved alerts request silent
 notifications; WARN/CRITICAL keep normal notifications. Phone/chat settings
 control audible playback. Unknown severity keeps normal notification behavior.
@@ -87,6 +91,18 @@ npm run build
 The frontend's data-source interfaces are independent of database schemas and C++
 service internals. `VITE_*` settings are public bundle data; never put secrets there.
 
+Execution shows recorded fill fees, including Kraken's delayed linked FEE events,
+with enough precision for small orders. Reference slippage compares fills with the
+persisted planning price (the stop trigger for position stops); it includes price
+gaps and venue differences, and does not claim a mark-at-submission measurement.
+Missing references and pending Kraken fees remain explicit. See the API contract
+for the bounded window and fee provenance. To test the actual fee SQL locally under
+WSL with the cached `postgres:16-alpine` image and no network:
+
+```bash
+python3 dashboard/scripts/test-execution-fees-postgres.py
+```
+
 ## Observe canonical replay
 
 For an isolated five-minute CPU/RAM study with a 100-day canonical replay,
@@ -151,19 +167,26 @@ for SQLite WAL locking/sidecar bookkeeping; API queries use `-readonly` and
 The watchdog has its own durable store, and API manual-audit/acknowledgement stores
 are separate from trading data.
 
-This overlay configures the Hyperliquid TESTNET public/dry-run boundary. Public metadata,
-symbol mapping and venue rules do not prove private authentication or execution.
-Changing provider mode does not enable private orders.
+This standalone overlay predates deploy/chain and is superseded by it. Since 2026-10-15 the
+real provider (dashboard-api and watchdog) reads the trading chain only: PAPER (SIMULATED venue,
+PAPER environment, backend gateway) or Kraken LIVE (KRAKEN, LIVE, venue gateway), values that
+deploy/chain/algo sets. The former Hyperliquid TESTNET boundary of this overlay (the
+`/api/venue-*` endpoints, public Hyperliquid client and Step 33-37 scripts) was retired, so the
+overlay no longer starts as it is. Changing provider mode does not enable private orders.
 
 ## Local Telegram setup
 
-All Telegram notifications use compact importance, account/system, reason and
-detail text. WARN remains WARN, CRITICAL displays URGENT, and resolutions display
-INFO with a resolved reason. Optional alert account labels pass through to the sink;
+Telegram alerts use compact importance, account/system and title only.
+WARN remains WARN, CRITICAL remains CRITICAL, and resolutions display
+INFO with a resolved title. Optional alert account labels pass through to the sink;
 infrastructure alerts identify their system/service rather than invent an account.
 Internal notification/alert/correlation IDs and machine timestamps remain in journals
-and receipts, not chat text. Operational details are capped at 600 characters;
-daily portfolios retain room for holdings within the Telegram message limit.
+and receipts, not chat text. Operational descriptions are omitted from Telegram;
+daily portfolio reports retain their balances and holdings within the Telegram message limit.
+Kraken's daily report shows separate aligned tables for current positions and the last
+snapshot of yesterday (Asset, Side, USD exposure, % Eq). Only this report uses escaped
+Telegram HTML `<pre>` formatting; ordinary alerts remain plain title-only text.
+Old daily snapshots remain readable; missing history and prices stay unavailable.
 See the [Kraken account monitor](../live_trading/README.md#kraken-multi-m-preparation)
 for the once-per-UTC-day USD portfolio summary and previous-day snapshot semantics.
 Use `python3 validation/telegram_message_preview.py --send` under WSL to explicitly
@@ -312,9 +335,8 @@ implemented capabilities; do not treat a catalog label as execution authorizatio
 The [project roadmap](../docs/ROADMAP.md) records local Overview chart/timeframe
 acceptance, Pipeline/Risk investigations, Infrastructure completeness/readability,
 perpetual funding/collateral accounting, Telegram setup, Manual Control execution
-testing and Live vs. Expected baseline acceptance. Existing Hyperliquid public
-integration is current implementation, not the initial live-venue priority;
-Kraken is preferred subject to the roadmap's coverage and BTC-collateral checks.
+testing and Live vs. Expected baseline acceptance. Kraken Futures is the selected live
+venue; the earlier Hyperliquid TESTNET integration was retired on 2026-10-15.
 
 | Guide | Purpose |
 | --- | --- |

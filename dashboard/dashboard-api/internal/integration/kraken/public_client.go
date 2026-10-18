@@ -17,11 +17,14 @@ const TickersURL = "https://futures.kraken.com/derivatives/api/v3/tickers"
 
 const maxResponseBytes = 8 << 20
 
-// Ticker is one Multi-M perpetual: the mark price is USD per venue unit.
+// Ticker is one Multi-M perpetual: the mark price is USD per venue unit. FundingRate is
+// Kraken's current absolute funding rate, USD per venue unit per hour (positive: longs pay).
 type Ticker struct {
-	Symbol    string
-	MarkPrice float64
-	Suspended bool
+	Symbol       string
+	MarkPrice    float64
+	Suspended    bool
+	FundingRate  float64
+	FundingKnown bool
 }
 
 type PublicClient struct {
@@ -62,9 +65,10 @@ func (c *PublicClient) Tickers(ctx context.Context) (map[string]Ticker, error) {
 	var body struct {
 		Result  string `json:"result"`
 		Tickers []struct {
-			Symbol    string   `json:"symbol"`
-			MarkPrice *float64 `json:"markPrice"`
-			Suspended bool     `json:"suspended"`
+			Symbol      string   `json:"symbol"`
+			MarkPrice   *float64 `json:"markPrice"`
+			Suspended   bool     `json:"suspended"`
+			FundingRate *float64 `json:"fundingRate"`
 		} `json:"tickers"`
 	}
 	if err := json.NewDecoder(io.LimitReader(response.Body, maxResponseBytes)).Decode(&body); err != nil {
@@ -81,6 +85,9 @@ func (c *PublicClient) Tickers(ctx context.Context) (map[string]Ticker, error) {
 		ticker := Ticker{Symbol: row.Symbol, Suspended: row.Suspended}
 		if row.MarkPrice != nil {
 			ticker.MarkPrice = *row.MarkPrice
+		}
+		if row.FundingRate != nil {
+			ticker.FundingRate, ticker.FundingKnown = *row.FundingRate, true
 		}
 		tickers[row.Symbol] = ticker
 	}

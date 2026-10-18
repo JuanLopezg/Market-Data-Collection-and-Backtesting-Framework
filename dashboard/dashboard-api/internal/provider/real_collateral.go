@@ -28,6 +28,7 @@ const krakenAccountMaxAge = 5 * time.Minute
 
 type krakenAccountFile struct {
 	ObservedAt             string  `json:"observedAt"`
+	USDBalance             string  `json:"usdBalance"`
 	BTCQuantity            string  `json:"btc_quantity"`
 	BTCValueUSD            string  `json:"btc_value_usd"`
 	BTCCollateralUSD       string  `json:"btc_collateral_usd"`
@@ -69,6 +70,21 @@ func decimalText(value string) (float64, bool) {
 	return number, err == nil && !math.IsNaN(number) && !math.IsInf(number, 0)
 }
 
+// collateralCard shows the Kraken collateral in USD, the USD balance plus the BTC after
+// Kraken's haircut, and the share of it that is BTC, e.g. "$226.83 · 55% BTC". Without a
+// fresh monitor reading only the BTC value of the latest sized day is known.
+func collateralCard(account krakenAccountView, accountErr error, btcUSD float64) realOverviewMetric {
+	card := realOverviewMetric{Label: "Collateral",
+		Detail: "Kraken USD balance + BTC after haircut: margin, not positions; orders never sell the BTC"}
+	usd, usdKnown := decimalText(account.file.USDBalance)
+	if accountErr != nil || !account.fresh || !usdKnown || usd+btcUSD <= 0 {
+		card.Value = formatUSD(btcUSD) + " BTC (USD balance unavailable)"
+		return card
+	}
+	card.Value = fmt.Sprintf("%s · %.0f%% BTC", formatUSD(usd+btcUSD), btcUSD/(usd+btcUSD)*100)
+	return card
+}
+
 // dropLabel turns the monitor's fraction ("0.35", "NONE" or null) into "35.0%".
 func dropLabel(value *string) string {
 	if value == nil {
@@ -102,19 +118,45 @@ func latestCollateral(account krakenAccountView, accountErr error, days []pgstor
 	return 0, false
 }
 
-// addKrakenCollateral adds the collateral, sizing capital, margin and net deposit cards.
+// addKrakenCollateral makes Total Equity the whole Kraken capital (USD cash, positions at
+// Kraken's mark and BTC collateral after haircut, as the risk service sizes it), shows the
+// BTC share of it, and adds the net deposit card. The daily equity curve gets
+// each day's collateral too, so curve and card measure the same thing.
 func (p *Real) addKrakenCollateral(overview *realOverviewData, positions realPositionsData, days []pgstore.EquityDay) {
 	if !p.krakenLive() {
 		return
 	}
 	account, accountErr := p.readKrakenAccount(time.Now().UTC())
 	collateral, known := latestCollateral(account, accountErr, days)
+	if len(days) > 0 && len(overview.EquityCurve) == len(days) {
+		for index, day := range days {
+			overview.EquityCurve[index].Equity += day.CollateralUSD
+		}
+	}
+	total, detail := 0.0, ""
+	switch {
+	case positions.ValuationState == "AVAILABLE":
+		total = positions.equityValue // already includes the collateral
+		detail = "USD balance + positions at Kraken mark + BTC collateral after haircut"
+	case len(days) > 0:
+		total = days[len(days)-1].Equity + days[len(days)-1].CollateralUSD
+		detail = "At the latest daily close, BTC collateral after haircut included"
+	}
+	if total > 0 {
+		equity := realOverviewMetric{Label: "Total Equity", Value: formatUSD(total), Detail: detail}
+		if len(overview.Stats) == 0 {
+			overview.Stats = append(overview.Stats, equity)
+		} else {
+			overview.Stats[0] = equity // the overview's first card
+		}
+	}
 	if known {
-		overview.Stats = append(overview.Stats, realOverviewMetric{Label: "BTC Collateral", Value: formatUSD(collateral),
-			Detail: "After Kraken's haircut; margin only, never spent by orders"})
-		if positions.ValuationState == "AVAILABLE" {
-			overview.Stats = append(overview.Stats, realOverviewMetric{Label: "Sizing Capital",
-				Value: formatUSD(positions.equityValue + collateral), Detail: "Equity + BTC collateral after haircut"})
+		// The account's money, not its trades: USD and BTC are collateral, never positions.
+		card := collateralCard(account, accountErr, collateral)
+		if len(overview.Stats) > 1 && overview.Stats[1].Label == "Cash" {
+			overview.Stats[1] = card
+		} else {
+			overview.Stats = append(overview.Stats, card)
 		}
 	}
 	switch {
@@ -123,14 +165,6 @@ func (p *Real) addKrakenCollateral(overview *realOverviewData, positions realPos
 	case !account.fresh:
 		overview.SourceWarnings = append(overview.SourceWarnings,
 			"Kraken account monitor is stale (last observation "+account.at.Format("2006-01-02 15:04 UTC")+")")
-	default:
-		if headroom, ok := decimalText(account.file.MaintenanceHeadroomUSD); ok {
-			overview.Stats = append(overview.Stats, realOverviewMetric{Label: "Margin Headroom", Value: formatUSD(headroom),
-				Detail: "Kraken margin equity minus maintenance margin"})
-		}
-		overview.Stats = append(overview.Stats, realOverviewMetric{Label: "Drop to Maintenance",
-			Value:  "BTC " + dropLabel(account.file.BTCDrop) + " · all " + dropLabel(account.file.CryptoDrop),
-			Detail: "Price fall that would use up the headroom: BTC collateral alone, and BTC with the net long positions"})
 	}
 	if len(days) > 0 && days[len(days)-1].CapitalFlows != 0 {
 		overview.Stats = append(overview.Stats, realOverviewMetric{Label: "Net Deposits",

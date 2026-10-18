@@ -78,6 +78,10 @@ def main(build=True):
                          "algotrading_research_initial_params", "algotrading_research_stats",
                          "algotrading_research_btc_ma"], log)
                 library = ROOT / "build/lib/src"
+                # Fixtures below include a study executable's source, so they link
+                # the shared sweep/study driver like the executable does.
+                sensitivity_study_sources = ["research/src/common/parameter_sweep.cpp",
+                                             "research/src/common/sensitivity_study.cpp"]
                 fixture = work / "metrics_test"
                 include_dirs = [f"-I{p}" for p in (ROOT / "lib/src").rglob("*")
                                 if p.is_dir() and "on_hold" not in p.parts]
@@ -108,10 +112,8 @@ def main(build=True):
                     '  const std::vector<std::size_t> full{9450,7260,11440,98,874,7700,880};\n'
                     '  const std::vector<std::size_t> compact{16,16,16,4,6,16,8};\n'
                     '  for (std::size_t i=0; i<definitions.size(); ++i) {\n'
-                    '    compactSensitivity = false;\n'
-                    '    if (countSensitivityCombinations(definitions[i]) != full[i]) return 2;\n'
-                    '    compactSensitivity = true;\n'
-                    '    if (countSensitivityCombinations(definitions[i]) != compact[i]) return 3;\n'
+                    '    if (countValidCombinations(definitions[i], false) != full[i]) return 2;\n'
+                    '    if (countValidCombinations(definitions[i], true) != compact[i]) return 3;\n'
                     '  }\n'
                     '  return definitions.size() == 7 ? 0 : 4;\n'
                     '}\n'
@@ -119,7 +121,8 @@ def main(build=True):
                 grid_fixture = work / "initial_grid_test"
                 run(["g++", "-std=c++23", "-Iresearch/src/common", *include_dirs,
                      str(grid_source), "research/src/common/backtest_metrics.cpp",
-                     "research/src/common/backtest_html_report.cpp", f"-L{library}",
+                     "research/src/common/backtest_html_report.cpp",
+                     *sensitivity_study_sources, f"-L{library}",
                      f"-Wl,-rpath,{library}", "-lalgolib", "-lfmt", "-llog4cpp", "-lboost_program_options",
                      "-o", str(grid_fixture)], log)
                 run([str(grid_fixture)], log)
@@ -187,11 +190,9 @@ def main(build=True):
                     f'#include "{ROOT / "research/src/backtests/btc_moving_average.cpp"}"\n'
                     '#undef main\n'
                     'int main(int argc, char** argv) {\n'
-                    '  auto definition = makeStrategyDefinitions().front();\n'
-                    '  if (countSensitivityCombinations(definition) != 39) return 2;\n'
-                    '  compactSensitivity = true;\n'
-                    '  if (countSensitivityCombinations(definition) != 2) return 3;\n'
-                    '  compactSensitivity = false;\n'
+                    '  auto definition = makeBtcMovingAverageDefinitions().front();\n'
+                    '  if (countSensitivityCombinations(definition, false) != 39) return 2;\n'
+                    '  if (countSensitivityCombinations(definition, true) != 2) return 3;\n'
                     '  definition.sensitivityParameters = {{"btcMovingAverageLength", "BTC SMA", 0, 1, 1, true}};\n'
                     '  definition.isValidCombination = [](const ParameterValues& p) {\n'
                     '    return p.at("btcMovingAverageLength") > 0;\n'
@@ -200,9 +201,9 @@ def main(build=True):
                     '    throw std::runtime_error("Injected BTC report failure");\n'
                     '  };\n'
                     '  SensitivityProgressReporter progress(2);\n'
-                    '  const auto result = runParameterSensitivity(definition, OHLCVData{}, 100000, 0, 0,\n'
-                    '    BacktestMetricsSettings{}, std::filesystem::path(argv[1]) / "btc_rejected.csv",\n'
-                    '    "fixture", progress);\n'
+                    '  const StudyRunSettings settings{makeStudyPortfolio, 100000, 0, BacktestMetricsSettings{}};\n'
+                    '  const auto result = runParameterSensitivity(definition, OHLCVData{}, settings,\n'
+                    '    std::filesystem::path(argv[1]) / "btc_rejected.csv", "fixture", progress);\n'
                     '  return result.stats.plannedRunCount == 2 && result.stats.invalidRunCount == 1 &&\n'
                     '    result.stats.failedRunCount == 1 && result.stats.successfulRunCount == 0 ? 0 : 4;\n'
                     '}\n'
@@ -210,7 +211,8 @@ def main(build=True):
                 btc_fixture = work / "btc_report_contract_test"
                 run(["g++", "-std=c++23", "-Iresearch/src/common", *include_dirs,
                      str(btc_fixture_source), "research/src/common/backtest_metrics.cpp",
-                     "research/src/common/backtest_html_report.cpp", f"-L{library}",
+                     "research/src/common/backtest_html_report.cpp",
+                     *sensitivity_study_sources, f"-L{library}",
                      f"-Wl,-rpath,{library}", "-lalgolib", "-lfmt", "-llog4cpp", "-lboost_program_options",
                      "-o", str(btc_fixture)], log)
                 run([str(btc_fixture), str(work)], log)
@@ -400,7 +402,7 @@ def main(build=True):
                     f'#include "{ROOT / "research/src/backtests/testing_xhbreakout.cpp"}"\n'
                     '#undef main\n'
                     'int main(int argc, char** argv) {\n'
-                    '  auto definitions = makeStrategyDefinitions();\n'
+                    '  auto definitions = makeXhRobustnessDefinitions();\n'
                     '  if (countSensitivityCombinations(definitions[0]) != 2508 ||\n'
                     '      countSensitivityCombinations(definitions[1]) != 2299) return 2;\n'
                     '  OHLCVData data;\n'
@@ -408,16 +410,16 @@ def main(build=True):
                     '    data.data["BTC"][day] = {100, 101, 99, 100, 1000};\n'
                     '  auto definition = definitions[1];\n'
                     '  definition.sensitivityParameters = {{"atrMultiplier", "ATR multiplier", 0, 1, 1, true}};\n'
-                    '  BacktestMetricsSettings settings;\n'
+                    '  const StudyRunSettings settings{makeStudyPortfolio, 100000, 0, BacktestMetricsSettings{}};\n'
                     '  SensitivityProgressReporter progress(2);\n'
-                    '  const auto result = runParameterSensitivity(definition, data, 100000, 0, 0, settings,\n'
+                    '  const auto result = runParameterSensitivity(definition, data, settings,\n'
                     '      std::filesystem::path(argv[1]) / "invalid.csv", "fixture", progress);\n'
                     '  if (result.stats.plannedRunCount != 2 || result.stats.invalidRunCount != 1 ||\n'
                     '      result.stats.successfulRunCount != 1 || result.stats.failedRunCount != 0) return 3;\n'
                     '  definition.create = [](const ParameterValues&) -> std::unique_ptr<Strategy> {\n'
                     '    throw std::runtime_error("Injected research failure");\n'
                     '  };\n'
-                    '  const auto failure = runParameterSensitivity(definition, data, 100000, 0, 0, settings,\n'
+                    '  const auto failure = runParameterSensitivity(definition, data, settings,\n'
                     '      std::filesystem::path(argv[1]) / "failed.csv", "fixture", progress);\n'
                     '  return failure.stats.invalidRunCount == 1 && failure.stats.failedRunCount == 1 &&\n'
                     '         failure.stats.successfulRunCount == 0 ? 0 : 4;\n'
@@ -426,7 +428,8 @@ def main(build=True):
                 rejection_fixture = work / "robustness_rejection_test"
                 run(["g++", "-std=c++23", "-Iresearch/src/common", *include_dirs,
                      str(rejection_source), "research/src/common/backtest_metrics.cpp",
-                     "research/src/common/backtest_html_report.cpp", f"-L{library}",
+                     "research/src/common/backtest_html_report.cpp",
+                     *sensitivity_study_sources, f"-L{library}",
                      f"-Wl,-rpath,{library}", "-lalgolib", "-lfmt", "-llog4cpp", "-lboost_program_options",
                      "-o", str(rejection_fixture)], log)
                 run([str(rejection_fixture), str(work)], log)

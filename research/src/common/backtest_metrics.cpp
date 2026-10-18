@@ -690,9 +690,9 @@ BacktestMetrics calculateBacktestMetrics(
                 );
             }
         }
-        // CURRENT fill-derived reporting records have no legacy barsHeld counter.
-        // Count observed asset bars inclusively, preserving the legacy convention
-        // when other assets continue trading through a gap in this asset's data.
+        // Fill-derived trade records carry no barsHeld counter (0). Then count this
+        // asset's observed bars from entry to exit inclusively; bars where only
+        // other assets traded (a gap in this asset's data) are not counted.
         const auto entryBar = marketData.lower_bound(trade->start_);
         const auto exitBar = marketData.upper_bound(trade->end_);
         const auto holdingBars = trade->barsHeld > 0

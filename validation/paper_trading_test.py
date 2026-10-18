@@ -238,6 +238,9 @@ def main():
         monitor.capture_logs(project,directory/'logs')
         compose('restart','strategy','portfolio-risk','execution-state','order-planner','exchange-gateway','simulated-exchange')
         compose('up','-d','market-data');time.sleep(8)
+        # A restart during the day republishes the stored day: no new ranking or candle download.
+        last_run=compose('logs','--no-color','market-data').split('Market data service ready')[-1]
+        assert 'is already stored' in last_run and 'Download plan for' not in last_run, last_run
         after=evidence()
         assert before['fills']==after['fills'] and before['account']['account_cash']==after['account']['account_cash']
         assert before['positions']==after['positions'] and before['backend']['next_fill_id']==after['backend']['next_fill_id']

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -106,7 +107,7 @@ func TestTelegramReadableAccountsSeverityAndResolution(t *testing.T) {
 	n := testNotification()
 	n.Account = "Kraken"
 	text := telegramMessage(n)
-	if !strings.HasPrefix(text, "🔴 [URGENT] Account: Kraken\nPosition divergence") {
+	if !strings.HasPrefix(text, "🔴 [CRITICAL] Account: Kraken\nPosition divergence") {
 		t.Fatalf("unexpected compact message: %q", text)
 	}
 	for _, technical := range []string{n.AlertID, n.NotificationID, "event=", "source_time=", "correlation="} {
@@ -116,12 +117,75 @@ func TestTelegramReadableAccountsSeverityAndResolution(t *testing.T) {
 	}
 	n.Transition = "RESOLVED"
 	if !strings.HasPrefix(telegramMessage(n), "🟢 [INFO] Account: Kraken\nResolved: ") {
-		t.Fatal("resolution remains labelled urgent")
+		t.Fatal("resolution remains labelled critical")
 	}
 	n.Account = ""
 	n.Transition = "OPENED"
-	if !strings.HasPrefix(telegramMessage(n), "🔴 [URGENT] System: Reconciliation") {
+	if !strings.HasPrefix(telegramMessage(n), "🔴 [CRITICAL] System: Reconciliation") {
 		t.Fatal("system alert is mislabelled as a trading account")
+	}
+}
+
+func TestTelegramAlertsOmitDescriptionsAndPortfolioKeepsHoldings(t *testing.T) {
+	for _, transition := range []string{"OPENED", "UPDATED", "RESOLVED", "TEST"} {
+		for _, eventType := range []string{"POSITION_STOP_MISSING", "ALERT_SOURCE_STOPPED", "ORDER_REJECT"} {
+			n := testNotification()
+			n.Transition, n.EventType = transition, eventType
+			n.Detail = "Description that must remain in the web and journal only.\nSecond line."
+			text := telegramMessage(n)
+			if strings.Contains(text, "Description") || strings.Contains(text, "Second line") || strings.Count(text, "\n") != 1 {
+				t.Fatalf("alert description escaped into Telegram: %q", text)
+			}
+			if strings.Contains(text, "URGENT") || !strings.Contains(text, n.Title) {
+				t.Fatalf("incorrect title or severity: %q", text)
+			}
+		}
+	}
+	n := testNotification()
+	n.EventType, n.Severity, n.Title = "DAILY_PORTFOLIO", "INFO", "Daily portfolio"
+	n.Detail = "Balance: $100.00\nActive positions (USD exposure):\nBTC LONG: $20.00"
+	if text := telegramMessage(n); !strings.Contains(text, n.Detail) {
+		t.Fatalf("portfolio report lost its holdings: %q", text)
+	}
+}
+
+func TestDailyPortfolioUsesEscapedMonospaceTableOnly(t *testing.T) {
+	var payload telegramSendMessageRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":77}}`))
+	}))
+	defer server.Close()
+	sink, err := newTelegramSink(testTelegramToken, testTelegramChatID,
+		filepath.Join(t.TempDir(), "receipts.jsonl"), server.URL, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := testNotification()
+	n.EventType, n.Severity, n.Title = "DAILY_PORTFOLIO", "INFO", "Daily portfolio"
+	n.Account = "Kraken <test> & review"
+	n.Detail = "Asset  Side      USD   % Eq\nBTC    LONG  $20.00  20.00%\nYesterday's positions: <unavailable>"
+	if _, err := sink.Deliver(context.Background(), n); err != nil {
+		t.Fatal(err)
+	}
+	if payload.ParseMode != "HTML" || !payload.DisableNotification ||
+		!strings.HasPrefix(payload.Text, "<pre>") || !strings.HasSuffix(payload.Text, "</pre>") {
+		t.Fatalf("portfolio is not a silent monospace report: %+v", payload)
+	}
+	inner := strings.TrimSuffix(strings.TrimPrefix(payload.Text, "<pre>"), "</pre>")
+	if html.UnescapeString(inner) != telegramMessage(n) || strings.Contains(inner, "<test>") || strings.Contains(inner, "<unavailable>") {
+		t.Fatalf("unsafe or changed portfolio content: %q", payload.Text)
+	}
+	n.NotificationID += "-alert"
+	n.EventType, n.Severity = "USD_RESERVE", "WARN"
+	payload = telegramSendMessageRequest{}
+	if _, err := sink.Deliver(context.Background(), n); err != nil {
+		t.Fatal(err)
+	}
+	if payload.ParseMode != "" || strings.Contains(payload.Text, n.Detail) {
+		t.Fatalf("operational alert received portfolio formatting: %+v", payload)
 	}
 }
 
@@ -130,7 +194,7 @@ func TestTelegramPriorityAndSoundPayload(t *testing.T) {
 		name, severity, transition, prefix string
 		silent                             bool
 	}{
-		{"critical", "CRITICAL", "OPENED", "🔴 [URGENT]", false},
+		{"critical", "CRITICAL", "OPENED", "🔴 [CRITICAL]", false},
 		{"warning", "WARN", "OPENED", "🟡 [WARN]", false},
 		{"daily information", "INFO", "OPENED", "🔵 [INFO]", true},
 		{"critical recovery", "CRITICAL", "RESOLVED", "🟢 [INFO]", true},

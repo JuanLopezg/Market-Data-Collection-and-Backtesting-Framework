@@ -101,7 +101,7 @@ private:
 const char* ORDER_COLUMNS =
     "local_order_id, strategy_id, client_order_id, coin, symbol, side, source_quantity, venue_quantity,"
     " unit_scale, active_from, state, venue_order_id, filled_venue_quantity, reason, cancel_requested,"
-    " sent_at_ms, updated_at_ms, published_state";
+    " sent_at_ms, updated_at_ms, published_state, order_type, position_stop_price, venue_stop_price";
 
 JournalOrder readOrder(const Statement& row)
 {
@@ -125,6 +125,12 @@ JournalOrder readOrder(const Statement& row)
     order.updated_at_ms = row.integer(16);
     if (!row.isNull(17))
         order.published_state = parseState(row.text(17));
+    const std::string type = row.text(18);
+    if (type != "MARKET" && type != "POSITION_STOP")
+        throw std::runtime_error("Venue journal contains an unknown order type");
+    order.type = type == "POSITION_STOP" ? VenueOrderType::PositionStop : VenueOrderType::Market;
+    order.position_stop_price = row.real(19);
+    order.venue_stop_price = row.real(20);
     return order;
 }
 
@@ -151,6 +157,9 @@ void bindOrder(Statement& statement, const JournalOrder& order)
         statement.bind(18, std::string(orderStateName(*order.published_state)));
     else
         statement.bindNull(18);
+    statement.bind(19, std::string(order.type == VenueOrderType::PositionStop ? "POSITION_STOP" : "MARKET"));
+    statement.bind(20, order.position_stop_price);
+    statement.bind(21, order.venue_stop_price);
 }
 
 } // namespace
@@ -212,16 +221,41 @@ VenueJournal::VenueJournal(const std::string& path, const std::string& venue, co
         "CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT NOT NULL);"
     );
 
-    Statement existing(db_, "SELECT venue, account_namespace FROM context WHERE id = 1");
-    if (existing.step()) {
-        if (existing.text(0) != venue || existing.text(1) != accountNamespace)
-            throw std::runtime_error("Venue journal " + path + " belongs to another venue or account namespace");
-        return;
+    {
+        Statement existing(db_, "SELECT venue, account_namespace FROM context WHERE id = 1");
+        if (existing.step()) {
+            if (existing.text(0) != venue || existing.text(1) != accountNamespace)
+                throw std::runtime_error("Venue journal " + path + " belongs to another venue or account namespace");
+        }
+        else {
+            Statement insert(db_, "INSERT INTO context (id, venue, account_namespace) VALUES (1, ?, ?)");
+            insert.bind(1, venue);
+            insert.bind(2, accountNamespace);
+            insert.step();
+        }
     }
-    Statement insert(db_, "INSERT INTO context (id, venue, account_namespace) VALUES (1, ?, ?)");
-    insert.bind(1, venue);
-    insert.bind(2, accountNamespace);
-    insert.step();
+
+    // Additive, transactional migration: every pre-stop row remains a market order.
+    // Keep both prices so retries use the original tick-rounded venue terms and duplicate
+    // commands can be checked against the exact source price, not its rounded equivalent.
+    Transaction migration(db_);
+    bool hasType = false, hasSourceStop = false, hasVenueStop = false;
+    {
+        Statement columns(db_, "PRAGMA table_info(orders)");
+        while (columns.step()) {
+            hasType |= columns.text(1) == "order_type";
+            hasSourceStop |= columns.text(1) == "position_stop_price";
+            hasVenueStop |= columns.text(1) == "venue_stop_price";
+        }
+    }
+    if (!hasType)
+        execute("ALTER TABLE orders ADD COLUMN order_type TEXT NOT NULL DEFAULT 'MARKET'");
+    if (!hasSourceStop)
+        execute("ALTER TABLE orders ADD COLUMN position_stop_price REAL NOT NULL DEFAULT 0");
+    if (!hasVenueStop)
+        execute("ALTER TABLE orders ADD COLUMN venue_stop_price REAL NOT NULL DEFAULT 0");
+    execute("CREATE INDEX IF NOT EXISTS orders_venue_id ON orders(venue_order_id) WHERE venue_order_id <> ''");
+    migration.commit();
 }
 
 
@@ -274,6 +308,22 @@ std::optional<JournalOrder> VenueJournal::orderByClientId(const std::string& cli
 }
 
 
+std::optional<JournalOrder> VenueJournal::orderByVenueId(const std::string& venueOrderId) const
+{
+    if (venueOrderId.empty())
+        return std::nullopt;
+    const std::string sql = std::string("SELECT ") + ORDER_COLUMNS + " FROM orders WHERE venue_order_id = ?";
+    Statement statement(db_, sql.c_str());
+    statement.bind(1, venueOrderId);
+    if (!statement.step())
+        return std::nullopt;
+    JournalOrder order = readOrder(statement);
+    if (statement.step())
+        throw std::runtime_error("Venue journal has an ambiguous venue order id");
+    return order;
+}
+
+
 std::vector<JournalOrder> VenueJournal::ordersIn(std::initializer_list<OrderState> states) const
 {
     std::string list;
@@ -292,7 +342,7 @@ std::vector<JournalOrder> VenueJournal::unpublishedOrders() const
 void VenueJournal::insertOrder(const JournalOrder& order)
 {
     const std::string sql = std::string("INSERT INTO orders (") + ORDER_COLUMNS +
-                            ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+                            ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     Statement statement(db_, sql.c_str());
     bindOrder(statement, order);
     statement.step();
@@ -305,7 +355,8 @@ void VenueJournal::updateOrder(const JournalOrder& order)
         "UPDATE orders SET strategy_id = ?2, client_order_id = ?3, coin = ?4, symbol = ?5, side = ?6,"
         " source_quantity = ?7, venue_quantity = ?8, unit_scale = ?9, active_from = ?10, state = ?11,"
         " venue_order_id = ?12, filled_venue_quantity = ?13, reason = ?14, cancel_requested = ?15,"
-        " sent_at_ms = ?16, updated_at_ms = ?17, published_state = ?18 WHERE local_order_id = ?1");
+        " sent_at_ms = ?16, updated_at_ms = ?17, published_state = ?18, order_type = ?19,"
+        " position_stop_price = ?20, venue_stop_price = ?21 WHERE local_order_id = ?1");
     bindOrder(statement, order);
     statement.step();
     if (sqlite3_changes(db_) != 1)

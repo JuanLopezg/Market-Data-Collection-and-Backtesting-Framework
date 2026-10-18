@@ -41,6 +41,7 @@ struct LiveVenueOptions {
     bool order_submission_enabled = false;
     std::string account_namespace;                 // Short tag in client order ids, e.g. "a1".
     long long working_poll_interval_ms = 2000;     // Fill/open-order checks while orders work.
+    long long resting_poll_interval_ms = 15000;    // ...when only accepted position stops are open.
     long long market_refresh_interval_ms = 3600000;
     long long mark_price_max_age_ms = 60000;       // Venue prices older than this are fetched again.
     double max_notional_ratio = 1.5;               // Venue/planned USD value allowed in [1/x, x].
@@ -127,6 +128,7 @@ private:
     void checkVenue();
     void applyFills(const std::vector<VenueFill>& fills);
     void applyOpenOrders(const std::vector<OpenOrder>& openOrders);
+    std::optional<JournalOrder> findOrder(const std::string& clientId, const std::string& venueId) const;
     void refreshDeadMansSwitch();
     void readAccountLogIfDue();
 

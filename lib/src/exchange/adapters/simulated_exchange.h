@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "exchange.h"
+#include "position_state.h"
 
 
 // Deterministic exchange used by the current backtester
@@ -16,6 +17,7 @@
 // Current convention:
 // - market orders fill fully at the OPEN of their active_from timestamp;
 // - research stop entries match once the following bar is complete, or expire;
+// - position stops rest until a completed bar crosses their price, reducing longs only;
 // - commission is charged as abs(quantity * fillPrice) * commissionRate;
 // - split fills are available for lifecycle validation.
 //
@@ -74,7 +76,8 @@ private:
         events_.emplace_back(OrderUpdate(
             order.order_id,
             ts,
-            fillQuantity < order.quantity ? ExecutionOrderStatus::Canceled : ExecutionOrderStatus::Filled,
+            fillQuantity < order.quantity && !order.isPositionStop()
+                ? ExecutionOrderStatus::Canceled : ExecutionOrderStatus::Filled,
             "sim-" + std::to_string(order.order_id)
         ));
     }
@@ -96,7 +99,6 @@ public:
             throw std::invalid_argument("Order id must be non-zero");
         if (active_orders_.find(order.order_id) != active_orders_.end())
             throw std::invalid_argument("Order id already active");
-
         if (reject_next_order_) {
             reject_next_order_ = false;
             events_.emplace_back(OrderUpdate(
@@ -149,7 +151,7 @@ public:
         executableOrderIds.reserve(active_orders_.size());
 
         for (const auto& [orderId, order] : active_orders_) {
-            if (order.entry_stop_price == 0.0 && order.parent_order_id == 0 &&
+            if (!order.isPositionStop() && order.entry_stop_price == 0.0 && order.parent_order_id == 0 &&
                 order.active_from <= ts && bars.find(order.coin) != bars.end())
                 executableOrderIds.push_back(orderId);
         }
@@ -182,7 +184,7 @@ public:
         const auto it = active_orders_.find(orderId);
         if (it == active_orders_.end())
             return;
-        if (it->second.entry_stop_price != 0.0 || it->second.parent_order_id != 0)
+        if (it->second.isPositionStop() || it->second.entry_stop_price != 0.0 || it->second.parent_order_id != 0)
             throw std::invalid_argument("Only market orders can be filled at a given price");
         if (!std::isfinite(price) || price <= 0.0)
             throw std::invalid_argument("Invalid simulated fill price");
@@ -264,6 +266,54 @@ public:
                 emitFill(order, ts, std::max(order.protective_stop_price, bar->second.open), order.quantity);
                 active_orders_.erase(it);
             }
+        }
+    }
+
+    // Call only with a completed bar, after applying earlier market/entry fills to the
+    // supplied account positions. This method emits fills; the caller owns accounting.
+    void processPositionStopsAtClose(Timestamp ts, const CoinBarMap& bars, const PositionState& positions)
+    {
+        std::vector<OrderID> eligible;
+        for (const auto& [id, order] : active_orders_) {
+            if (!order.isPositionStop() || order.active_from > ts)
+                continue;
+            const auto bar = bars.find(order.coin);
+            if (bar == bars.end())
+                continue; // Missing evidence never expires a resting position stop.
+            if (!std::isfinite(bar->second.open) || bar->second.open <= 0.0 ||
+                !std::isfinite(bar->second.low) || bar->second.low <= 0.0 || bar->second.low > bar->second.open)
+                throw std::invalid_argument("Invalid daily bar for simulated position stop matching");
+            if (bar->second.low <= order.position_stop_price)
+                eligible.push_back(id);
+        }
+        std::sort(eligible.begin(), eligible.end(), [this](OrderID lhs, OrderID rhs) {
+            const auto& a = active_orders_.at(lhs);
+            const auto& b = active_orders_.at(rhs);
+            if (a.coin != b.coin)
+                return a.coin < b.coin;
+            if (a.position_stop_price != b.position_stop_price)
+                return a.position_stop_price > b.position_stop_price;
+            return lhs < rhs;
+        });
+
+        // Accounting is applied when the caller drains events. Reserve sold units here
+        // too, so overlapping reduce-only stops cannot both spend the same long position.
+        PositionState remaining = positions;
+        for (OrderID id : eligible) {
+            const auto it = active_orders_.find(id);
+            const auto& order = it->second;
+            const double held = remaining.get(order.coin);
+            if (held <= 0.0) {
+                events_.emplace_back(OrderUpdate(id, ts, ExecutionOrderStatus::Canceled,
+                    "sim-" + std::to_string(id), "reduce-only position stop cancelled: no long position remains"));
+            }
+            else {
+                const double quantity = std::min(order.quantity, held);
+                const double price = std::min(bars.at(order.coin).open, order.position_stop_price);
+                emitFill(order, ts, price, quantity);
+                remaining.set(order.coin, held - quantity);
+            }
+            active_orders_.erase(it);
         }
     }
 

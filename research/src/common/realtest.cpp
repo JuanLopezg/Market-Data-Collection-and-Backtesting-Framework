@@ -52,7 +52,7 @@ struct RealtestTrade {
     double dividends = 0.0;
 };
 
-static std::string trim(std::string s)
+static std::string trimCsvField(std::string s)
 {
     auto notSpace = [](unsigned char c) {
         return !std::isspace(c);
@@ -64,7 +64,7 @@ static std::string trim(std::string s)
     return s;
 }
 
-static std::string toLower(std::string value)
+static std::string lowercaseCopy(std::string value)
 {
     std::transform(
         value.begin(),
@@ -84,20 +84,29 @@ static std::vector<std::string> parseCsvLine(const std::string& line)
     std::string current;
     bool inQuotes = false;
 
-    for (std::size_t i = 0; i < line.size(); ++i) {
+    for (std::size_t i = 0; i < line.size(); ++i)
+    {
         char c = line[i];
 
-        if (c == '"') {
-            if (inQuotes && i + 1 < line.size() && line[i + 1] == '"') {
+        if (c == '"')
+        {
+            if (inQuotes && i + 1 < line.size() && line[i + 1] == '"')
+            {
                 current += '"';
                 ++i;
-            } else {
+            }
+            else
+            {
                 inQuotes = !inQuotes;
             }
-        } else if (c == ',' && !inQuotes) {
+        }
+        else if (c == ',' && !inQuotes)
+        {
             fields.push_back(current);
             current.clear();
-        } else {
+        }
+        else
+        {
             current += c;
         }
     }
@@ -108,7 +117,7 @@ static std::vector<std::string> parseCsvLine(const std::string& line)
 
 static double parseRealtestNumber(std::string value)
 {
-    value = trim(value);
+    value = trimCsvField(value);
 
     if (value.empty()) {
         return 0.0;
@@ -119,7 +128,7 @@ static double parseRealtestNumber(std::string value)
     if (value.size() >= 2 && value.front() == '(' && value.back() == ')') {
         negativeByParentheses = true;
         value = value.substr(1, value.size() - 2);
-        value = trim(value);
+        value = trimCsvField(value);
     }
 
     value.erase(
@@ -144,7 +153,7 @@ static double parseRealtestNumber(std::string value)
 
 static int parseRealtestInt(std::string value)
 {
-    value = trim(value);
+    value = trimCsvField(value);
 
     if (value.empty()) {
         return 0;
@@ -201,7 +210,7 @@ static bool loadRealtestTrades(
             line.pop_back();
         }
 
-        if (trim(line).empty()) {
+        if (trimCsvField(line).empty()) {
             LG_INFO("Skipping empty line {} in RealTest trades CSV", lineNumber);
             continue;
         }
@@ -220,22 +229,22 @@ static bool loadRealtestTrades(
         try {
             RealtestTrade realtestTrade;
 
-            realtestTrade.trade     = trim(fields[0]);
-            realtestTrade.strategy  = trim(fields[1]);
-            realtestTrade.symbol    = trim(fields[2]);
-            realtestTrade.side      = trim(fields[3]);
+            realtestTrade.trade     = trimCsvField(fields[0]);
+            realtestTrade.strategy  = trimCsvField(fields[1]);
+            realtestTrade.symbol    = trimCsvField(fields[2]);
+            realtestTrade.side      = trimCsvField(fields[3]);
 
-            realtestTrade.dateIn    = trim(fields[4]);
-            realtestTrade.timeIn    = trim(fields[5]);
+            realtestTrade.dateIn    = trimCsvField(fields[4]);
+            realtestTrade.timeIn    = trimCsvField(fields[5]);
             realtestTrade.qtyIn     = parseRealtestNumber(fields[6]);
             realtestTrade.priceIn   = parseRealtestNumber(fields[7]);
 
-            realtestTrade.dateOut   = trim(fields[8]);
-            realtestTrade.timeOut   = trim(fields[9]);
+            realtestTrade.dateOut   = trimCsvField(fields[8]);
+            realtestTrade.timeOut   = trimCsvField(fields[9]);
             realtestTrade.qtyOut    = parseRealtestNumber(fields[10]);
             realtestTrade.priceOut  = parseRealtestNumber(fields[11]);
 
-            realtestTrade.reason    = trim(fields[12]);
+            realtestTrade.reason    = trimCsvField(fields[12]);
             realtestTrade.bars      = parseRealtestInt(fields[13]);
 
             realtestTrade.pctGain   = parseRealtestNumber(fields[14]);
@@ -415,7 +424,7 @@ static bool parseRealtestTime(
     int& minute,
     int& second
 ) {
-    std::string normalized = toLower(trim(time));
+    std::string normalized = lowercaseCopy(trimCsvField(time));
 
     if (normalized.empty() || normalized == "open" || normalized == "intraday") {
 
@@ -472,7 +481,7 @@ static bool parseRealtestTimestamp(
     int month = 0;
     int day = 0;
 
-    if (!parseRealtestDate(trim(date), year, month, day)) {
+    if (!parseRealtestDate(trimCsvField(date), year, month, day)) {
         LG_ERROR("Invalid RealTest date: {}", date);
         return false;
     }
@@ -481,7 +490,7 @@ static bool parseRealtestTimestamp(
     int minute = 0;
     int second = 0;
 
-    if (!parseRealtestTime(trim(time), hour, minute, second)) {
+    if (!parseRealtestTime(trimCsvField(time), hour, minute, second)) {
         LG_ERROR("Invalid RealTest time: {}", time);
         return false;
     }
@@ -504,7 +513,7 @@ static bool parseRealtestDirection(
     const std::string& side,
     Direction& direction
 ) {
-    const std::string normalized = toLower(trim(side));
+    const std::string normalized = lowercaseCopy(trimCsvField(side));
 
     if (normalized == "long") {
         direction = Direction::Long;
@@ -539,7 +548,7 @@ static bool parseRealtestTradeId(
     TradeID& tradeId
 ) {
     try {
-        tradeId = static_cast<TradeID>(std::stoull(trim(tradeIdText)));
+        tradeId = static_cast<TradeID>(std::stoull(trimCsvField(tradeIdText)));
         return true;
     } catch (const std::exception& e) {
         LG_ERROR("Invalid RealTest trade id '{}': {}", tradeIdText, e.what());
@@ -1022,7 +1031,7 @@ static bool waitForEnterOrQuit()
     std::string input;
     std::getline(std::cin, input);
 
-    return toLower(trim(input)) == "q";
+    return lowercaseCopy(trimCsvField(input)) == "q";
 }
 
 static bool compareTradeVectorsInteractive(
@@ -1085,7 +1094,6 @@ static bool compareTradeVectorsInteractive(
     std::size_t fullyMatchedCount = 0;
     std::size_t differentCount = 0;
     std::size_t missingBacktesterCount = 0;
-    std::size_t fallbackSameDayCount = 0;
     std::size_t comparisonIndex = 0;
 
     std::cout << "\n============================================================\n";

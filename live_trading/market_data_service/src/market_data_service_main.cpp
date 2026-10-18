@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -31,6 +32,9 @@
 // Internal helpers and service implementation.
 
 namespace {
+
+// The daily run is prepared this long before midnight (SQLite reads, plan, Binance connection).
+constexpr auto PREPARE_AHEAD = std::chrono::seconds(10);
 
 std::atomic<bool> running{true};
 
@@ -115,8 +119,15 @@ void interruptibleBusinessWaitUntil(
     constexpr auto technicalPollInterval = std::chrono::milliseconds(250);
 
     while (running.load()) {
-        if (timeHandler.getTime() >= businessDeadline)
+        const auto now = timeHandler.getTime();
+        if (now >= businessDeadline)
             return;
+        // The last stretch sleeps exactly to the deadline: the daily run starts on time
+        // instead of up to one poll interval late.
+        if (businessDeadline - now <= technicalPollInterval) {
+            timeHandler.sleepUntil(businessDeadline);
+            return;
+        }
         std::this_thread::sleep_for(technicalPollInterval);
     }
 }
@@ -124,12 +135,13 @@ void interruptibleBusinessWaitUntil(
 bool runTarget(
     MarketDataIngestor& ingestor,
     const MarketDataUpdatePublisher& publisher,
-    std::chrono::year_month_day targetDate)
+    std::chrono::year_month_day targetDate,
+    const MarketDataPreparation* prepared = nullptr)
 {
     try {
         // The ingestor returns only after the SQLite transaction has committed.
         // The notification is intentionally the next step.
-        const MarketDataIngestionSummary summary = ingestor.run(targetDate);
+        const MarketDataIngestionSummary summary = ingestor.run(targetDate, prepared);
         publisher.publish(summary);
         return true;
     }
@@ -177,7 +189,15 @@ int main(int argc, char** argv)
         // (speed=1, bias=0), so this remains the previous completed real UTC day. In replay-like
         // configurations it becomes the previous completed simulated/business UTC day.
         auto targetDate = newestCompletedBusinessUtcDate(timeHandler);
-        bool success = runTarget(ingestor, publisher, targetDate);
+        // The catch-up run takes the same prepared path as the midnight run.
+        std::optional<MarketDataPreparation> startupPrepared;
+        try {
+            startupPrepared = ingestor.prepare(targetDate);
+        }
+        catch (const std::exception& error) {
+            LG_WARN("Could not prepare the catch-up download for {} ({}); it runs unprepared", formatYMD(targetDate), error.what());
+        }
+        bool success = runTarget(ingestor, publisher, targetDate, startupPrepared ? &*startupPrepared : nullptr);
 
         if (options.run_once) {
             curl_global_cleanup();
@@ -209,12 +229,25 @@ int main(int argc, char** argv)
             const auto scheduled = nextScheduledBusinessRun(
                 timeHandler, config.midnight_delay_ms);
             LG_INFO("Next daily run is scheduled {} ms after the next UTC midnight", config.midnight_delay_ms);
+            // Wake a little before: read SQLite, build the expected plan and open the Binance
+            // connection, so the run at midnight only downloads and commits.
+            interruptibleBusinessWaitUntil(timeHandler, scheduled - PREPARE_AHEAD);
+            if (!running.load())
+                break;
+            std::optional<MarketDataPreparation> prepared;
+            const auto preparedDate = getPreviousDayDate(getCurrentUtcDate(scheduled));
+            try {
+                prepared = ingestor.prepare(preparedDate);
+            }
+            catch (const std::exception& error) {
+                LG_WARN("Could not prepare the daily download for {} ({}); it runs unprepared", formatYMD(preparedDate), error.what());
+            }
             interruptibleBusinessWaitUntil(timeHandler, scheduled);
             if (!running.load())
                 break;
 
             targetDate = newestCompletedBusinessUtcDate(timeHandler);
-            success = runTarget(ingestor, publisher, targetDate);
+            success = runTarget(ingestor, publisher, targetDate, prepared ? &*prepared : nullptr);
         }
 
         LG_INFO("Shutdown complete");

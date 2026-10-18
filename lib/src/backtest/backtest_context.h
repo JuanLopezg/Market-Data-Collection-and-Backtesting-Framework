@@ -45,7 +45,7 @@ private:
     std::vector<std::pair<Balance, Equity>> balance_equity_historic_;
     TradeRecorder trade_recorder_;
     std::vector<VolatilityDiagnosticSnapshot> volatility_diagnostics_;
-    mutable std::map<TradeID, Trade> legacy_trade_cache_;
+    mutable std::map<TradeID, Trade> report_trades_;
 
     TargetPortfolio last_global_target_;
     PriceSnapshot last_marks_;
@@ -159,10 +159,10 @@ public:
     // These Trade objects never drive account state or execution.
     const std::map<TradeID, Trade>& GetTradesHistory() const
     {
-        legacy_trade_cache_.clear();
+        report_trades_.clear();
 
         if (last_marks_.size() == 0)
-            return legacy_trade_cache_;
+            return report_trades_;
 
         const auto records = trade_recorder_.allTrades(last_marks_, last_timestamp_);
         for (const TradeRecord& record : records) {
@@ -181,10 +181,10 @@ public:
             trade.isSimulated_ = false;
             trade.exited_ = record.exited;
             trade.strategy_name_ = record.strategy_name;
-            legacy_trade_cache_[trade.trade_id_] = std::move(trade);
+            report_trades_[trade.trade_id_] = std::move(trade);
         }
 
-        return legacy_trade_cache_;
+        return report_trades_;
     }
 
     double GetCommissionMarketRate() const { return market_commission_rate_; }

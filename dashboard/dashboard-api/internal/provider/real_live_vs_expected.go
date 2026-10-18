@@ -150,7 +150,7 @@ func step45Coverage(marketState, marketDetail string) []realLiveVsExpectedCovera
 		{ID: "market-inputs", Label: "Canonical market / strategy-input behaviour", State: marketState, Source: "SQLite market_volume_rank_daily + ohlcv_data", Detail: marketDetail},
 		{ID: "execution-distribution", Label: "Execution slippage / latency / rejects", State: "DEFERRED", Source: "future versioned execution baseline", Detail: "Durable execution observations exist, but no accepted historical execution-distribution artifact is canonical yet; Step 45 does not invent one."},
 		{ID: "performance-accounting", Label: "PnL / equity / holding-time behaviour", State: "DEFERRED", Source: "future runtime-owned accounting projection", Detail: "Step 42 explicitly does not claim durable realized/unrealized PnL or historical equity, so performance baselines remain unavailable."},
-		{ID: "accepted-replay", Label: "Accepted replay behavioural baseline", State: "DEFERRED", Source: "future versioned replay artifact", Detail: "The future HyperliquidAdapter/MockExchangeAdapter replay path must publish an accepted versioned baseline before replay economics can be compared here."},
+		{ID: "accepted-replay", Label: "Accepted replay behavioural baseline", State: "DEFERRED", Source: "future versioned replay artifact", Detail: "The future venue-adapter/MockExchangeAdapter replay path must publish an accepted versioned baseline before replay economics can be compared here."},
 	}
 }
 
@@ -187,7 +187,7 @@ func buildRealLiveVsExpected(window sqlitemarket.BehaviourWindow, canonicalTopN,
 	series := []behaviourSeries{
 		{
 			ID: "entry-qualified", Family: "ACTIVITY", Label: "Entry-qualified assets",
-			Description: fmt.Sprintf("Count of the reconstructed universe with RSI(7) > %g on each completed canonical day; input conditions, not persisted transitions.", entry),
+			Description: fmt.Sprintf("Count of the reconstructed universe with %s > %g on each completed canonical day; input conditions, not persisted transitions.", cfg.rsiLabel(), entry),
 			Values:      obsValues(observations, func(o dailyBehaviourObservation) float64 { return o.EntryQualified }),
 			Format:      func(v float64) string { return fmt.Sprintf("%.0f assets", v) },
 		},
@@ -199,7 +199,7 @@ func buildRealLiveVsExpected(window sqlitemarket.BehaviourWindow, canonicalTopN,
 		},
 		{
 			ID: "median-rsi", Family: "STRATEGY INPUTS", Label: "Top-20 Median RSI",
-			Description: "Median RSI(7) across the reconstructed top-20 universe, recomputed from canonical OHLCV with Wilder smoothing.",
+			Description: fmt.Sprintf("Median %s across the reconstructed top-%d universe, recomputed from canonical OHLCV with Wilder smoothing.", cfg.rsiLabel(), universeN),
 			Values:      obsValues(observations, func(o dailyBehaviourObservation) float64 { return o.MedianRSI }),
 			Format:      func(v float64) string { return fmt.Sprintf("%.1f", v) },
 		},
@@ -323,8 +323,8 @@ func computeDailyBehaviour(window sqlitemarket.BehaviourWindow, universeN int, c
 			if !hasBarOnDate(bars, date) {
 				continue
 			}
-			sma := latestSMAOnRows(bars, pureRSILiquidityLength, func(bar sqlitemarket.Bar) float64 { return liquidityValue(bar, cfg.QuoteVolume) })
-			rsi := latestRSIOnRows(bars, pureRSILength)
+			sma := latestSMAOnRows(bars, cfg.liquidityLength(), func(bar sqlitemarket.Bar) float64 { return liquidityValue(bar, cfg.QuoteVolume) })
+			rsi := latestRSIOnRows(bars, cfg.rsiLength())
 			if !isFinite(sma) || !isFinite(rsi) {
 				continue
 			}

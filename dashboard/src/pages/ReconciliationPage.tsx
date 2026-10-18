@@ -102,7 +102,7 @@ export function ReconciliationPage() {
           {data.openOrders.length === 0
             ? <tr><td colSpan={8} className="empty-cell">No open orders</td></tr>
             : data.openOrders.map(order => <tr key={order.orderId}>
-              <td className="mono">{order.orderId}</td>
+              <td className="mono">{order.orderId}{order.orderType === 'STOP' && <span title={`Resting stop-loss at ${order.positionStopPrice}$; moves to 70% of each daily close`}> · STOP</span>}</td>
               <td><strong>{order.asset}</strong></td>
               <td className={order.side === 'BUY' ? 'positive' : 'negative'}>{order.side}</td>
               <td>{qty(order.quantity)}</td>

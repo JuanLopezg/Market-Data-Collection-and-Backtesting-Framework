@@ -1,5 +1,5 @@
 import { Search } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { useAuth } from '../providers/AuthProvider'
 import { useDashboardDataSource } from '../providers/DashboardDataSourceProvider'
 import { Panel } from '../components/Panel'
@@ -14,6 +14,11 @@ const SEVERITY_ORDER: Record<Severity, number> = { CRITICAL: 0, WARN: 1, INFO: 2
 const SEVERITY_LABEL: Record<Severity, string> = { CRITICAL: 'Critical', WARN: 'Warning', INFO: 'Info' }
 const STATUS_LABEL: Record<AlertStatus, string> = { ACTIVE: 'Open', ACKNOWLEDGED: 'Seen', RESOLVED: 'Resolved' }
 const PAGE = 20
+
+// The long explanation of an alert or audit row stays hidden until its Details button opens it.
+function DetailsButton({ open, onClick }: { open: boolean; onClick: () => void }) {
+  return <button className="ghost-button" onClick={onClick} aria-expanded={open}>{open ? 'Hide' : 'Details'}</button>
+}
 
 function SeverityPill({ severity }: { severity: Severity }) {
   const tone = severity === 'CRITICAL' ? 'bad' : severity === 'WARN' ? 'warn' : 'info'
@@ -30,6 +35,13 @@ export function AlertsAuditPage() {
   const isOperator = session?.user.role === 'OPERATOR'
   const [ackBusyId, setAckBusyId] = useState<string | null>(null)
   const [ackError, setAckError] = useState<string | null>(null)
+  const [openDetails, setOpenDetails] = useState<Set<string>>(new Set())
+  const toggleDetails = (key: string) => setOpenDetails(current => {
+    const next = new Set(current)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    return next
+  })
 
   const alerts = useMemo(() => {
     if (!data) return []
@@ -83,18 +95,21 @@ export function AlertsAuditPage() {
         </select></label>
       </div>
       <div className="table-wrap"><table className="wide-table alerts-table">
-        <thead><tr><th>Severity</th><th>What happened</th><th>Area</th><th>Since</th><th>Status</th>{ackAvailable && <th/>}</tr></thead>
+        <thead><tr><th>Severity</th><th>What happened</th><th>Area</th><th>Since</th><th>Status</th><th/>{ackAvailable && <th/>}</tr></thead>
         <tbody>
-          {alerts.map(alert => <tr key={alert.id}>
+          {alerts.map(alert => <Fragment key={alert.id}><tr>
             <td><SeverityPill severity={alert.severity}/></td>
-            <td><strong>{alert.title}</strong>{alert.asset ? ` · ${alert.asset}` : ''}{alert.detail && <small className="alerts-table__detail">{alert.detail}</small>}</td>
+            <td><strong>{alert.title}</strong>{alert.asset ? ` · ${alert.asset}` : ''}</td>
             <td>{alert.service}</td>
             <td>{alert.timestamp || '—'}</td>
             <td>{STATUS_LABEL[alert.status]}{alert.status === 'ACKNOWLEDGED' && alert.acknowledgedBy ? ` by ${alert.acknowledgedBy}` : ''}</td>
+            <td>{alert.detail && <DetailsButton open={openDetails.has('alert:' + alert.id)} onClick={() => toggleDetails('alert:' + alert.id)}/>}</td>
             {ackAvailable && <td>{alert.status === 'ACTIVE' && alert.acknowledgementKey && isOperator &&
               <button className="button-secondary" onClick={() => void acknowledge(alert.id, alert.acknowledgementKey)} disabled={ackBusyId === alert.id}>{ackBusyId === alert.id ? 'Saving…' : 'Mark as seen'}</button>}</td>}
-          </tr>)}
-          {alerts.length === 0 && <tr><td colSpan={ackAvailable ? 6 : 5} className="empty-cell">{open.length === 0 ? 'No open alerts' : 'No alerts match the filters'}</td></tr>}
+          </tr>
+          {openDetails.has('alert:' + alert.id) && <tr className="alerts-table__details"><td colSpan={ackAvailable ? 7 : 6}><small className="alerts-table__detail">{alert.detail}</small></td></tr>}
+          </Fragment>)}
+          {alerts.length === 0 && <tr><td colSpan={ackAvailable ? 7 : 6} className="empty-cell">{open.length === 0 ? 'No open alerts' : 'No alerts match the filters'}</td></tr>}
         </tbody>
       </table></div>
     </Panel>
@@ -114,15 +129,17 @@ export function AlertsAuditPage() {
 
     <Panel title="Audit Log">
       <div className="table-wrap"><table className="wide-table">
-        <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Result</th><th>Detail</th></tr></thead>
+        <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Result</th><th/></tr></thead>
         <tbody>
-          {data.audit.slice(0, auditLimit).map(row => <tr key={row.id} title={row.correlationId}>
+          {data.audit.slice(0, auditLimit).map(row => <Fragment key={row.id}><tr title={row.correlationId}>
             <td>{row.timestamp || '—'}</td>
             <td>{row.actor}</td>
             <td>{row.action}</td>
             <td className={row.result === 'REJECTED' ? 'negative' : row.result === 'SUCCESS' ? 'positive' : ''}>{row.result === 'SUCCESS' ? 'Done' : row.result === 'REJECTED' ? 'Rejected' : 'No change'}</td>
-            <td>{row.detail || '—'}</td>
-          </tr>)}
+            <td>{row.detail && <DetailsButton open={openDetails.has('audit:' + row.id)} onClick={() => toggleDetails('audit:' + row.id)}/>}</td>
+          </tr>
+          {openDetails.has('audit:' + row.id) && <tr className="alerts-table__details"><td colSpan={5}><small className="alerts-table__detail">{row.detail}</small></td></tr>}
+          </Fragment>)}
           {data.audit.length === 0 && <tr><td colSpan={5} className="empty-cell">No operator actions yet</td></tr>}
         </tbody>
       </table></div>

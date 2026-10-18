@@ -44,9 +44,9 @@ std::string benchmark = "BTC";
 int main(int argc, char** argv)
 {
     if (argc == 2 && std::string(argv[1]) == "--help") {
-        std::cout << "CURRENT research fast backtest.\n"
+        std::cout << "Research fast backtest.\n"
                      "Use research/replay.py fast for the historical profile.\n"
-                     "ALGOTRADING_PAPER_BASELINE_MANIFEST selects the frozen PAPER study.\n";
+                     "ALGOTRADING_PAPER_BASELINE_MANIFEST selects the recorded PAPER baseline study.\n";
         return 0;
     }
 
@@ -95,8 +95,8 @@ int main(int argc, char** argv)
         0
     );
 
-    // The canonical research/replay.py front door owns RealTest comparison when this
-    // variable is set. Direct legacy runs preserve the historical behavior.
+    // research/replay.py sets this variable because it runs the RealTest comparison
+    // itself; a direct run of this executable still compares against RealTest here.
     const bool compareWithReferenceBacktest =
         envText("ALGOTRADING_REPLAY_SKIP_INTERNAL_REALTEST", "0") != "1";
 
@@ -353,25 +353,10 @@ int main(int argc, char** argv)
                 true
             );
 
-            // Volatility-target validation configuration. All percentages below are
-            // fractions of strategy equity: 0.20 = 20%.
-            constexpr std::size_t covarianceLookback = 5;
-            constexpr double periodsPerYear = 365.0;
-            constexpr double targetVolatility = 0.20;
-            constexpr double rebalanceThreshold = 0.02;
+            // Fractions of strategy equity: 1.5 = 150%. The volatility-target variant
+            // of this study is algotrading_research_html --sizer volatility-target.
             constexpr double maxGrossLeverage = 1.50;
             constexpr double maxAssetWeight = 1.5;
-
-            /* auto portfolioSizer = std::make_unique<VolatilityTargetSizer>(
-                std::make_unique<SampleCovarianceEstimator>(covarianceLookback, periodsPerYear),
-                targetVolatility
-            );
-            auto rebalancePolicy = std::make_unique<ThresholdRebalancePolicy>(
-                rebalanceThreshold
-            );
-
-            rollingVolatilityWindow = covarianceLookback;
-            volatilityPeriodsPerYear = periodsPerYear; */
 
             auto portfolioSizer = std::make_unique<EqualWeightSizer>(0.10);
             auto rebalancePolicy = std::make_unique<EntryExitOnlyRebalancePolicy>();

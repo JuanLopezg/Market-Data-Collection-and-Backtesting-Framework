@@ -30,11 +30,15 @@ type realPositionsData struct {
 	ClosedPositions  []closedPositionRow `json:"closedPositions"`
 	ClosedAvailable  bool                `json:"closedAvailable"`  // whole fill history read
 	FundingAvailable bool                `json:"fundingAvailable"` // funding payments recorded
-	// Numeric valuation (set with ValuationState AVAILABLE) for other read models.
-	equityValue, grossValue float64
+	// Kraken LIVE: "Kraken mark price", or "Binance daily close" when Kraken cannot be read.
+	PriceSource string `json:"priceSource,omitempty"`
+	// Numeric valuation (set with ValuationState AVAILABLE) for other read models. In Kraken
+	// LIVE equityValue includes collateralValue (BTC collateral after haircut).
+	equityValue, grossValue, collateralValue float64
 }
 
 type realPosition struct {
+	StopLoss                *positionStopLoss      `json:"stopLoss,omitempty"`
 	Asset                   string                 `json:"asset"`
 	Side                    string                 `json:"side"`
 	Quantity                float64                `json:"quantity"`
@@ -66,6 +70,10 @@ type realPosition struct {
 	NetPnLUSD               float64                `json:"netPnlUsd"`  // unrealized + realized so far - fees + funding
 	FeesAvailable           bool                   `json:"feesAvailable"`
 	FundingAvailable        bool                   `json:"fundingAvailable"`
+	// Kraken LIVE: the market's current funding rate (+ = longs pay), per hour and annualized.
+	FundingRateHourlyPct float64 `json:"fundingRateHourlyPct"`
+	FundingRateAnnualPct float64 `json:"fundingRateAnnualPct"`
+	FundingRateAvailable bool    `json:"fundingRateAvailable"`
 }
 
 type realStrategyPosition struct {
@@ -80,6 +88,8 @@ func (p *Real) positions(ctx context.Context) (realPositionsData, error) {
 		return realPositionsData{}, fmt.Errorf("read durable positions: %w", err)
 	}
 	data := buildRealPositions(state)
+	// Only a real venue pays funding; the runtime books it on the position it was paid on.
+	data.FundingAvailable = p.krakenLive()
 	p.valuePositions(ctx, &data, state.Snapshot.AccountCash)
 	// The runtime's position ledger is the source; rebuilding from the fills is only the
 	// fallback for an ExecutionState that does not write it yet.
@@ -87,8 +97,10 @@ func (p *Real) positions(ctx context.Context) (realPositionsData, error) {
 		closed, open := lotsFromAccounting(accounting)
 		applyPositionLots(&data, closed, open)
 	} else if window, err := p.postgres.TradeHistoryFills(ctx); err == nil && window.TotalRows <= int64(len(window.Rows)) {
+		data.FundingAvailable = false // fills carry no funding
 		applyRealPositionHistory(&data, realTradeEvents(window.Rows))
 	}
+	applyPositionStops(&data, state.Snapshot.Orders)
 	return data, nil
 }
 
@@ -114,8 +126,8 @@ func lotsFromAccounting(accounting pgstore.Accounting) ([]positionLot, map[strin
 	return closed, open
 }
 
-// PAPER/LIVE fills carry their commission; funding payments are not persisted yet,
-// so funding stays unavailable instead of showing zero.
+// Fallback when ExecutionState has no position ledger: fills carry their commission but no
+// funding, so funding stays out of this history.
 func realTradeEvents(fills []tradingwire.Fill) []tradeEvent {
 	events := make([]tradeEvent, 0, len(fills))
 	for _, fill := range fills {
@@ -144,8 +156,10 @@ func applyPositionLots(data *realPositionsData, closed []positionLot, lots map[s
 		position.OpenedAt = tradeTimeLabel(lot.OpenedAt)
 		position.FeesUSD = lot.Fees
 		position.FeesAvailable = true
+		position.FundingUSD = lot.Funding
+		position.FundingAvailable = data.FundingAvailable
 		if position.PnLAvailable {
-			position.NetPnLUSD = position.PnLUSD + lot.GrossPnL - lot.Fees
+			position.NetPnLUSD = position.PnLUSD + lot.GrossPnL - lot.Fees + lot.Funding
 		}
 	}
 }

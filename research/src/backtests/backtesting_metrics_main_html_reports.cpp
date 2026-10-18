@@ -1,290 +1,44 @@
 #include "backtester.h"
-#include "validated/pure_rsi.h"
-#include "equal_weight_sizer.h"
-#include "entry_exit_only_rebalance_policy.h"
-#include "sample_covariance_estimator.h"
-#include "threshold_rebalance_policy.h"
-#include "volatility_target_sizer.h"
-#include "donchian_signal_strategy.h"
-#include "xh_breakout_strategy.h"
-#include "backtest_metrics.h"
-#include "backtest_html_report.h"
 #include "database_utils.h"
-#include "indicator_ranker.h"
-#include "indicator_spec.h"
-#include "liquidity_universe.h"
+#include "donchian_signal_strategy.h"
+#include "entry_exit_only_rebalance_policy.h"
 #include "logger.h"
-#include "universe_selector.h"
+#include "relative_threshold_rebalance_policy.h"
+#include "research_strategy_definitions.h"
+#include "sample_covariance_estimator.h"
+#include "sensitivity_study.h"
+#include "threshold_rebalance_policy.h"
+#include "validated/pure_rsi.h"
+#include "volatility_target_sizer.h"
+#include "xh_breakout_strategy.h"
+
+#include <boost/program_options.hpp>
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <exception>
 #include <filesystem>
 #include <fstream>
-#include <ctime>
-#include <exception>
-#include <stdexcept>
-#include <system_error>
-#include <functional>
-#include <iomanip>
 #include <iostream>
-#include <limits>
 #include <map>
-#include <memory>
-#include <sstream>
+#include <stdexcept>
 #include <string>
-#include <utility>
 #include <vector>
-#include <boost/program_options.hpp>
 
 namespace {
 
-using ParameterValues = std::map<std::string, double>;
+using namespace research_studies;
 
-struct SensitivityParameterDefinition {
-    std::string key;
-    std::string displayName;
-    double minimum = 0.0;
-    double maximum = 0.0;
-    double spacing = 1.0;
-    bool enabled = false;
-};
+// PureRSI (default), DonchianBreakout, XHBreakout and XHBreakout_ATR with their
+// full study grids. benchmarkSymbol feeds Donchian's market-state filter.
+// --btc-filter-length: PureRSI opens new signals only while the benchmark closes above
+// SMA(close, length); 0 = no filter. A study option, so PureRSI CSV columns are unchanged.
+unsigned int pureRsiBenchmarkFilterLength = 0;
 
-struct StrategyDefinition {
-    std::string name;
-    ParameterValues currentParameters;
-    std::vector<SensitivityParameterDefinition> sensitivityParameters;
-    std::function<std::unique_ptr<Strategy>(const ParameterValues&)> create;
-    std::function<bool(const ParameterValues&)> isValidCombination;
-};
-
-struct ActiveSensitivityParameter {
-    const SensitivityParameterDefinition* definition = nullptr;
-    std::vector<double> values;
-};
-
-struct SensitivityAccumulator {
-    std::vector<double> finalReturnPercentValues;
-    std::vector<double> maxDrawdownPercentValues;
-    std::vector<double> tradeCountValues;
-    std::size_t positiveCombinationCount = 0U;
-    std::size_t zeroTradeCombinationCount = 0U;
-
-    void add(const BacktestMetrics& metrics)
-    {
-        finalReturnPercentValues.push_back(metrics.netReturnPercent);
-        maxDrawdownPercentValues.push_back(metrics.maxDrawdownPercent);
-        tradeCountValues.push_back(static_cast<double>(metrics.tradeCount));
-
-        if (metrics.netReturnPercent > 0.0) {
-            ++positiveCombinationCount;
-        }
-        if (metrics.tradeCount == 0U) {
-            ++zeroTradeCombinationCount;
-        }
-    }
-};
-
-struct SensitivityRunStats {
-    std::size_t plannedRunCount = 0U;
-    std::size_t successfulRunCount = 0U;
-    std::size_t invalidRunCount = 0U;
-    std::size_t failedRunCount = 0U;
-};
-
-struct ParameterSensitivityExecution {
-    std::vector<ParameterSensitivityReport> reports;
-    SensitivityRunStats stats;
-};
-
-struct StrategyExecutionResult {
-    BacktestMetrics metrics;
-    SensitivityRunStats sensitivityStats;
-};
-
-class SensitivityProgressReporter {
-public:
-    explicit SensitivityProgressReporter(std::size_t totalRuns)
-        : totalRuns_(totalRuns), start_(std::chrono::steady_clock::now())
-    {
-        if (totalRuns_ > 0U) {
-            std::cout << "\nParameter sensitivity: " << totalRuns_
-                      << " isolated backtests planned.\n";
-            render(true);
-        }
-    }
-
-    void setStrategy(const std::string& strategyName)
-    {
-        strategyName_ = strategyName;
-        render(true);
-    }
-
-    void advance()
-    {
-        if (completedRuns_ < totalRuns_) {
-            ++completedRuns_;
-        }
-
-        const std::size_t renderInterval = std::max<std::size_t>(
-            1U,
-            totalRuns_ / 1000U
-        );
-
-        if (completedRuns_ == totalRuns_ ||
-            completedRuns_ % renderInterval == 0U) {
-            render(false);
-        }
-    }
-
-    void finish()
-    {
-        if (totalRuns_ > 0U) {
-            render(true);
-            std::cout << '\n';
-        }
-    }
-
-private:
-    static std::string formatDuration(std::chrono::seconds duration)
-    {
-        const auto totalSeconds = duration.count();
-        const auto hours = totalSeconds / 3600;
-        const auto minutes = (totalSeconds % 3600) / 60;
-        const auto seconds = totalSeconds % 60;
-
-        std::ostringstream output;
-        if (hours > 0) {
-            output << hours << "h ";
-        }
-        if (hours > 0 || minutes > 0) {
-            output << minutes << "m ";
-        }
-        output << seconds << "s";
-        return output.str();
-    }
-
-    void render(bool force)
-    {
-        if (totalRuns_ == 0U) {
-            return;
-        }
-
-        const auto now = std::chrono::steady_clock::now();
-        const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-            now - start_
-        );
-
-        const double ratio = static_cast<double>(completedRuns_) /
-            static_cast<double>(totalRuns_);
-        constexpr int barWidth = 34;
-        const int filled = static_cast<int>(std::round(ratio * barWidth));
-
-        std::chrono::seconds remaining(0);
-        if (completedRuns_ > 0U && completedRuns_ < totalRuns_) {
-            const double remainingSeconds =
-                static_cast<double>(elapsed.count()) *
-                static_cast<double>(totalRuns_ - completedRuns_) /
-                static_cast<double>(completedRuns_);
-            remaining = std::chrono::seconds(
-                static_cast<long long>(std::max(0.0, remainingSeconds))
-            );
-        }
-
-        std::cout << '\r' << '[';
-        for (int index = 0; index < barWidth; ++index) {
-            std::cout << (index < filled ? '=' : ' ');
-        }
-        std::cout << "] " << std::fixed << std::setprecision(1)
-                  << (ratio * 100.0) << "% "
-                  << completedRuns_ << '/' << totalRuns_
-                  << " | " << strategyName_
-                  << " | elapsed " << formatDuration(elapsed)
-                  << " | ETA " << formatDuration(remaining)
-                  << std::flush;
-
-        (void)force;
-    }
-
-    std::size_t totalRuns_ = 0U;
-    std::size_t completedRuns_ = 0U;
-    std::string strategyName_ = "Preparing";
-    std::chrono::steady_clock::time_point start_;
-};
-
-double parameterOr(
-    const ParameterValues& parameters,
-    const std::string& key,
-    double fallback
-)
+std::vector<StrategyDefinition> makeHtmlStudyDefinitions(const std::string& benchmarkSymbol)
 {
-    const auto iterator = parameters.find(key);
-    return iterator == parameters.end() ? fallback : iterator->second;
-}
-
-unsigned int unsignedParameterOr(
-    const ParameterValues& parameters,
-    const std::string& key,
-    unsigned int fallback
-)
-{
-    const double value = parameterOr(
-        parameters,
-        key,
-        static_cast<double>(fallback)
-    );
-
-    if (!std::isfinite(value) || value <= 0.0) {
-        return 0U;
-    }
-
-    const double upperBound = static_cast<double>(
-        std::numeric_limits<unsigned int>::max()
-    );
-    return static_cast<unsigned int>(std::llround(std::min(value, upperBound)));
-}
-
-std::unique_ptr<UniverseSelector> makeTopLiquidityUniverse()
-{
-    constexpr unsigned int topLiquidityCount = 20;
-
-    return std::make_unique<TopNLiquidityUniverse>(
-        IndicatorSpec{
-            IndicatorKind::SMA,
-            PriceField::Volume,
-            25
-        },
-        topLiquidityCount,
-        true
-    );
-}
-
-std::vector<SensitivityParameterDefinition> makeSensitivityParameters(
-    std::initializer_list<SensitivityParameterDefinition> parameters
-)
-{
-    return std::vector<SensitivityParameterDefinition>(
-        parameters.begin(),
-        parameters.end()
-    );
-}
-
-std::vector<StrategyDefinition> makeStrategyDefinitions(
-    double feeMaker,
-    double feeTaker,
-    double commissionEntryFactor,
-    double commissionExitFactor,
-    const std::string& benchmarkSymbol
-)
-{
-    (void)commissionEntryFactor;
-    (void)commissionExitFactor;
-    (void)feeMaker;
-    (void)feeTaker;
-    (void)benchmarkSymbol;
-
     std::vector<StrategyDefinition> definitions;
-
 
     // ------------------------------------------------------------------
     // PureRSI
@@ -329,7 +83,7 @@ std::vector<StrategyDefinition> makeStrategyDefinitions(
             );
 
             auto universeSelector = makeTopLiquidityUniverse();
-            auto ranker = std::make_unique<IndicatorRanker>(
+            auto ranker = makeStudyRanker(
                 IndicatorSpec{IndicatorKind::RSI, PriceField::Close, rsiLength},
                 true
             );
@@ -341,7 +95,8 @@ std::vector<StrategyDefinition> makeStrategyDefinitions(
                 maxRankingPosition,
                 rsiLength,
                 rsiEntry,
-                rsiExit
+                rsiExit,
+                makeBenchmarkTrendFilter(benchmarkSymbol, pureRsiBenchmarkFilterLength)
             );
         },
         [](const ParameterValues& parameters) {
@@ -401,7 +156,7 @@ std::vector<StrategyDefinition> makeStrategyDefinitions(
             );
 
             auto universeSelector = makeTopLiquidityUniverse();
-            auto ranker = std::make_unique<IndicatorRanker>(
+            auto ranker = makeStudyRanker(
                 IndicatorSpec{IndicatorKind::ROC, PriceField::Close, momentumLength},
                 true
             );
@@ -473,7 +228,7 @@ std::vector<StrategyDefinition> makeStrategyDefinitions(
             );
 
             auto universeSelector = makeTopLiquidityUniverse();
-            auto ranker = std::make_unique<IndicatorRanker>(
+            auto ranker = makeStudyRanker(
                 IndicatorSpec{IndicatorKind::ROC, PriceField::Close, momentumLength},
                 true
             );
@@ -536,7 +291,7 @@ std::vector<StrategyDefinition> makeStrategyDefinitions(
             );
 
             auto universeSelector = makeTopLiquidityUniverse();
-            auto ranker = std::make_unique<IndicatorRanker>(
+            auto ranker = makeStudyRanker(
                 IndicatorSpec{IndicatorKind::ROC, PriceField::Close, momentumLength},
                 true
             );
@@ -562,127 +317,17 @@ std::vector<StrategyDefinition> makeStrategyDefinitions(
 }
 
 
-std::vector<double> makeSweepValues(
-    const SensitivityParameterDefinition& parameter
-)
-{
-    std::vector<double> values;
-
-    if (!parameter.enabled ||
-        !std::isfinite(parameter.minimum) ||
-        !std::isfinite(parameter.maximum) ||
-        !std::isfinite(parameter.spacing) ||
-        parameter.spacing <= 0.0 ||
-        parameter.maximum < parameter.minimum) {
-        return values;
-    }
-
-    constexpr std::size_t safetyLimit = 100000U;
-    constexpr double epsilon = 1e-10;
-
-    for (std::size_t index = 0U; index < safetyLimit; ++index) {
-        const double value = parameter.minimum +
-            static_cast<double>(index) * parameter.spacing;
-
-        if (value > parameter.maximum + epsilon) {
-            break;
-        }
-
-        values.push_back(value);
-    }
-
-    return values;
-}
-
-std::vector<ActiveSensitivityParameter> activeSensitivityParameters(
-    const StrategyDefinition& definition
-)
-{
-    std::vector<ActiveSensitivityParameter> active;
-
-    for (const SensitivityParameterDefinition& parameter :
-         definition.sensitivityParameters) {
-        if (!parameter.enabled) {
-            continue;
-        }
-
-        std::vector<double> values = makeSweepValues(parameter);
-        if (values.empty()) {
-            LG_WARN(
-                "Skipping invalid sensitivity parameter '{}.{}'",
-                definition.name,
-                parameter.key
-            );
-            continue;
-        }
-
-        active.push_back(ActiveSensitivityParameter{&parameter, std::move(values)});
-    }
-
-    return active;
-}
-
-template <typename Callback>
-void enumerateSensitivityCombinations(
-    const StrategyDefinition& definition,
-    const std::vector<ActiveSensitivityParameter>& activeParameters,
-    std::size_t parameterIndex,
-    ParameterValues& parameters,
-    Callback& callback
-)
-{
-    if (parameterIndex >= activeParameters.size()) {
-        callback(parameters);
-        return;
-    }
-
-    const ActiveSensitivityParameter& active = activeParameters[parameterIndex];
-    for (const double value : active.values) {
-        parameters.insert_or_assign(active.definition->key, value);
-        enumerateSensitivityCombinations(
-            definition,
-            activeParameters,
-            parameterIndex + 1U,
-            parameters,
-            callback
-        );
-    }
-}
-
-std::size_t countSensitivityCombinations(
-    const StrategyDefinition& definition
-)
-{
-    const std::vector<ActiveSensitivityParameter> active =
-        activeSensitivityParameters(definition);
-
-    if (active.empty()) {
-        return 0U;
-    }
-
-    ParameterValues parameters = definition.currentParameters;
-    std::size_t count = 0U;
-
-    auto counter = [&count](const ParameterValues&) { ++count; };
-
-    enumerateSensitivityCombinations(
-        definition,
-        active,
-        0U,
-        parameters,
-        counter
-    );
-
-    return count;
-}
-
 // Position sizing for every run of the study, chosen once on the command line.
 // equal-weight: fixed quantityPercent per signal, entry/exit-only rebalance (default).
-// volatility-target: config/portfolio/pure_rsi_vol_target.json semantics: signal shape
-// scaled to an annualized portfolio volatility from a sample covariance, positions
-// resized when their weight drifts beyond the threshold.
+// volatility-target: signal shape scaled to an annualized portfolio volatility from a
+// sample covariance. --rebalance chooses when a held position is resized to its target:
+// none (entries/exits only), absolute (weight drift beyond --rebalance-threshold points) or
+// relative (drift beyond that fraction of the current weight). Default: none for equal
+// weight, absolute for volatility target. The deployed config/portfolio/pure_rsi_vol_target.json
+// uses the volatility target with a 20% relative threshold since 2026-10-15.
 struct StudySizing {
     std::string sizer = "equal-weight";
+    std::string rebalance = "default";
     double targetVolatility = 0.20;
     std::size_t covarianceLookback = 5;
     double periodsPerYear = 365.0;
@@ -691,7 +336,18 @@ struct StudySizing {
 
 StudySizing studySizing;
 
-StrategyPortfolio makeStudyPortfolio(
+std::unique_ptr<RebalancePolicy> makeStudyRebalancePolicy()
+{
+    const std::string rule = studySizing.rebalance != "default" ? studySizing.rebalance
+        : studySizing.sizer == "volatility-target" ? "absolute" : "none";
+    if (rule == "relative")
+        return std::make_unique<RelativeThresholdRebalancePolicy>(studySizing.rebalanceThreshold);
+    if (rule == "absolute")
+        return std::make_unique<ThresholdRebalancePolicy>(studySizing.rebalanceThreshold);
+    return std::make_unique<EntryExitOnlyRebalancePolicy>();
+}
+
+StrategyPortfolio makeSizedStudyPortfolio(
     const StrategyDefinition& definition,
     const ParameterValues& parameters
 )
@@ -709,7 +365,7 @@ StrategyPortfolio makeStudyPortfolio(
                     studySizing.covarianceLookback, studySizing.periodsPerYear),
                 studySizing.targetVolatility),
             RiskConstraints(1.5, 1.5),
-            std::make_unique<ThresholdRebalancePolicy>(studySizing.rebalanceThreshold)
+            makeStudyRebalancePolicy()
         );
         return portfolio;
     }
@@ -721,735 +377,11 @@ StrategyPortfolio makeStudyPortfolio(
         1.0,
         std::make_unique<EqualWeightSizer>(assetWeight),
         RiskConstraints(1.5, 1.5),
-        std::make_unique<EntryExitOnlyRebalancePolicy>()
+        makeStudyRebalancePolicy()
     );
     return portfolio;
 }
 
-BacktestMetrics runSingleBacktest(
-    const StrategyDefinition& definition,
-    const ParameterValues& parameters,
-    const OHLCVData& ohlcvData,
-    double initialBalance,
-    double feeMaker,
-    double feeTaker,
-    const BacktestMetricsSettings& metricsSettings
-)
-{
-    (void)feeMaker; // CURRENT research execution uses market orders only.
-    BacktestContext context(
-        ohlcvData, makeStudyPortfolio(definition, parameters), initialBalance, feeTaker
-    );
-
-    Backtester tester(context);
-    tester.loop();
-    tester.closeTrades();
-
-    return calculateBacktestMetrics(
-        definition.name,
-        context.GetTradesHistory(),
-        context.GetBalanceEquityHistoric(),
-        context.GetMarketData(),
-        initialBalance,
-        metricsSettings
-    );
-}
-
-double median(std::vector<double> values)
-{
-    if (values.empty()) {
-        return 0.0;
-    }
-
-    std::sort(values.begin(), values.end());
-    const std::size_t middle = values.size() / 2U;
-
-    if (values.size() % 2U == 0U) {
-        return (values[middle - 1U] + values[middle]) / 2.0;
-    }
-
-    return values[middle];
-}
-
-const SensitivityParameterDefinition* findSensitivityParameterDefinition(
-    const StrategyDefinition& definition,
-    const std::string& key
-)
-{
-    for (const SensitivityParameterDefinition& parameter :
-         definition.sensitivityParameters) {
-        if (parameter.key == key) {
-            return &parameter;
-        }
-    }
-
-    return nullptr;
-}
-
-std::string formatCsvNumber(double value)
-{
-    if (!std::isfinite(value)) {
-        return {};
-    }
-
-    std::ostringstream output;
-    output << std::setprecision(15) << value;
-    return output.str();
-}
-
-void writeCsvRow(
-    std::ostream& output,
-    const std::vector<std::string>& cells
-)
-{
-    for (std::size_t index = 0U; index < cells.size(); ++index) {
-        if (index > 0U) {
-            output << ',';
-        }
-
-        output << '"';
-        for (const char character : cells[index]) {
-            if (character == '"') {
-                output << "\"\"";
-            } else {
-                output << character;
-            }
-        }
-        output << '"';
-    }
-    output << '\n';
-}
-
-std::string utcTimestamp()
-{
-    const std::time_t now = std::time(nullptr);
-    std::tm utcTime{};
-
-#if defined(_WIN32)
-    gmtime_s(&utcTime, &now);
-#else
-    gmtime_r(&now, &utcTime);
-#endif
-
-    std::ostringstream output;
-    output << std::put_time(&utcTime, "%Y-%m-%dT%H:%M:%SZ");
-    return output.str();
-}
-
-class SensitivityCsvWriter {
-public:
-    SensitivityCsvWriter(
-        const std::filesystem::path& outputPath,
-        const std::string& studyId,
-        const StrategyDefinition& definition
-    )
-        : output_(outputPath),
-          studyId_(studyId),
-          strategyName_(definition.name)
-    {
-        if (!output_.is_open()) {
-            throw std::runtime_error(
-                "Could not write sensitivity CSV: " + outputPath.string()
-            );
-        }
-        output_.exceptions(std::ios::failbit | std::ios::badbit);
-
-        parameterKeys_.reserve(definition.currentParameters.size());
-        for (const auto& [key, value] : definition.currentParameters) {
-            parameterKeys_.push_back(key);
-            (void)value;
-        }
-
-        std::vector<std::string> header{
-            "study_id",
-            "strategy",
-            "run_id",
-            "status",
-            "failure_reason"
-        };
-        header.insert(header.end(), parameterKeys_.begin(), parameterKeys_.end());
-
-        const std::vector<std::string> metricHeaders{
-            "net_return_percent",
-            "annualized_return_percent",
-            "max_drawdown_percent",
-            "sharpe_ratio",
-            "sortino_ratio",
-            "calmar_ratio",
-            "profit_factor",
-            "expectancy_per_trade",
-            "trade_count",
-            "exposure_percent",
-            "turnover_multiple",
-            "win_rate_percent",
-            "average_win",
-            "average_loss",
-            "max_consecutive_losses",
-            "worst_loss_streak",
-            "average_holding_bars",
-            "net_profit",
-            "final_equity"
-        };
-        header.insert(header.end(), metricHeaders.begin(), metricHeaders.end());
-
-        writeCsvRow(output_, header);
-    }
-
-    void writeRun(
-        std::size_t runId,
-        const std::string& status,
-        const std::string& failureReason,
-        const ParameterValues& parameters,
-        const BacktestMetrics* metrics
-    )
-    {
-        std::vector<std::string> row{
-            studyId_,
-            strategyName_,
-            std::to_string(runId),
-            status,
-            failureReason
-        };
-
-        for (const std::string& key : parameterKeys_) {
-            const auto iterator = parameters.find(key);
-            row.push_back(
-                iterator == parameters.end()
-                    ? std::string{}
-                    : formatCsvNumber(iterator->second)
-            );
-        }
-
-        if (metrics != nullptr) {
-            row.insert(
-                row.end(),
-                {
-                    formatCsvNumber(metrics->netReturnPercent),
-                    formatCsvNumber(metrics->annualizedReturnPercent),
-                    formatCsvNumber(metrics->maxDrawdownPercent),
-                    formatCsvNumber(metrics->sharpeRatio),
-                    formatCsvNumber(metrics->sortinoRatio),
-                    formatCsvNumber(metrics->calmarRatio),
-                    formatCsvNumber(metrics->profitFactor),
-                    formatCsvNumber(metrics->expectancyPerTrade),
-                    std::to_string(metrics->tradeCount),
-                    formatCsvNumber(metrics->exposurePercent),
-                    formatCsvNumber(metrics->turnoverMultiple),
-                    formatCsvNumber(metrics->winRatePercent),
-                    formatCsvNumber(metrics->averageWin),
-                    formatCsvNumber(metrics->averageLoss),
-                    std::to_string(metrics->maximumConsecutiveLosses),
-                    formatCsvNumber(metrics->worstConsecutiveLossPnl),
-                    formatCsvNumber(metrics->averageHoldingBars),
-                    formatCsvNumber(metrics->netProfit),
-                    formatCsvNumber(metrics->finalEquity)
-                }
-            );
-        } else {
-            constexpr std::size_t metricColumnCount = 19U;
-            row.insert(row.end(), metricColumnCount, std::string{});
-        }
-
-        writeCsvRow(output_, row);
-    }
-
-private:
-    std::ofstream output_;
-    std::string studyId_;
-    std::string strategyName_;
-    std::vector<std::string> parameterKeys_;
-};
-
-std::string invalidCombinationReason(
-    const StrategyDefinition& definition,
-    const ParameterValues& parameters
-)
-{
-    for (const auto& [key, value] : parameters) {
-        if (!std::isfinite(value)) {
-            return "Non-finite parameter value for '" + key + "'";
-        }
-    }
-
-    if (definition.name == "PureRSI" &&
-        parameterOr(parameters, "rsiEntry", 0.0) <=
-        parameterOr(parameters, "rsiExit", 0.0)) {
-        return "rsiEntry must be strictly greater than rsiExit";
-    }
-
-    if (definition.isValidCombination &&
-        !definition.isValidCombination(parameters)) {
-        return "Rejected by the strategy-specific valid-combination predicate";
-    }
-
-    return {};
-}
-
-ParameterSensitivityExecution runParameterSensitivity(
-    const StrategyDefinition& definition,
-    const OHLCVData& ohlcvData,
-    double initialBalance,
-    double feeMaker,
-    double feeTaker,
-    const BacktestMetricsSettings& baseMetricsSettings,
-    const std::filesystem::path& csvPath,
-    const std::string& studyId,
-    SensitivityProgressReporter& progress
-)
-{
-    ParameterSensitivityExecution execution;
-
-    const std::vector<ActiveSensitivityParameter> active =
-        activeSensitivityParameters(definition);
-
-    if (active.empty()) {
-        return execution;
-    }
-
-    // Sensitivity runs use historical metrics only. Monte Carlo is disabled
-    // here so every grid point remains a single deterministic backtest.
-    BacktestMetricsSettings sensitivityMetricsSettings = baseMetricsSettings;
-    sensitivityMetricsSettings.monteCarloSimulationCount = 0U;
-    sensitivityMetricsSettings.monteCarloFanPointCount = 0U;
-
-    std::vector<std::vector<SensitivityAccumulator>> accumulators;
-    accumulators.reserve(active.size());
-    for (const ActiveSensitivityParameter& parameter : active) {
-        accumulators.emplace_back(parameter.values.size());
-    }
-
-    std::vector<std::map<double, std::size_t>> valueIndexes;
-    valueIndexes.reserve(active.size());
-    for (const ActiveSensitivityParameter& parameter : active) {
-        std::map<double, std::size_t> indexes;
-        for (std::size_t index = 0U; index < parameter.values.size(); ++index) {
-            indexes.insert_or_assign(parameter.values[index], index);
-        }
-        valueIndexes.push_back(std::move(indexes));
-    }
-
-    SensitivityCsvWriter csvWriter(csvPath, studyId, definition);
-
-    ParameterValues parameters = definition.currentParameters;
-    std::size_t runId = 0U;
-    progress.setStrategy(definition.name);
-
-    auto processCombination = [&](const ParameterValues& combination) {
-        ++runId;
-        ++execution.stats.plannedRunCount;
-
-        const std::string validationReason =
-            invalidCombinationReason(definition, combination);
-
-        if (!validationReason.empty()) {
-            ++execution.stats.invalidRunCount;
-            csvWriter.writeRun(
-                runId,
-                "invalid",
-                validationReason,
-                combination,
-                nullptr
-            );
-            progress.advance();
-            return;
-        }
-
-        try {
-            const BacktestMetrics metrics = runSingleBacktest(
-                definition,
-                combination,
-                ohlcvData,
-                initialBalance,
-                feeMaker,
-                feeTaker,
-                sensitivityMetricsSettings
-            );
-
-            csvWriter.writeRun(
-                runId,
-                "success",
-                {},
-                combination,
-                &metrics
-            );
-            ++execution.stats.successfulRunCount;
-
-            for (std::size_t parameterIndex = 0U;
-                 parameterIndex < active.size();
-                 ++parameterIndex) {
-                const double value = parameterOr(
-                    combination,
-                    active[parameterIndex].definition->key,
-                    0.0
-                );
-                const auto valueIndex = valueIndexes[parameterIndex].find(value);
-                if (valueIndex != valueIndexes[parameterIndex].end()) {
-                    accumulators[parameterIndex][valueIndex->second].add(metrics);
-                }
-            }
-        } catch (const std::exception& exception) {
-            ++execution.stats.failedRunCount;
-            csvWriter.writeRun(
-                runId,
-                "failed",
-                exception.what(),
-                combination,
-                nullptr
-            );
-            LG_ERROR(
-                "Sensitivity run failed for {} (run {}): {}",
-                definition.name,
-                runId,
-                exception.what()
-            );
-        } catch (...) {
-            ++execution.stats.failedRunCount;
-            csvWriter.writeRun(
-                runId,
-                "failed",
-                "Unknown non-standard exception",
-                combination,
-                nullptr
-            );
-            LG_ERROR(
-                "Sensitivity run failed for {} (run {}): unknown exception",
-                definition.name,
-                runId
-            );
-        }
-
-        progress.advance();
-    };
-
-    enumerateSensitivityCombinations(
-        definition,
-        active,
-        0U,
-        parameters,
-        processCombination
-    );
-
-    execution.reports.reserve(active.size());
-    for (std::size_t parameterIndex = 0U;
-         parameterIndex < active.size();
-         ++parameterIndex) {
-        const ActiveSensitivityParameter& parameter = active[parameterIndex];
-        ParameterSensitivityReport report;
-        report.parameterName = parameter.definition->key;
-        report.displayName = parameter.definition->displayName;
-        report.points.reserve(parameter.values.size());
-
-        for (std::size_t valueIndex = 0U;
-             valueIndex < parameter.values.size();
-             ++valueIndex) {
-            const SensitivityAccumulator& accumulator =
-                accumulators[parameterIndex][valueIndex];
-
-            report.points.push_back(ParameterSensitivityPoint{
-                parameter.values[valueIndex],
-                median(accumulator.finalReturnPercentValues),
-                median(accumulator.maxDrawdownPercentValues),
-                median(accumulator.tradeCountValues),
-                accumulator.positiveCombinationCount,
-                accumulator.finalReturnPercentValues.size(),
-                accumulator.zeroTradeCombinationCount
-            });
-        }
-
-        execution.reports.push_back(std::move(report));
-    }
-
-    return execution;
-}
-
-StrategyExecutionResult runStrategyAndWriteReport(
-    const StrategyDefinition& definition,
-    const OHLCVData& ohlcvData,
-    double initialBalance,
-    double feeMaker,
-    double feeTaker,
-    const BacktestMetricsSettings& metricsSettings,
-    const std::filesystem::path& reportPath,
-    const std::filesystem::path& sensitivityCsvPath,
-    const std::string& studyId,
-    SensitivityProgressReporter* progress
-)
-{
-    StrategyExecutionResult result;
-
-    BacktestContext context(
-        ohlcvData,
-        makeStudyPortfolio(definition, definition.currentParameters),
-        initialBalance,
-        feeTaker
-    );
-
-    Backtester tester(context);
-    tester.loop();
-    tester.closeTrades();
-
-    tester.storeTradesCSV(reportPath.parent_path() / (definition.name + "_trades.csv"));
-    std::ofstream accountOutput(
-        reportPath.parent_path() / (definition.name + "_account.csv")
-    );
-    accountOutput.exceptions(std::ios::failbit | std::ios::badbit);
-    accountOutput << "timestamp,cash,balance,equity\n" << std::setprecision(17);
-    for (const auto& snapshot : context.GetAccountHistory()) {
-        accountOutput << snapshot.timestamp << ',' << snapshot.cash << ','
-                      << snapshot.balance << ',' << snapshot.equity << '\n';
-    }
-    result.metrics = calculateBacktestMetrics(
-        definition.name,
-        context.GetTradesHistory(),
-        context.GetBalanceEquityHistoric(),
-        context.GetMarketData(),
-        initialBalance,
-        metricsSettings
-    );
-    SensitivityCsvWriter baselineMetrics(
-        reportPath.parent_path() / (definition.name + "_metrics.csv"), studyId, definition
-    );
-    baselineMetrics.writeRun(0, "success", {}, definition.currentParameters, &result.metrics);
-
-    std::vector<ParameterSensitivityReport> parameterSensitivity;
-    if (progress != nullptr) {
-        ParameterSensitivityExecution sensitivity = runParameterSensitivity(
-            definition,
-            ohlcvData,
-            initialBalance,
-            feeMaker,
-            feeTaker,
-            metricsSettings,
-            sensitivityCsvPath,
-            studyId,
-            *progress
-        );
-        parameterSensitivity = std::move(sensitivity.reports);
-        result.sensitivityStats = sensitivity.stats;
-    }
-
-    if (!writeBacktestHtmlReport(
-            reportPath,
-            result.metrics,
-            context.GetBalanceEquityHistoric(),
-            context.GetMarketData(),
-            parameterSensitivity
-        )) {
-        throw std::runtime_error("Could not write report for strategy " + definition.name);
-    }
-
-    return result;
-}
-
-bool ensureDirectoryExists(const std::filesystem::path& path)
-{
-    std::error_code error;
-    std::filesystem::create_directories(path, error);
-
-    if (error) {
-        LG_ERROR(
-            "Could not create output directory '{}': {}",
-            path.string(),
-            error.message()
-        );
-        return false;
-    }
-
-    return true;
-}
-
-void writeParameterGridCsv(
-    const std::filesystem::path& outputPath,
-    const std::string& studyId,
-    const std::vector<StrategyDefinition>& definitions
-)
-{
-    std::ofstream output(outputPath);
-    if (!output.is_open()) {
-        throw std::runtime_error(
-            "Could not write parameter grid CSV: " + outputPath.string()
-        );
-    }
-    output.exceptions(std::ios::failbit | std::ios::badbit);
-
-    writeCsvRow(
-        output,
-        {
-            "study_id",
-            "strategy",
-            "parameter_name",
-            "display_name",
-            "current_value",
-            "enabled",
-            "minimum",
-            "maximum",
-            "spacing"
-        }
-    );
-
-    for (const StrategyDefinition& definition : definitions) {
-        for (const auto& [key, currentValue] : definition.currentParameters) {
-            const SensitivityParameterDefinition* sensitivityDefinition =
-                findSensitivityParameterDefinition(definition, key);
-
-            writeCsvRow(
-                output,
-                {
-                    studyId,
-                    definition.name,
-                    key,
-                    sensitivityDefinition == nullptr
-                        ? std::string{}
-                        : sensitivityDefinition->displayName,
-                    formatCsvNumber(currentValue),
-                    sensitivityDefinition != nullptr &&
-                        sensitivityDefinition->enabled
-                        ? "yes"
-                        : "no",
-                    sensitivityDefinition == nullptr
-                        ? std::string{}
-                        : formatCsvNumber(sensitivityDefinition->minimum),
-                    sensitivityDefinition == nullptr
-                        ? std::string{}
-                        : formatCsvNumber(sensitivityDefinition->maximum),
-                    sensitivityDefinition == nullptr
-                        ? std::string{}
-                        : formatCsvNumber(sensitivityDefinition->spacing)
-                }
-            );
-        }
-    }
-}
-
-void writeStudyMetadataCsv(
-    const std::filesystem::path& outputPath,
-    const std::string& studyId,
-    const std::string& databasePath,
-    double initialBalance,
-    double feeMaker,
-    double feeTaker,
-    double commissionEntryFactor,
-    double commissionExitFactor,
-    const BacktestMetricsSettings& metricsSettings,
-    const std::vector<std::pair<std::string, SensitivityRunStats>>& strategyStats
-)
-{
-    std::ofstream output(outputPath);
-    if (!output.is_open()) {
-        throw std::runtime_error(
-            "Could not write study metadata CSV: " + outputPath.string()
-        );
-    }
-    output.exceptions(std::ios::failbit | std::ios::badbit);
-
-    writeCsvRow(
-        output,
-        {
-            "record_type",
-            "study_id",
-            "created_utc",
-            "database_path",
-            "initial_balance",
-            "fee_maker",
-            "fee_taker",
-            "commission_entry_factor",
-            "commission_exit_factor",
-            "periods_per_year",
-            "database_timeframe",
-            "annualization_benchmark_symbol",
-            "exclude_simulated_trades",
-            "sensitivity_monte_carlo_enabled",
-            "strategy",
-            "planned_runs",
-            "successful_runs",
-            "invalid_runs",
-            "failed_runs"
-        }
-    );
-
-    const std::string createdUtc = utcTimestamp();
-
-    writeCsvRow(
-        output,
-        {
-            "study",
-            studyId,
-            createdUtc,
-            databasePath,
-            formatCsvNumber(initialBalance),
-            formatCsvNumber(feeMaker),
-            formatCsvNumber(feeTaker),
-            formatCsvNumber(commissionEntryFactor),
-            formatCsvNumber(commissionExitFactor),
-            formatCsvNumber(metricsSettings.periodsPerYear),
-            metricsSettings.databaseTimeframe,
-            metricsSettings.annualizationBenchmarkSymbol,
-            metricsSettings.excludeSimulatedTrades ? "yes" : "no",
-            "no",
-            {},
-            {},
-            {},
-            {},
-            {}
-        }
-    );
-
-    for (const auto& [strategyName, stats] : strategyStats) {
-        writeCsvRow(
-            output,
-            {
-                "strategy",
-                studyId,
-                createdUtc,
-                databasePath,
-                formatCsvNumber(initialBalance),
-                formatCsvNumber(feeMaker),
-                formatCsvNumber(feeTaker),
-                formatCsvNumber(commissionEntryFactor),
-                formatCsvNumber(commissionExitFactor),
-                formatCsvNumber(metricsSettings.periodsPerYear),
-                metricsSettings.databaseTimeframe,
-                metricsSettings.annualizationBenchmarkSymbol,
-                metricsSettings.excludeSimulatedTrades ? "yes" : "no",
-                "no",
-                strategyName,
-                std::to_string(stats.plannedRunCount),
-                std::to_string(stats.successfulRunCount),
-                std::to_string(stats.invalidRunCount),
-                std::to_string(stats.failedRunCount)
-            }
-        );
-    }
-}
-
-
-double periodsPerYearFromTimeframe(const std::string& timeframe)
-{
-    if (timeframe == "1d") {
-        return 365.0;
-    }
-
-    if (timeframe.size() >= 2U && timeframe.back() == 'h') {
-        const int hours = std::stoi(timeframe.substr(0, timeframe.size() - 1U));
-
-        if (
-            hours == 1 ||
-            hours == 2 ||
-            hours == 3 ||
-            hours == 4 ||
-            hours == 6 ||
-            hours == 8 ||
-            hours == 12
-        ) {
-            return 365.0 * 24.0 / static_cast<double>(hours);
-        }
-    }
-
-    throw std::runtime_error(
-        "Unsupported database timeframe: " + timeframe +
-        ". Use 1d, 1h, 2h, 3h, 4h, 6h, 8h or 12h."
-    );
-}
 
 } // namespace
 
@@ -1464,6 +396,8 @@ try
     std::string outputRoot;
     std::string grid;
     std::string selectedStrategy;
+    std::vector<std::string> parameterOverrides;
+    std::string rankerChoice;
     Timestamp startDate;
     Timestamp endDate;
     double feeTaker;
@@ -1478,12 +412,16 @@ try
         ("study-id", options::value(&studyId)->default_value(""), "New study directory name (default UTC timestamp)")
         ("output-root", options::value(&outputRoot)->default_value("storage/backtests/sensitivity_results"), "Study parent directory")
         ("strategy", options::value(&selectedStrategy)->default_value("PureRSI"), "Strategy name or all")
+        ("ranker", options::value(&rankerChoice)->default_value("own"), "own (each strategy's ranker) or volume (SMA(volume, 25), highest first; PureMom keeps momentum)")
+        ("set", options::value(&parameterOverrides)->composing(), "Baseline parameter name=value (repeatable, e.g. --set rsiExit=65)")
         ("grid", options::value(&grid)->default_value("none"), "none, compact or full sensitivity grid")
         ("fee-taker", options::value(&feeTaker)->default_value(0.0), "Market commission fraction per fill")
         ("sizer", options::value(&studySizing.sizer)->default_value("equal-weight"), "equal-weight or volatility-target")
         ("target-volatility", options::value(&studySizing.targetVolatility)->default_value(0.20), "volatility-target: annualized target (0.20 = 20%)")
         ("covariance-lookback", options::value(&studySizing.covarianceLookback)->default_value(5), "volatility-target: returns in the sample covariance")
-        ("rebalance-threshold", options::value(&studySizing.rebalanceThreshold)->default_value(0.02), "volatility-target: weight drift that triggers a resize");
+        ("rebalance-threshold", options::value(&studySizing.rebalanceThreshold)->default_value(0.02), "volatility-target: weight drift that triggers a resize")
+        ("rebalance", options::value(&studySizing.rebalance)->default_value("default"), "none, absolute (weight points) or relative (fraction of the current weight); default: none for equal-weight, absolute for volatility-target")
+        ("btc-filter-length", options::value(&pureRsiBenchmarkFilterLength)->default_value(0), "PureRSI: new signals only while the benchmark closes above SMA(close, length); 0 = off");
     try {
         options::variables_map values;
         options::store(options::parse_command_line(argc, argv, arguments), values);
@@ -1508,6 +446,11 @@ try
             throw std::invalid_argument("Fee must be finite and non-negative");
         if (studySizing.sizer != "equal-weight" && studySizing.sizer != "volatility-target")
             throw std::invalid_argument("Sizer must be equal-weight or volatility-target");
+        if (rankerChoice != "own" && rankerChoice != "volume")
+            throw std::invalid_argument("Ranker must be own or volume");
+        if (studySizing.rebalance != "default" && studySizing.rebalance != "none" &&
+            studySizing.rebalance != "absolute" && studySizing.rebalance != "relative")
+            throw std::invalid_argument("Rebalance must be none, absolute or relative");
         if (!std::isfinite(studySizing.targetVolatility) || studySizing.targetVolatility <= 0.0 ||
             studySizing.covarianceLookback < 2U ||
             !std::isfinite(studySizing.rebalanceThreshold) || studySizing.rebalanceThreshold < 0.0)
@@ -1535,11 +478,19 @@ try
     }
 
     studySizing.periodsPerYear = periodsPerYear;
+    const std::string rebalanceRule = studySizing.rebalance != "default" ? studySizing.rebalance
+        : studySizing.sizer == "volatility-target" ? "absolute" : "none";
     if (studySizing.sizer == "volatility-target")
-        LG_INFO("Sizer: volatility-target {:.0f}% annualized, covariance of {} returns, rebalance at {:.1f}% drift, max gross 1.5x",
-                studySizing.targetVolatility * 100.0, studySizing.covarianceLookback, studySizing.rebalanceThreshold * 100.0);
+        LG_INFO("Sizer: volatility-target {:.0f}% annualized, covariance of {} returns, max gross 1.5x",
+                studySizing.targetVolatility * 100.0, studySizing.covarianceLookback);
     else
-        LG_INFO("Sizer: equal-weight (quantityPercent per signal), entry/exit-only rebalance");
+        LG_INFO("Sizer: equal-weight (quantityPercent per signal)");
+    if (rebalanceRule == "none")
+        LG_INFO("Rebalance: entries and exits only");
+    else
+        LG_INFO("Rebalance: resize at {:.1f}% {} drift", studySizing.rebalanceThreshold * 100.0, rebalanceRule);
+    if (pureRsiBenchmarkFilterLength > 0)
+        LG_INFO("PureRSI filter: new signals only while {} closes above SMA({})", benchmarkSymbol, pureRsiBenchmarkFilterLength);
 
     constexpr double initialBalance = 100000.0;
 
@@ -1548,7 +499,7 @@ try
     constexpr double commissionEntryFactor = 0.0;
     constexpr double commissionExitFactor = 0.0;
 
-    const bool runParameterSensitivity = grid != "none";
+    const bool runSensitivityGrid = grid != "none";
 
     const BacktestMetricsSettings metricsSettings{
         .periodsPerYear = periodsPerYear,
@@ -1592,14 +543,29 @@ try
     LG_INFO("Database loaded successfully");
     LG_INFO("Annualization: {} bars, benchmark {}, {} periods per year", databaseTimeframe, benchmarkSymbol, periodsPerYear);
 
-    std::vector<StrategyDefinition> strategyDefinitions =
-        makeStrategyDefinitions(
-            feeMaker,
-            feeTaker,
-            commissionEntryFactor,
-            commissionExitFactor,
-            benchmarkSymbol
-        );
+    rankByVolumeAverage() = rankerChoice == "volume";
+    if (rankByVolumeAverage())
+        LG_INFO("Ranking: SMA(volume, 25), highest first (PureMom keeps its momentum ranking)");
+    std::vector<StrategyDefinition> strategyDefinitions = makeHtmlStudyDefinitions(benchmarkSymbol);
+    // Timed research strategies, only when named explicitly (keeps "all" to the four HTML
+    // definitions), with the values of the multi-strategy study where the shared
+    // definitions differ (ATRBreakout also matches the parameters frozen in August 2026).
+    const std::map<std::string, ParameterValues> multiStrategyValues{
+        {"PureMom", {}},
+        {"BargainChaser", {{"barsUntilExit", 1.0}}},
+        {"MRRSILong", {}},
+        {"ATRBreakout", {{"heldBars", 3.0}, {"atrMultiple", 0.875}, {"atrLength", 10.0}}},
+        {"MRShort", {{"rsiEntry", 65.0}, {"entryAtrLength", 10.0}, {"heldBars", 7.0}}},
+    };
+    if (const auto values = multiStrategyValues.find(selectedStrategy); values != multiStrategyValues.end()) {
+        for (auto& definition : makeStrategyDefinitions(benchmarkSymbol)) {
+            if (definition.name != selectedStrategy)
+                continue;
+            for (const auto& [key, value] : values->second)
+                definition.currentParameters[key] = value;
+            strategyDefinitions.push_back(std::move(definition));
+        }
+    }
 
     if (selectedStrategy != "all") {
         std::erase_if(strategyDefinitions, [&](const auto& definition) {
@@ -1609,6 +575,41 @@ try
     if (strategyDefinitions.empty()) {
         LG_ERROR("Strategy is unavailable in this target: {}", selectedStrategy);
         return 1;
+    }
+    // --set replaces baseline values of the selected strategies; grid ranges are unchanged.
+    for (const std::string& override : parameterOverrides) {
+        const auto separator = override.find('=');
+        double value = 0.0;
+        try {
+            if (separator == std::string::npos || separator == 0)
+                throw std::invalid_argument("missing name=value");
+            std::size_t parsed = 0;
+            value = std::stod(override.substr(separator + 1), &parsed);
+            if (parsed != override.size() - separator - 1 || !std::isfinite(value))
+                throw std::invalid_argument("value is not a number");
+        } catch (const std::exception&) {
+            LG_ERROR("Invalid --set {} (expected name=number)", override);
+            return 1;
+        }
+        const std::string key = override.substr(0, separator);
+        bool applied = false;
+        for (auto& definition : strategyDefinitions) {
+            if (!definition.currentParameters.contains(key))
+                continue;
+            definition.currentParameters[key] = value;
+            applied = true;
+            LG_INFO("Baseline {} {} = {}", definition.name, key, value);
+        }
+        if (!applied) {
+            LG_ERROR("--set {}: no selected strategy has parameter {}", override, key);
+            return 1;
+        }
+    }
+    for (const auto& definition : strategyDefinitions) {
+        if (!definition.isValidCombination(definition.currentParameters)) {
+            LG_ERROR("Baseline parameters of {} are not a valid combination", definition.name);
+            return 1;
+        }
     }
     if (grid == "compact") {
         // Bounded signal study: 2 lengths x 2 entries x 2 exits = 8 runs.
@@ -1661,75 +662,24 @@ try
         return 1;
     }
 
-    std::size_t totalSensitivityRuns = 0U;
-    if (runParameterSensitivity) {
-        for (const StrategyDefinition& definition : strategyDefinitions) {
-            const std::size_t strategyRuns = countSensitivityCombinations(definition);
-            totalSensitivityRuns += strategyRuns;
-            LG_INFO(
-                "Sensitivity grid {}: {} planned parameter combinations",
-                definition.name,
-                strategyRuns
-            );
-        }
-        LG_INFO(
-            "Total parameter-sensitivity grid: {} planned parameter combinations",
-            totalSensitivityRuns
-        );
-    }
+    const StudyRunSettings runSettings{
+        .makePortfolio = makeSizedStudyPortfolio,
+        .initialBalance = initialBalance,
+        .feeTaker = feeTaker,
+        .metricsSettings = metricsSettings
+    };
 
-    std::unique_ptr<SensitivityProgressReporter> progress;
-    if (runParameterSensitivity && totalSensitivityRuns > 0U) {
-        progress = std::make_unique<SensitivityProgressReporter>(
-            totalSensitivityRuns
-        );
-    }
-
-    std::map<std::string, BacktestMetrics> metricsCache;
-    std::vector<std::pair<std::string, SensitivityRunStats>> sensitivityStats;
-    sensitivityStats.reserve(strategyDefinitions.size());
-
+    StudyResults results;
     try {
-        for (const StrategyDefinition& definition : strategyDefinitions) {
-            LG_INFO("Running isolated backtest for {}", definition.name);
-
-            const StrategyExecutionResult result = runStrategyAndWriteReport(
-                definition,
-                ohlcvData,
-                initialBalance,
-                feeMaker,
-                feeTaker,
-                metricsSettings,
-                reportsDirectory / (definition.name + ".html"),
-                studyDirectory / (definition.name + ".csv"),
-                studyId,
-                progress.get()
-            );
-
-            if (progress) {
-                std::cout << '\n';
-            }
-            logBacktestMetrics(result.metrics);
-            metricsCache.insert_or_assign(definition.name, result.metrics);
-            sensitivityStats.emplace_back(
-                definition.name,
-                result.sensitivityStats
-            );
-
-            if (runParameterSensitivity) {
-                LG_INFO(
-                    "{} sensitivity: {} success, {} invalid, {} failed",
-                    definition.name,
-                    result.sensitivityStats.successfulRunCount,
-                    result.sensitivityStats.invalidRunCount,
-                    result.sensitivityStats.failedRunCount
-                );
-            }
-        }
-
-        if (progress) {
-            progress->finish();
-        }
+        results = runStudyStrategies(
+            strategyDefinitions,
+            ohlcvData,
+            runSettings,
+            runSensitivityGrid,
+            studyDirectory,
+            reportsDirectory,
+            studyId
+        );
 
         writeStudyMetadataCsv(
             studyDirectory / "study_metadata.csv",
@@ -1741,29 +691,18 @@ try
             commissionEntryFactor,
             commissionExitFactor,
             metricsSettings,
-            sensitivityStats
+            true, // timeframe and benchmark are options here
+            results.sensitivityStats
         );
     } catch (const std::exception& exception) {
-        if (progress) {
-            progress->finish();
-        }
         LG_ERROR("Backtest study stopped: {}", exception.what());
         return 1;
     }
 
-    LG_INFO(
-        "Completed {} baseline strategy backtests. Study outputs are in: {}",
-        metricsCache.size(),
-        studyDirectory.string()
-    );
+    logStudySummary(results, studyDirectory);
 
-    for (const auto& [strategyName, metrics] : metricsCache) {
-        LG_INFO("Summary {}: return {:.2f}%, annualized {:.2f}%, max drawdown {:.2f}%, Sharpe {:.3f}, Sortino {:.3f}, Calmar {:.3f}, profit factor {:.3f}, {} trades",
-                strategyName, metrics.netReturnPercent, metrics.annualizedReturnPercent, metrics.maxDrawdownPercent,
-                metrics.sharpeRatio, metrics.sortinoRatio, metrics.calmarRatio, metrics.profitFactor, metrics.tradeCount);
-    }
-
-    return std::any_of(sensitivityStats.begin(), sensitivityStats.end(), [](const auto& entry) {
+    // A failed grid run is recorded in the CSV and also fails the process.
+    return std::any_of(results.sensitivityStats.begin(), results.sensitivityStats.end(), [](const auto& entry) {
         return entry.second.failedRunCount > 0;
     }) ? 1 : 0;
 }

@@ -21,20 +21,37 @@ struct MarketDataIngestionSummary {
     std::unordered_map<Coin, double> paper_opening_prices;
 };
 
+// The work of a daily run that needs no closed candle: done a few seconds before midnight
+// so the run itself only downloads and commits.
+struct MarketDataPreparation {
+    std::chrono::year_month_day target_date;
+    TrackedMarketData previous;
+    // Requests of the previous tracker: nearly always the final plan.
+    std::vector<MarketDataDownloadRequest> early_plan;
+};
+
 // Coordinates one atomic daily market-data refresh from Binance into canonical storage.
 class MarketDataIngestor {
 public:
     explicit MarketDataIngestor(MarketDataConfig config);
 
-    MarketDataIngestionSummary run(std::chrono::year_month_day targetDate);
+    // Reads the tracker, builds the expected plan and opens the Binance connection.
+    MarketDataPreparation prepare(std::chrono::year_month_day targetDate) const;
+
+    // prepared, when given for the same day, saves the SQLite reads; the tracker is read
+    // again inside the run to check it did not change.
+    MarketDataIngestionSummary run(std::chrono::year_month_day targetDate,
+                                   const MarketDataPreparation* prepared = nullptr);
 
 private:
     MarketDataConfig config_;
     BinanceMarketDataClient binance_;
 
-    // Returns once Binance's own clock (GET /fapi/v1/time) has passed the end of targetDate,
-    // so every candle of that day is final there even if this host's clock runs slightly ahead.
-    void waitForBinanceDayClose(std::chrono::year_month_day targetDate) const;
+    // Summary of a day committed by an earlier run, for publication after a restart.
+    MarketDataIngestionSummary republishStoredDay(
+        const MarketDataStore& store,
+        const TrackedMarketData& tracked,
+        std::chrono::year_month_day targetDate) const;
 
     TrackedMarketData updateTracker(
         const TrackedMarketData& previous,

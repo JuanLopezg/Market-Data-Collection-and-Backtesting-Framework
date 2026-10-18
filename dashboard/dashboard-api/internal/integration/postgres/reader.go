@@ -110,6 +110,7 @@ type OperationalSnapshot struct {
 type FillWindow struct {
 	TotalRows       int64              `json:"totalRows"`
 	TotalCommission float64            `json:"totalCommission"`
+	PendingFeeRows  int64              `json:"pendingFeeRows"`
 	Rows            []tradingwire.Fill `json:"rows"`
 }
 
@@ -145,6 +146,8 @@ type PipelineCheckpoint struct {
 	PortfolioConfig string
 	StrategyUpdate  *tradingwire.MarketDataUpdated
 	Signals         tradingwire.StrategyIntentBatch
+	// Signals of the previous decision checkpoint; nil on the first one.
+	PreviousSignals *tradingwire.StrategyIntentBatch
 	Account         tradingwire.AccountSnapshot
 	Decision        tradingwire.DecisionBatch
 	PlanningRequest *tradingwire.NotionalOrderPlanningRequest
@@ -282,6 +285,7 @@ func (r *Reader) LatestPipelineCheckpoint(ctx context.Context) (PipelineCheckpoi
 		RiskDiagnosticsPayload *string `json:"riskDiagnosticsPayload"`
 		StrategyUpdatePayload  *string `json:"strategyUpdatePayload"`
 		SignalsPayload         string  `json:"signalsPayload"`
+		PreviousSignalsPayload *string `json:"previousSignalsPayload"`
 		AccountPayload         string  `json:"accountPayload"`
 		DecisionPayload        string  `json:"decisionPayload"`
 		PlanningRequestPayload *string `json:"planningRequestPayload"`
@@ -311,6 +315,16 @@ func (r *Reader) LatestPipelineCheckpoint(ctx context.Context) (PipelineCheckpoi
 	result.Timestamp = envelope.Timestamp
 	result.PortfolioConfig = envelope.PortfolioConfig
 	result.Signals = signals
+	if envelope.PreviousSignalsPayload != nil && *envelope.PreviousSignalsPayload != "" {
+		previous, err := tradingwire.DecodeStrategyIntentBatch([]byte(*envelope.PreviousSignalsPayload))
+		if err != nil {
+			return result, fmt.Errorf("previous strategy intents: %w", err)
+		}
+		if previous.Timestamp >= envelope.Timestamp {
+			return result, fmt.Errorf("previous strategy intents %d are not before anchor %d", previous.Timestamp, envelope.Timestamp)
+		}
+		result.PreviousSignals = &previous
+	}
 	result.Account = account
 	result.Decision = decision
 	if envelope.RiskDiagnosticsPayload != nil && *envelope.RiskDiagnosticsPayload != "" {
@@ -419,7 +433,7 @@ func (r *Reader) LedgerFills(ctx context.Context, limit int) (LedgerFillWindow, 
 	if limit > 1000 {
 		limit = 1000
 	}
-	raw, err := r.query(ctx, fmt.Sprintf(ledgerFillsSQL, limit))
+	raw, err := r.queryFills(ctx, fmt.Sprintf(ledgerFillsSQL, limit))
 	if err != nil {
 		return result, err
 	}
@@ -446,7 +460,7 @@ func (r *Reader) TradeHistoryFills(ctx context.Context) (LedgerFillWindow, error
 	if r.dsn == "" {
 		return result, errors.New("PostgreSQL DSN is not configured")
 	}
-	raw, err := r.query(ctx, fmt.Sprintf(ledgerFillsSQL, MaxTradeHistoryFills))
+	raw, err := r.queryFills(ctx, fmt.Sprintf(ledgerFillsSQL, MaxTradeHistoryFills))
 	if err != nil {
 		return result, err
 	}
@@ -493,7 +507,7 @@ func (r *Reader) FillsForOrders(ctx context.Context, orderIDs []uint64, limit in
 		where = "order_id IN (" + strings.Join(ids, ",") + ")"
 	}
 	query := fmt.Sprintf(fillsForOrdersSQL, where, limit)
-	raw, err := r.query(ctx, query)
+	raw, err := r.queryFills(ctx, query)
 	if err != nil {
 		return result, err
 	}
@@ -600,6 +614,12 @@ SELECT json_build_object(
     LIMIT 1
   ),
   'signalsPayload', risk.signals_payload,
+  'previousSignalsPayload', (
+    SELECT previous.signals_payload FROM portfolio_risk_live_decision_checkpoint previous
+    WHERE previous.state_key = 'portfolio-risk-live-sqlite-v1' AND previous.timestamp < risk.timestamp
+    ORDER BY previous.timestamp DESC
+    LIMIT 1
+  ),
   'accountPayload', risk.account_payload,
   'decisionPayload', risk.decision_payload,
   'riskDiagnosticsPayload', risk.risk_diagnostics_payload,
@@ -625,6 +645,43 @@ WHERE state_key = 'strategy-service-market-db-v1'
 ORDER BY timestamp DESC
 LIMIT 1;`
 
+// Venue fees are separate, append-only cash events. Aggregate them before the join
+// so several fee events cannot duplicate a fill or its notional. This matches
+// ExecutionState::rebuildAccounting: fill commission plus sum(-FEE amount).
+const venueFillFeesPresentSQL = `SELECT json_build_object('present', to_regclass('trading_venue_costs') IS NOT NULL);`
+
+const venueFillFeesSQL = `WITH venue_fees AS (
+  SELECT fill_id, sum(-amount) AS commission
+  FROM trading_venue_costs WHERE kind = 'FEE' AND fill_id <> 0 GROUP BY fill_id
+), effective_fills AS (
+  SELECT f.fill_id, f.order_id, f.strategy_id, f.timestamp, f.coin, f.side, f.quantity, f.price,
+    f.commission + COALESCE(v.commission, 0) AS commission,
+    (f.commission <> 0 OR v.fill_id IS NOT NULL) AS fee_recorded
+  FROM trading_fills f LEFT JOIN venue_fees v ON v.fill_id = f.fill_id
+) `
+
+const legacyFillFeesSQL = `WITH effective_fills AS (
+  SELECT f.*, TRUE AS fee_recorded FROM trading_fills f
+) `
+
+func (r *Reader) queryFills(ctx context.Context, query string) ([]byte, error) {
+	raw, err := r.query(ctx, venueFillFeesPresentSQL)
+	if err != nil {
+		return nil, err
+	}
+	var table struct {
+		Present bool `json:"present"`
+	}
+	if err := json.Unmarshal(raw, &table); err != nil {
+		return nil, fmt.Errorf("decode venue fee table check: %w", err)
+	}
+	prefix := legacyFillFeesSQL
+	if table.Present {
+		prefix = venueFillFeesSQL
+	}
+	return r.query(ctx, prefix+query)
+}
+
 const ledgerFillsSQL = `SELECT json_build_object(
   'totalRows', count(*),
   'distinctFillIds', count(DISTINCT fill_id),
@@ -637,22 +694,23 @@ const ledgerFillsSQL = `SELECT json_build_object(
   'rows', COALESCE((
     SELECT json_agg(row_to_json(f) ORDER BY f.timestamp, f.fill_id)
     FROM (
-      SELECT fill_id, order_id, strategy_id, timestamp, coin, side, quantity, price, commission
-      FROM trading_fills
+      SELECT fill_id, order_id, strategy_id, timestamp, coin, side, quantity, price, commission, fee_recorded
+      FROM effective_fills
       ORDER BY timestamp DESC, fill_id DESC
       LIMIT %d
     ) AS f
   ), '[]'::json)
-)::text FROM trading_fills;`
+)::text FROM effective_fills;`
 
 const fillsForOrdersSQL = `SELECT json_build_object(
-  'totalRows', (SELECT count(*) FROM trading_fills),
-  'totalCommission', COALESCE((SELECT sum(commission) FROM trading_fills), 0),
+  'totalRows', (SELECT count(*) FROM effective_fills),
+  'totalCommission', COALESCE((SELECT sum(commission) FROM effective_fills), 0),
+  'pendingFeeRows', (SELECT count(*) FROM effective_fills WHERE NOT fee_recorded),
   'rows', COALESCE((
     SELECT json_agg(row_to_json(f) ORDER BY f.timestamp, f.fill_id)
     FROM (
-      SELECT fill_id, order_id, strategy_id, timestamp, coin, side, quantity, price, commission
-      FROM trading_fills
+      SELECT fill_id, order_id, strategy_id, timestamp, coin, side, quantity, price, commission, fee_recorded
+      FROM effective_fills
       WHERE %s
       ORDER BY timestamp DESC, fill_id DESC
       LIMIT %d

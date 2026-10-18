@@ -360,7 +360,7 @@ func buildDependencies(
 		{Component: "ExecutionState durable snapshot", State: runtimeState, Reason: runtimeReason, LastCheck: checked},
 		{Component: "Trading service liveness", State: "UNKNOWN", Reason: "No common service heartbeat/readiness contract is wired yet", LastCheck: checked},
 		{Component: "Reconciliation", State: "UNKNOWN", Reason: "Latest exchange snapshot/reconciliation result is not durably exposed yet", LastCheck: checked},
-		{Component: "Exchange", State: "UNKNOWN", Reason: fmt.Sprintf("%s TESTNET foundation configured; public connectivity is intentionally not checked until Step 34", executionVenue), LastCheck: checked},
+		{Component: "Exchange", State: "UNKNOWN", Reason: fmt.Sprintf("%s venue: connectivity is shown by the exchange gateway and reconciliation, not probed here", executionVenue), LastCheck: checked},
 		{Component: "Clock sync", State: "UNKNOWN", Reason: "Host clock metrics are intentionally not inferred from the dashboard container", LastCheck: checked},
 	}
 }

@@ -107,14 +107,17 @@ type realWhyMarket struct {
 }
 type realWhyStrategy struct {
 	RSI        string `json:"rsi"`
+	Rule       string `json:"rule,omitempty"`
 	Signal     string `json:"signal"`
 	Transition string `json:"transition"`
 	Intent     string `json:"intent"`
 }
 type realWhyPortfolio struct {
+	Sizer          string   `json:"sizer,omitempty"`
 	RawTarget      string   `json:"rawTarget"`
 	VolTarget      string   `json:"volTarget"`
 	RiskChanges    []string `json:"riskChanges"`
+	Rebalance      string   `json:"rebalance,omitempty"`
 	ApprovedTarget string   `json:"approvedTarget"`
 }
 type realWhyPlanning struct {
@@ -189,6 +192,17 @@ func (p *Real) pipeline(ctx context.Context) (realPipelineData, error) {
 	}
 	proof := buildRealEndToEndProof(checkpoint, state, recon, reconErr, fills, fillsErr, p.runtimeMode())
 	data.Proof = &proof
+
+	inputs := pipelineTraceInputs{cfg: p.cfg, fills: fills.Rows, exchange: "Simulated exchange (PAPER)"}
+	if p.krakenLive() {
+		inputs.exchange = "Kraken Futures (LIVE)"
+	}
+	if market, err := p.marketDataResource(ctx); err == nil {
+		inputs.market = market.assets
+	} else {
+		inputs.marketErr = err
+	}
+	enrichPipeline(&data, checkpoint, inputs)
 	return data, nil
 }
 
@@ -327,7 +341,7 @@ func buildRealPipeline(checkpoint pgstore.PipelineCheckpoint, state pgstore.Runt
 		Traces:          traces,
 		SourceMode:      "REAL",
 		SourceUpdatedAt: state.UpdatedAt,
-		SourceNote:      "Cycle-aligned lineage anchored on portfolio_risk_live_decision_checkpoint. Strategy intent/account/DecisionBatch are the exact persisted inputs/outputs for that decision. " + plannerState + " RSI, liquidity rank, raw target and intermediate volatility/risk transforms are not persisted in these checkpoints and are explicitly shown as unavailable.",
+		SourceNote:      "Cycle-aligned lineage anchored on portfolio_risk_live_decision_checkpoint. Strategy intent/account/DecisionBatch are the exact persisted inputs/outputs for that decision. " + plannerState + " RSI and the liquidity rank are recomputed from the canonical market SQLite with the live strategy parameters; sizing, caps and the rebalance band come from the same-cycle risk evaluation.",
 	}
 }
 

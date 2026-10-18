@@ -18,7 +18,7 @@ try
     std::string databasePath, selectedStrategy;
     Timestamp startDate, endDate;
     double feeTaker;
-    options::options_description arguments("Isolated CURRENT strategy statistics");
+    options::options_description arguments("Isolated strategy statistics");
     arguments.add_options()
         ("help,h", "Show study options")
         ("database", options::value(&databasePath)->default_value("storage/databases/1d_cmc.csv"), "Daily CSV/SQLite input")

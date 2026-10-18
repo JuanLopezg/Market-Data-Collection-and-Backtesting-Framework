@@ -54,6 +54,9 @@ struct JournalOrder {
     long long sent_at_ms = 0;
     long long updated_at_ms = 0;
     std::optional<OrderState> published_state; // Last state reported to the gateway.
+    VenueOrderType type = VenueOrderType::Market;
+    double position_stop_price = 0.0; // Original command, USD per source unit.
+    double venue_stop_price = 0.0;    // Rounded down to the venue tick, USD per venue unit.
 };
 
 struct JournalFill {
@@ -88,6 +91,7 @@ public:
 
     std::optional<JournalOrder> order(OrderID localOrderId) const;
     std::optional<JournalOrder> orderByClientId(const std::string& clientOrderId) const;
+    std::optional<JournalOrder> orderByVenueId(const std::string& venueOrderId) const;
     std::vector<JournalOrder> ordersIn(std::initializer_list<OrderState> states) const;
     std::vector<JournalOrder> unpublishedOrders() const;
 

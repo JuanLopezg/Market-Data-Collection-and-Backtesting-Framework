@@ -1,8 +1,8 @@
 # Canonical Replay Suite
 
-The existing `algotrading_research` fast binary also supports an explicit frozen PAPER
+The `algotrading_research` fast binary also supports an explicit recorded PAPER
 baseline selected by `ALGOTRADING_PAPER_BASELINE_MANIFEST`. Its orchestration lives in
-`src/common/paper_baseline.cpp` and uses CURRENT TradingEngine/sizing/accounting in
+`src/common/paper_baseline.cpp` and uses the library TradingEngine/sizing/accounting in
 process, with per-day canonical 100-day indicator windows and observed next-open
 prices. It does not change the default historical fast profile or RealTest reference.
 The [chain study runbook](../deploy/chain/README.md#changing-the-portfolio-sizer)
@@ -285,40 +285,38 @@ campaign. `--resume` requires the same explicit `--label`, start and selected wi
 The same invariant is required in both `system` and `dashboard` modes.
 
 
-## Current implementation and research migration
+## Research executables
 
-The fast replay executable is built from `src/backtests/backtesting_main.cpp`
-against CURRENT `lib/backtest/Backtester`; its directory name does not mean it
-uses the frozen runtime. System/dashboard use `src/canonical/canonical_replay.cpp`
-and CURRENT `lib/src/runtime/replay_runtime.*`.
-
-All six useful research consumers now use CURRENT APIs. The frozen runtime,
-its comparison target and conditional HTML implementation have been removed.
-Regression checks preserve explicit report contracts and verify CURRENT fills,
-accounting, fees, causal prefixes and determinism.
-The HTML report source builds one target:
-`algotrading_research_html` links CURRENT `lib/` for supported PureRSI studies
-and research-only Donchian, XH and XH-ATR experiments.
-All four HTML strategy definitions and the XH robustness executable now have
-CURRENT paths. Initial parameter and statistics consumers also use CURRENT APIs
-for all seven of their original strategy families. The BTC moving-average study
-also uses the shared current short/momentum configurations. The scenario consumer
-uses current signal, sizing,
-execution and accounting APIs for all eight strategy families.
+Every research executable links `libalgolib` (CURRENT `lib/`); there is no separate
+research runtime. The fast replay executable is built from
+`src/backtests/backtesting_main.cpp` on `lib/backtest/Backtester`. System/dashboard use
+`src/canonical/canonical_replay.cpp` and `lib/src/runtime/replay_runtime.*`.
+Regression checks keep explicit report contracts and verify fills, accounting, fees,
+causal prefixes and determinism.
 
 ### Research consumer inventory
 
-All entrypoints below live under `src/backtests/`; verify build linkage in its
-`meson.build`, rather than inferring runtime from the directory name.
+All entrypoints below live under `src/backtests/`; `meson.build` lists their sources.
 
-| Entrypoint | Useful capabilities | Current implementation |
+| Entrypoint | Useful capabilities | Notes |
 | --- | --- | --- |
-| `backtesting_metrics_main_html_reports.cpp` | Isolated baselines, full Cartesian grids, invalid/failed run CSVs, parameter medians, equity/drawdown/tail risk, closed-trade distributions and seeded Monte Carlo HTML. | All four definitions use CURRENT APIs; one reporting target, explicit contract and accounting checks. |
-| `btc_moving_average.cpp` | MRShort and PureMom BTC SMA sensitivity; grid, metadata and HTML reports. | CURRENT shared short/momentum configurations; original 10..200 step-5 sweep and report contracts retained. |
-| `initial_strategy_parameters.cpp` | Initial parameter grids and HTML for BargainChaser, ATRBreakout, MRShort, PureMom, PureRSI, MRRSILong and XHBreakout. | CURRENT APIs/economics; original ranges, medians and HTML filenames retained; bounded CLI and verification exports added. |
-| `multi_strategy_main.cpp` | Eight isolated strategy families across 18 database/timeframe scenarios, chart index and cross-strategy return correlations. | CURRENT APIs/economics; distinct settings, benchmarks, original scenario list, HTML names and correlation controls retained. |
-| `stats.cpp` | Seven isolated strategy baselines and in-memory/logged statistical metrics. | CURRENT APIs/economics using shared initial-study configurations; logged summaries and in-memory cache retained. |
-| `testing_xhbreakout.cpp` | XH and XH-ATR robustness grids, rejection accounting, CSV metadata and HTML. | CURRENT XH definitions, sizing and fill accounting; original full ranges and rejection/report contracts retained. |
+| `backtesting_metrics_main_html_reports.cpp` | Isolated baselines, full Cartesian grids, invalid/failed run CSVs, parameter medians, equity/drawdown/tail risk, closed-trade distributions and seeded Monte Carlo HTML. | PureRSI (default), Donchian, XH and XH-ATR definitions; equal-weight or volatility-target sizing. |
+| `btc_moving_average.cpp` | MRShort and PureMom BTC SMA sensitivity; grid, metadata and HTML reports. | Shared short/momentum configurations; original 10..200 step-5 sweep and report contracts retained. |
+| `initial_strategy_parameters.cpp` | Initial parameter grids and HTML for BargainChaser, ATRBreakout, MRShort, PureMom, PureRSI, MRRSILong and XHBreakout. | Original ranges, medians and HTML filenames retained; skips rejected combinations instead of recording them. |
+| `multi_strategy_main.cpp` | Eight isolated strategy families across 18 database/timeframe scenarios, chart index and cross-strategy return correlations. | Distinct settings, benchmarks, original scenario list, HTML names and correlation controls retained. |
+| `stats.cpp` | Seven isolated strategy baselines and in-memory/logged statistical metrics. | Shared initial-study configurations; logged summaries and in-memory cache retained. |
+| `testing_xhbreakout.cpp` | XH and XH-ATR robustness grids, rejection accounting, CSV metadata and HTML. | Original full ranges and rejection/report contracts retained. |
+
+Shared code lives in `src/common/`:
+
+| File | Owns |
+| --- | --- |
+| `research_strategy_definitions.h` | The seven original strategy definitions, parameter ranges and the one-strategy equal-weight study portfolio. |
+| `parameter_sweep.*` | Grid values per parameter, the Cartesian walk, per-value medians for the HTML sensitivity section and the progress bar. |
+| `sensitivity_study.*` | Study driver of the HTML, BTC and XH studies: per-run sensitivity CSV (invalid/failed runs kept), baseline exports, `parameter_grid.csv` and `study_metadata.csv`. |
+| `backtest_metrics.*`, `backtest_html_report.*` | Metrics, Monte Carlo and the single-strategy HTML report. |
+| `scenario_reports.*`, `plotly_chart_html.*` | Multi-strategy index/correlation pages; reading and patching the generated Plotly chart HTML. |
+| `realtest.*`, `backtest_helpers.*`, `paper_baseline.*` | RealTest comparison, balance/equity chart and CSV, the recorded PAPER baseline. |
 
 ### Bounded HTML study
 
@@ -342,18 +340,28 @@ The retained contracts are `PureRSI.csv`, `parameter_grid.csv`,
 `study_metadata.csv` and `reports/PureRSI.html`. CSV columns and inline SVG/Monte
 Carlo/sensitivity sections retain their existing formats. Additional
 `execution_settings.csv` identifies runtime/window/grid/cutoff;
-`reports/PureRSI_trades.csv` and `reports/PureRSI_account.csv` expose CURRENT
+`reports/PureRSI_trades.csv` and `reports/PureRSI_account.csv` expose
 fill-derived campaigns and timestamped cash/balance/equity for verification.
 The runner also writes `reports/<strategy>_metrics.csv` for its baseline, using
 the sensitivity CSV columns with run ID zero. This permits numeric comparison
 across current studies even when no sensitivity grid is requested.
 
-CURRENT sizing uses 10% fixed weight, full strategy allocation, 1.5 gross/asset
+Default sizing uses 10% fixed weight, full strategy allocation, 1.5 gross/asset
 risk limits and entry/exit-only rebalance, matching the public fast configuration.
-`--sizer volatility-target` instead uses `config/portfolio/pure_rsi_vol_target.json`
-semantics: `VolatilityTargetSizer` with a sample covariance of `--covariance-lookback`
-(default 5) daily returns, `--target-volatility` (default 0.20) and a
-`ThresholdRebalancePolicy` of `--rebalance-threshold` (default 0.02), same 1.5 limits.
+`--sizer volatility-target` instead uses `VolatilityTargetSizer` with a sample covariance
+of `--covariance-lookback` (default 5) daily returns, `--target-volatility` (default 0.20)
+and an absolute `ThresholdRebalancePolicy` of `--rebalance-threshold` (default 0.02), same
+1.5 limits. The deployed `config/portfolio/pure_rsi_vol_target.json` uses the same sizer
+with `relative_threshold` 0.20 (resize only when the target differs by 20% of the current
+weight) since 2026-10-15; `--rebalance relative --rebalance-threshold 0.20` reproduces it
+(`--rebalance none|absolute|relative` applies to both sizers; default none for equal weight
+and absolute for volatility target). `--btc-filter-length 50` lets PureRSI open new signals
+only while the benchmark closes above SMA(close, 50). `--set name=value` (repeatable) changes baseline
+parameters, e.g. `--set rsiLength=8 --set rsiEntry=80 --set rsiExit=65`. `--strategy PureMom`,
+`BargainChaser`, `MRRSILong`, `ATRBreakout` or `MRShort` runs those timed research strategies with the multi-strategy
+defaults (named explicitly only; `--strategy all` keeps the four HTML definitions).
+`--ranker volume` ranks candidates of every strategy except PureMom by SMA(volume, 25),
+highest first (default `--ranker own`).
 
 Current Binance perpetual data: `python3 tools/binance_perp_daily.py --start YYYY-MM-DD
 --output storage/databases/<name>.csv` writes every USDT perpetual (COIN underlying, any

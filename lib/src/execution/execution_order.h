@@ -45,6 +45,13 @@ struct ExecutionOrder {
     // once at reference_price, the market price when they were planned, instead of waiting
     // for a daily open. Real venues ignore it and execute at the market.
     bool fill_at_reference_price = false;
+    // LIVE long stop-loss (user decision 2026-10-17): > 0 makes this order the resting
+    // protective stop of the strategy's long position in `coin`, a reduce-only SELL
+    // stop-market that the venue triggers when its mark price reaches this price (USD per
+    // source unit). It stays open across daily cycles; execution replaces it when the
+    // position changes. Research brackets (protective_stop_price/parent_order_id) are
+    // a different mechanism.
+    double position_stop_price = 0.0;
 
     ExecutionOrder() = default;
 
@@ -76,6 +83,8 @@ struct ExecutionOrder {
         return side == OrderSide::Buy ? quantity : -quantity;
     }
 
+    bool isPositionStop() const { return position_stop_price != 0.0; }
+
     void validateConditional() const
     {
         if ((entry_stop_price != 0.0 || protective_stop_price != 0.0 || parent_order_id != 0) &&
@@ -92,6 +101,11 @@ struct ExecutionOrder {
         if (parent_order_id == 0 && protective_stop_price != 0.0 &&
             (side != OrderSide::Sell || entry_stop_price == 0.0))
             throw std::invalid_argument("Protective stop must attach to a short stop entry");
+        if (position_stop_price != 0.0 &&
+            (!std::isfinite(position_stop_price) || position_stop_price < 0.0 || side != OrderSide::Sell ||
+             entry_stop_price != 0.0 || protective_stop_price != 0.0 || parent_order_id != 0 ||
+             fill_at_reference_price || !std::isfinite(quantity) || quantity <= 0.0))
+            throw std::invalid_argument("A position stop is a positive-price SELL stop with no other conditions");
     }
 };
 
@@ -158,7 +172,9 @@ struct TrackedOrder {
 
     double pendingSignedQuantity() const
     {
-        if (isTerminalExecutionOrderStatus(status) || request.parent_order_id != 0)
+        // Protective orders (research bracket children, LIVE position stops) are not trades
+        // the planners wait for.
+        if (isTerminalExecutionOrderStatus(status) || request.parent_order_id != 0 || request.isPositionStop())
             return 0.0;
 
         const double remaining = remainingQuantity();

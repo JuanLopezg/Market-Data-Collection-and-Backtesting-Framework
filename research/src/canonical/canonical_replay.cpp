@@ -707,11 +707,11 @@ void exportParityFillsForRealTest(
                 "parity fill asset lacks source reverse mapping: " + fill.coin);
 
         ++fill_id;
-        const Timestamp legacy_timestamp = fill.timestamp / 10U;
+        const Timestamp fill_date = fill.timestamp / 10U; // YYYYMMDD without the open/close phase digit
         out << fill_id << ','
             << fill.order_id << ','
             << fill.strategy_id << ','
-            << legacy_timestamp << ','
+            << fill_date << ','
             << source->second << ','
             << (fill.side == OrderSide::Buy ? 0 : 1) << ','
             << fill.quantity << ','
@@ -751,11 +751,11 @@ void exportFillsForRealTest(
                 fill.instrument.market.canonical_asset);
 
         ++fill_id;
-        const Timestamp legacy_timestamp = fill.timestamp / 10U;
+        const Timestamp fill_date = fill.timestamp / 10U; // YYYYMMDD without the open/close phase digit
         out << fill_id << ','
             << fill.local_order_id << ','
             << fill.strategy_id << ','
-            << legacy_timestamp << ','
+            << fill_date << ','
             << source->second << ','
             << (fill.side == VenueContracts::V1::Side::Buy ? 0 : 1) << ','
             << fill.quantity << ','

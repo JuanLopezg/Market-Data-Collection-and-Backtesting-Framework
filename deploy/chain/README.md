@@ -207,6 +207,27 @@ updating until the next cycle. Manual Control trades are not in the expected run
 
 Back to PAPER: `algo down`, `MODE=paper`, `algo up` (PAPER state was untouched).
 
+After either switch run `sudo systemctl restart algotrading-monitor`: the host monitor reads
+MODE at start and watches the services of that mode (LIVE: `gateway-kraken`; PAPER: `gateway`
+and `sim-exchange`). In LIVE the dashboard values positions at Kraken's current mark price
+(Binance daily close only as fallback), shows each market's funding rate and the funding paid,
+and counts the BTC collateral after haircut inside Total Equity.
+
+## Stop-loss (MODE=live)
+
+`LIVE_LONG_STOP_FRACTION` in `chain.env` (0 = off; 0.30 = 30%) gives every long position a
+resting Kraken stop: a reduce-only stop-market SELL of the whole position, triggered by the
+mark price at (1 - fraction) x the coin's latest completed daily close. Execution moves it at
+every daily close (up or down) and when the position size changes: the new stop is sent first
+and the old one is cancelled once Kraken accepted the new one; a flat position has its stops
+cancelled. A triggered stop is an ordinary fill; the strategy may enter again at the next daily
+cycle. Stops stay open across days: the daily cycle, the scheduled reconciliation and Manual
+Control do not wait for them, and the order planner ignores them. The first start with a
+fraction set places stops for the positions already held. A rejected stop raises an ALERT and
+is not retried for the same price and size; the dashboard's Positions page shows each stop and
+a WARN "<asset>: no stop-loss" appears after 10 minutes without one. Design:
+`docs/codex/STOP_LOSS_DESIGN.md`.
+
 ## Log receiver and monitor
 
 Docker sends every container's output to `127.0.0.1:5514`. The receiver
@@ -262,8 +283,11 @@ sudo /algoTrading/chain/algo up                      # risk restarts with the ad
 sudo systemctl restart algotrading-comparison
 ```
 
-Earlier decisions keep their sizing; the next daily decision uses the new one (with vol
-targeting, open positions are resized when their weight is off by more than 2 points).
+Earlier decisions keep their sizing; the next daily decision uses the new one. With
+`pure_rsi_vol_target.json` an open position is resized only when its target weight differs
+from its current weight by at least 20% of that weight (`relative_threshold` 0.20; 10% ->
+only below 8% or above 12%); entries, exits and side changes always happen. Editing that
+file in place is a portfolio change too: use the same procedure.
 `comparison.py` reads `STRATEGY_FILE`/`PORTFOLIO_FILE`, archives the previous study in
 `data/comparison/archive-<fingerprint>/` and seeds the fast baseline with the PAPER account
 and strategy state at the switch; the rows already shown remain in the chart.
@@ -286,7 +310,21 @@ Telegram severity routing uses optional `DASHBOARD_TELEGRAM_CRITICAL_CHAT_ID` in
 `secrets/chain.env`: CRITICAL alerts and their recoveries go to that group; other
 messages keep the original chat. INFO/resolved updates are silent; WARN/CRITICAL
 use normal notifications, controlled by phone/chat settings. The Kraken notifier
-is active in TELEGRAM mode; the general watchdog sink remains TEST_FILE. Explicit
+is active in TELEGRAM mode. The general watchdog notifier (all watchdog alerts, WARN and
+up) holds a new CRITICAL alert until it has lasted `DASHBOARD_NOTIFIER_CRITICAL_DELAY`
+(5m in Compose; 0 sends at once): one resolved within that time, such as the ten or so
+process alerts of a restart, is never sent; WARN alerts are not delayed. The user decided
+on 2026-10-16 to switch it to TELEGRAM (`NOTIFIER_SINK=TELEGRAM` in chain/chain.env);
+until that authorized change it remains TEST_FILE. Its first Telegram start sends the
+alerts active at that moment once. After each sweep that changes a chat's alerts, both
+notifiers also post a silent summary there: "📋 Watchdog · Critical alerts now: N" (critical
+group, CRITICAL only) or "Active alerts now: N" (normal chat) with one short line per active,
+reported alert with only its colored circle and name (`🔴 gateway-kraken down`,
+`🟡 USD reserve low`), without bracketed severity labels, or
+"All clear". Operational messages retain the account/system header and title only;
+descriptions remain in the dashboard/journal. The daily Kraken portfolio is the exception:
+it retains balances/collateral and separate monospace position tables for now and the last
+snapshot of yesterday. Missing history is unavailable, never invented. Explicit
 tests use `docker exec kraken-notifier /dashboard-alert-notifier --test-message
 --test-severity CRITICAL` (sends a real TEST-labelled message).
 
@@ -316,7 +354,7 @@ general notifier and `Kraken` for kraken-notifier, set in Compose. The warning s
 when failure was first observed and only a safe reason (missing, stale, ahead of
 clock, source error). WARN is yellow with normal notification; resolved is green
 and silent; both use the normal Telegram chat even with a critical group configured.
-The general notifier remains TEST_FILE. Keep each store's `source-health.json`,
+Keep each store's `source-health.json`,
 decision journal and sink receipts together for restart deduplication and retained
 timers. No source alerts are replayed while its evidence is unhealthy. This local
 feature requires an authorized deployment; the existing healthcheck is unchanged
@@ -349,7 +387,8 @@ algotrading-kraken.service (host, python3)          kraken-notifier (container, 
   (installed once from `config/venues/kraken_futures/account_policy.json`).
 - One daily portfolio message at 09:00 UTC (balance, equity, BTC collateral before and
   after haircut, maintenance margin and headroom, the price drop that would reach
-  maintenance margin, positions in USD).
+  maintenance margin, positions in USD). Current positions and the previous UTC day's last
+  snapshot are separate aligned Asset / Side / USD / % Eq tables; absent history stays unavailable.
 - `data/kraken_account/account.json` (each successful read): the same collateral and
   margin figures for the dashboard. In `MODE=live` the Overview shows BTC Collateral,
   Sizing Capital (equity + BTC after haircut, what the strategy sizes with), Margin
@@ -360,8 +399,9 @@ algotrading-kraken.service (host, python3)          kraken-notifier (container, 
   `journalctl -u algotrading-kraken` when it starts, changes and recovers (for example
   "Kraken account read failed: Kraken HTTP 503 at wallets"), never bodies or keys. After
   `--unreadable-warning-minutes` (10) of failed reads one WARN "Kraken account unreadable"
-  (KRAKEN_UNREADABLE) goes to Telegram with the cause and the last good read; the next good
-  read resolves it. A failed read never changes or resolves the other warnings.
+  (KRAKEN_UNREADABLE) goes to Telegram as a title-only alert; the cause and last good read
+  remain in its source journal. The next good read resolves it. A failed read never changes
+  or resolves the other warnings.
 - `status.json` (step43-v1): `lastSuccessAt` is the last sweep in which the monitor itself
   worked and published, whether or not Kraken answered; `lastError` only reports the
   monitor's own failures (journal, disk). A `lastSuccessAt` that stops moving means the
@@ -395,6 +435,35 @@ Changing the thresholds binds a new journal: stop the unit, move `data/kraken_ac
 aside, edit the policy and start again (the old history stays in the moved folder).
 Stop: `systemctl disable --now algotrading-kraken` and remove `kraken` from
 `COMPOSE_PROFILES`.
+
+## Off-host heartbeat
+
+Every alert above is sent from this host, so a host that is down, frozen or offline
+sends nothing. `algotrading-heartbeat.timer` pings a healthchecks.io check once a minute
+(one empty outbound HTTPS GET, no data, no open port); when the pings stop,
+healthchecks.io sends "down" to Telegram, and "up" when they return. It is independent of
+Docker and of trading, and changes nothing in the chain.
+
+Check settings in healthchecks.io: Period 1 minute, Grace Time 5 minutes, Telegram
+integration enabled. The ping URL is the only secret (whoever has it could hide a real
+outage): it lives only in `secrets/heartbeat.curl` (the bare URL, or `url = "..."`),
+reaches `chain/heartbeat_ping.sh` as a systemd credential and curl on stdin, and never
+appears in command lines or logs. Enable it on the VPS (only when authorized;
+the file is created by you):
+
+```bash
+# 1. The ping URL on one line: https://hc-ping.com/<uuid>
+sudo install -m 0600 /dev/null /algoTrading/secrets/heartbeat.curl && sudo nano /algoTrading/secrets/heartbeat.curl
+# 2. Units of the installed release (installed by hand on 2026-10-15; later releases ship them)
+sudo cp /algoTrading/chain/systemd/algotrading-heartbeat.service /algoTrading/chain/systemd/algotrading-heartbeat.timer /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now algotrading-heartbeat.timer
+sudo systemctl start algotrading-heartbeat.service && systemctl status algotrading-heartbeat.service --no-pager
+sudo /algoTrading/chain/algo ps        # "off-host heartbeat: running (every minute)"
+```
+
+The check turns green in healthchecks.io within a minute. Stop:
+`sudo systemctl disable --now algotrading-heartbeat.timer` (pause the check first, or it
+reports "down").
 
 ## Releases
 

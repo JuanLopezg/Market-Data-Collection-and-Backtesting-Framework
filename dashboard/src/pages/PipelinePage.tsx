@@ -10,7 +10,7 @@ import type { EndToEndProof, PipelineAssetRow, PipelineData, PipelineStageState 
 
 // Pipeline: the latest close decision asset by asset. The matrix shows the aggregated
 // signal (-1..+1, strategies weighted by capital share) and what followed from it. Click a
-// row for the per-strategy breakdown and the stage rail, "Why?" for the full trace.
+// row for the per-strategy breakdown and the stage rail, "Trace" for the full cycle.
 
 function StageState({ state }: { state: PipelineStageState }) {
   const cls = state === 'OK' ? 'stage-state stage-state--ok' : state === 'CHANGED' ? 'stage-state stage-state--changed' : state === 'BLOCKED' ? 'stage-state stage-state--blocked' : 'stage-state stage-state--pending'
@@ -172,7 +172,7 @@ export function PipelinePage() {
             <td className={row.requiredDeltaLabel?.startsWith('+') ? 'positive' : row.requiredDeltaLabel?.startsWith('-') ? 'negative' : ''}>{displayAmount(row.requiredDeltaLabel ?? '—')}</td>
             <td>{row.plannedAction}</td>
             <td><span className={`exchange-state exchange-state--${row.exchangeState.toLowerCase()}`}>{row.exchangeState}</span></td>
-            <td><button className="why-button" onClick={event => { event.stopPropagation(); setSelectedCycle(row.cycleId) }}><Waypoints size={13}/> Why?</button></td>
+            <td><button className="why-button" onClick={event => { event.stopPropagation(); setSelectedCycle(row.cycleId) }}><Waypoints size={13}/> Trace</button></td>
           </tr>
           {expandedCycle === row.cycleId && <tr className="pipeline-expanded"><td colSpan={12}><StrategyBreakdown row={row}/><PipelineRail row={row}/></td></tr>}
         </Fragment>)}

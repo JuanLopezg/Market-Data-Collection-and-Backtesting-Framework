@@ -1,9 +1,11 @@
 #pragma once
 
+#include <chrono>
 #include <filesystem>
 #include <map>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "data_types.h"
@@ -74,3 +76,23 @@ private:
     std::filesystem::path processed_;
     std::filesystem::path resync_state_;
 };
+
+
+// Manual Control limits from the portfolio-risk config. A manual weight applies to every
+// strategy (each on its own share of equity), so the account limits are the strictest
+// strategy's, as in the replay. A request above them is rejected, never clipped.
+struct ManualRiskConfig {
+    std::unordered_map<StrategyID, double> allocation;
+    double max_gross_leverage = 0.0;
+    double max_asset_weight = 0.0;
+};
+
+// Reads the limits and allocations; every strategy of `strategies` must be in the file.
+ManualRiskConfig loadManualRiskConfig(const std::string& path, const std::vector<StrategyID>& strategies);
+
+// No manual orders from 23:45 to 00:15 UTC: the daily cycle reconciles, decides and sends
+// its orders then.
+bool inDailyCycleWindow(std::chrono::system_clock::time_point now);
+
+// "2026-10-14T12:00:00Z" -> time point; nothing when the text has another shape.
+std::optional<std::chrono::system_clock::time_point> parseUtcSeconds(const std::string& text);

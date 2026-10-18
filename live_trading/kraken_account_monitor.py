@@ -201,12 +201,30 @@ class AccountAlertMonitor:
     def close(self):
         self.journal.close()
 
+    def _record_transition(self, name, alert_id, sequence, active, warning, timestamp):
+        """Persist the event and state together inside the caller's transaction.
+
+        Unreadability has a context-based id, including before the first account read;
+        other warnings retain their account-based ids. Neither path changes trading.
+        """
+        severity, title, detail = warning
+        event = {'eventId': alert_id + ':' + str(sequence), 'recordedAt': utc(timestamp),
+            'transition': 'OPENED' if active else 'RESOLVED',
+            'alert': {'id': alert_id, 'timestamp': utc(timestamp),
+            'severity': severity, 'status': 'ACTIVE' if active else 'RESOLVED',
+            'service': 'KrakenAccountReadOnly', 'account': self.account_name, 'eventType': name,
+            'title': title if active else title + ' resolved',
+            'detail': detail if active else 'This warning has cleared.'}}
+        self.db.execute('INSERT INTO alert_events(payload) VALUES (?)', (json.dumps(event),))
+        self.db.execute('INSERT OR REPLACE INTO alert_state VALUES (?,?,?,?,?,?)',
+                        (name, int(active), sequence, severity, title, detail))
+
     def observe(self, bundle, now, market=None):
         result = self.journal.observe(bundle, now)
         desired = warnings(result)
-        extra, unavailable = account_warnings(result, market, now, self.summary.yesterday(result['observed_at']),
+        account_alerts, unavailable = account_warnings(result, market, now, self.summary.yesterday(result['observed_at']),
                                               self.decline_fraction, self.gross_limit, self.maintenance_drop)
-        desired.update(extra)
+        desired.update(account_alerts)
         timestamp = result['observed_at']
         with self.db:
             previous = self.db.execute('SELECT observed_at FROM alert_clock WHERE id=1').fetchone()
@@ -216,25 +234,17 @@ class AccountAlertMonitor:
             for name in sorted(set(states) | set(desired)):
                 if name in unavailable:
                     continue  # Unknown evidence must not manufacture a resolution.
-                old = states.get(name, (0, 0, '', '', ''))
+                previous_state = states.get(name, (0, 0, '', '', ''))
                 active = name in desired
-                if bool(old[0]) == active:
+                if bool(previous_state[0]) == active:
                     continue
-                severity, title, detail = desired[name] if active else old[2:]
-                sequence = old[1] + 1
+                severity, title, detail = desired[name] if active else previous_state[2:]
+                sequence = previous_state[1] + 1
                 # A good read is never "desired" to be unreadable, so this resolves it.
                 alert_id = (self.unreadable_alert_id if name == UNREADABLE else
                             'kraken-account:' + result['account_identity_hash'] + ':' + name)
-                transition = 'OPENED' if active else 'RESOLVED'
-                event = {'eventId': alert_id + ':' + str(sequence), 'recordedAt': utc(timestamp),
-                    'transition': transition, 'alert': {'id': alert_id, 'timestamp': utc(timestamp),
-                    'severity': severity, 'status': 'ACTIVE' if active else 'RESOLVED',
-                    'service': 'KrakenAccountReadOnly', 'account': self.account_name, 'eventType': name,
-                    'title': title if active else title + ' resolved',
-                    'detail': detail if active else 'This warning has cleared.'}}
-                self.db.execute('INSERT INTO alert_events(payload) VALUES (?)', (json.dumps(event),))
-                self.db.execute('INSERT OR REPLACE INTO alert_state VALUES (?,?,?,?,?,?)',
-                                (name, int(active), sequence, severity, title, detail))
+                self._record_transition(name, alert_id, sequence, active,
+                                        (severity, title, detail), timestamp)
             self.db.execute('INSERT OR REPLACE INTO alert_clock VALUES (1,?)', (timestamp,))
             if self.summary:
                 summary = self.summary.record(result, market, now)
@@ -272,17 +282,12 @@ class AccountAlertMonitor:
             if state and state[0]:
                 return
             sequence = (state[1] if state else 0) + 1
-            last = self.db.execute('SELECT observed_at FROM alert_clock WHERE id=1').fetchone()
+            last_good_read = self.db.execute('SELECT observed_at FROM alert_clock WHERE id=1').fetchone()
             title = 'Kraken account unreadable'
             detail = ('Failing since: ' + utc_minute(self.failing_since) + '\nCause: ' + cause +
-                      '\nLast good read: ' + (utc_minute(last[0]) if last else 'none'))
-            event = {'eventId': self.unreadable_alert_id + ':' + str(sequence), 'recordedAt': utc(now),
-                'transition': 'OPENED', 'alert': {'id': self.unreadable_alert_id, 'timestamp': utc(now),
-                'severity': 'WARN', 'status': 'ACTIVE', 'service': 'KrakenAccountReadOnly',
-                'account': self.account_name, 'eventType': UNREADABLE, 'title': title, 'detail': detail}}
-            self.db.execute('INSERT INTO alert_events(payload) VALUES (?)', (json.dumps(event),))
-            self.db.execute('INSERT OR REPLACE INTO alert_state VALUES (?,?,?,?,?,?)',
-                            (UNREADABLE, 1, sequence, 'WARN', title, detail))
+                      '\nLast good read: ' + (utc_minute(last_good_read[0]) if last_good_read else 'none'))
+            self._record_transition(UNREADABLE, self.unreadable_alert_id, sequence, True,
+                                    ('WARN', title, detail), now)
         logging.warning('Kraken account unreadable for %s minutes; warning opened',
                         format(self.unreadable_seconds / 60, 'g'))
 

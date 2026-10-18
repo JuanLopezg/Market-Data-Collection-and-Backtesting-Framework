@@ -28,6 +28,7 @@ type LedgerEntry struct {
 	Price         float64 `json:"price"`
 	GrossNotional float64 `json:"grossNotional"`
 	Commission    float64 `json:"commission"`
+	FeesPending   bool    `json:"feesPending,omitempty"`
 	PositionDelta float64 `json:"positionDelta"`
 	CashDelta     float64 `json:"cashDelta"`
 	EntryHash     string  `json:"entryHash"`
@@ -91,7 +92,7 @@ func buildLedgerStatus(window pgstore.LedgerFillWindow, checkedAt time.Time) Led
 		OrderRouting:              "DISABLED",
 		CheckedAt:                 checkedAt.UTC().Format(time.RFC3339),
 		Entries:                   []LedgerEntry{},
-		Note:                      "Read-only economic ledger over the append-only trading_fills table: each persisted fill is one immutable event with explicit asset and cash deltas. Cost basis, realized PnL and daily equity are owned by ExecutionState (trading_open_positions, trading_closed_positions, trading_equity_daily).",
+		Note:                      "Read-only fill projection: commission includes linked FEE cash events from trading_venue_costs when that table exists, matching ExecutionState accounting. Late fees update this projection and its fingerprint; source fills and fee events remain append-only. Funding and other cash events are excluded from these fill totals. Cost basis, realized PnL and daily equity are owned by ExecutionState.",
 	}
 
 	if window.TotalRows < 0 || window.DistinctFillIDs < 0 || window.InvalidRows < 0 {
@@ -210,7 +211,18 @@ func (p *Real) LedgerStatus(ctx context.Context) LedgerStatus {
 			Note: "Step 42 cannot validate the append-only fill-ledger foundation because the canonical PostgreSQL source is unavailable. Order routing remains disabled.",
 		}
 	}
-	return buildLedgerStatus(window, time.Now().UTC())
+	result := buildLedgerStatus(window, time.Now().UTC())
+	if p.cfg.RuntimeMode == "LIVE" && p.cfg.ExecutionVenue == "KRAKEN" {
+		pending := make(map[uint64]bool, len(window.Rows))
+		for _, fill := range window.Rows {
+			pending[fill.FillID] = !fill.FeeRecorded && fill.Commission == 0
+		}
+		for i := range result.Entries {
+			id, _ := strconv.ParseUint(result.Entries[i].FillID, 10, 64)
+			result.Entries[i].FeesPending = pending[id]
+		}
+	}
+	return result
 }
 
 func (p *EmbeddedMock) LedgerStatus(_ context.Context) LedgerStatus {

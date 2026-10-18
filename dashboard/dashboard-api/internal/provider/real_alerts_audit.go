@@ -111,23 +111,24 @@ func (p *Real) alertsAudit(ctx context.Context) realAlertsAuditData {
 
 func (p *Real) loadAlertsAudit(ctx context.Context) realAlertsAuditData {
 	var (
-		infra     realInfrastructure
-		recon     realReconciliationData
-		reconErr  error
-		execution realExecutionData
-		execErr   error
-		market    realMarketData
-		marketErr error
-		risk      realRiskData
-		riskErr   error
-		symbolMap SymbolMapStatus
-		ledger    LedgerStatus
+		infra      realInfrastructure
+		recon      realReconciliationData
+		reconErr   error
+		execution  realExecutionData
+		execErr    error
+		market     realMarketData
+		marketErr  error
+		risk       realRiskData
+		riskErr    error
+		symbolMap  SymbolMapStatus
+		ledger     LedgerStatus
+		stopAlerts []realOperationalAlert
 	)
 
 	// Each source is independent and bounded. Fetch concurrently so one slow
 	// optional projection does not consume the entire HTTP read timeout.
 	var wg sync.WaitGroup
-	wg.Add(7)
+	wg.Add(8)
 	go func() { defer wg.Done(); infra = p.infrastructure(ctx) }()
 	go func() { defer wg.Done(); recon, reconErr = p.reconciliation(ctx) }()
 	go func() { defer wg.Done(); execution, execErr = p.execution(ctx) }()
@@ -135,9 +136,12 @@ func (p *Real) loadAlertsAudit(ctx context.Context) realAlertsAuditData {
 	go func() { defer wg.Done(); risk, riskErr = p.risk(ctx) }()
 	go func() { defer wg.Done(); symbolMap = p.SymbolMapStatus(ctx) }()
 	go func() { defer wg.Done(); ledger = p.LedgerStatus(ctx) }()
+	go func() { defer wg.Done(); stopAlerts = p.missingPositionStopAlerts(ctx) }()
 	wg.Wait()
 
 	result := buildRealAlertsAudit(infra, recon, reconErr, execution, execErr, market, marketErr, risk, riskErr)
+	result.Alerts = append(result.Alerts, stopAlerts...)
+	recountAlerts(&result)
 	result = mergeLedgerAlerts(result, ledger)
 	result = mergeSymbolMapAlerts(result, symbolMap)
 	result = mergeDurableAlertHistory(result, p.cfg.AlertStoreDir, time.Now().UTC())

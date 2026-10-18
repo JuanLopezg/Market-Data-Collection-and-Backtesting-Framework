@@ -69,14 +69,16 @@ type realReconciliationRow struct {
 }
 
 type realOpenOrderSummary struct {
-	OrderID    string  `json:"orderId"`
-	Asset      string  `json:"asset"`
-	Side       string  `json:"side"`
-	Quantity   float64 `json:"quantity"`
-	Remaining  float64 `json:"remaining"`
-	Age        string  `json:"age"`
-	State      string  `json:"state"`
-	ExchangeID string  `json:"exchangeId"`
+	OrderType         string  `json:"orderType,omitempty"`
+	PositionStopPrice float64 `json:"positionStopPrice,omitempty"`
+	OrderID           string  `json:"orderId"`
+	Asset             string  `json:"asset"`
+	Side              string  `json:"side"`
+	Quantity          float64 `json:"quantity"`
+	Remaining         float64 `json:"remaining"`
+	Age               string  `json:"age"`
+	State             string  `json:"state"`
+	ExchangeID        string  `json:"exchangeId"`
 }
 
 type realReconciliationIssue struct {
@@ -262,14 +264,16 @@ func reconciliationOpenOrders(orders []tradingwire.PersistedTrackedOrder) []real
 		}
 		state := mapExecutionState(order)
 		result = append(result, realOpenOrderSummary{
-			OrderID:    strconv.FormatUint(order.OrderID, 10),
-			Asset:      order.Coin,
-			Side:       sideLabel(order.Side),
-			Quantity:   order.Quantity,
-			Remaining:  math.Max(0, order.Quantity-order.FilledQuantity),
-			Age:        formatTradingTimestamp(order.UpdatedAt),
-			State:      state,
-			ExchangeID: emptyAsDash(order.ExchangeOrderID),
+			OrderType:         positionStopOrderType(order),
+			PositionStopPrice: order.PositionStopPrice,
+			OrderID:           strconv.FormatUint(order.OrderID, 10),
+			Asset:             order.Coin,
+			Side:              sideLabel(order.Side),
+			Quantity:          order.Quantity,
+			Remaining:         math.Max(0, order.Quantity-order.FilledQuantity),
+			Age:               formatTradingTimestamp(order.UpdatedAt),
+			State:             state,
+			ExchangeID:        emptyAsDash(order.ExchangeOrderID),
 		})
 	}
 	sort.Slice(result, func(i, j int) bool {
@@ -283,7 +287,7 @@ func reconciliationOpenOrders(orders []tradingwire.PersistedTrackedOrder) []real
 func pendingSignedQuantities(orders []tradingwire.PersistedTrackedOrder) map[string]float64 {
 	result := make(map[string]float64)
 	for _, order := range orders {
-		if isTerminalPersistedStatus(order.Status) {
+		if isTerminalPersistedStatus(order.Status) || order.PositionStopPrice > 0 {
 			continue
 		}
 		remaining := math.Max(0, order.Quantity-order.FilledQuantity)

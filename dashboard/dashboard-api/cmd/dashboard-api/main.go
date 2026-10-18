@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -173,7 +172,7 @@ func configuredProvider() (provider.Provider, error) {
 			HostMetricsFile:    strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_FILE")),
 			HostMetricsProject: strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_PROJECT"))}), nil
 	case "real":
-		// Step 36 keeps all prior read-only/safety boundaries and adds public Hyperliquid TESTNET trading-rule validation for supported mappings only.
+		// Read-only view of the trading chain (PAPER or Kraken LIVE).
 		// The proof never creates trades; it only correlates already-durable Strategy/Risk/Planner/Execution/Fill/Reconciliation evidence.
 		probeTimeout, err := time.ParseDuration(envOr("DASHBOARD_SOURCE_PROBE_TIMEOUT", "1s"))
 		if err != nil || probeTimeout <= 0 {
@@ -191,89 +190,48 @@ func configuredProvider() (provider.Provider, error) {
 		if err != nil {
 			return nil, err
 		}
-		executionVenue := strings.ToUpper(strings.TrimSpace(envOr("DASHBOARD_EXECUTION_VENUE", "HYPERLIQUID")))
-		venueEnvironment := strings.ToUpper(strings.TrimSpace(envOr("DASHBOARD_VENUE_TARGET_ENVIRONMENT", "TESTNET")))
-		gatewayMode := strings.ToLower(strings.TrimSpace(envOr("DASHBOARD_EXCHANGE_GATEWAY_MODE", "hyperliquid-dry-run")))
-		venuePublicInfoURL := strings.TrimSpace(envOr("DASHBOARD_HYPERLIQUID_PUBLIC_INFO_URL", "https://api.hyperliquid-testnet.xyz/info"))
-		venuePublicTimeout, err := time.ParseDuration(envOr("DASHBOARD_HYPERLIQUID_PUBLIC_TIMEOUT", "3s"))
-		if err != nil || venuePublicTimeout <= 0 || venuePublicTimeout > 10*time.Second {
-			return nil, fmt.Errorf("invalid DASHBOARD_HYPERLIQUID_PUBLIC_TIMEOUT")
-		}
+		// The real provider reads the trading chain: PAPER (simulated exchange behind the
+		// backend gateway) or Kraken LIVE (venue gateway). Any other combination is refused.
 		runtimeMode := strings.TrimSpace(os.Getenv("DASHBOARD_RUNTIME_MODE"))
-		paper := runtimeMode == "PAPER" &&
-			executionVenue == "SIMULATED" && venueEnvironment == "PAPER" && gatewayMode == "backend"
-		if runtimeMode == "PAPER" && !paper {
-			return nil, fmt.Errorf("PAPER requires SIMULATED venue, PAPER environment and backend gateway")
-		}
-		// The chain's MODE=live: Kraken Futures through the venue gateway.
-		krakenLive := runtimeMode == "LIVE" && executionVenue == "KRAKEN"
-		if krakenLive && (venueEnvironment != "LIVE" || gatewayMode != "venue") {
-			return nil, fmt.Errorf("KRAKEN requires LIVE runtime, LIVE environment and venue gateway")
-		}
-		// The trading chain (PAPER or Kraken LIVE) uses the same read models and no
-		// Hyperliquid testnet probe; anything else is the older Hyperliquid testnet setup.
-		chain := paper || krakenLive
-		if !chain && executionVenue != "HYPERLIQUID" {
-			return nil, fmt.Errorf("Step 36 current audited execution venue must be HYPERLIQUID, got %q", executionVenue)
-		}
-		if !chain && venueEnvironment != "TESTNET" {
-			return nil, fmt.Errorf("Step 36 target environment must be TESTNET, got %q", venueEnvironment)
-		}
-		if !chain && gatewayMode != "hyperliquid-dry-run" {
-			return nil, fmt.Errorf("Step 36 gateway mode must remain hyperliquid-dry-run, got %q", gatewayMode)
-		}
-		if chain {
-			venuePublicInfoURL = ""
-		} else if err := validateHyperliquidTestnetInfoURL(venuePublicInfoURL); err != nil {
+		executionVenue := strings.ToUpper(strings.TrimSpace(os.Getenv("DASHBOARD_EXECUTION_VENUE")))
+		venueEnvironment := strings.ToUpper(strings.TrimSpace(os.Getenv("DASHBOARD_VENUE_TARGET_ENVIRONMENT")))
+		gatewayMode := strings.ToLower(strings.TrimSpace(os.Getenv("DASHBOARD_EXCHANGE_GATEWAY_MODE")))
+		if err := provider.ValidateChainBoundary(runtimeMode, executionVenue, venueEnvironment, gatewayMode); err != nil {
 			return nil, err
 		}
 
 		return provider.NewReal(provider.RealConfig{
-			HostMetricsFile:        strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_FILE")),
-			HostMetricsProject:     strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_PROJECT")),
-			PostgreSQLDSN:          strings.TrimSpace(os.Getenv("DASHBOARD_POSTGRES_DSN")),
-			NATSURL:                strings.TrimSpace(os.Getenv("DASHBOARD_NATS_URL")),
-			NATSMonitorURL:         strings.TrimSpace(os.Getenv("DASHBOARD_NATS_MONITOR_URL")),
-			NATSStream:             strings.TrimSpace(envOr("DASHBOARD_NATS_STREAM", "ALGOTRADING_RUNTIME")),
-			MarketDataDB:           strings.TrimSpace(os.Getenv("DASHBOARD_MARKET_DATA_DB")),
-			RuntimeMode:            strings.TrimSpace(envOr("DASHBOARD_RUNTIME_MODE", "LIVE")),
-			MarketTopN:             marketTopN,
-			MarketHistoryDays:      marketHistoryDays,
-			QuoteVolume:            os.Getenv("DASHBOARD_QUOTE_VOLUME") == "true",
-			QuoteVolumeFrom:        strings.TrimSpace(os.Getenv("DASHBOARD_QUOTE_VOLUME_FROM")),
-			PaperComparisonFile:    strings.TrimSpace(os.Getenv("DASHBOARD_PAPER_COMPARISON_FILE")),
-			RSIEntry:               envFloat("DASHBOARD_RSI_ENTRY", 80),
-			RSIExit:                envFloat("DASHBOARD_RSI_EXIT", 70),
-			StrategyUniverseN:      strategyUniverseN,
-			ProbeTimeout:           probeTimeout,
-			ExecutionVenue:         executionVenue,
-			VenueTargetEnvironment: venueEnvironment,
-			ExchangeGatewayMode:    gatewayMode,
-			VenuePublicInfoURL:     venuePublicInfoURL,
-			VenuePublicTimeout:     venuePublicTimeout,
-			SymbolMapFile:          strings.TrimSpace(os.Getenv("DASHBOARD_SYMBOL_MAP_FILE")),
-			KrakenTickersURL:       krakenpublic.TickersURL,
-			AlertStoreDir:          strings.TrimSpace(envOr("DASHBOARD_ALERT_STORE_DIR", "/data/watchdog")),
-			ManualAuditDir:         strings.TrimSpace(os.Getenv("DASHBOARD_MANUAL_AUDIT_DIR")),
-			AlertAckDir:            strings.TrimSpace(os.Getenv("DASHBOARD_ALERT_ACK_DIR")),
-			ManualRequestDir:       strings.TrimSpace(os.Getenv("DASHBOARD_MANUAL_REQUEST_DIR")),
-			LiveOrderSubmission:    strings.TrimSpace(os.Getenv("DASHBOARD_LIVE_ORDER_SUBMISSION")),
-			KrakenAccountFile:      strings.TrimSpace(os.Getenv("DASHBOARD_KRAKEN_ACCOUNT_FILE")),
+			HostMetricsFile:     strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_FILE")),
+			HostMetricsProject:  strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_PROJECT")),
+			PostgreSQLDSN:       strings.TrimSpace(os.Getenv("DASHBOARD_POSTGRES_DSN")),
+			NATSURL:             strings.TrimSpace(os.Getenv("DASHBOARD_NATS_URL")),
+			NATSMonitorURL:      strings.TrimSpace(os.Getenv("DASHBOARD_NATS_MONITOR_URL")),
+			NATSStream:          strings.TrimSpace(envOr("DASHBOARD_NATS_STREAM", "ALGOTRADING_RUNTIME")),
+			MarketDataDB:        strings.TrimSpace(os.Getenv("DASHBOARD_MARKET_DATA_DB")),
+			RuntimeMode:         strings.TrimSpace(envOr("DASHBOARD_RUNTIME_MODE", "LIVE")),
+			MarketTopN:          marketTopN,
+			MarketHistoryDays:   marketHistoryDays,
+			QuoteVolume:         os.Getenv("DASHBOARD_QUOTE_VOLUME") == "true",
+			QuoteVolumeFrom:     strings.TrimSpace(os.Getenv("DASHBOARD_QUOTE_VOLUME_FROM")),
+			PaperComparisonFile: strings.TrimSpace(os.Getenv("DASHBOARD_PAPER_COMPARISON_FILE")),
+			RSIEntry:            envFloat("DASHBOARD_RSI_ENTRY", 80),
+			RSIExit:             envFloat("DASHBOARD_RSI_EXIT", 70),
+			StrategyUniverseN:   strategyUniverseN,
+			StrategyConfigFile:  strings.TrimSpace(os.Getenv("DASHBOARD_STRATEGY_CONFIG")),
+			ProbeTimeout:        probeTimeout,
+			ExecutionVenue:      executionVenue,
+			SymbolMapFile:       strings.TrimSpace(os.Getenv("DASHBOARD_SYMBOL_MAP_FILE")),
+			KrakenTickersURL:    krakenpublic.TickersURL,
+			AlertStoreDir:       strings.TrimSpace(envOr("DASHBOARD_ALERT_STORE_DIR", "/data/watchdog")),
+			ManualAuditDir:      strings.TrimSpace(os.Getenv("DASHBOARD_MANUAL_AUDIT_DIR")),
+			AlertAckDir:         strings.TrimSpace(os.Getenv("DASHBOARD_ALERT_ACK_DIR")),
+			ManualRequestDir:    strings.TrimSpace(os.Getenv("DASHBOARD_MANUAL_REQUEST_DIR")),
+			LiveOrderSubmission: strings.TrimSpace(os.Getenv("DASHBOARD_LIVE_ORDER_SUBMISSION")),
+			KrakenAccountFile:   strings.TrimSpace(os.Getenv("DASHBOARD_KRAKEN_ACCOUNT_FILE")),
 		}), nil
 	default:
 		return nil, fmt.Errorf("unsupported DASHBOARD_DATA_PROVIDER %q; expected mock, simulation or real", mode)
 	}
-}
-
-func validateHyperliquidTestnetInfoURL(raw string) error {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil {
-		return fmt.Errorf("invalid DASHBOARD_HYPERLIQUID_PUBLIC_INFO_URL: %w", err)
-	}
-	if parsed.Scheme != "https" || parsed.Hostname() != "api.hyperliquid-testnet.xyz" || parsed.Port() != "" || parsed.Path != "/info" || parsed.RawPath != "" || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || parsed.User != nil {
-		return fmt.Errorf("DASHBOARD_HYPERLIQUID_PUBLIC_INFO_URL must be exactly the HTTPS Hyperliquid testnet /info endpoint")
-	}
-	return nil
 }
 
 func envPositiveInt(name string, fallback int) (int, error) {

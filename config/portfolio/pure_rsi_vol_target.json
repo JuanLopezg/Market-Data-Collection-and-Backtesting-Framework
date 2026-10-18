@@ -15,8 +15,8 @@
         "max_asset_weight": 1.50
       },
       "rebalance": {
-        "type": "threshold",
-        "threshold": 0.02
+        "type": "relative_threshold",
+        "threshold": 0.20
       }
     }
   ]

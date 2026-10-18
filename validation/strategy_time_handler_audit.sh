@@ -30,11 +30,12 @@ if grep -q 'std::chrono::system_clock::now()' "$FILE"; then
   fail "Strategy still reads host wall clock directly"
 fi
 
-# Technical cadence must remain monotonic/real and must not be speed-scaled.
-grep -q 'std::chrono::steady_clock::now()' "$FILE" \
-  || fail "Strategy technical loop no longer uses steady_clock"
-grep -q 'std::this_thread::sleep_for' "$FILE" \
+# Technical cadence must remain real and must not be speed-scaled: a real sleep_for while
+# waiting for the next business day, and the bus poll timeout while draining messages.
+grep -q 'std::this_thread::sleep_for(technicalPollInterval);' "$FILE" \
   || fail "Strategy technical interruptible polling sleep is missing"
+grep -q 'bus_.poll(market_update_subscription_, 32, fetchTimeoutMs);' "$FILE" \
+  || fail "Strategy message draining no longer uses the bounded technical poll timeout"
 
 # Legacy distributed clock must not be reintroduced into Strategy.
 if grep -Eq 'ServiceClockContext|SimulatedClock|ClockState|simulation\.clock\.|--simulation-id|--runtime-mode' "$FILE"; then

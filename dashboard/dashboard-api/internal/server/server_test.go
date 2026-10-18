@@ -622,108 +622,19 @@ func TestSafetyGateRequiresAuthenticationAndBlocksMockMode(t *testing.T) {
 	}
 }
 
-func TestVenueFoundationRequiresAuthenticationAndIsReadOnly(t *testing.T) {
+// The Hyperliquid TESTNET foundation endpoints were retired on 2026-10-15; the trading
+// chain uses /api/symbol-map (Kraken) instead.
+func TestRetiredHyperliquidVenueEndpointsAreGone(t *testing.T) {
 	api := newTestServer(t)
-
-	unauthenticated := httptest.NewRequest(http.MethodGet, "/api/venue-foundation", nil)
-	unauthenticatedResponse := httptest.NewRecorder()
-	api.Handler().ServeHTTP(unauthenticatedResponse, unauthenticated)
-	if unauthenticatedResponse.Code != http.StatusUnauthorized {
-		t.Fatalf("unauthenticated status = %d, want 401", unauthenticatedResponse.Code)
-	}
-
 	cookie, _ := loginAs(t, api, "viewer", "viewer-pass")
-	request := httptest.NewRequest(http.MethodGet, "/api/venue-foundation", nil)
-	request.AddCookie(cookie)
-	response := httptest.NewRecorder()
-	api.Handler().ServeHTTP(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body=%s", response.Code, response.Body.String())
-	}
-	var body provider.VenueFoundation
-	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
-		t.Fatalf("invalid venue foundation JSON: %v", err)
-	}
-	if body.OrderRouting != "DISABLED" || body.PrivateAuth != "DISABLED" || !body.ReadOnly {
-		t.Fatalf("unexpected mock venue boundary: %+v", body)
-	}
-
-	post := httptest.NewRequest(http.MethodPost, "/api/venue-foundation", nil)
-	post.AddCookie(cookie)
-	postResponse := httptest.NewRecorder()
-	api.Handler().ServeHTTP(postResponse, post)
-	if postResponse.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("POST venue foundation status = %d, want 405", postResponse.Code)
-	}
-}
-
-func TestVenuePublicRequiresAuthenticationAndIsReadOnly(t *testing.T) {
-	api := newTestServer(t)
-
-	unauthenticated := httptest.NewRequest(http.MethodGet, "/api/venue-public", nil)
-	unauthenticatedResponse := httptest.NewRecorder()
-	api.Handler().ServeHTTP(unauthenticatedResponse, unauthenticated)
-	if unauthenticatedResponse.Code != http.StatusUnauthorized {
-		t.Fatalf("unauthenticated venue-public status = %d, want 401", unauthenticatedResponse.Code)
-	}
-
-	cookie, _ := loginAs(t, api, "viewer", "viewer-pass")
-	request := httptest.NewRequest(http.MethodGet, "/api/venue-public", nil)
-	request.AddCookie(cookie)
-	response := httptest.NewRecorder()
-	api.Handler().ServeHTTP(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("venue-public status = %d, want 200; body=%s", response.Code, response.Body.String())
-	}
-	var body provider.VenuePublicStatus
-	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
-		t.Fatalf("invalid venue-public JSON: %v", err)
-	}
-	if body.Status != "MOCK_ONLY" || body.Connected || body.OrderRouting != "DISABLED" || body.PrivateAuth != "DISABLED" || !body.ReadOnly {
-		t.Fatalf("unexpected mock public venue boundary: %+v", body)
-	}
-
-	post := httptest.NewRequest(http.MethodPost, "/api/venue-public", nil)
-	post.AddCookie(cookie)
-	postResponse := httptest.NewRecorder()
-	api.Handler().ServeHTTP(postResponse, post)
-	if postResponse.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("POST venue-public status = %d, want 405", postResponse.Code)
-	}
-}
-
-func TestVenueRulesRequiresAuthenticationAndIsReadOnly(t *testing.T) {
-	api := newTestServer(t)
-
-	unauthenticated := httptest.NewRequest(http.MethodGet, "/api/venue-rules", nil)
-	unauthenticatedResponse := httptest.NewRecorder()
-	api.Handler().ServeHTTP(unauthenticatedResponse, unauthenticated)
-	if unauthenticatedResponse.Code != http.StatusUnauthorized {
-		t.Fatalf("unauthenticated venue-rules status = %d, want 401", unauthenticatedResponse.Code)
-	}
-
-	cookie, _ := loginAs(t, api, "viewer", "viewer-pass")
-	request := httptest.NewRequest(http.MethodGet, "/api/venue-rules", nil)
-	request.AddCookie(cookie)
-	response := httptest.NewRecorder()
-	api.Handler().ServeHTTP(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("venue-rules status = %d, want 200; body=%s", response.Code, response.Body.String())
-	}
-	var body provider.VenueTradingRulesStatus
-	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
-		t.Fatalf("invalid venue-rules JSON: %v", err)
-	}
-	if body.Status != "MOCK_ONLY" || body.Validated || body.OrderRouting != "DISABLED" || body.PrivateAuth != "DISABLED" || !body.ReadOnly {
-		t.Fatalf("unexpected mock venue-rules boundary: %+v", body)
-	}
-
-	post := httptest.NewRequest(http.MethodPost, "/api/venue-rules", nil)
-	post.AddCookie(cookie)
-	postResponse := httptest.NewRecorder()
-	api.Handler().ServeHTTP(postResponse, post)
-	if postResponse.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("POST venue-rules status = %d, want 405", postResponse.Code)
+	for _, path := range []string{"/api/venue-foundation", "/api/venue-public", "/api/venue-symbol-map", "/api/venue-rules"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.AddCookie(cookie)
+		response := httptest.NewRecorder()
+		api.Handler().ServeHTTP(response, request)
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("%s status = %d, want 404", path, response.Code)
+		}
 	}
 }
 

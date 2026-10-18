@@ -1,12 +1,11 @@
 // Bridges northbound trading commands to an exchange backend and republishes exchange events.
 //
 // 1. Read runtime/control/backend stream configuration.
-// 2. Subscribe to submit, cancel, snapshot, or dry-run planning messages.
+// 2. Subscribe to submit, cancel and snapshot-request messages.
 // 3. Forward commands to the backend adapter and publish normalized order/fill/snapshot events.
 //
-// Modes: "backend" (simulated exchange over NATS), "venue" (real exchange through
-// venue/LiveVenueAdapter; order submission disabled unless --order-submission enabled)
-// and "hyperliquid-dry-run" (plan inspection only).
+// Modes: "backend" (simulated exchange over NATS) and "venue" (real exchange through
+// venue/LiveVenueAdapter; order submission disabled unless --order-submission enabled).
 
 #include <atomic>
 #include <csignal>
@@ -60,17 +59,10 @@ Timestamp currentBusinessUtcDate(const TimeHandler& timeHandler)
     );
 }
 
-Timestamp newestCompletedUtcDate(const TimeHandler& timeHandler)
-{
-    const auto todayUtc = getCurrentUtcDate(timeHandler.getTime());
-    return static_cast<Timestamp>(toYYYYMMDD(getPreviousDayDate(todayUtc)));
-}
-
 
 enum class GatewayMode {
     Backend,
-    Venue,
-    HyperliquidDryRun
+    Venue
 };
 
 GatewayMode parseGatewayMode(const std::string& value)
@@ -79,12 +71,7 @@ GatewayMode parseGatewayMode(const std::string& value)
         return GatewayMode::Backend;
     if (value == "venue")
         return GatewayMode::Venue;
-    if (value == "hyperliquid-dry-run")
-        return GatewayMode::HyperliquidDryRun;
-
-    throw std::invalid_argument(
-        "--mode must be backend, venue or hyperliquid-dry-run"
-    );
+    throw std::invalid_argument("--mode must be backend or venue");
 }
 
 const char* gatewayModeName(GatewayMode mode)
@@ -94,8 +81,6 @@ const char* gatewayModeName(GatewayMode mode)
         return "backend";
     case GatewayMode::Venue:
         return "venue";
-    case GatewayMode::HyperliquidDryRun:
-        return "hyperliquid-dry-run";
     }
     return "unknown";
 }
@@ -174,7 +159,7 @@ Options parseOptions(int argc, char** argv)
                 << "  --stream NAME\n"
                 << "  --control-stream NAME\n"
                 << "  --backend-stream NAME\n"
-                << "  --mode backend|venue|hyperliquid-dry-run\n"
+                << "  --mode backend|venue\n"
                 << "  --poll-timeout-ms N\n"
                 << "Venue mode:\n"
                 << "  --venue kraken-futures\n"
@@ -232,7 +217,6 @@ private:
     MessageBus::SubscriptionID submit_subscription_ = 0;
     MessageBus::SubscriptionID cancel_subscription_ = 0;
     MessageBus::SubscriptionID snapshot_request_subscription_ = 0;
-    MessageBus::SubscriptionID notional_plan_subscription_ = 0;
     bool chaos_duplicate_fill_once_ = envFlag("ALGOTRADING_CHAOS_DUPLICATE_FILL_ONCE");
     bool chaos_duplicate_fill_done_ = false;
 
@@ -443,64 +427,6 @@ private:
         }
     }
 
-    DurableMessageDisposition onNotionalPlanDryRun(const BusMessage& message)
-    {
-        try {
-            const NotionalOrderPlanBatch plan =
-                MessageJson::decodeNotionalOrderPlanBatch(message.payload);
-
-            validateMetadata(plan.metadata);
-
-            const Timestamp newestCompleted = newestCompletedUtcDate(time_handler_);
-            if (plan.decision_timestamp == 0 || plan.decision_timestamp > newestCompleted) {
-                throw std::invalid_argument(
-                    "NotionalOrderPlan decision_timestamp is ahead of the newest completed business day"
-                );
-            }
-
-            LG_INFO("Hyperliquid dry run: received plan for {} with {} orders (newest completed day {}); preparing raw orders only",
-                    FormatDayKey(plan.decision_timestamp), plan.submit_orders.size(), FormatDayKey(newestCompleted));
-            LG_DEBUG("Dry-run plan state revision {}, message id {}", plan.state_revision, plan.metadata.message_id);
-
-            for (const PlannedNotionalOrder& order : plan.submit_orders) {
-                if (!std::isfinite(order.reference_close) ||
-                    order.reference_close <= 0.0 ||
-                    !std::isfinite(order.notional_usd) ||
-                    order.notional_usd <= 0.0)
-                    throw std::invalid_argument(
-                        "Invalid notional/reference_close for Hyperliquid dry-run"
-                    );
-
-                const double rawQuantity =
-                    order.notional_usd / order.reference_close;
-
-                if (!std::isfinite(rawQuantity) || rawQuantity <= 0.0)
-                    throw std::invalid_argument(
-                        "Invalid raw Hyperliquid dry-run quantity"
-                    );
-
-                LG_INFO("Hyperliquid dry run: {} {} {} ({} at close {}) - venue rules not applied, not submitted",
-                        order.side == OrderSide::Buy ? "BUY" : "SELL",
-                        FormatQuantity(rawQuantity),
-                        order.coin,
-                        FormatUsd(order.notional_usd),
-                        FormatQuantity(order.reference_close));
-                LG_DEBUG("Dry-run order ids: economic {}, order {}; decision {}, state revision {}",
-                         order.economic_order_id, order.order_id, FormatDayKey(order.decision_timestamp), order.state_revision);
-            }
-
-            return DurableMessageDisposition::Ack;
-        }
-        catch (const std::invalid_argument& error) {
-            LG_WARN("Hyperliquid dry run: rejected invalid plan: {}", error.what());
-            return DurableMessageDisposition::Terminate;
-        }
-        catch (const std::exception& error) {
-            LG_ERROR("Hyperliquid dry run: plan handling failed; will retry: {}", error.what());
-            return DurableMessageDisposition::Retry;
-        }
-    }
-
     std::unique_ptr<ExchangeGatewayAdapter> createVenueAdapter()
     {
         venue_protocol_ = std::make_unique<Venue::KrakenFuturesProtocol>(
@@ -545,74 +471,56 @@ public:
             options_.runtime_stream,
             MessageSubjects::tradingRuntimeSubjects()
         );
-        if (options_.mode == GatewayMode::Backend || options_.mode == GatewayMode::Venue) {
-            bus_.ensureStream(
+        bus_.ensureStream(
+            options_.control_stream,
+            MessageSubjects::exchangeGatewayControlSubjects()
+        );
+
+        if (options_.mode == GatewayMode::Backend)
+            adapter_ = std::make_unique<BackendGateway>(
+                options_.nats_url, options_.backend_stream
+            );
+        else
+            adapter_ = createVenueAdapter();
+        adapter_->setHandlers({
+            [this](const OrderUpdateEvent& value) { publish(value); },
+            [this](const FillEvent& value) { publish(value); },
+            [this](const ExchangeSnapshotEvent& value) { publish(value); },
+            [this](const VenueCostEvent& value) { publish(value); }
+        });
+
+        submit_subscription_ = bus_.subscribe(
+            consumer(
+                options_.runtime_stream,
+                "exchange-gateway-submit",
+                MessageSubjects::SUBMIT_ORDER
+            ),
+            [this](const BusMessage& message) { return onSubmit(message); }
+        );
+
+        cancel_subscription_ = bus_.subscribe(
+            consumer(
+                options_.runtime_stream,
+                "exchange-gateway-cancel",
+                MessageSubjects::CANCEL_ORDER
+            ),
+            [this](const BusMessage& message) { return onCancel(message); }
+        );
+
+        snapshot_request_subscription_ = bus_.subscribe(
+            consumer(
                 options_.control_stream,
-                MessageSubjects::exchangeGatewayControlSubjects()
-            );
-
-            if (options_.mode == GatewayMode::Backend)
-                adapter_ = std::make_unique<BackendGateway>(
-                    options_.nats_url, options_.backend_stream
-                );
-            else
-                adapter_ = createVenueAdapter();
-            adapter_->setHandlers({
-                [this](const OrderUpdateEvent& value) { publish(value); },
-                [this](const FillEvent& value) { publish(value); },
-                [this](const ExchangeSnapshotEvent& value) { publish(value); },
-                [this](const VenueCostEvent& value) { publish(value); }
-            });
-
-            submit_subscription_ = bus_.subscribe(
-                consumer(
-                    options_.runtime_stream,
-                    "exchange-gateway-submit",
-                    MessageSubjects::SUBMIT_ORDER
-                ),
-                [this](const BusMessage& message) { return onSubmit(message); }
-            );
-
-            cancel_subscription_ = bus_.subscribe(
-                consumer(
-                    options_.runtime_stream,
-                    "exchange-gateway-cancel",
-                    MessageSubjects::CANCEL_ORDER
-                ),
-                [this](const BusMessage& message) { return onCancel(message); }
-            );
-
-            snapshot_request_subscription_ = bus_.subscribe(
-                consumer(
-                    options_.control_stream,
-                    "exchange-gateway-snapshot-request",
-                    MessageSubjects::EXCHANGE_SNAPSHOT_REQUEST
-                ),
-                [this](const BusMessage& message) {
-                    return onSnapshotRequest(message);
-                }
-            );
-        }
-        else {
-            // Dry-run mode can inspect and validate notional plans but cannot submit orders.
-            // It deliberately has no SubmitOrder/CancelOrder/backend binding.
-            notional_plan_subscription_ = bus_.subscribe(
-                consumer(
-                    options_.runtime_stream,
-                    "exchange-gateway-hyperliquid-dry-run-plan",
-                    MessageSubjects::NOTIONAL_ORDER_PLAN
-                ),
-                [this](const BusMessage& message) {
-                    return onNotionalPlanDryRun(message);
-                }
-            );
-        }
+                "exchange-gateway-snapshot-request",
+                MessageSubjects::EXCHANGE_SNAPSHOT_REQUEST
+            ),
+            [this](const BusMessage& message) {
+                return onSnapshotRequest(message);
+            }
+        );
     }
 
     ~ExchangeGatewayRuntime()
     {
-        if (notional_plan_subscription_ != 0)
-            bus_.close(notional_plan_subscription_);
         if (snapshot_request_subscription_ != 0)
             bus_.close(snapshot_request_subscription_);
         if (cancel_subscription_ != 0)
@@ -631,33 +539,22 @@ public:
         std::cout.flush();
 
         while (running.load()) {
-            if (options_.mode == GatewayMode::Backend || options_.mode == GatewayMode::Venue) {
-                // Existing replay/test path remains unchanged.
-                adapter_->poll(options_.poll_timeout_ms);
-                bus_.poll(
-                    snapshot_request_subscription_,
-                    8,
-                    options_.poll_timeout_ms
-                );
-                bus_.poll(
-                    cancel_subscription_,
-                    32,
-                    options_.poll_timeout_ms
-                );
-                bus_.poll(
-                    submit_subscription_,
-                    32,
-                    options_.poll_timeout_ms
-                );
-            }
-            else {
-                // Dry-run boundary: there is no backend binding and no real submission path.
-                bus_.poll(
-                    notional_plan_subscription_,
-                    32,
-                    options_.poll_timeout_ms
-                );
-            }
+            adapter_->poll(options_.poll_timeout_ms);
+            bus_.poll(
+                snapshot_request_subscription_,
+                8,
+                options_.poll_timeout_ms
+            );
+            bus_.poll(
+                cancel_subscription_,
+                32,
+                options_.poll_timeout_ms
+            );
+            bus_.poll(
+                submit_subscription_,
+                32,
+                options_.poll_timeout_ms
+            );
         }
 
         LG_INFO("Shutdown requested");

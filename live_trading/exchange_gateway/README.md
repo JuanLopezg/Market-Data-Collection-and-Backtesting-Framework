@@ -1,14 +1,13 @@
 # Exchange gateway and real venues
 
 The gateway receives `SubmitOrder`, `CancelOrder` and exchange-snapshot requests from
-the execution services and returns order updates, fills and snapshots. It has three
-modes:
+the execution services and returns order updates, fills and snapshots. It has two
+modes (the earlier `hyperliquid-dry-run` plan-inspection mode was removed on 2026-10-15):
 
 | Mode | Behind the gateway |
 | --- | --- |
 | `backend` | simulated exchange over a private NATS stream (PAPER, replay) |
 | `venue` | a real exchange through `venue/LiveVenueAdapter` (currently Kraken Futures) |
-| `hyperliquid-dry-run` | plan inspection only; no order path |
 
 ## Two levels: one gateway, one adapter per kind of exchange
 
@@ -89,6 +88,53 @@ Order states in the journal: `PREPARED`, `SENDING`, `OPEN`, `UNKNOWN`, `FILLED`,
 `CANCELLED` (also partial fills whose remainder ended), `REJECTED`. Only `OPEN`
 (Accepted), `FILLED`, `CANCELLED` and `REJECTED` are reported to execution.
 
+### Resting long-position stops
+
+An `ExecutionOrder` with `position_stop_price > 0` is a separate reduce-only SELL
+stop-market, triggered by the venue mark price. Execution supplies its source-unit
+price (70% of the latest daily close) and quantity; the gateway does not calculate or
+move that daily level. It converts the price by the symbol's unit scale and rounds
+down to `instruments[].tickSize`. Missing/invalid ticks, unusable prices and a rounded
+stop at or above the current mark are rejected locally. The existing planned/venue
+USD-value check still applies using `reference_price`, not the stop price.
+
+The journal stores `order_type`, the original `position_stop_price` and rounded
+`venue_stop_price`. Opening an old journal adds these columns transactionally, with
+existing rows defaulting to `MARKET` and zero stop prices. Accepted stops stay `OPEN`
+while listed, including across daily cycles and restarts, and are never resent.
+The stop's `active_from` is its command's `created_at`.
+
+The migration preserves existing market rows; older gateways do not understand new
+stop rows. The release owner must prevent a downgrade to a gateway without stop
+support while stops remain pending: an older reader could treat a prepared stop as a
+market order. Release/rollback configuration is outside this gateway task.
+
+Execution replaces a stop by submitting its successor first, then cancelling the old
+one after acceptance. Multiple open stops on the same symbol are therefore normal;
+tracking and cancellation use each order's own client id, never just the symbol.
+Fills and snapshot open orders resolve by `cliOrdId` first; when it is absent they
+use the journaled venue `order_id`. An explicit foreign/unknown client id does not
+fall back to another order's venue id. Fill timestamps still guard against reused ids,
+and fill quantities/prices are converted back with the journaled order's unit scale.
+
+Kraken REST references checked on 2026-10-17:
+
+- [Send order](https://docs.kraken.com/api/docs/futures-api/trading/send-order):
+  `orderType=stp`, `symbol`, `side=sell`, `size`, `stopPrice`, `reduceOnly=true`,
+  `triggerSignal=mark`, `cliOrdId`. No `limitPrice` means stop-market. Acceptance uses
+  `sendStatus.status` and `sendStatus.order_id`. Market order bodies are unchanged.
+- [Open orders](https://docs.kraken.com/api/docs/futures-api/trading/get-open-orders):
+  `openOrders[]` with `order_id`, `symbol`, `side`, `filledSize`, `unfilledSize`.
+- [Fills](https://docs.kraken.com/api/docs/futures-api/trading/get-fills): `fills[]`
+  with `fill_id`, `order_id`, `symbol`, `side`, `size`, `price`, `fillTime`, `fillType`.
+- [Instruments](https://docs.kraken.com/api/docs/futures-api/trading/get-instruments):
+  `instruments[].tickSize` supplies the price increment.
+
+The open-order/fill REST examples omit `cliOrdId`; the parser accepts it when present
+and does not require it. Actual triggered-stop id continuity, concurrent reduce-only
+stops, venue acceptance and live trigger behavior remain to be verified with a real
+account and an individually authorized small order. Offline tests use fake transport only.
+
 Fees and funding (the venue reports no fee on fills): the adapter reads the account
 history every 5 minutes and 30 s after a new fill. Each fee or funding entry is
 journaled once (`cash_entries`, keyed by the venue log id) and published as a
@@ -132,10 +178,10 @@ test with small, individually authorized real-money orders).
 | Key permissions | `GET /api/auth/v1/api-keys/v3/check` | refuse transfer/withdraw |
 | Markets | `GET /derivatives/api/v3/instruments` (public) | `PF_` flexible perpetuals, quote USD, `tradfi` excluded; `XBT` = BTC; `contractSize` must be 1; step = 10^-`contractValueTradePrecision` |
 | Mark prices | `GET /derivatives/api/v3/tickers` (public) | `markPrice` per `PF_` symbol for the USD value check; cached 60 s |
-| Submit | `POST /derivatives/api/v3/sendorder` | `orderType=mkt` (IOC with 1% price protection), `symbol`, `side`, `size`, `cliOrdId` |
+| Submit | `POST /derivatives/api/v3/sendorder` | `mkt` (IOC with 1% price protection), or `stp` position stop with `stopPrice`, `reduceOnly=true`, `triggerSignal=mark`; common `symbol`, `side`, `size`, `cliOrdId` |
 | Cancel | `POST /derivatives/api/v3/cancelorder` | by `cliOrdId`; `cancelled` / `filled` / `notFound` |
-| Open orders | `GET /derivatives/api/v3/openorders` | evidence for `UNKNOWN` orders |
-| Fills | `GET /derivatives/api/v3/fills` | last 100, newest first; includes `cliOrdId`; **no fee field** |
+| Open orders | `GET /derivatives/api/v3/openorders` | resting-order and recovery evidence; `order_id`, optional `cliOrdId` |
+| Fills | `GET /derivatives/api/v3/fills` | last 100, newest first; `order_id`, optional `cliOrdId`; **no fee field** |
 | Fees, funding, interest, capital flows | `GET /api/history/v2/account-log?count=500` | newest 500 entries; `fee` (paid, positive) with `execution` = fill id; `realized_funding`; other USD changes of the `flex` wallet = `new_balance - old_balance`: `info` with "interest" → INTEREST, with "transfer"/"conversion" → CAPITAL_FLOW; read every 5 min and 30 s after a fill |
 | Snapshot | `GET accounts`, `openpositions`, `openorders` | cash = USD quantity of the Multi-M (`flex`) wallet minus Σ position size x `price` (average entry); collateral = Σ `collateral` (USD after haircut) of the non-USD currencies |
 | Dead man's switch | `POST /derivatives/api/v3/cancelallordersafter` | off by default; path/parameter UNCONFIRMED |

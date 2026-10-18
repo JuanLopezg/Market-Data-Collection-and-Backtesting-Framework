@@ -82,6 +82,10 @@ func main() {
 	}
 
 	engine, err := notifier.NewEngine(store, sink, cfg.minSeverity, cfg.cooldown)
+	if err == nil {
+		err = engine.SetCriticalDelay(cfg.criticalDelay)
+		engine.SetSummarySource(cfg.sourceName)
+	}
 	if err != nil {
 		logger.Error("configure notifier engine", "error", err)
 		os.Exit(1)
@@ -101,6 +105,7 @@ func main() {
 		"sink", cfg.sink,
 		"minSeverity", cfg.minSeverity,
 		"cooldown", cfg.cooldown.String(),
+		"criticalDelay", cfg.criticalDelay.String(),
 		"interval", cfg.interval.String(),
 	)
 
@@ -128,9 +133,14 @@ func main() {
 			"processed", stats.Processed,
 			"delivered", stats.Delivered,
 			"suppressed", stats.Suppressed,
+			"deferred", stats.Deferred,
+			"summaries", stats.Summaries,
 			"bootstrap", stats.Bootstrap,
 			"sink", sink.Name(),
 		)
+		if stats.SummaryError != "" {
+			logger.Warn("active-alert summary not sent", "error", stats.SummaryError)
+		}
 	}
 
 	sweep()
@@ -207,6 +217,7 @@ type config struct {
 	minSeverity            string
 	interval               time.Duration
 	cooldown               time.Duration
+	criticalDelay          time.Duration
 	sweepTimeout           time.Duration
 	sourceMaxBytes         int64
 	sourceName             string
@@ -257,6 +268,10 @@ func loadConfig() (config, error) {
 		return config{}, err
 	}
 	cfg.cooldown, err = durationEnv("DASHBOARD_NOTIFIER_COOLDOWN", "5m", 0, 24*time.Hour)
+	if err != nil {
+		return config{}, err
+	}
+	cfg.criticalDelay, err = durationEnv("DASHBOARD_NOTIFIER_CRITICAL_DELAY", "0s", 0, time.Hour)
 	if err != nil {
 		return config{}, err
 	}

@@ -29,6 +29,20 @@ public:
         Timestamp ts,
         double accountEquity,
         const StrategyPositionSnapshot& executionPositions
+    )
+    {
+        onBarClose(marketData, marketData, ts, accountEquity, executionPositions);
+    }
+
+    // Split form, as the LIVE chain splits it: signalData is the strategy's entry
+    // universe (strategy service); sizingData prices and sizes every signalled and held
+    // coin (risk service), so a held coin outside today's entry universe keeps its close.
+    void onBarClose(
+        const MarketData& signalData,
+        const MarketData& sizingData,
+        Timestamp ts,
+        double accountEquity,
+        const StrategyPositionSnapshot& executionPositions
     );
 
     bool hasPendingDecisions() const { return !pending_decisions_.strategies.empty(); }

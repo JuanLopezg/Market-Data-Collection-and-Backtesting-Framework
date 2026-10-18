@@ -11,7 +11,8 @@ import sys
 import fcntl
 
 
-# Chain layout: <ALGO_ROOT>/logs/<service>/YYYYMMDD.log (ALGO_ROOT=/ on the VPS).
+# Chain layout: <ALGO_ROOT>/logs/<service>/YYYYMMDD.log; units pass the installed root.
+# Keep /logs as the standalone default for existing callers.
 DEFAULT_ROOT = Path("/logs")
 # Short Docker container names from chain/compose.yml, e.g. market-data.
 SERVICE = re.compile(r"[a-z][a-z0-9-]{0,62}")

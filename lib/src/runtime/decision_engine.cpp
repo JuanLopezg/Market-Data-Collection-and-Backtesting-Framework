@@ -15,7 +15,8 @@ DecisionEngine::DecisionEngine(
 
 // Update signals at a completed bar and create strategy decision intents
 void DecisionEngine::onBarClose(
-    const MarketData& marketData,
+    const MarketData& signalData,
+    const MarketData& sizingData,
     Timestamp ts,
     double accountEquity,
     const StrategyPositionSnapshot& executionPositions
@@ -24,11 +25,11 @@ void DecisionEngine::onBarClose(
     pending_decisions_.decision_timestamp = ts;
 
     for (auto& strategy : strategies_) {
-        strategy.updateSignals(marketData, ts, indicators_);
+        strategy.updateSignals(signalData, ts, indicators_);
 
         const double strategyCapital = accountEquity * strategy.allocationWeight();
         const auto plan = strategy.calculateRebalancePlan(
-            marketData,
+            sizingData,
             ts,
             strategyCapital,
             executionPositions.at(strategy.id())

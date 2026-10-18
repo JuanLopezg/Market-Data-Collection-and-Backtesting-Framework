@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -108,76 +107,41 @@ func configuredRealProvider() (*provider.Real, error) {
 	if err != nil {
 		return nil, err
 	}
-	publicTimeout, err := time.ParseDuration(envOr("DASHBOARD_HYPERLIQUID_PUBLIC_TIMEOUT", "3s"))
-	if err != nil || publicTimeout <= 0 || publicTimeout > 10*time.Second {
-		return nil, fmt.Errorf("invalid DASHBOARD_HYPERLIQUID_PUBLIC_TIMEOUT")
-	}
-
-	venue := strings.ToUpper(strings.TrimSpace(envOr("DASHBOARD_EXECUTION_VENUE", "HYPERLIQUID")))
-	environment := strings.ToUpper(strings.TrimSpace(envOr("DASHBOARD_VENUE_TARGET_ENVIRONMENT", "TESTNET")))
-	gateway := strings.ToLower(strings.TrimSpace(envOr("DASHBOARD_EXCHANGE_GATEWAY_MODE", "hyperliquid-dry-run")))
-	publicURL := strings.TrimSpace(envOr("DASHBOARD_HYPERLIQUID_PUBLIC_INFO_URL", "https://api.hyperliquid-testnet.xyz/info"))
+	// Same chain boundary as dashboard-api: PAPER or Kraken LIVE only.
 	runtimeMode := strings.TrimSpace(os.Getenv("DASHBOARD_RUNTIME_MODE"))
-	paper := runtimeMode == "PAPER" &&
-		venue == "SIMULATED" && environment == "PAPER" && gateway == "backend"
-	if runtimeMode == "PAPER" && !paper {
-		return nil, fmt.Errorf("PAPER requires SIMULATED venue, PAPER environment and backend gateway")
-	}
-	// The chain's MODE=live: Kraken Futures through the venue gateway (same read models).
-	krakenLive := runtimeMode == "LIVE" && venue == "KRAKEN"
-	if krakenLive && (environment != "LIVE" || gateway != "venue") {
-		return nil, fmt.Errorf("KRAKEN requires LIVE runtime, LIVE environment and venue gateway")
-	}
-	chain := paper || krakenLive
-	if !chain && (venue != "HYPERLIQUID" || environment != "TESTNET" || gateway != "hyperliquid-dry-run") {
-		return nil, fmt.Errorf("watchdog must remain on HYPERLIQUID TESTNET hyperliquid-dry-run")
-	}
-	if chain {
-		publicURL = ""
-	} else if err := validateTestnetInfoURL(publicURL); err != nil {
+	venue := strings.ToUpper(strings.TrimSpace(os.Getenv("DASHBOARD_EXECUTION_VENUE")))
+	environment := strings.ToUpper(strings.TrimSpace(os.Getenv("DASHBOARD_VENUE_TARGET_ENVIRONMENT")))
+	gateway := strings.ToLower(strings.TrimSpace(os.Getenv("DASHBOARD_EXCHANGE_GATEWAY_MODE")))
+	if err := provider.ValidateChainBoundary(runtimeMode, venue, environment, gateway); err != nil {
 		return nil, err
 	}
 
 	return provider.NewReal(provider.RealConfig{
-		HostMetricsFile:        strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_FILE")),
-		HostMetricsProject:     strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_PROJECT")),
-		PostgreSQLDSN:          strings.TrimSpace(os.Getenv("DASHBOARD_POSTGRES_DSN")),
-		NATSURL:                strings.TrimSpace(os.Getenv("DASHBOARD_NATS_URL")),
-		NATSMonitorURL:         strings.TrimSpace(os.Getenv("DASHBOARD_NATS_MONITOR_URL")),
-		NATSStream:             strings.TrimSpace(envOr("DASHBOARD_NATS_STREAM", "ALGOTRADING_RUNTIME")),
-		MarketDataDB:           strings.TrimSpace(os.Getenv("DASHBOARD_MARKET_DATA_DB")),
-		RuntimeMode:            strings.TrimSpace(envOr("DASHBOARD_RUNTIME_MODE", "LIVE")),
-		MarketTopN:             marketTopN,
-		MarketHistoryDays:      historyDays,
-		QuoteVolume:            os.Getenv("DASHBOARD_QUOTE_VOLUME") == "true",
-		QuoteVolumeFrom:        strings.TrimSpace(os.Getenv("DASHBOARD_QUOTE_VOLUME_FROM")),
-		PaperComparisonFile:    strings.TrimSpace(os.Getenv("DASHBOARD_PAPER_COMPARISON_FILE")),
-		RSIEntry:               envFloat("DASHBOARD_RSI_ENTRY", 80),
-		RSIExit:                envFloat("DASHBOARD_RSI_EXIT", 70),
-		StrategyUniverseN:      universeN,
-		ProbeTimeout:           probeTimeout,
-		ExecutionVenue:         venue,
-		VenueTargetEnvironment: environment,
-		ExchangeGatewayMode:    gateway,
-		VenuePublicInfoURL:     publicURL,
-		VenuePublicTimeout:     publicTimeout,
-		SymbolMapFile:          strings.TrimSpace(os.Getenv("DASHBOARD_SYMBOL_MAP_FILE")),
-		KrakenTickersURL:       krakenpublic.TickersURL,
+		HostMetricsFile:     strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_FILE")),
+		HostMetricsProject:  strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_PROJECT")),
+		PostgreSQLDSN:       strings.TrimSpace(os.Getenv("DASHBOARD_POSTGRES_DSN")),
+		NATSURL:             strings.TrimSpace(os.Getenv("DASHBOARD_NATS_URL")),
+		NATSMonitorURL:      strings.TrimSpace(os.Getenv("DASHBOARD_NATS_MONITOR_URL")),
+		NATSStream:          strings.TrimSpace(envOr("DASHBOARD_NATS_STREAM", "ALGOTRADING_RUNTIME")),
+		MarketDataDB:        strings.TrimSpace(os.Getenv("DASHBOARD_MARKET_DATA_DB")),
+		RuntimeMode:         strings.TrimSpace(envOr("DASHBOARD_RUNTIME_MODE", "LIVE")),
+		MarketTopN:          marketTopN,
+		MarketHistoryDays:   historyDays,
+		QuoteVolume:         os.Getenv("DASHBOARD_QUOTE_VOLUME") == "true",
+		QuoteVolumeFrom:     strings.TrimSpace(os.Getenv("DASHBOARD_QUOTE_VOLUME_FROM")),
+		PaperComparisonFile: strings.TrimSpace(os.Getenv("DASHBOARD_PAPER_COMPARISON_FILE")),
+		RSIEntry:            envFloat("DASHBOARD_RSI_ENTRY", 80),
+		RSIExit:             envFloat("DASHBOARD_RSI_EXIT", 70),
+		StrategyUniverseN:   universeN,
+		StrategyConfigFile:  strings.TrimSpace(os.Getenv("DASHBOARD_STRATEGY_CONFIG")),
+		ProbeTimeout:        probeTimeout,
+		ExecutionVenue:      venue,
+		SymbolMapFile:       strings.TrimSpace(os.Getenv("DASHBOARD_SYMBOL_MAP_FILE")),
+		KrakenTickersURL:    krakenpublic.TickersURL,
 		// Intentionally omit AlertStoreDir: the watchdog derives current alerts
 		// from canonical sources and must not feed its own durable history back
 		// into the sweep input.
 	}), nil
-}
-
-func validateTestnetInfoURL(raw string) error {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil {
-		return fmt.Errorf("invalid DASHBOARD_HYPERLIQUID_PUBLIC_INFO_URL: %w", err)
-	}
-	if parsed.Scheme != "https" || parsed.Hostname() != "api.hyperliquid-testnet.xyz" || parsed.Port() != "" || parsed.Path != "/info" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.User != nil {
-		return fmt.Errorf("DASHBOARD_HYPERLIQUID_PUBLIC_INFO_URL must be exactly the HTTPS Hyperliquid testnet /info endpoint")
-	}
-	return nil
 }
 
 func envPositiveInt(name string, fallback int) (int, error) {

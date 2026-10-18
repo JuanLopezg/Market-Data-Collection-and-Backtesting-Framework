@@ -6,5 +6,6 @@ rebalance_sources = files(
     'rebalance_plan.h',
     'rebalance_policy.h',
     'entry_exit_only_rebalance_policy.h',
-    'threshold_rebalance_policy.h'
+    'threshold_rebalance_policy.h',
+    'relative_threshold_rebalance_policy.h'
 )

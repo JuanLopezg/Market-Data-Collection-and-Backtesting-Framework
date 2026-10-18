@@ -143,6 +143,8 @@ json encodeSnapshot(const TradingStateSnapshot& snapshot)
             entry["reference_price"] = order.request.reference_price;
         if (order.request.fill_at_reference_price)
             entry["fill_at_reference_price"] = true;
+        if (order.request.isPositionStop())
+            entry["position_stop_price"] = order.request.position_stop_price;
         orders.push_back(std::move(entry));
     }
 
@@ -211,6 +213,8 @@ TradingStateSnapshot decodeSnapshot(const json& value)
         );
         request.reference_price = entry.value("reference_price", 0.0);
         request.fill_at_reference_price = entry.value("fill_at_reference_price", false);
+        request.position_stop_price = entry.value("position_stop_price", 0.0);
+        request.validateConditional();
 
         TrackedOrder order(std::move(request));
         order.status = static_cast<ExecutionOrderStatus>(entry.at("status").get<int>());
@@ -576,7 +580,7 @@ void PostgresStateStore::saveLedger(const PositionLedger& ledger, const std::vec
 }
 
 
-void PostgresStateStore::saveEquityDay(const EquityDay& day)
+bool PostgresStateStore::insertEquityDay(const EquityDay& day)
 {
     const std::array<std::string, 11> parameters{
         std::to_string(day.date), encodeDoubleForPostgres(day.cash),
@@ -589,16 +593,16 @@ void PostgresStateStore::saveEquityDay(const EquityDay& day)
     std::array<const char*, 11> values{};
     for (std::size_t i = 0; i < parameters.size(); ++i)
         values[i] = parameters[i].c_str();
-    clear(execParams(
+    PGresult* result = execParams(
         impl_->connection,
         "INSERT INTO trading_equity_daily(date,cash,positions_value,equity,realized_gross_pnl,fees,funding,"
         "open_positions,capital_flows,interest,collateral_usd,updated_at) "
         "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW()) "
-        "ON CONFLICT(date) DO UPDATE SET cash=EXCLUDED.cash,positions_value=EXCLUDED.positions_value,"
-        "equity=EXCLUDED.equity,realized_gross_pnl=EXCLUDED.realized_gross_pnl,fees=EXCLUDED.fees,"
-        "funding=EXCLUDED.funding,open_positions=EXCLUDED.open_positions,capital_flows=EXCLUDED.capital_flows,"
-        "interest=EXCLUDED.interest,collateral_usd=EXCLUDED.collateral_usd,updated_at=NOW();",
-        static_cast<int>(values.size()), values.data()));
+        "ON CONFLICT(date) DO NOTHING;",
+        static_cast<int>(values.size()), values.data());
+    const bool inserted = std::string(PQcmdTuples(result)) == "1";
+    clear(result);
+    return inserted;
 }
 
 

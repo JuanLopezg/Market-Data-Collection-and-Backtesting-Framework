@@ -1,11 +1,51 @@
 package server
 
 import (
+	"encoding/json"
+	"fmt"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestHostHistoryAllUsesEntireRetainedSpanAndBoundsPoints(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	oldest := now.Add(-15 * 24 * time.Hour)
+	path := filepath.Join(t.TempDir(), "history.jsonl")
+	content := "not json\n"
+	// Reverse order proves ALL finds the earliest observation, not the first line.
+	for i := 1000; i >= 0; i-- {
+		observed := oldest.Add(time.Duration(i) * (now.Sub(oldest) / 1000))
+		content += fmt.Sprintf("{\"t\":%q,\"cpuPct\":10}\n", observed.Format(time.RFC3339Nano))
+	}
+	content += fmt.Sprintf("{\"t\":%q,\"cpuPct\":99}\n", now.Add(24*time.Hour).Format(time.RFC3339))
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{cfg: Config{HostHistoryFile: path}}
+	response := httptest.NewRecorder()
+	s.hostHistory(response, httptest.NewRequest("GET", "/api/infrastructure/history?range=all", nil))
+	if response.Code != 200 {
+		t.Fatalf("ALL rejected: %d %s", response.Code, response.Body.String())
+	}
+	var result hostHistory
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.Available || result.Range != "all" || result.OldestAt != oldest.Format(time.RFC3339) || result.Stale {
+		t.Fatalf("wrong retained span: %+v", result)
+	}
+	if len(result.Points) > maxHistoryPoints || len(result.Points) < 2 {
+		t.Fatalf("unexpected point count: %d", len(result.Points))
+	}
+	for _, point := range result.Points {
+		if point.CPUPct == nil || *point.CPUPct != 10 {
+			t.Fatalf("future data must be excluded: %+v", point)
+		}
+	}
+}
 
 func TestReadHostHistoryAveragesBucketsAndKeepsMissingValuesAbsent(t *testing.T) {
 	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)

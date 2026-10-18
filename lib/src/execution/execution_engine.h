@@ -82,6 +82,16 @@ public:
         const PersistCallback& persist
     );
 
+    // Place and cancel resting position stops (LIVE stop-loss) outside the daily plan, with
+    // the same staging contract as manual orders (see .cpp).
+    void applyPositionStopChanges(
+        const std::vector<ExecutionOrder>& submits,
+        const std::vector<OrderID>& cancels,
+        OrderID nextOrderId,
+        Timestamp at,
+        const PersistCallback& persist
+    );
+
     // Submit manual orders without touching the daily-cycle markers (see .cpp).
     void applyManualOrders(
         const std::vector<ExecutionOrder>& orders,

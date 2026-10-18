@@ -55,9 +55,11 @@ def main():
         flags = run(["pkg-config", "--cflags", "--libs", "libnats", "libpq"]).stdout.split()
         sources = [ROOT / "validation/transport_persistence_integration_test.cpp",
                    ROOT / "lib/src/transport/jetstream_bus.cpp",
-                   ROOT / "lib/src/persistence/postgres_state_store.cpp"]
-        includes = [ROOT / "lib/src" / name for name in
-                    ("transport", "persistence", "execution", "rebalance", "data_types")]
+                   ROOT / "lib/src/persistence/postgres_state_store.cpp",
+                   ROOT / "lib/src/account/position_ledger.cpp"]
+        # Every lib/src folder, as the component tests do: the store's headers include
+        # contracts and the position ledger.
+        includes = [ROOT / "lib/src", *sorted(path for path in (ROOT / "lib/src").iterdir() if path.is_dir())]
         run(["c++", "-std=c++20", "-O0", *["-I" + str(path) for path in includes],
              *map(str, sources), *flags, "-o", str(executable)])
         password = secrets.token_hex(16)
@@ -108,6 +110,8 @@ def main():
                 wait_ready(postgres, postgres_port, postgres=True)
                 completed = run([str(executable), phase], env=environment)
                 print(completed.stdout.strip())
+            # Projection rule on the same real database: a day's equity row is written once.
+            print(run([str(executable), "equity"], env=environment).stdout.strip())
         finally:
             for name in reversed(containers):
                 # Never remove anything outside the exact UUID-owned fixture names.

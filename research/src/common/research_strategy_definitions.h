@@ -1,5 +1,6 @@
 #pragma once
 
+#include "benchmark_above_sma_filter.h"
 #include "timed_research_strategies.h"
 #include "xh_breakout_strategy.h"
 #include "validated/pure_rsi.h"
@@ -83,6 +84,33 @@ inline std::unique_ptr<UniverseSelector> makeTopLiquidityUniverse()
     );
 }
 
+// Study-wide ranking choice. false: each strategy's own ranker. true (--ranker volume of the
+// HTML study): candidates ranked by SMA(volume, 25), highest first, for every strategy
+// except PureMom, whose momentum ranking is its signal.
+inline bool& rankByVolumeAverage()
+{
+    static bool enabled = false;
+    return enabled;
+}
+
+inline std::unique_ptr<Ranker> makeStudyRanker(IndicatorSpec ownIndicator, bool descending)
+{
+    if (rankByVolumeAverage())
+        return std::make_unique<IndicatorRanker>(IndicatorSpec{IndicatorKind::SMA, PriceField::Volume, 25}, true);
+    return std::make_unique<IndicatorRanker>(ownIndicator, descending);
+}
+
+// Optional uptrend filter for long timed strategies: no new entries unless the benchmark
+// closes above SMA(close, length). length 0 (the default) means no filter.
+inline std::vector<std::unique_ptr<MarketFilter>> makeBenchmarkTrendFilter(
+    const std::string& benchmarkSymbol, unsigned int length)
+{
+    std::vector<std::unique_ptr<MarketFilter>> filters;
+    if (length > 0)
+        filters.push_back(std::make_unique<BenchmarkAboveSMAFilter>(benchmarkSymbol, length));
+    return filters;
+}
+
 inline std::vector<SensitivityParameterDefinition> makeSensitivityParameters(
     std::initializer_list<SensitivityParameterDefinition> parameters
 )
@@ -94,7 +122,9 @@ inline std::vector<SensitivityParameterDefinition> makeSensitivityParameters(
     );
 }
 
-inline std::vector<StrategyDefinition> makeStrategyDefinitions()
+// benchmarkSymbol is the BTC filter symbol of PureMom and MRShort ("BTC" in the CMC
+// dataset, "BTCUSDT" in Binance perpetual data).
+inline std::vector<StrategyDefinition> makeStrategyDefinitions(const std::string& benchmarkSymbol = "BTC")
 {
     std::vector<StrategyDefinition> definitions;
 
@@ -107,7 +137,8 @@ inline std::vector<StrategyDefinition> makeStrategyDefinitions()
             {"barsUntilExit", 2.0},
             {"fallPercentage", 10.0},
             {"movingAverageLength", 50.0},
-            {"rankerRocLength", 1.0}
+            {"rankerRocLength", 1.0},
+            {"btcFilterLength", 0.0}
         },
         makeSensitivityParameters({
             {"barsUntilExit", "Bars until exit", 1.0, 20.0, 2.0, true},
@@ -117,7 +148,7 @@ inline std::vector<StrategyDefinition> makeStrategyDefinitions()
             {"maxPositionsOpen", "Maximum open positions", 1.0, 20.0, 1.0, false},
             {"riskPerTrade", "Risk per trade", 0.02, 0.20, 0.02, false}
         }),
-        [](const ParameterValues& parameters) {
+        [benchmarkSymbol](const ParameterValues& parameters) {
             const unsigned int maxPositionsOpen = unsignedParameterOr(
                 parameters, "maxPositionsOpen", 10U
             );
@@ -138,7 +169,7 @@ inline std::vector<StrategyDefinition> makeStrategyDefinitions()
             );
 
             auto universeSelector = makeTopLiquidityUniverse();
-            auto ranker = std::make_unique<IndicatorRanker>(
+            auto ranker = makeStudyRanker(
                 IndicatorSpec{IndicatorKind::ROC, PriceField::Close, rankerRocLength},
                 false
             );
@@ -150,7 +181,8 @@ inline std::vector<StrategyDefinition> makeStrategyDefinitions()
                 maxRankingPosition,
                 barsUntilExit,
                 fallPercentage,
-                movingAverageLength
+                movingAverageLength,
+                makeBenchmarkTrendFilter(benchmarkSymbol, unsignedParameterOr(parameters, "btcFilterLength", 0U))
             );
         },
         [](const ParameterValues&) { return true; }
@@ -190,7 +222,7 @@ inline std::vector<StrategyDefinition> makeStrategyDefinitions()
             );
 
             auto universeSelector = makeTopLiquidityUniverse();
-            auto ranker = std::make_unique<IndicatorRanker>(
+            auto ranker = makeStudyRanker(
                 IndicatorSpec{
                     IndicatorKind::ROC,
                     PriceField::Close,
@@ -237,7 +269,7 @@ inline std::vector<StrategyDefinition> makeStrategyDefinitions()
             {"quantityPercent", "Quantity (%)", 2.0, 20.0, 2.0, false},
             {"maxPositionsOpen", "Maximum open positions", 1.0, 20.0, 1.0, false}
         }),
-        [](const ParameterValues& parameters) {
+        [benchmarkSymbol](const ParameterValues& parameters) {
             const unsigned int rsiLength = unsignedParameterOr(parameters, "rsiLength", 5U);
             const double rsiEntry = parameterOr(parameters, "rsiEntry", 70.0);
             const unsigned int btcMovingAverageLength = unsignedParameterOr(
@@ -261,7 +293,7 @@ inline std::vector<StrategyDefinition> makeStrategyDefinitions()
             );
 
             auto universeSelector = makeTopLiquidityUniverse();
-            auto ranker = std::make_unique<IndicatorRanker>(
+            auto ranker = makeStudyRanker(
                 IndicatorSpec{IndicatorKind::ROC, PriceField::Close, rankerRocLength},
                 true
             );
@@ -276,7 +308,8 @@ inline std::vector<StrategyDefinition> makeStrategyDefinitions()
                 btcMovingAverageLength,
                 entryAtrMultiple,
                 entryAtrLength,
-                heldBars
+                heldBars,
+                benchmarkSymbol
             );
         },
         [](const ParameterValues&) { return true; }
@@ -299,7 +332,7 @@ inline std::vector<StrategyDefinition> makeStrategyDefinitions()
             {"quantityPercent", "Quantity (%)", 2.0, 20.0, 2.0, false},
             {"maxPositionsOpen", "Maximum open positions", 1.0, 10.0, 1.0, false}
         }),
-        [](const ParameterValues& parameters) {
+        [benchmarkSymbol](const ParameterValues& parameters) {
             const unsigned int heldBars = unsignedParameterOr(parameters, "heldBars", 7U);
             const unsigned int rocLength = unsignedParameterOr(parameters, "rocLength", 7U);
             const unsigned int btcMovingAverageLength = unsignedParameterOr(
@@ -326,7 +359,8 @@ inline std::vector<StrategyDefinition> makeStrategyDefinitions()
                 std::move(ranker),
                 maxRankingPosition,
                 heldBars,
-                btcMovingAverageLength
+                btcMovingAverageLength,
+                benchmarkSymbol
             );
         },
         [](const ParameterValues&) { return true; }
@@ -361,7 +395,7 @@ inline std::vector<StrategyDefinition> makeStrategyDefinitions()
             );
 
             auto universeSelector = makeTopLiquidityUniverse();
-            auto ranker = std::make_unique<IndicatorRanker>(
+            auto ranker = makeStudyRanker(
                 IndicatorSpec{IndicatorKind::RSI, PriceField::Close, rsiLength},
                 true
             );
@@ -391,7 +425,8 @@ inline std::vector<StrategyDefinition> makeStrategyDefinitions()
             {"heldBars", 1.0},
             {"quantityPercent", 10.0},
             {"maxPositionsOpen", 10.0},
-            {"maxRankingPosition", static_cast<double>(std::numeric_limits<unsigned int>::max())}
+            {"maxRankingPosition", static_cast<double>(std::numeric_limits<unsigned int>::max())},
+            {"btcFilterLength", 0.0}
         },
         makeSensitivityParameters({
             {"rsiLength", "RSI length", 2.0, 20.0, 2.0, true},
@@ -401,7 +436,7 @@ inline std::vector<StrategyDefinition> makeStrategyDefinitions()
             {"quantityPercent", "Quantity (%)", 2.0, 20.0, 2.0, false},
             {"maxPositionsOpen", "Maximum open positions", 1.0, 20.0, 1.0, false}
         }),
-        [](const ParameterValues& parameters) {
+        [benchmarkSymbol](const ParameterValues& parameters) {
             const unsigned int rsiLength = unsignedParameterOr(parameters, "rsiLength", 3U);
             const double rsiEntryLevel = parameterOr(parameters, "rsiEntryLevel", 10.0);
             const unsigned int momentumLength = unsignedParameterOr(
@@ -418,7 +453,7 @@ inline std::vector<StrategyDefinition> makeStrategyDefinitions()
             );
 
             auto universeSelector = makeTopLiquidityUniverse();
-            auto ranker = std::make_unique<IndicatorRanker>(
+            auto ranker = makeStudyRanker(
                 IndicatorSpec{IndicatorKind::ROC, PriceField::Close, momentumLength},
                 true
             );
@@ -430,7 +465,8 @@ inline std::vector<StrategyDefinition> makeStrategyDefinitions()
                 maxRankingPosition,
                 rsiLength,
                 rsiEntryLevel,
-                heldBars
+                heldBars,
+                makeBenchmarkTrendFilter(benchmarkSymbol, unsignedParameterOr(parameters, "btcFilterLength", 0U))
             );
         },
         [](const ParameterValues&) { return true; }
@@ -469,7 +505,7 @@ inline std::vector<StrategyDefinition> makeStrategyDefinitions()
             );
 
             auto universeSelector = makeTopLiquidityUniverse();
-            auto ranker = std::make_unique<IndicatorRanker>(
+            auto ranker = makeStudyRanker(
                 IndicatorSpec{IndicatorKind::ROC, PriceField::Close, momentumLength},
                 true
             );

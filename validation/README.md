@@ -111,6 +111,11 @@ separate --output storage/kraken_shadow/account-live-policy-50-10; its ignored r
 retains low USD-reserve warnings. No automatic conversion or exchange stop is tested
 or activated; remaining venue/accounting/recovery acceptance and future cost forecasts are pending.
 
+`python3 validation/standby_test.py` checks that the local standby reads the Kraken account
+as the gateway does (cash = USD balance minus entry value, source units, collateral after
+haircut, unmapped venue symbols kept by name), without network. The standby plan itself
+was validated against three VPS PAPER decisions; see standby/README.md.
+
 Kraken account warning/recovery projection is checked under WSL:
 
 ```bash
@@ -380,7 +385,10 @@ rebinding, incompatible-filter rejection, publish/audit deduplication and exact
 cash/position/timestamp/next-order/fill-ID recovery. The fixture handler explicitly
 owns economic deduplication; the state store alone does not prevent a caller from
 applying the same cash/position delta twice. A second infrastructure restart checks
-that the ACKed delivery stays consumed. Only UUID-owned, labeled containers and
+that the ACKed delivery stays consumed. The `equity` phase checks the daily equity
+write-once rule against real PostgreSQL: a second `insertEquityDay` for the same day
+returns false and keeps the first row (the row of close(T) must survive a restart that
+redelivers T's market update after T+1's fills). Only UUID-owned, labeled containers and
 their anonymous volumes are removed, including on failure; no LIVE stack is started.
 Dummy credentials and compiled artifacts stay in temporary directories. This is
 adapter integration, not the five-service LIVE pipeline, service outbox recovery,
@@ -501,6 +509,12 @@ bash validation/mock_component_tests.sh   # builds lib sources once, runs all co
 | `step55` | Fault/chaos/rate-limit behavior. |
 | `step56` | Full-system replay runtime. |
 | `step57` | Manual targets through the normal risk/planning/MOCK pipeline. |
+| `order_manager_stale_update_test` | A redelivered status the order already passed is ignored; a real contradiction throws. |
+| `reconciler_quantity_tolerance_test` | Rounding noise on very large positions is not drift; one real unit still blocks. |
+| `relative_threshold_rebalance_test` | 20% relative resize rule: band scales with the weight, shorts, price drift, entries/exits/reversals always. |
+| `position_ledger_test` | Position history (averages, reductions, flips), idempotency and rebuild order. |
+| `equity_history_test` | Daily equity rows: close(T) ignores T+1's fills, existing days kept, missing closes skipped, funding/flows/collateral, replay phase digit. |
+| `manual_chain_test` | Manual Control below the services: re-sync, wire fields, simulated fill, cycle markers, request folder. |
 
 | Gate | Responsibility |
 | --- | --- |

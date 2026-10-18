@@ -1058,7 +1058,7 @@ void ReplayRuntime::onOrderUpdate(const VenueContracts::V1::OrderUpdate& update)
         break;
 
     case VenueContracts::V1::OrderLifecycleStatus::CancelPending:
-        // Legacy planner mirror has no CANCEL_PENDING state.
+        // The planner's order mirror has no CANCEL_PENDING state; the final update follows.
         break;
 
     case VenueContracts::V1::OrderLifecycleStatus::Canceled:
@@ -1090,38 +1090,39 @@ void ReplayRuntime::onOrderUpdate(const VenueContracts::V1::OrderUpdate& update)
 
 void ReplayRuntime::onFill(const VenueContracts::V1::Fill& fill)
 {
-    Fill legacy;
-    legacy.fill_id = fillIdHash(fill.native_references.native_fill_id);
-    legacy.order_id = fill.local_order_id;
-    legacy.strategy_id = fill.strategy_id;
-    legacy.timestamp = fill.timestamp;
-    legacy.coin = fill.instrument.market.canonical_asset;
-    legacy.side = fill.side == VenueContracts::V1::Side::Buy
+    // The venue fill as the execution layer's Fill (order manager, positions, accounting).
+    Fill executionFill;
+    executionFill.fill_id = fillIdHash(fill.native_references.native_fill_id);
+    executionFill.order_id = fill.local_order_id;
+    executionFill.strategy_id = fill.strategy_id;
+    executionFill.timestamp = fill.timestamp;
+    executionFill.coin = fill.instrument.market.canonical_asset;
+    executionFill.side = fill.side == VenueContracts::V1::Side::Buy
         ? OrderSide::Buy
         : OrderSide::Sell;
-    legacy.quantity = fill.quantity;
-    legacy.price = fill.price;
-    legacy.commission = 0.0;
+    executionFill.quantity = fill.quantity;
+    executionFill.price = fill.price;
+    executionFill.commission = 0.0;
 
     if (resolve_realtest_target_at_execution_open_) {
         // The parity profile requires full next-open fills. Its planner mirror retains
         // the Backtester quantity/price doubles; canonical grid fills still drive MOCK evidence.
         const auto expected = parity_expected_fills_.find(fill.local_order_id);
         if (expected != parity_expected_fills_.end()) {
-            legacy.quantity = expected->second.quantity;
-            legacy.price = expected->second.price;
-            legacy.side = expected->second.side;
+            executionFill.quantity = expected->second.quantity;
+            executionFill.price = expected->second.price;
+            executionFill.side = expected->second.side;
         }
     }
 
-    const bool is_new = planning_order_manager_.onFill(legacy);
+    const bool is_new = planning_order_manager_.onFill(executionFill);
 
     if (!is_new)
         return;
 
     if (resolve_realtest_target_at_execution_open_) {
-        parity_cash_ -= legacy.signedQuantity() * legacy.price; // Research cash follows spot-style buy/sell flows.
-        parity_fills_.push_back(legacy);
+        parity_cash_ -= executionFill.signedQuantity() * executionFill.price; // Research cash follows spot-style buy/sell flows.
+        parity_fills_.push_back(executionFill);
         parity_expected_fills_.erase(fill.local_order_id);
     }
 
@@ -1131,7 +1132,7 @@ void ReplayRuntime::onFill(const VenueContracts::V1::Fill& fill)
         throw std::runtime_error("Step56 fill references unknown strategy");
     }
 
-    strategy_it->second.add(legacy.coin, legacy.signedQuantity());
+    strategy_it->second.add(executionFill.coin, executionFill.signedQuantity());
 
     ++evidence_.canonical_fills;
 }

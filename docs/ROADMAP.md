@@ -1,9 +1,105 @@
 # Remaining implementation and acceptance roadmap
 
-Latest VPS release (2026-10-15, authorized): 20261015_090303-d11699d-dirty with the
+## Next steps (2026-10-15, in this order)
+
+**Stop-loss live (2026-10-17, authorized):** release 20261017_190518 with a reduce-only Kraken
+stop 30% below each long's last daily close, moved at every close (`LIVE_LONG_STOP_FRACTION=0.30`,
+README "Stop-loss"). LIVE state restarted at 23:14 UTC as kraken3 after the positions were closed
+manually in Kraken at 15:13 UTC; NEAR/STRK/WLD re-bought with stops accepted.
+
+**Previous VPS release (2026-10-17 14:31 UTC, authorized): 20261017_142931-9bed096-dirty** (Kraken
+marks, funding, total equity with BTC share, alert summaries, monitor in LIVE; old releases and
+images removed, disk 15%).
+
+**Kraken LIVE running since 2026-10-17 12:59 UTC** with real order submission (namespace
+kraken2), test thresholds RSI(8) > 50 / < 40 (`pure_rsi_8_50_40_volume_rank.json`) and the
+portfolio file `pure_rsi_equal_weight_rel25.json`; first orders NEAR/STRK/WLD (~20 USD each).
+Switch to entry 80 / exit 65 when the user asks (new strategy file + adoption on a running
+chain). PAPER data removed from the VPS (archive in storage/vps_paper_archive/).
+
+**LIVE strategy decided by the user (2026-10-17):** PureRSI with RSI length 8, entry RSI > 80,
+exit RSI < 65; universe top 20 by SMA(quote volume, 25); candidates ranked by SMA(quote
+volume, 25), highest first; max 10 signals; equal weight 10% of equity per signal; a held
+position goes back to 10% when |10% - current weight| >= 25% of its current weight (below
+8% or above 13.3%); entries and exits always; max 1.5x gross / asset. No volatility target,
+no BTC filter. Backtest evidence: CURRENT_STATE.md "PureRSI 8/80/65, 10% equal weight:
+relative rebalance thresholds" (Binance perps 2020-2026: 63.0% CAGR, max DD 30.5%, Sharpe
+1.53). The chain already supports every part (`equal_weight` sizer, `relative_threshold`
+rebalance, `indicator` ranker on SMA QuoteVolume 25): it needs a new strategy file and a new
+portfolio file (do not edit the 80/70, 50/40 or vol-target files in place), then
+STRATEGY_FILE/PORTFOLIO_FILE and RSI_ENTRY=80 / RSI_EXIT=65 in chain.env at the LIVE switch.
+
+Besides the authorized release with the equity fix and the repair of the two VPS rows
+(see the paragraph below and CURRENT_STATE.md):
+
+1. Cleanup task A open questions: the user decides on the "PREGUNTAR" group of
+   `storage/cleanup_notes/A-inventory.md` (Parquet files, VPS backups/snapshot, tax
+   scripts, the historical runner/audit family). Nothing in it is deleted until then.
+2. `research/replay.py fast` fails locally: it prepends
+   `deploy/historical_replay/.runtime_bundle/lib`, whose libalgolib (2026-10-11) predates
+   `TradingEngine::onBarClose(..., extraCapital)`. Refresh that bundle or stop prepending
+   it when the build library exists.
+3. Proposals awaiting the user: retire the standalone dashboard deployment track
+   (`dashboard/docker-compose.real*.yml`, `dashboard/docs/AWS_DEPLOYMENT.md`,
+   production preflight and the step43..46c checks of those files) in favour of
+   deploy/chain; remove the empty `Backtester::closeTrades()` stub from lib/; split the
+   dashboard-state export out of `research/src/canonical/canonical_replay.cpp` (Step58A
+   greps its source text, so adjust that gate in the same change).
+4. Kraken: the user deposits more than USD 200; then step (c), the first small real
+   orders, each one explicitly authorized (funding sign, average entry price, immediate
+   USD settlement of realized PnL, scaled-asset units such as PEPE), and step (d), checking
+   fees, funding, net PnL and the tax CSV against the Kraken export, SKIPPED markets and
+   the Live vs Expected explanations.
+5. Local standby of the deployed version (user request 2026-10-15): every time a release
+   is activated on the VPS, keep locally, in its own folder (not live_trading/), what is
+   needed to reproduce what the VPS does with the fast backtest (same source/release,
+   strategy and portfolio configuration, seed account/positions), so that if the VPS goes
+   down the user can compute locally the decisions/targets the VPS would have taken.
+   Agreed design (2026-10-15): stateless. Each run downloads the last 100 daily bars of
+   every current Binance USDT perpetual, runs the deployed strategy/portfolio configuration
+   over them, reads the Kraken account at that moment (positions, equity, BTC collateral)
+   and derives the orders as target minus holdings, with the same 20% relative resize rule;
+   the only VPS-owned input is the Binance -> Kraken symbol map (already in the repo). It
+   may then send the orders to Kraken from the local machine: never while the VPS is alive,
+   only after the user confirms the listed orders (real-order rule), and only once Kraken
+   LIVE is the deployed mode. Plan-only mode first; validate its targets against the VPS on
+   the same day before any order is sent from local.
+   Phase 1 done locally 2026-10-15/16 (`standby/`, README there): `sync` copies the deployed
+   profile from the VPS read-only; `plan` downloads the data and prints the orders, never
+   sends. Its plans for closes 20261013-15 equal the VPS PAPER decisions and order amounts to
+   the cent. Remaining: phase 2 (sending from local, with a trading key, the VPS-down check
+   and per-run confirmation) once the chain trades Kraken LIVE; refresh `sync` after each
+   release.
+6. Resize rule (user decision 2026-10-15, done locally, pending release): with the vol-target
+   portfolio a held position is resized only when its target weight differs from its current
+   weight (at the current price) by at least 20% of that weight (`relative_threshold` 0.20 in
+   `config/portfolio/pure_rsi_vol_target.json`; was an absolute 2-point threshold). Entries,
+   exits and side changes always happen. On the VPS the portfolio file must be edited and
+   adopted with the README "Changing the portfolio sizer" procedure after the release.
+7. Telegram for the general watchdog alerts (user decision 2026-10-16, instead of a second
+   healthchecks.io check): every watchdog alert goes to Telegram, CRITICAL to the critical
+   group and the rest to the normal chat, and a CRITICAL one only after it has lasted 5
+   minutes (restarts stay silent). Done locally: `DASHBOARD_NOTIFIER_CRITICAL_DELAY` 5m
+   for the general notifier. On the VPS, after the release: `NOTIFIER_SINK=TELEGRAM` in
+   chain/chain.env and restart only the notifier (needs authorization).
+
+Latest VPS release (2026-10-16, authorized): 20261016_095921-9bed096-dirty with everything
+listed below as local, then the equity-row repair, the 20% rule adopted in the VPS
+portfolio file and the general watchdog notifier on TELEGRAM with the 5-minute critical
+delay (steps 6 and 7 done; CURRENT_STATE.md has the evidence). One WARN "Risk decision
+checkpoint unavailable" stays active until the 00:00 UTC decision after the adoption.
+
+Previous release (2026-10-15, authorized): 20261015_090303-d11699d-dirty with the
 Binance `/fapi/v1/time` day-close guard, the Kraken monitor KRAKEN_UNREADABLE warning and
 account-history summary, and the notifier "Alert source stopped" warning. Ledger unchanged;
 CURRENT_STATE.md has the evidence and a pre-existing equity-row overwrite found on restart.
+
+Local since that release (2026-10-15/16, not deployed): the equity-row fix (first row of a day
+wins; step 11), removal of the Hyperliquid TESTNET gateway mode/dashboard path, the
+repo cleanup (storage/cleanup_notes/), the 20% resize rule, the heartbeat files, the standby
+the comparison-baseline fix for a held coin outside the top 50 and the 5-minute critical
+delay of the general notifier (CURRENT_STATE.md). Next release must carry the fix; afterwards repair
+the VPS rows 20261013/20261014 with the procedure in CURRENT_STATE.md (needs authorization).
 
 Full deployment update (2026-10-14): explicitly authorized and completed as
 20261014_201725-d11699d-dirty. Runtime root is now `/algoTrading`; all eight folders,
@@ -84,7 +180,7 @@ holdings already include their USD notional as a percentage of snapshot equity.
 8. Complete funded Kraken Multi-M BTC/USD collateral economics: valuation/haircuts, margin, USD settlement, conversion/interest and liquidation-risk reporting. Preserve the agreed warning-only account policy; do not automatically sell BTC or rebalance reserves. User decisions 2026-10-14: the strategy sizes with USD + BTC after Kraken's haircut; USD deposits, withdrawals and conversions are capital flows (not PnL), venue interest a cost. Done locally 2026-10-14 (CURRENT_STATE.md, live_trading/exchange_gateway/README.md): the gateway snapshot carries Kraken's post-haircut collateral, execution-state fixes it per day and adds it to the daily AccountSnapshot, portfolio risk and Manual Control size with it; the account history books INTEREST and CAPITAL_FLOW entries (BTC movements are collateral-only); `trading_equity_daily` records interest, net flows and collateral; the account monitor reports BTC collateral, maintenance headroom and the drop to maintenance margin (daily Telegram, `account.json`, LIVE Overview cards). The user then asked for a warning below a 25% drop to maintenance (MAINTENANCE_DROP, warning-only). Confirmed 2026-10-15 with the read-only key (CURRENT_STATE.md, live_trading/exchange_gateway/README.md): funded `collateral` = BTC `value` x (1 - 1% haircut), margin equity = BTC collateral + USD; wallet fields `quantity`/`available`/`value`/`collateral`; history words "futures trade", "conversion", "cross-exchange transfer"; `old_balance`/`new_balance` = balance of the row's asset (USD, XBT or the contract's signed position size); with no USD Kraken converts BTC itself to pay fees. Remaining: the interest and plain USD deposit/withdrawal words (none yet in the history).
 9. Account for actual trading commissions and perpetual funding payments/receipts in replay/live, with explicit timestamps, currency, sign and attribution. Keep estimates distinct from confirmed costs; missing funding is unavailable, not zero, and costs must not be counted twice. Dashboard side done 2026-10-12 (fees/funding per position from the MOCK ledger in the simulation and from fill commissions in PAPER). User decision 2026-10-14: no funding or fee modelling in the PAPER simulation; with Kraken, update the real fees/funding of open positions periodically while trading and store the final values when each position closes. The runtime ledger already attributes `trading_funding` rows to the open position and keeps them in the closed-position row. Done locally 2026-10-14: the Kraken gateway reads the account history (every 5 min, 30 s after a fill), journals each fee/funding entry once and publishes `VenueCostEvent`; execution-state applies it once to cash (`trading_venue_costs`), fees join their fill and funding its position in the ledger; venue snapshot cash is reported spot-style and LIVE reconciliation accepts 0.50 USD (CURRENT_STATE.md). Pending confirmation with Kraken (not documented by Kraken; marked UNCONFIRMED in the code and in live_trading/exchange_gateway/README.md), with the read-only key (`--live-read-only` also reads the account history: path, signing, field names) and the first authorized order: (a) the sign of `realized_funding` (we take it as the change of the USD balance: negative = paid); (b) the fee currency (we book only USD fees; a fee in another currency is logged, not booked); (c) that `openPositions[].price` is the average entry price (used for the spot-style snapshot cash); (d) that realized PnL is settled into the USD balance at once when a position is reduced or closed. If any of these differs, fix the parser/snapshot cash before the next real order. Confirmed 2026-10-15 from the real account history (the user's small trades of 2026-10-07): path/signing/field names; (a) `realized_funding` is the USD balance change, positive = received; (b) fees are paid in USD (positive `fee` on the trade's USD row); (d) realized PnL settles into the USD balance at once (new = old + realized_pnl - fee + realized_funding), and opening moves it only by the fee. Still open: (c) `openPositions[].price` = average entry, `execution` = `/fills` `fill_id`, periodic funding rows while a position stays open. Interest and USD capital flows (step 8) use the same history read.
 10. Add separate Commission and Funding columns to the dashboard Trades view, showing USD costs/receipts and net PnL after both. Done locally 2026-10-12 in Positions (active and closed tables: Fees, Funding, Net PnL) plus the closed-positions CSV in `<root>/reports/` for the yearly tax report. Remaining: verify against a real exchange export after the first live trades.
-11. Complete runtime-owned cost basis, realized/unrealized PnL and durable balance/equity history, including collateral and funding effects; verify trade totals reconcile to account-level performance. Done locally 2026-10-14: ExecutionState's `PositionLedger` writes `trading_open_positions`, `trading_closed_positions` and `trading_equity_daily` (rebuilt from the fills at every start, missing days backfilled); the dashboard reads them. Remaining: collateral effects (roadmap 8) and checking against a real Kraken export.
+11. Complete runtime-owned cost basis, realized/unrealized PnL and durable balance/equity history, including collateral and funding effects; verify trade totals reconcile to account-level performance. Done locally 2026-10-14: ExecutionState's `PositionLedger` writes `trading_open_positions`, `trading_closed_positions` and `trading_equity_daily` (rebuilt from the fills at every start, missing days backfilled); the dashboard reads them. Fixed locally 2026-10-15: a day's equity row is written once (`insertEquityDay`, ON CONFLICT DO NOTHING) so the restart redelivery of close(T) no longer overwrites it with T+1's fills; pending release, then repair of the two overwritten VPS rows (20261013, 20261014). Remaining: collateral effects (roadmap 8) and checking against a real Kraken export.
 12. Verify Manual Control preview, authorization and audit; after private integration is ready, test submission through normal risk/execution, reconciliation and recovery with explicitly authorized small real-money orders. Done in the replay simulation 2026-10-12 (immediate execution, limits from risk config, re-sync at the next close, progress bar, audit). PAPER/LIVE chain done locally 2026-10-14: request folder dash-api -> execution-state, immediate execution at the current Binance prices (PAPER fills at once; LIVE through gateway-kraken only with submission enabled), re-sync to the strategy targets at the next 00:00 UTC cycle (CURRENT_STATE.md). Deployed; remaining: check on the VPS PAPER (one request, then the next night's re-sync), and the authorized real-money test.
 13. Extend Live vs. Expected to actual venue execution, costs/funding, skipped markets and collateral constraints using aligned simplest CURRENT PureRSI baseline inputs/settings/dates. Preserve the original raw-volume reference and explain differences instead of forcing parity. Done locally 2026-10-14 (deploy/chain/README.md "Switching to live", CURRENT_STATE.md): `comparison.py` with `MODE=live` reads the Kraken account, real fills and venue costs, takes the Binance open of each execution day, gives the fast baseline the day's BTC collateral and USD capital flows, and each row splits the difference into fees (real vs `LIVE_COMMISSION_RATE`), funding, interest, fill prices vs the Binance open and skipped markets; the dashboard page shows the split. PAPER is unchanged. Remaining: the first real cycles (needs the authorized live test); Manual Control trades are not modelled in the expected run.
 14. Persistent Kraken read-only monitoring and Telegram: activated on the VPS with explicit user authorization on 2026-10-14, at the existing root `/`. General READ_ONLY / transfer NO_ACCESS validated; host monitor polls every 30 s with 3-day raw retention, `kraken-notifier` sends warnings and the 09:00 UTC daily summary. Setup message, subsequent fresh account reads and three Telegram delivery receipts pass; existing PAPER container IDs remain unchanged (CURRENT_STATE.md). Remaining: verify the first scheduled daily summary and restart deduplication on the VPS.
@@ -139,9 +235,9 @@ Use the following boundaries for the remaining venue integration/acceptance:
    margin/reconciliation behavior; authorized small real-money lifecycle tests remain separate.
 
 Existing PAPER is Binance public data with a simulated exchange, not selected-venue
-shadow acceptance. Existing Hyperliquid dry-run logs raw proposed quantities with
-`venue_rules_applied=false` and `submitted=false`; it does not provide a complete
-shadow harness. Keep the VPS and all real-capital execution unchanged.
+shadow acceptance. The former Hyperliquid dry-run gateway mode was removed on
+2026-10-15; Kraken shadow observation is `live_trading/kraken_shadow.py`. Keep the VPS
+and all real-capital execution unchanged.
 
 ## Deferred deployment improvement
 

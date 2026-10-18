@@ -31,6 +31,7 @@ its rolling comparison after that boundary. See the PAPER guide for state migrat
 | `lib/` | Current reusable trading domain and venue simulation. |
 | `live_trading/` | Service entrypoints, adapters and service-owned lifecycle. Real venues: `exchange_gateway/src/venue/` (LiveVenueAdapter + one VenueProtocol per exchange). |
 | `research/` | Public replay CLI, canonical runner and research executables. |
+| `standby/` | Local standby: the deployed profile's next orders from Binance data and the real account (plan only). |
 | `dashboard/` | React UI, Go read-model API, observability stores and deployment. |
 | `validation/` | Current release gate, component tests and focused source audits. |
 | `deploy/` | `chain/` (runtime root layout, single compose.yml, `algo` launcher, log receiver, host monitor), plus LIVE and isolated historical Compose deployments. PAPER test fixtures live in validation/fixtures/paper/. |
@@ -131,6 +132,13 @@ the same close before continuing. The CLI requires the same label/window.
 The release gate compares resumed, uninterrupted, dashboard and paced fingerprints.
 
 ## Service trading
+
+ExecutionState writes the accounting projection (`trading_equity_daily`, ledger,
+reconciliation) next to its trading state. A day's equity row is written once, at the
+first market update of that day (`PostgresStateStore::insertEquityDay`, `ON CONFLICT DO
+NOTHING`); the restart redelivery of an already recorded day keeps the first row.
+Backfill and the day rules are pure functions in
+`live_trading/execution_state_service/src/equity_history.*`.
 
 `live_trading/kraken_shadow.py` owns Kraken public Multi-M normalization and a
 hypothetical BTC/USD cross-margin diagnostic. It reuses `ShadowJournal` with an
@@ -343,7 +351,13 @@ BTC moving-average reporting now reuses the shared PureMom/MRShort definitions,
 with its original SMA sweep and CSV/HTML contracts. The scenario consumer now uses
 CURRENT APIs for all eight isolated strategy families and 18 dataset definitions.
 `research/src/backtests/multi_strategy_main.cpp` owns settings and study orchestration;
-`research/src/common/scenario_reports.*` owns embedded charts and correlation reports.
+`research/src/common/scenario_reports.*` owns the index and correlation pages and
+`research/src/common/plotly_chart_html.*` reads/patches the generated Plotly chart HTML.
+The HTML, BTC moving-average and XH studies are thin mains over
+`research/src/common/sensitivity_study.*` (per-run sensitivity CSV, baseline exports,
+grid/metadata CSVs, study loop); all four single-strategy studies share
+`research/src/common/parameter_sweep.*` (grid values, Cartesian walk, per-value medians,
+progress bar). Each study passes its own portfolio factory and CSV options explicitly.
 Shared short/momentum signals accept per-scenario benchmark symbols, with BTC defaults.
 Benchmarks come from the same bounded market data as trading. Synthetic intraday keys
 are retained; annualization uses explicit bar frequencies. All useful consumers have
@@ -383,9 +397,10 @@ the chain receiver covers all services. See [chain operations](../../deploy/chai
 The [VPS equivalence procedure](../../deploy/live/README.md#local-to-vps-equivalence-acceptance)
 compares source/input identity, configured builds, packaging, non-secret settings
 and bounded Step59 results before separate deployed-cycle acceptance.
-Kraken is the likely initial live venue, subject to perpetual coverage and BTC
-collateral/account eligibility checks against Hyperliquid. Existing Hyperliquid
-public/testnet components describe current source, not the selected future venue.
+Kraken Multi-M with BTC/USD collateral is the venue for the initial small live test.
+The earlier Hyperliquid TESTNET path (gateway `hyperliquid-dry-run` mode, dashboard
+`/api/venue-*` endpoints and public client) was removed on 2026-10-15; only the
+public coverage studies and the frozen Step47B/C documents remain.
 Exact source paths and the research backlog
 are in [CONTEXT_FULL.txt](CONTEXT_FULL.txt).
 

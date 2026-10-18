@@ -1,6 +1,887 @@
 # Current state
 
-Last synchronized: 2026-10-15. Current source and test output take precedence.
+Last synchronized: 2026-10-16. Current source and test output take precedence.
+
+## Infrastructure ALL range (2026-10-18, local only)
+
+Added ALL to the infrastructure time selector and range=all to the host-history API.
+ALL discovers the earliest valid retained observation, including unsorted rows, and
+uses that span for chart bounds and averaging. File size remains capped at 64 MiB;
+responses remain bounded to 720 averaged points. Current monitor retention remains
+seven days: ALL means all available retained data, not deleted observations.
+No VPS changes. WSL validation PASS: offline Go vet/tests for all packages, frontend
+API-mode Docker build (tsc -b + Vite), source audit (33 markers), targeted diff check.
+
+## Symbol Mapping problem table (2026-10-18, local only)
+
+Removed the Detail column from Problems Found; rows show Severity, Asset and Problem.
+Alert payloads and the main mapping table are unchanged. No VPS deployment or exchange
+commands. WSL frontend Docker build (API mode, tsc -b + Vite) PASS.
+
+## Market freshness age in days (2026-10-18, local only)
+
+Freshness ageLabel now displays Nd relative to the previous completed UTC day,
+not relative to the newest date in SQLite. A candle dated Oct 17 stays 0d through
+Oct 18 23:59:59 UTC and becomes 1d on Oct 19. This keeps age advancing if ingestion
+stalls. Existing health classification against the canonical day is unchanged.
+Only the dashboard read model changes; no exchange commands or VPS deployment.
+UTC boundary/time-zone regression test added. WSL validation PASS: go vet ./...
+and go test ./... in offline golang:1.23-alpine; targeted git diff --check PASS.
+
+## Execution fees and reference slippage (2026-10-18, local only)
+
+User requested local fixes only; no VPS deployment or real orders authorized for this task.
+Root causes: dashboard fill readers ignored delayed Kraken FEE events in
+trading_venue_costs, the tracked-order DTO omitted persisted reference_price, and
+generic frontend currency formatting rounded small fees/prices to cents. The local
+read projection now aggregates linked fees once by fill_id, adds them to fill commission
+as ExecutionState accounting does, and derives side-aware reference slippage from
+persisted prices (stop trigger for position stops). Historical missing reference prices
+remain unavailable; no mark-at-submission history is invented. No lib/, execution
+service or gateway behavior was changed by this task.
+
+Read-only VPS SELECT confirmed fills 1/2/3 have commission=0 while linked FEE cash
+events are -0.0068 / -0.0069 / -0.0074 USD: recorded fees total 0.0211 USD. Their
+planning references are already persisted (NEAR 5.067, STRK 0.0741, WLD 0.5167).
+Local projection joins those events for per-fill/order/global fees and the fill-ledger
+read. Small fees retain eight decimals; Kraken unreported fees stay Pending rather
+than becoming a claimed zero. PAPER zero fees remain zero. No source rows are rewritten.
+Reference slippage is side-aware, daily and USD-notional weighted; per-order values
+use VWAP, stop fills use the trigger, missing old references remain unavailable and
+truncated fill windows suppress incomplete quality summaries. It includes gaps and
+venue price differences and must not be read as isolated market impact at submission.
+
+WSL validation: all Go packages `go vet ./...` and `go test ./...` PASS offline in
+golang:1.23-alpine; frontend Docker build (API mode, tsc -b + Vite) PASS;
+dashboard source audit PASS (33 markers); targeted git diff --check PASS.
+`python3 dashboard/scripts/test-execution-fees-postgres.py` PASS with isolated,
+network-disabled PostgreSQL: legacy schema, delayed/multiple/zero fees, pending
+fees, no duplicated fills, exclusion of funding/interest/orphan fees, global totals,
+bounded detail and repeatable reads. Canonical Step59 PASS: 107 days, 50 fills,
+RealTest 25/25 with zero differences, deterministic rerun, system/dashboard restart
+and pacing invariance. Accepted fingerprint:
+`94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2`.
+Read-only evidence: `storage/reports/execution_quality_20261018/vps_readonly_evidence.json`.
+Concurrent pipeline/previous-signal work in the shared reader was preserved.
+
+## Active-alert summary rows: color and name only (2026-10-18, deployed)
+
+User correction after deployment: summary rows must omit bracketed severity names.
+Shared Watchdog/Kraken summary formatting now emits `🔴 gateway-kraken down`,
+`🟡 USD reserve low`, etc. Severity still selects the color and destination; individual
+alert headers, portfolio reports, summary headings and delivery policy are unchanged.
+Go vet and tests for internal/notifier and cmd/dashboard-alert-notifier PASS in WSL
+using offline golang:1.23-alpine. Existing summary tests updated and regression assertion
+rejects bracketed labels. README/chain guide updated. User explicitly authorized deployment
+at 12:44 UTC. Release `20261018_130842-9bed096-dirty` activated at 13:13 UTC; previous
+`20261018_121047-9bed096-dirty`. Full `algo build` PASS, including web tsc/Vite.
+Concurrent provider valuation edits were detected during packaging: local package
+`20261018_130038-9bed096-dirty` is marked NOT_FOR_DEPLOYMENT and was never uploaded.
+The final package was created from the previous release's source plus only the summary
+formatter/tests and documentation. The API image was rebuilt from that isolated source;
+all Go tests and `go vet ./...` PASS offline. Source comparison confirms the provider
+valuation code is unchanged from the previous deployed release.
+Local/remote SHA256SUMS PASS; manifest IDs match the completed builds and running images:
+runtime `7a16e58b...`, API/notifiers `1d30c2a5...`, web `71daac66...`.
+Activation backup: `/algoTrading/backups/20261018_131316.tar.gz`.
+All 13 containers healthy; API health OK; Kraken host monitor active with fresh successful
+observations. Execution startup reconciliation clean, 3 positions / 3 fills / stops 7/8/9
+preserved. No manual real orders or test Telegram messages were sent. Daily portfolio
+tables are unchanged. Evidence: `storage/reports/telegram_summary_color_only_20261018/`.
+
+## Kraken daily portfolio tables and Telegram deployment preparation (2026-10-18)
+
+The user authorized applying the pending changes to the VPS, then requested readable
+tables in the daily Kraken portfolio. `kraken_portfolio_summary.position_table` now
+renders Asset / Side / USD / % Eq for current positions and the previous UTC day's last
+snapshot. Persisted position lines keep their original format, so existing history works
+without migration. Missing prices/equity remain N/A; missing yesterday stays unavailable.
+The notifier uses escaped HTML `<pre>` only for DAILY_PORTFOLIO to preserve columns;
+ordinary alerts remain plain title-only messages. No new report is forced or replayed.
+
+Validation (WSL): kraken_portfolio_summary 8 tests PASS; kraken_account_monitor 20 tests
+OK (one existing environment-dependent skip); all Go tests and `go vet ./...` PASS in
+offline golang:1.23-alpine; dashboard source audit 33 markers PASS; installation-root
+test PASS. No manual real orders or Telegram test messages.
+
+VPS read-only preflight 11:54 UTC: current `20261018_114445-9bed096-dirty`, all 13 containers
+healthy, Kraken monitor active, no other build/activation detected. Comparing its archived
+application source with local source found only the notifier formatting/tests and portfolio
+summary changed. Deployment coordination: `docs/codex/DEPLOYMENT_IN_PROGRESS.md`.
+Deployment completed at 12:14 UTC: release `20261018_121047-9bed096-dirty`, previous
+`20261018_114445-9bed096-dirty`. `algo build` PASS (82 targets, runtime/API/web images;
+web tsc/Vite PASS). Manifest IDs equal the completed builds and the running containers:
+runtime `77601d5a...`, dash-api/notifiers `ded666dd...`, dash-web `f65db1a2...`.
+Local and remote SHA256SUMS passed; activation took backup
+`/algoTrading/backups/20261018_121352.tar.gz`. All 13 containers healthy, API health OK.
+Kraken read-only host monitor restarted to load the new table code; its installed SHA-256
+matches local source and lastSuccessAt advances without an error. Retained daily snapshots
+for Oct 18 and Oct 17 (last observation 23:59:53 UTC) render as tables on the VPS.
+Execution startup reconciliation clean; 3 positions, 3 fills and accepted stops 7/8/9
+preserved, no duplicate orders. Snapshot cash at verification: 41.9493 USD (venue-aligned).
+No report was forced/replayed; the next normal 09:00 UTC report uses the new presentation.
+
+## Telegram: CRITICAL labels, title-only alerts and colored summary severity (2026-10-18, local)
+
+User request: replace Telegram's URGENT wording with CRITICAL, omit alert descriptions,
+and show a colored severity beside every name in active-alert summaries. The notifier now
+retains the account/system header and alert title only, including recoveries and source-health
+warnings. DAILY_PORTFOLIO is a report and retains its balances/holdings. Descriptions remain
+in the web and journals. Summaries use red `[CRITICAL]`, yellow `[WARN]`, blue `[INFO]` and
+white for unsupported labels; the critical-chat heading is "Critical alerts". Recovery
+messages retain green INFO and silence. Delivery routing, receipts, cooldown and critical
+delay are unchanged. README updated.
+
+Validation (WSL, local `golang:1.23-alpine`, `--network none`): `go vet ./...` and
+`go test ./...` PASS, including title-only messages, retained portfolio content, colored
+summary rows, per-chat routing, critical-delay suppression and resolution. No VPS access,
+deployment or real Telegram messages. Pending an explicitly authorized deployment.
+
+## Overview: compact Collateral card and Exposure card (2026-10-18, local)
+
+User request: Collateral shows only the total USD collateral (Kraken USD balance + BTC after
+haircut) and the BTC share, e.g. "$226.83 · 55% BTC" (no BTC quantity); a new "Exposure" card
+"Gross $x (y% of Total Equity) · Net $z" from the positions valuation (all modes with a
+valuation). Go tests OK (updated TestKrakenCollateralCardsOnlyInLive, new
+TestOverviewShowsGrossAndNetExposure). Release 20261017_235036-9bed096-dirty built 23:50 UTC
+(dash-api 13b824ff...). The user asked to publish inside the 23:30-00:30 window, which
+`algo activate` refuses by design; with the user's explicit instruction only dash-api (no
+trading role) was swapped at 23:51 UTC: release uploaded (SHA256SUMS OK), images.tar loaded,
+`algotrading-dash-api:chain` retagged to 13b824ff..., `algo up --no-deps dash-api`; dash-api
+healthy, every trading container untouched. releases/current still names 20261017_190518:
+the formal `algo activate` of 20261017_235036 is due after 00:30 UTC.
+
+Follow-up (2026-10-18 00:10 UTC): the Exposure card was split into two cards, "Gross Exposure"
+(detail: % of Total Equity) and "Net Exposure", as on Positions. Release
+20261018_000946-9bed096-dirty (dash-api 9baf54e7...) was hot-swapped the same way (dash-api
+only, healthy; execution/gateway-kraken/dash-web still on b6e6e423.../a15b1312...). This
+release supersedes 20261017_235036 for the pending formal `algo activate` after 00:30 UTC.
+
+First daily stop move verified (00:00 UTC cycle, read-only): new stops 7/8/9 at 70% of the
+2026-10-17 closes (NEAR 3.402, STRK 0.04515, WLD 0.3445 at venue tick) accepted first, then
+old stops 4/5/6 cancelled. Kraken shows exactly 3 open orders: stop, reduceOnly, trigger mark,
+cliOrdId algo-kraken3-7/8/9, matching the 3 long positions.
+
+Formal activation (2026-10-18 09:58 UTC, user-authorized): `algo activate
+20261018_000946-9bed096-dirty`; releases/current names it, previous 20261017_190518 (rollback).
+All 13 containers healthy; runtime 622f4bef... (same source, rebuilt), dash-api 9baf54e7...,
+dash-web 495caff5.... Execution restart reconciled clean (cash 41.96 USD, 3 positions, 3 open
+orders); Kraken still shows only stops 7/8/9, no duplicates.
+
+Overview cards (2026-10-18 10:21 UTC, local, not deployed): the Margin Headroom card was removed
+and `orderOverviewStats` sorts the cards Total Equity, Gross Exposure, Net Exposure, Collateral
+(Cash outside Kraken LIVE), Leverage, then any other card (Net Deposits). Go vet/tests OK
+(TestOverviewShowsGrossAndNetExposure checks the order); API_CONTRACT.md updated. Release
+20261018_102127-9bed096-dirty built (dash-api a4e62aa2...) and formally activated 10:23 UTC
+(user-authorized; previous 20261018_000946 for rollback). 13 containers healthy; runtime
+25a3c31e..., dash-web 23094a8e...; execution reconciled clean (cash 41.95 USD, 3 positions,
+3 open orders).
+
+Market-data same-day restart (2026-10-18, deployed 11:45 UTC as release
+20261018_114445-9bed096-dirty, user-authorized; previous 20261018_102127 for rollback; all 13
+containers healthy, runtime 80aa7fca...; the restart logged "already stored ... republishing",
+0 rows, no ranking; execution reconciled clean, cash 41.95 USD, 3 positions, 3 open orders.
+The user chose to keep the 54 tracked symbols.): `MarketDataIngestor::run`
+now returns `republishStoredDay` when the stored tracker date equals the target day: summary
+from SQLite (stored ranking count, tracked/maintained), no exchangeInfo/24h ticker/candle
+requests; only open(T+1) prices are fetched when `publish_paper_execution_prices` is set, for
+the symbols with a stored candle that day. paper_trading_test asserts the restart run logs
+"is already stored" and no "Download plan". Validation: ninja build OK, chain build OK,
+PAPER_RECOVERY_TEST=1 paper_trading_test PASS (incl. NATS-outage retry and restore),
+daily_service_logs_test OK, Step59 PASS fingerprint 94fdf8d8...68da2. The VPS market database
+still holds the 09:58 re-rank of 2026-10-17 (ranking overwritten, 54 tracked); untouched.
+
+Market-data midnight run, second step (2026-10-18, deployed 18:56 UTC in release
+20261018_185456-9bed096-dirty, user-authorized; previous 20261018_171838 for rollback):
+10 s before midnight `MarketDataIngestor::prepare` reads the tracker, builds the expected plan
+and opens the HTTP/2 connection (`warmUp`; the client keeps one curl multi handle, so the
+connection survives between calls); the business wait sleeps exactly to the deadline (was a
+250 ms poll); `midnight_delay_ms` 0 (VPS config edited 100 → 0, backup
+market_data.json.bak-20261018b). The run is one burst (`fetchDailySnapshot`): exchangeInfo,
+24h tickers and every planned symbol's candles up to D plus D+1. The D+1 candle proves D closed
+on Binance's clock and gives open(T+1): the /fapi/v1/time request and the separate opening-price
+requests are gone from the normal path. Symbols without D+1 are re-asked every 50 ms for up
+to 30 s, then Binance's clock decides; the ranking needs tickers' closeTime >= midnight
+(fallback: Binance's clock). Local two-day run against real Binance: 614 ms prepared (5.3 s
+before today's work); D+1 never stored. Validation: ninja OK, time-handler audit PASS, chain
+build OK, PAPER_RECOVERY_TEST=1 paper_trading_test PASS, daily_service_logs_test OK (alone),
+Step59 PASS 94fdf8d8...68da2. After activation: 13 containers healthy, execution reconciled
+clean, market-data republished the stored day.
+
+Market-data daily download speed-up (2026-10-18, deployed 17:20 UTC in release
+20261018_171838-9bed096-dirty, user-authorized; previous 20261018_144907 for rollback). The
+00:00 run took 7.2 s: clock 0.26 s, then exchangeInfo (1.1 MB, uncompressed) + 24h tickers,
+then 50 candles and 50 opens on 16 connections. Measured on the VPS: each Binance request
+answers in ~0.25 s; 100 klines take 0.8 s multiplexed on one HTTP/2 connection vs 2.5 s on 16
+connections and 3.8 s on one each; gzip shrinks exchangeInfo to 52 KB and tickers to 65 KB.
+Changes: `BinanceMarketDataClient::getAll` (curl multi, CURLPIPE_MULTIPLEX + PIPEWAIT,
+retries as httpGet) used by the ranking, candles and opening prices; CURLOPT_ACCEPT_ENCODING;
+after the Binance clock check the ranking, the previous tracker's candles and the previous
+day's symbols' opens download together, only symbols the ranking adds wait for it;
+max_parallel_requests 64 (schema maximum; VPS /algoTrading/config/market_data.json edited
+16 → 64, backup market_data.json.bak-20261018); new INFO line "Daily download for D took N
+ms: Binance clock, ranking, candles (early/after/retried), opening prices, saved". Weight ~150
+of Binance's 2400/min. Local two-day run against real Binance: 5.3 s → 1.2 s. Validation:
+ninja OK, chain build OK (runtime libcurl links nghttp2 and zlib), PAPER_RECOVERY_TEST=1
+paper_trading_test PASS, daily_service_logs_test OK, Step59 PASS 94fdf8d8...68da2. Same
+release: Alerts & Audit rows hide the long description behind a "Details" button. After
+activation: 13 containers healthy, execution reconciled clean (41.93 USD, 3 positions, 3
+orders), market-data republished the stored day. Check tonight's "took" line.
+
+Release 20261018_144907-9bed096-dirty activated 14:50 UTC (user-authorized; previous
+20261018_130842, activated 13:13 by another session, for rollback). It carries the Pipeline
+Trace, the HOLD target on Positions and the lower-case Kraken funding contract fix. 13
+containers healthy; runtime d4bfc102..., dash-api ede3b1e7..., dash-web 98fec553...;
+execution reconciled clean (cash 41.94 USD, 3 positions, 3 open orders); market-data restart
+republished the stored day (no download); dash-api has
+DASHBOARD_STRATEGY_CONFIG=/config/strategies/pure_rsi_8_50_40_volume_rank.json mounted. The 38
+stored funding rows with lower-case coin are still uncorrected (needs authorization).
+
+Pipeline Trace (2026-10-18, deployed 14:50 UTC in 20261018_144907): the Decision Matrix "Why?" button is now
+"Trace" and its panel explains the whole cycle with real numbers (`real_pipeline_trace.go`,
+`enrichPipeline`): liquidity rank (#n of candidates by the strategy's SMA measure, inside/outside
+the top-N universe) and RSI recomputed from the market SQLite; the PureRSI rule with the live
+parameters; signal transition against the previous risk checkpoint (`previousSignalsPayload`
+in pipelineCheckpointSQL); sizer by configuration (equal weight: signal × weight per signal;
+volatility target: book volatility, scale, after caps; "Vol targeting" shown only then); asset
+and gross caps; rebalance band arithmetic (relative 25%: current 8.6% = 4 × 4.86 / 226.57 vs
+target 10%, 1.42 pp < 2.15 pp → HOLD); fees and slippage of the cycle's fills; risk config
+fingerprint and venue. HOLD rows show "Target" as approved weight × reference capital
+("22.66$ (hold)") and "Liq. Rank" as "#n". Also found: the dashboard used RSI(7) and 80/70
+(DASHBOARD_RSI_ENTRY/EXIT unset on the VPS) while the live strategy is RSI(8) 50/40; it now
+reads the strategy file itself (`DASHBOARD_STRATEGY_CONFIG=/config/strategies/${STRATEGY_FILE}`,
+strategies dir mounted read-only in dash-api and watchdog; `applyStrategyConfigFile`), which
+also corrects the Market Data page. Go vet/tests OK (new TestTraceExplainsHoldInsideTheRelativeBand,
+TestStrategyConfigFileOverridesEnvironmentDefaults), web tsc+vite build OK,
+chain_installation_root_test OK, verify-project-contracts PASS.
+
+Kraken funding not attached to positions (2026-10-18, fixed locally, not deployed): Kraken Multi-M
+realizes funding hourly into the USD balance (account-log `realized_funding`), and the gateway
+books it (38 rows in trading_funding by 13:00 UTC: STRK -0.025, WLD +0.009, NEAR -0.0009 USD,
+cash included). But those rows name the contract in lower case ("pf_strkusd"), so
+`SymbolMap::byVenueSymbol` missed and the payments were stored under the venue name instead of
+STRKUSDT: per-position Total Funding stayed 0. `parseAccountLog` now upper-cases the contract;
+venue_adapter_test PASS (302 checks; lower-case funding row reaches BTCUSDT, the 2026-10-15
+real-shape row now expects PF_HYPEUSD). The 38 stored rows keep the lower-case venue name
+until a data fix (not done; needs authorization).
+Note: another session activated release 20261018_121047-9bed096-dirty at 12:13:56 UTC (not
+this session); it does not contain addHeldTargets.
+
+Positions target weight 0% on HOLD (2026-10-18, fixed locally, not deployed): with the 25%
+relative rebalance band, risk kept NEAR/STRK/WLD on HOLD for 2026-10-17 and published an empty
+decision (`strategies: []`, planner 0 orders: correct, positions kept). The dashboard read
+target notionals only from the decision, so held assets showed target 0% and deviation -8.7%.
+`addHeldTargets` now adds HOLD assets from the risk diagnostics as approved_weight x
+reference_capital (10% of 226.57 USD). Go vet/tests OK (new TestHeldAssetsKeepTheirApprovedTarget).
+
+Original report: restarting market-data during the day re-runs the
+last completed day's ingestion with Binance's *current* 24h ticker ranking. The 09:58 restart
+re-ranked 2026-10-17 with volume that includes 2026-10-18 hours, added 4 new top-50 symbols
+(54 tracked) and downloaded their 100-day history (400 rows). Strategy/risk/planner/execution
+had already processed 2026-10-17 and ignored the repeat (no new orders), but the tracked
+universe now differs from a midnight-only run. Proposed fix: when the store's tracked date
+already equals the target date, skip the re-rank/download and only republish stored data.
+
+## VPS release 20261017_190518-9bed096-dirty: LIVE stop-loss 30% (2026-10-17, deployed)
+
+Integration of tasks 0, A (Codex: gateway stp reduce-only mark-triggered orders, tick rounding
+in decimal arithmetic, journal migration, fills by cliOrdId or journaled venue id, open stops
+in snapshots; 300 adapter checks), B (Codex: simulated exchange resting stops, low <= stop,
+min(open, stop), reduce-only cap, highest first; service persistence; README; Python service
+test) and C (Codex: dash-api `stopLoss` per position, newest of two, STOP labels, WARN
+"<asset>: no stop-loss" after 10 minutes in LIVE; API_CONTRACT.md) with task D. Claude added
+`resting_poll_interval_ms` = 15 s to the gateway (fills/open orders polled every 15 s instead of
+2 s when only accepted position stops are open) and adapted two adapter test polls plus a check
+that a resting stop is not polled within 15 s. Pre-release (WSL): build; 20 component tests
+(new position_stop_simulated_exchange_test registered); venue adapter 302 checks PASS; service
+test POSITION-STOP-SERVICE PASS; chain_installation_root, host_monitor, paper_comparison,
+standby, kraken_account_monitor, daily_service_logs OK; paper_trading_test PASS; 14 Go packages
+OK; web and api images build; dashboard source audit PASS (33 markers); Step59 PASS fingerprint
+94fdf8d8...8da2. README "Stop-loss (MODE=live)". Built 19:04 UTC (runtime b6e6e423..., dash-api
+6a80b0aa..., dash-web a15b1312...; release.json equal), chain.env copy
+backups/chain.env.before-stoploss-20261017, `LIVE_LONG_STOP_FRACTION=0.30` added, activated
+19:06 UTC from 20261017_145336.
+Incident found at activation: reconciliation reported Kraken with 0 positions and USD 102.15
+against 3 local positions; trading paused. Kraken read-only fills show NEAR 4, STRK 305 and WLD
+43 sold at 15:13 UTC without cliOrdId (outside the chain: manual close in Kraken), so no stop was
+placed. User decision: restart now and re-buy. 23:14 UTC: comparison stopped, `algo down`,
+data/live archived to backups/live-kraken2-20261017.tar.gz and removed,
+LIVE_ACCOUNT_NAMESPACE=kraken3, LIVE_INITIAL_CASH=102.1531 (monitor usdBalance), `algo up`.
+Reconciliation clean (102.15 USD, 0 positions, 0 orders); the 2026-10-16 decision replayed:
+BUY 4 NEAR at 4.8543, 305 STRK at 0.06452, 43 WLD at 0.49 (taker); after each fill a stop:
+NEAR 3.5469, STRK 0.05187, WLD 0.36169 requested -> 0.3616 at the venue tick (70% of the
+2026-10-16 closes 5.067 / 0.0741 / 0.5167); all three accepted. Kraken read-only: 3 long
+positions and 3 open orders type stop, reduceOnly true, triggerSignal mark, cliOrdId
+algo-kraken3-4/5/6. 13 containers healthy. Pending: the first daily move at the 00:00 UTC
+cycle (new stops at 70% of the 2026-10-17 closes, old ones cancelled after acceptance).
+
+## LIVE long stop-loss: task D, execution lifecycle (2026-10-17, local)
+
+`live_trading/execution_state_service/src/position_stops.{h,cpp}`: pure `planPositionStops`
+(one stop per held long at (1 - fraction) x the latest completed daily close for the whole
+position; a different price or size submits a new stop; older working stops are cancelled only
+when the newest matching stop is Accepted/PartiallyFilled; flat positions cancel their stops;
+a rejected stop is not resubmitted for the same price and size; held coins without a close are
+reported and keep their stop). `ExecutionEngine::applyPositionStopChanges` stages submits and
+cancels durably (persist) before sending, submits before cancels, accepts only position stops
+and open, not yet cancelled stops. `makeExecutionPlanningStateSnapshot` hides position stops
+from the order planner (no pending quantity, never a cancel candidate, revision unchanged by
+replacements); `TrackedOrder::pendingSignedQuantity` is 0 for them. Execution service:
+`--long-stop-fraction` (0 = off, [0, 1)); `maintainPositionStops` after a fill, an order
+update, the applied daily plan ("daily close": every held long moves to the new close) and a
+clean reconciliation (so existing positions get stops on the first start), never while the
+daily plan is requested but not applied (`dailyPlanPending`, the plan's revision would no
+longer match); cycle completion, the scheduled reconciliation skip and Manual Control ignore
+open position stops; LG_ALERT once per rejected stop, LG_WARN once per coin and day without a
+close. Chain: `LIVE_LONG_STOP_FRACTION` in chain.env (template 0), exported by ./algo in LIVE
+as LONG_STOP_FRACTION, compose passes `--long-stop-fraction ${LONG_STOP_FRACTION:-0}`.
+New `validation/position_stops_test.cpp` (placement, replacement order, following a lower
+close and a new size, flat cancels, rejected not retried, missing close, engine staging and
+planner exclusion). Checks (WSL): 19 component tests PASS, full build, `--help` lists the
+option, chain_installation_root_test OK, paper_trading_test PASS, Step59 PASS fingerprint
+94fdf8d8...8da2. Waiting for Codex tasks A (gateway), B (simulated exchange), C (dashboard);
+the task 0 guards still reject position stops in the gateway and the simulator.
+
+## LIVE long stop-loss 30%: design and task 0 contract (2026-10-17, local, in progress)
+
+User decisions: a real Kraken stop-loss for every LIVE long at 70% of the latest completed
+daily close, moved at every daily close (up or down, not a ratchet), reduce-only stop-market
+with mark trigger, following the position size, cancelled when flat; re-entry allowed; a
+replacement is submitted before the old stop is cancelled. Kraken `sendorder` has no attached SL, so it is a separate `stp` order. Design and the
+parallel task split (A gateway, B simulated exchange, C dashboard: Codex; D execution lifecycle:
+Claude) in `docs/codex/STOP_LOSS_DESIGN.md`. Task 0 done: `ExecutionOrder::position_stop_price`
+with validation, optional `position_stop_price` in the service wire and the Postgres snapshot,
+temporary guards (gateway rejects locally `POSITION_STOP_UNSUPPORTED`, simulated exchange
+rejects) so a position stop can never become a market sell; new
+`validation/position_stop_contract_test.cpp`. Checks: 18 component tests PASS, full build,
+venue adapter test 110 checks PASS, paper_comparison OK, Step59 PASS fingerprint 94fdf8d8...8da2.
+Not deployed.
+
+## VPS release 20261017_145336-9bed096-dirty: Collateral card (2026-10-17, deployed)
+
+User request: show that BTC is collateral, not a position, and remove the "Drop to
+Maintenance" card; publish again (authorized). dash-api, LIVE overview: the "Cash" card becomes
+"Collateral" = Kraken USD balance (monitor `usdBalance`), BTC quantity and its value after
+haircut, and the BTC share of both, e.g. "$102.15 USD · 0.0015458052 BTC ($124.68) · 55% BTC"
+(without a fresh monitor reading: "BTC $x (USD balance unavailable)"); the separate
+"In BTC Collateral" and "Drop to Maintenance" cards are gone (Margin Headroom stays). Go tests
+OK (TestKrakenCollateralCardsOnlyInLive updated), dashboard source audit PASS. Built 14:53 UTC
+(dash-api 27aef3ff..., runtime 8f902ca8..., dash-web 355ae68e...; release.json equal),
+activated 14:54 UTC from 20261017_142931 (rollback target): 13 containers healthy,
+reconciliation clean (cash 40.05 USD, 3 positions, 0 orders), LIVE ledger unchanged; release
+20261016_095921 and unused images removed; disk 8.3 GB (15%).
+
+## VPS release 20261017_142931-9bed096-dirty (2026-10-17, deployed)
+
+User explicitly authorized the release, removal of old images/releases and the launch. Contents:
+host monitor watching gateway-kraken in LIVE, dash-api Kraken marks / funding / total equity
+with the BTC share, Telegram active-alert summaries, comparison one-shadow-attempt-per-day,
+research options (`--rebalance`, `--ranker`, `--set`, `--btc-filter-length`, timed strategies),
+LIVE strategy/portfolio configs. Pre-release (WSL): build, 17 component tests,
+chain_installation_root, host_monitor, paper_comparison 15, standby, kraken_account_monitor,
+daily_service_logs OK; go vet + all Go tests OK; dashboard source audit PASS (33 markers);
+Step59 PASS with fingerprint 94fdf8d8...8da2. Built 14:28-14:29 UTC (runtime e233a717...,
+dash-api 7dc222af..., dash-web 0cbbae59...; release.json IDs equal), SHA256SUMS OK, activated
+14:31 UTC from 20261016_095921 (rollback target). After: 13 containers healthy; monitor
+restarted, host.json processes all RUNNING including gateway-kraken (no gateway/sim-exchange);
+comparison restarted; reconciliation clean (cash 40.05 USD, 3 positions, 0 orders; Kraken USD
+102.15 after fees, positions entered 62.09, collateral 124.64); gateway "real order submission
+ENABLED", namespace kraken2; LIVE ledger unchanged (3 fills, 3 open, same hashes).
+Cleanup: removed releases 20261013_193943, 20261013_212613, 20261014_175134, 20261014_200715,
+20261014_201725, 20261015_090303, dashboard-mobile-20261014 and pre-root-20261014_201026 (kept
+current and previous); `docker image prune -a` reclaimed 1.28 GB, `docker builder prune -a`
+2.13 GB. Disk 14 GB -> 8.2 GB used (15%). Rollback to 20261016_095921 reloads its images.tar.
+Standby `sync` to the new release.
+
+## VPS disk growth 2026-10-14..17 explained (2026-10-17, local fix)
+
+User question: disk use rose steadily from about 20% to 38% until the LIVE switch. Cause:
+`deploy/chain/comparison.py` (PAPER mode) ran `kraken_shadow.py` every 60 s until the day's
+public plan observation was complete; each run stores a new `raw/<timestamp>/` capture of
+Kraken's instruments and tickers (about 1 MB), and while a plan stayed unobservable it retried
+all day: `data/kraken_shadow/paper-forward` grew 6.2 GB (2026-10-16) -> 7.5 GB (2026-10-17),
+about 1.4 GB a day. The steps of the chart were releases and their activation backups
+(backups/ was 1.2 GB). Deleted with the PAPER data today; LIVE (`collect_live`) never runs the
+shadow tool, and no process, cron or timer writes there now (checked read-only). Fix for PAPER:
+one attempt per decision day (the marker records `unavailable`). Remaining growth to watch, read
+13:35 UTC: releases/ 2.2 GB (7 release folders of ~260 MB plus pre-root and mobile copies),
+containerd 4.3 GB and Docker 2.2 GB of images (765 MB reclaimable) and 2.6 GB of build cache
+(1.7 GB reclaimable); logs are bounded (two days / 50 MiB); data/ is 70 MB. The host monitor
+already turns HostResources WARN at disk >= 85% or < 15 GiB free (about 74% of 58 GB) and
+CRITICAL at >= 95%; the summary label is "VPS CPU, RAM or disk high". paper_comparison_test
+15 OK; notifier tests OK.
+
+## Telegram active-alert summaries (2026-10-17, local)
+
+User request: whenever a chat gets an alert update, also post the alerts still active in that
+chat (critical group: CRITICAL only; normal chat: the rest), as a count and bullet list of
+short names. New `internal/notifier/summary.go`: `SummarySink` (Telegram: `SendSummary`,
+silent, same chat routing; `sendMessage` extracted from `Deliver`), `Engine.SetSummarySource`
+(the notifier's source name, set from `DASHBOARD_NOTIFIER_SOURCE_NAME`: Watchdog / Kraken).
+After a sweep that delivered an alert change (not the daily portfolio), each changed chat gets
+"📋 <source> · Urgent alerts now: N" (critical group) or "Active alerts now: N" with
+"• <label>" lines, or "✅ All clear"; with no critical group one combined list marks
+"(urgent)". Listed: latest event not resolved and already reported (a CRITICAL alert inside
+its delay or below the minimum severity is not listed). Labels: `alertLabel` maps event
+types to short names ("gateway-kraken down", "NEARUSDT: order rejected", "reconciliation
+blocked", "Kraken account unreadable", ...), otherwise the alert's short title. A failed
+summary never fails the sweep (logged "active-alert summary not sent"). Each notifier lists
+its own source. Tests: TestActiveAlertSummaryPerChat, TestSingleChatSummaryMarksUrgentAndSkipsUnreported;
+all Go tests OK, gofmt clean. Not deployed (goes with the next release).
+
+## Kraken LIVE dashboard fixes: marks, funding, total equity, gateway status (2026-10-17, local)
+
+User report after the first real orders: (1) no funding shown, (2) BTC collateral shown apart
+from equity, (3) PnL disagrees with Kraken, (4) gateway shown as down. Causes and changes:
+- Gateway "down": `deploy/chain/monitor.py` always watched the PAPER services (gateway,
+  sim-exchange), so in LIVE both were STOPPED in host.json (and raised CRITICAL process alerts).
+  Now the default selection follows MODE in the chain.env next to the script
+  (`default_services`): LIVE watches gateway-kraken (`algotrading_exchange_gateway`) and no
+  sim-exchange; `--services` still overrides. dash-api's host telemetry list knows
+  gateway-kraken. The monitor unit must be restarted after a mode switch.
+- PnL: LIVE positions were marked at the latest Binance daily close (NEAR 5.067, the
+  2026-10-16 close). New `real_kraken_marks.go`: Kraken public tickers through the symbol map,
+  source price = venue mark x fixed scale, cached 15 s; Binance close only as fallback;
+  `priceSource` shown in the Active Positions title. PnL and Net PnL were equal because Kraken
+  fees arrive from the account history every 300 s after the fill (fills carry commission 0).
+- Funding: the runtime already books funding per position (FundingPayment, position ledger);
+  dash-api now sets `fundingUsd` and `fundingAvailable` in LIVE, adds funding to Net PnL
+  (unrealized + realized - fees + funding), and shows Kraken's current rate per position
+  (`fundingRateHourlyPct`/`fundingRateAnnualPct` = fundingRate / mark; + = longs pay; the
+  public `fundingRate` is USD per venue unit per hour, e.g. BTC 0.60 at 81,400 = 0.00074%/h).
+  Positions page: Funding Rate column (%/y, %/h on hover, red when the position pays) and
+  Total Funding card.
+- Equity: in LIVE the valuation counts the BTC collateral after haircut (the risk service's
+  sizing capital), so Total Equity, current weights and leverage use it; the "BTC Collateral"
+  and "Sizing Capital" cards are replaced by "In BTC Collateral" (share of Total Equity); the
+  daily equity curve adds each day's `collateral_usd`.
+Checks: host_monitor_test 4 OK (1 Docker test skipped); go vet and all Go tests OK
+(golang:1.23-alpine, --network none; new TestKrakenMarksUseTheSymbolMapScale and
+TestLiveValuationCountsCollateralAndFunding, updated TestKrakenCollateralCardsOnlyInLive);
+dash-web (tsc -b + vite) and dash-api images build. Not deployed: needs a release, then
+`systemctl restart algotrading-monitor`.
+
+## VPS switched to Kraken LIVE, real orders enabled (2026-10-17)
+
+User request: remove all PAPER history from the VPS except CPU/RAM/disk telemetry, and run
+the chosen LIVE strategy with test thresholds RSI(8) > 50 / < 40 until overbought markets
+return. Steps (explicitly authorized; the user allowed the remote writes after one
+permission-classifier block):
+- Kraken read-only check at 12:12 UTC: 0 open orders (the test limit order was cancelled),
+  0 positions, USD 102.1695, BTC 0.0015458052.
+- New configs `config/strategies/pure_rsi_8_50_40_volume_rank.json` (ranker SMA QuoteVolume
+  25) and `config/portfolio/pure_rsi_equal_weight_rel25.json` (equal weight 0.10,
+  relative_threshold 0.25), checked locally with the fast baseline, installed in
+  /algoTrading/config.
+- Comparison service stopped, `algo down` 12:13 UTC; PAPER archive downloaded to
+  `storage/vps_paper_archive/vps_paper_archive_20261017.tar.gz` (14.3 MB, 1,623 entries, SHA-256
+  44bc7a32...e915f equal on both sides).
+- Deleted on the VPS: data/postgres, nats, market, venue, manual, comparison, kraken_shadow
+  (7.5 GB), dashboard alerts/audit/notifier/watchdog, every chain log folder except
+  kraken-notifier, all backups (1.2 GB) and reports; log receiver restarted. Kept:
+  data/telemetry, kraken_account, receiver, dashboard/kraken-notifier, logs/kraken-notifier,
+  STATE_FORMAT, config, secrets, releases. Disk 22 GB -> 13 GB used.
+- chain.env (copy in backups/chain.env.before-live-20261017): MODE=live, the two new files,
+  RSI_ENTRY=50, RSI_EXIT=40, appended LIVE_INITIAL_CASH=102.1695, LIVE_ACCOUNT_NAMESPACE=kraken1,
+  LIVE_ORDER_SUBMISSION=disabled, LIVE_DEAD_MANS_SWITCH_SECONDS=0, LIVE_COMMISSION_RATE=0.0005;
+  PAPER_COMPARISON_FILE kept.
+- `algo up` 12:50 UTC: 13 containers healthy (gateway-kraken instead of gateway/sim-exchange),
+  fresh state in data/live. Reconciliation clean: cash 102.17 USD, 0 positions, 0 open orders,
+  collateral 124.56 USD after haircut. Market data downloaded the 2026-10-16 day (100 ranked,
+  50 tracked); strategy started from a fresh signal state (100 warm-up days) with 3 active
+  signals; risk sized on 226.73 USD; planner: BUY NEAR, STRK, WLD 22.67 USD each; the gateway
+  rejected all three locally ("order submission disabled"); Kraken still 0 orders/positions.
+  Comparison restarted ("Kraken LIVE comparison refreshed"); notifier TELEGRAM healthy;
+  standby `sync`: MODE=live with the new files.
+First real orders (user's explicit authorization, 2026-10-17: enable submission and relaunch
+so yesterday's decision is executed): 12:58 UTC `algo down`, `data/live` removed (one hour old,
+only the three rejected orders), LIVE_ACCOUNT_NAMESPACE=kraken2, LIVE_ORDER_SUBMISSION=enabled,
+`algo up`. Startup reconciliation clean (102.17 USD, 0 positions, 0 orders); the 2026-10-16
+decision was replanned (BUY NEAR, STRK, WLD 22.67 USD each) and executed at market, taker:
+4 PF_NEARUSD at 5.0535, 305 PF_STRKUSD at 0.06631, 43 PF_WLDUSD at 0.5036 (venue step
+rounding down: 4.47 -> 4 NEAR, 305.98 -> 305 STRK, 43.88 -> 43 WLD). Execution cash 40.08 USD,
+3 open positions; Kraken read-only: 0 open orders, 3 long positions of those sizes. Fills carry
+commission 0; Kraken fees/funding are booked from the account history every 300 s. STRK filled
+10.5% below the Binance 2026-10-16 close (0.0741) because it ran at 13:00 UTC, not at the open.
+Earlier account fills (PF_XBTUSD, PF_HYPEUSD) were recorded as pre-existing, not attributed.
+Comparison service restarted. From now on each 00:00 UTC cycle trades automatically.
+
+## User decision: LIVE strategy (2026-10-17)
+
+PureRSI RSI(8) > 80 / < 65, top 20 and ranking by SMA(quote volume, 25), max 10 signals,
+10% equal weight with a 25% relative rebalance (resize to 10% below 8% or above 13.3%), no
+volatility target, no BTC filter. Recorded in docs/ROADMAP.md (top of Next steps) with what the
+chain needs; the config files are not created yet.
+
+## PureRSI 8/80/65, 10% equal weight: relative rebalance thresholds (2026-10-17)
+
+Same setup as the variants below (volume ranking, Binance perps 2020-2026, fee 0.05%),
+`--sizer equal-weight --rebalance relative --rebalance-threshold 0.25|0.5|1.0|1.5`. The rule
+compares |10% - current weight| with threshold x current weight, so it is asymmetric:
+20% resizes below 8.3% or above 12.5%, 25% below 8% / above 13.3%, 50% below 6.7% / above
+20%, 100% only below 5%, 150% only below 4% (winners never trimmed). Final USD / CAGR / max
+DD / vol / Sharpe / Calmar: none 2,151,606 / 56.2% / 46.7% / 46.5% / 1.20 / 1.20; 20%
+2,538,532 / 60.0% / 30.8% / 35.5% / 1.50 / 1.95; 25% 2,888,259 / 63.0% / 30.5% / 36.2% /
+1.53 / 2.07; 50% 3,056,657 / 64.4% / 32.0% / 38.8% / 1.47 / 2.01; 100% and 150% equal to no
+rebalance (2,151,501 / 2,151,606). The gain comes from trimming winners. Page:
+`storage/backtests/sensitivity_results/pure_rsi_comparison_binance_perps_2020/PureRSI_8_80_65_ew10_rebalance_thresholds.html`.
+
+## PureRSI 8/80/65: sizing and rebalance variants (2026-10-17)
+
+User request: PureRSI RSI(8) > 80 / < 65, always ranked by SMA(volume, 25), four variants
+plus the current one with a BTC filter. `algotrading_research_html --rebalance` now applies
+to both sizers (`none|absolute|relative`; default none for equal weight, absolute for
+volatility target, so earlier commands keep their behaviour), and `--btc-filter-length N`
+gives PureRSI a `BenchmarkAboveSMAFilter` on new signals (study option; PureRSI CSV columns
+unchanged). Studies `pure_rsi_8_80_65_*_volrank_binance_perps_2020_fee0.0005`. Final USD /
+CAGR / max DD / realized vol / Sharpe / Calmar:
+- EW 10%, no rebalance: 2,151,606 / 56.2% / 46.7% / 46.5% / 1.20 / 1.20
+- EW 10%, 20% relative rebalance: 2,538,532 / 60.0% / 30.8% / 35.5% / 1.50 / 1.95
+- VT 20%, no rebalance: 699,648 / 32.7% / 19.1% / 22.7% / 1.36 / 1.71
+- VT 20%, 20% relative rebalance (deployed rule): 590,818 / 29.5% / 21.3% / 22.2% / 1.27 / 1.38
+- the same with BTC > SMA50 for new signals: 863,397 / 36.8% / 27.9% / 29.3% / 1.20 / 1.32
+- reference BTC held while close > SMA50 (close-to-close, 0.05% per switch): 2,165,703 /
+  56.4% / 58.1% DD; BTC buy and hold +1,013%, DD 77%.
+Page: `storage/backtests/sensitivity_results/pure_rsi_comparison_binance_perps_2020/PureRSI_8_80_65_sizing_variants.html`.
+After the `--rebalance`/`--btc-filter-length` and `btcFilterLength` changes: full build,
+research_html_report_gate PASS, research_scenario_gate PASS.
+
+## BargainChaser and MRRSILong with a BTC uptrend filter (2026-10-17)
+
+User request: no new entries unless BTC close > SMA(50). New parameter `btcFilterLength`
+(default 0 = no filter, so earlier results are unchanged) in both shared definitions; it
+adds the library's `BenchmarkAboveSMAFilter(benchmark, length)` through new optional
+`marketFilters` arguments of `TimedResearchStrategy`, `BargainChaserStrategy` and
+`RSIMeanReversionStrategy` (the base class already checks market filters before entries;
+open positions still exit after their bars). Run with `--set btcFilterLength=50`, 10% equal
+weight, volume ranking, same data: BargainChaser 265,195 -> 244,401 USD (CAGR 15.2% ->
+13.9%, max DD 31.4% -> 23.7%, Calmar 0.48 -> 0.58, exposure 32% -> 19%; 2024 -10.8 -> -7.4,
+2026 -17.1 -> -5.8); MRRSILong 121,214 -> 103,073 (CAGR 2.8% -> 0.4%, max DD 28.4% ->
+30.1%). Added (dotted) to `All_strategies_equal10_volume_rank.html`.
+
+## All strategies, 10% equal weight, ranked by SMA(volume, 25) (2026-10-16)
+
+User request: every strategy with equal weight and, except PureMom, candidates ranked by
+SMA(quote volume, 25) instead of their own ranker. New `algotrading_research_html --ranker
+own|volume` (default own): `research_studies::makeStudyRanker` replaces the ranker of every
+HTML and shared definition except PureMom when `volume` is chosen. `--strategy ATRBreakout`
+and `MRShort` are now selectable, with the multi-strategy values (ATRBreakout 3 bars / ATR(10)
+x 0.875, matching the August freeze; MRShort RSI(5) > 65, BTC < SMA50, entry close - 0.3 ATR(10),
+7 bars); MRShort also passes the benchmark symbol. Studies `*_equal10_volrank_binance_perps_2020_fee0.0005`.
+Sorted by CAGR/vol: XHBreakout 1.47 (40.3% CAGR, DD 33.1%); PureRSI 7/80/70 1.44 (57.4%,
+31.4%); XHBreakout_ATR 1.21 (51.2%, 43.3%); PureRSI 8/80/65 1.21 (56.2%, 46.7%); Donchian
+1.20 (76.9%, 50.4%); ATRBreakout 0.97 (22.6%, 49.1%); MRShort 0.74 (20.9%, 27.5%, +45.8% in
+2025 and +74.4% in 2026); BargainChaser 0.56; PureMom 0.15; MRRSILong 0.13. MRShort is
+negatively correlated with every long strategy (-0.08 to -0.22). Against each strategy's own
+ranking (equal weight): PureRSI 7/80/70 2.13M -> 2.27M USD, Donchian 7.50M -> 5.07M,
+BargainChaser and PureMom unchanged in practice, MRRSILong 139k -> 121k. After all research
+changes (including `--ranker`): full build, research_html_report_gate PASS,
+research_scenario_gate PASS.
+Page: `storage/backtests/sensitivity_results/pure_rsi_comparison_binance_perps_2020/All_strategies_equal10_volume_rank.html`.
+
+## All research strategies on Binance perpetuals 2020-2026 (2026-10-16)
+
+User request: compare DonchianBreakout, PureMom, BargainChaser and MRRSILong with their
+research defaults against PureRSI, each with the 20% vol target and 10% equal weight
+(same data/window/fee). `algotrading_research_html --strategy PureMom|BargainChaser|MRRSILong`
+now takes them from `research_studies::makeStrategyDefinitions(benchmark)` (only when named,
+`all` unchanged); `makeStrategyDefinitions` gained the PureMom BTC-filter symbol (default
+"BTC", so BTCUSDT works with Binance data); BargainChaser uses the multi-strategy study's
+1-bar exit (the shared definition had 2). Defaults: Donchian lookback 30, no market filter,
+ROC 30 ranking; PureMom ROC 7, 7 bars, BTC > SMA50, max 3 positions; BargainChaser fall
+> 10% with close > SMA50, ROC(1) ascending, 1 bar; MRRSILong RSI(3) < 10, ROC 30 ranking,
+1 bar. Sorted by CAGR/realized vol: PureRSI 7/80/70 VT 1.75 (37.0% CAGR, DD 21.3%);
+PureRSI 7/80/70 EW 1.40 (56.0%, 31.4%); Donchian EW 1.34 (87.3%, 51.2%, exposure 84%);
+PureRSI 8/80/65 VT 1.27; PureRSI 8/80/65 EW 1.20; Donchian VT 0.92 (25.1%, 29.7%);
+BargainChaser EW 0.55; MRRSILong EW 0.24; PureMom EW 0.15; PureMom VT, BargainChaser VT,
+MRRSILong VT about 0.1 (CAGR 1-2%). Daily-return correlation with PureRSI VT: Donchian 0.52,
+PureMom 0.38, BargainChaser 0.07, MRRSILong 0.03. Page:
+`storage/backtests/sensitivity_results/pure_rsi_comparison_binance_perps_2020/All_strategies_comparison.html`.
+
+## PureRSI sizing comparison: 20% vol target vs 10% equal weight (2026-10-16)
+
+Same data/window/fee as the two studies below; equal weight = default `--sizer equal-weight`
+(10% per signal, entry/exit-only), studies `pure_rsi_8_80_65_equal10_*` and
+`pure_rsi_80_70_7_equal10_*`. Final USD / CAGR / max DD / realized vol / Sharpe / Calmar:
+8/80/65 VT 544,150 / 27.9% / 21.2% / 22.0% / 1.23 / 1.32; 7/80/70 VT 873,438 / 37.0% /
+21.3% / 21.1% / 1.59 / 1.74; 8/80/65 EW 2,093,721 / 55.6% / 46.7% / 46.4% / 1.19 / 1.19;
+7/80/70 EW 2,133,710 / 56.0% / 31.4% / 40.1% / 1.30 / 1.79. Equal weight carries about twice
+the volatility; per unit of volatility 7/80/70 VT is best (CAGR/vol 1.75). Chart and tables:
+`storage/backtests/sensitivity_results/pure_rsi_comparison_binance_perps_2020/PureRSI_sizing_comparison.html`.
+
+## PureRSI 8/80/65 (user decision for LIVE), same backtest (2026-10-16)
+
+User decision 2026-10-16: RSI length 8, entry > 80, exit < 65 (candidate #1 of
+`PureRSI_ValidP.docx`); it replaces the 7/80/70 of the TO-DO table. `algotrading_research_html`
+gained `--set name=value` (repeatable; overrides baseline parameters of the selected strategy,
+unknown names and invalid combinations rejected; grid ranges unchanged). Same data and
+options as the 7/80/70 run below plus `--set rsiLength=8 --set rsiEntry=80 --set rsiExit=65`,
+study `pure_rsi_8_80_65_voltarget20_rel20_binance_perps_2020_fee0.0005`: 100,000 ->
+544,150 USD (+444%, 27.9% annualized), max DD 21.2% (710 days), Sharpe 1.23, Sortino 2.13,
+Calmar 1.32, 560 trades, win rate 41%, PF 1.48, exposure 62%. Calendar years (8/80/65 vs
+7/80/70): 2020 +85.1/+83.2, 2021 +78.8/+98.4, 2022 +13.8/+8.5, 2023 +51.2/+53.5,
+2024 -6.7/+8.2, 2025 +11.1/+27.1, 2026 -7.7/+4.9. Interactive chart with both and BTC:
+`reports/PureRSI_equity_interactive.html` of the study (also one for 7/80/70).
+
+## PureRSI 80/70/7, 20% vol target, 20% relative resize, Binance perpetuals 2020-2026 (2026-10-16)
+
+User request: backtest of all Binance with the user's frozen parameters (RSI 7, entry 80,
+exit 70, ranker RSI 7; source: `algoTrading - copia/TO-DO.txt`, 2026-08-10). Data:
+`tools/binance_perp_daily.py --start 2019-11-01` ->
+`storage/databases/1d_binance_perp_quote_20191101.csv` (654 USDT perpetuals with data,
+2019-11-01..2026-10-15; symbols per year 3/69/113/133/228/357/601/654 for 2019..2026).
+`algotrading_research_html` gained `--rebalance absolute|relative` (default absolute,
+unchanged), so the study matches the deployed portfolio file. Run: `--start 20191201
+--end 20261015 --benchmark BTCUSDT --sizer volatility-target --target-volatility 0.20
+--rebalance relative --rebalance-threshold 0.20 --fee-taker 0.0005`, study
+`pure_rsi_80_70_7_voltarget20_rel20_binance_perps_2020_fee0.0005`. Result: 100,000 ->
+873,438 USD (+773%, 37.0% annualized), max DD 21.3% (492 days), Sharpe 1.59, Sortino 2.99,
+Calmar 1.74, 761 trades, win rate 38%, PF 1.61, exposure 62%. Calendar years: 2020 +83%,
+2021 +98%, 2022 +8.5%, 2023 +54%, 2024 +8.2%, 2025 +27%, 2026 (to 15 Oct) +4.9%. BTCUSDT
+over the same window +1,013% with 77% max DD. Monte Carlo of the closed trades (seeded
+bootstrap without order) shows 30% DD in 63% of paths. Not modelled: funding, slippage,
+contracts already removed from exchangeInfo (survivorship, strongest in 2020-2022), Kraken
+availability. The option is opt-in (default path unchanged); research_html_report_gate PASS
+after the change.
+
+## VPS release 20261016_095921-9bed096-dirty (2026-10-16, deployed)
+
+User explicitly authorized the release and the follow-up VPS steps. Built 09:59 UTC
+(runtime 4f8eb8de..., dash-api a4cb58fd..., dash-web dc5b6c4b...; release.json IDs equal
+the fresh builds); uploaded, SHA256SUMS OK, activated 10:01-10:03 UTC from 20261015_090303
+(rollback target). Contents: equity-row fix, Hyperliquid gateway mode removal, dashboard
+chain boundary, repo cleanup, 20% relative rule (config file only; the VPS portfolio file
+still has the absolute 0.02 threshold until adopted), heartbeat files (installed units
+unchanged, no NOTE), chain_profile/standby sources, comparison-baseline top-50 fix and
+the 5m critical delay of the general notifier. After activation: 14 containers healthy,
+heartbeat timer active, risk restored its checkpoint (last decision 2026-10-15); fills
+25, open 3, closed 8, simulated positions and cash hashes unchanged (only today's
+reconciliation check count 9 -> 11 from the restart rerun). Equity rows before repair:
+20261013 cash 77,252.91 / equity 92,195.40 and 20261014 equity 91,694.59 (overwritten).
+Follow-up VPS steps (10:45-10:52 UTC, after the user allowed the remote writes):
+- Equity rows: `algo backup` (backups/20261016_104509.tar.gz), DELETE 2, restart execution:
+  "Backfilled 2 days of equity history from the fills"; 20261013 cash 45,535.43 / equity
+  92,230.58, 20261014 equity 91,699.43 (= the VPS sizing capital); 20261015 kept.
+- Portfolio: copies of the file and chain.env in backups/ (`*.20261016`); rebalance set to
+  relative_threshold 0.20; RISK_ADOPT_PORTFOLIO_CONFIG=yes, up (risk ALERT "Portfolio
+  config changed on purpose"), back to no, up (risk ready), comparison restarted (previous
+  study archived as archive-6ec3b412f06b, new fingerprint eebaabf1...).
+- Notifier: NOTIFIER_SINK=TELEGRAM (same up); starts with sink TELEGRAM, criticalDelay 5m,
+  store data/dashboard/notifier/telegram. Its bootstrap over 14,943 old events needed five
+  10 s sweep timeouts (progress is kept per event), then completed: 14,931 history events
+  suppressed and one active alert sent (WARN "Risk decision checkpoint unavailable").
+- That WARN is real and expected until the next decision: the adopted risk checkpoint now
+  carries the new portfolio identity while the stored 2026-10-15 risk diagnostics carry the
+  old one, and dash-api's decodeRiskDiagnostics requires equality. Trading is unaffected
+  (risk healthy and ready); it should resolve with the 2026-10-16 close decision at
+  00:00 UTC. Possible later improvement: show older-identity diagnostics as such instead of
+  failing the read.
+- Standby `sync` from Windows: release 20261016_095921, portfolio relative_threshold 0.20.
+All 14 containers healthy after the steps.
+
+## General watchdog alerts to Telegram, CRITICAL after 5 minutes (2026-10-16, local)
+
+User decision: every VPS watchdog alert goes to Telegram (CRITICAL to the critical group,
+the rest to the normal chat, the existing `DASHBOARD_TELEGRAM_CRITICAL_CHAT_ID` routing),
+and a CRITICAL one only once it has lasted about 5 minutes. Read-only look at the VPS test
+sink (`data/dashboard/notifier/test-sink.jsonl`, 14,413 lines since 2026-10-13): each
+restart on 2026-10-15 opened and resolved about ten CRITICAL alerts within a minute
+(TRADING_PROCESS_UNAVAILABLE per service, SOURCE_CRITICAL DailyTradingProgress/PostgreSQL).
+New notifier option `DASHBOARD_NOTIFIER_CRITICAL_DELAY` (`Engine.SetCriticalDelay`,
+default 0, so kraken-notifier is unchanged; 5m for the general notifier in
+deploy/chain/compose.yml): a not yet reported CRITICAL alert is left unprocessed until it
+has been active that long from the start of its episode; resolved earlier, it and its
+recovery are suppressed (RESOLVED_WITHIN_CRITICAL_DELAY); later events of a held alert
+wait with it; WARN, recoveries of reported alerts and the bootstrap of active alerts are not
+delayed; an unreadable time sends at once. The sweep log gains `deferred`. New Go test
+TestCriticalDelayHoldsBriefOutagesAndReportsLongOnes. Checks: gofmt clean on the changed
+files, go vet and all Go tests OK (golang:1.23-alpine, --network none),
+chain_installation_root_test OK, verify-project-contracts OK.
+VPS pending (authorization): release, then `NOTIFIER_SINK=TELEGRAM` in
+`/algoTrading/chain/chain.env` and restart only the notifier; its first Telegram start
+sends the alerts active at that moment once.
+
+## Comparison baseline: held coin outside the top 50 (2026-10-16, local, not deployed)
+
+The in-process TradingEngine used one MarketData for signals and for sizing/rebalance
+prices. The comparison baseline (`research/src/common/paper_baseline.cpp`) fills it with
+the day's top-50 entry universe, so a coin still held or signalled after leaving the top 50
+had no close(T): the threshold rules abort ("Current price must be positive") and the
+volatility sizer lacks its bar. The LIVE chain is not affected: its risk service loads every
+signalled and held symbol. Fix: `DecisionEngine::onBarClose` / `TradingEngine::onBarClose`
+gain a split form (signalData for `updateSignals`, sizingData for
+`calculateRebalancePlan`); the old one-argument form passes the same data twice, so the
+backtester, fake-live tool and canonical replay are unchanged. The baseline keeps its
+signal input as before and adds close(T) of every signalled/held coin to the sizing input,
+as the risk service does. New paper_comparison_test case (held ETH with an active signal,
+absent from the ranking): the old binary aborted (SIGABRT); now it is priced and resized.
+Checks (WSL): full build; 17 component tests; paper_comparison_test 15 OK;
+paper_trading_test PASS; standby_test OK; research_html_report_gate and
+research_scenario_gate PASS; Step59 PASS with the unchanged fingerprint 94fdf8d8...8da2.
+
+## Local standby, phase 1: the VPS's next orders computed locally (2026-10-16, local)
+
+User request (ROADMAP Next steps 5): if the VPS is down, compute here what the chain would do.
+New `standby/` (README there): `standby.py sync` copies the deployed profile read-only over
+SSH (MODE, STRATEGY_FILE, PORTFOLIO_FILE, LIVE_COMMISSION_RATE lines of chain.env, those two
+config files, the Kraken symbol map, the current release id) into ignored
+`standby/profile/`; `standby.py plan` downloads 130 daily klines of every Binance USDT
+perpetual with status TRADING into the market-data SQLite schema (ohlcv_data + top-100
+quote-volume ranking per day), reads the Kraken account with the read-only key (or
+`--account-file`), runs `build/standby/algotrading_standby_plan` and prints the orders with
+Kraken symbol and contracts; it never sends (`"sent": false`). The planner is the chain's
+service split with the canonical replay's components: StrategySignalEngine over 30 settle
+days + T with the strategy service window (top 50 + active signals, 100 days),
+PortfolioRiskEngine at close(T) with the real account and the risk service window
+(signalled + held symbols, lookback + 5 days), NotionalOrderPlanner at the exact close(T).
+The account mapping follows live_venue_adapter.cpp (cash = USD balance - entry value,
+source units, collateral after haircut). A first version on the in-process TradingEngine
+failed when a held coin left the day's top 50 (that engine prices from the top-N market data
+only); the same gap in the comparison baseline was fixed afterwards (section above). New `research/src/common/chain_profile.*`: profile builders shared by the
+baseline (moved from paper_baseline.cpp unchanged) and the standby (strategy/risk builders
+mirroring the service loaders).
+Validation against the VPS (comparison manifest, read-only; PAPER account before each
+decision): closes 20261013/14/15 give the VPS's sizing capital (92,230.58 / 91,699.43 /
+91,992.67), signals, actions/target weights and order amounts to the cent (for example
+20261014 sell AVAX 2,926.81 and ONDO 2,842.87 USD; 20261015 buy 1000PEPE 1,932.50 and WLD
+1,890.03). `sync` ran from Windows (WSL ssh had no VPS host key). Checks (WSL): full build;
+new validation/standby_test.py (Kraken account mapping, unmapped symbols) OK;
+paper_comparison_test 14 OK after the chain_profile move; chain_installation_root OK;
+research_html_report_gate PASS; Step59 PASS with the unchanged fingerprint 94fdf8d8...8da2.
+Pending: phase 2 (sending orders from local) once the chain trades Kraken LIVE; run `sync`
+after each release.
+
+## 20% relative resize rule (2026-10-15, local, not deployed)
+
+User decision: a held position is resized only when its target weight differs from its
+current weight (quantity x current price / strategy capital) by at least 20% of that
+weight; entries, exits and side changes always happen. Before: the deployed
+`pure_rsi_vol_target.json` used an absolute 2-point `threshold` (0.02). New header-only
+`lib/src/rebalance/relative_threshold_rebalance_policy.h` (`RelativeThresholdRebalancePolicy`),
+config type `relative_threshold`, read by portfolio_risk_service and the fast baseline
+(`research/src/common/paper_baseline.cpp`, used by comparison.py), so PAPER and its
+"Expected" line apply the same rule. `config/portfolio/pure_rsi_vol_target.json` now has
+`{"type": "relative_threshold", "threshold": 0.20}`. The HTML study's
+`--rebalance-threshold` keeps its absolute meaning. New component test
+relative_threshold_rebalance_test (10% holds in (8%, 12%), 5% in (4%, 6%), shorts, price
+drift, entries/exits/reversals). Checks (WSL): full build; "All 17 component tests pass";
+paper_comparison_test 14 OK (runs the baseline with the new file); chain_installation_root
+OK; Step59 PASS with the unchanged fingerprint 94fdf8d8...8da2 (the canonical replay uses
+entry/exit-only rebalancing). VPS: needs the release (risk/baseline must know the type), then
+editing /algoTrading/config/portfolio/pure_rsi_vol_target.json and the adopt procedure of
+deploy/chain/README.md "Changing the portfolio sizer"; comparison.py then archives the study.
+
+## Off-host heartbeat for "VPS down" alerts (2026-10-15, installed on the VPS)
+
+Every Telegram alert is sent from the VPS itself, so a host that is down, frozen or
+offline sent nothing. New host units `deploy/chain/systemd/algotrading-heartbeat.{service,
+timer}`: once a minute one empty outbound HTTPS GET to the user's healthchecks.io check
+(Period 1 min, Grace 5 min, Telegram integration; the user created the account and
+connected Telegram). healthchecks.io alerts when pings stop and when they return. The ping
+URL is the only secret: `secrets/heartbeat.curl` (bare URL or `url = "..."`), passed as a
+systemd credential (`LoadCredential`) to `chain/heartbeat_ping.sh`, which hands it to curl
+on stdin: never in argv, environment or logs; DynamicUser, no capabilities, ProtectSystem=strict, 32 MB. Independent of Docker and
+trading. `algo install` now copies systemd/*.timer and reports differing timers; `algo ps`
+shows "off-host heartbeat: running|STOPPED|not configured". README section "Off-host
+heartbeat" has the enable commands. Checks (WSL): bash -n algo; chain_installation_root_test
+(rendered root paths); `systemd-analyze verify` of the rendered units exit 0 (systemd 249;
+VPS has 255 and curl 8.5, read-only check); curl reads the URL from the config file
+(local HTTP server saw the path), heartbeat_ping.sh accepts five URL formats (bare,
+spaces, quotes, url =, blank line/CR) and rejects a file without https:// without
+printing it; a failed ping prints no URL.
+VPS (user-authorized, 18:12-18:25 UTC): the user created secrets/heartbeat.curl (never
+opened by the agent); the rendered units went to /etc/systemd/system and the script to
+/algoTrading/chain/heartbeat_ping.sh (by hand, outside a release; the next release ships
+the same files). `systemd-analyze verify` OK, timer enabled; the first attempts failed
+(the bare URL was not valid curl config, hence the script), then 18:24:32 and 18:24:34
+Result=success, next run every minute. No container restarted (all 14 healthy, up 9 h).
+`algo ps` shows the heartbeat line only after the next release (algo itself unchanged on
+the VPS). Noted: /etc/systemd/system/algotrading-kraken.service has an executable bit
+(systemd warns; harmless, not changed).
+
+## Repo cleanup round A/B1/C/B2/D and equity-row fix (2026-10-15, local, not deployed)
+
+Tasks of storage/cleanup_tasks_20261015.txt; each task's full notes, file lists and
+outputs are in storage/cleanup_notes/{A,B1,C,B2}.md. No VPS change, release or commit.
+- A (storage and unused files): 229 approved paths removed (old releases, temporary
+  profiles/images, old campaigns, finished logs; ~1.98 GiB, storage 9.7G -> 7.7G) plus six
+  unused tracked helpers: config/database/database_{config,config_sim,schema}.json and
+  tools/historical_replay/{apply_t18_execution_account_snapshot_barrier,
+  apply_t18_replay_event_time_semantics,t23_cleanup_current}.py (empty config/database/
+  removed in D). Kept: datasets, backtests, Kraken shadow evidence, current and previous
+  release, recent PAPER campaigns. The "PREGUNTAR" group of A-inventory.md (Parquet,
+  VPS backups/snapshot, tax scripts, historical runner family) is untouched and still
+  needs the user's decision. 49 references in older entries of this file name removed
+  logs/captures (mostly storage/pipeline_risk_step59.log, storage/*_build.log and
+  storage/paper_validation/algotrading-paper-*); their accepted results stand, the files
+  are no longer available (list: storage/cleanup_notes/A-reference-audit.json).
+- B1, accounting fix: `trading_equity_daily` was upserted, and after every ExecutionState
+  restart NATS redelivers the last completed day's market update, so `recordEquityDay(T)`
+  rewrote close(T)'s row with the live account that already holds T+1's open fills. Now
+  `PostgresStateStore::insertEquityDay` (`ON CONFLICT(date) DO NOTHING`, returns whether it
+  wrote): the first row of a day wins, like trading_daily_collateral (fees/funding of T's
+  fills arrive minutes after the fill, long before the row is written at ~00:01 T+1). Day
+  rules and backfill moved unchanged to execution_state_service/src/equity_history.*;
+  Manual Control helpers to manual_requests.*. New equity_history_test (component tests
+  now 16) and an `equity` phase in transport_persistence_integration_test against real
+  PostgreSQL 16 (that test was broken before: its include list predated contracts/
+  position_ledger; fixed). Rebuild with the VPS fills/closes (read-only export):
+  20261013 cash 45,535.43 / equity 92,230.58; 20261014 equity 91,699.43 (= original row).
+  Two stale source audits (execution_state, strategy time handler) were already failing
+  at HEAD and now match the source.
+- B1, removals requested by the user: gateway `--mode hyperliquid-dry-run` (and its
+  NOTIONAL_ORDER_PLAN consumer); the dashboard Hyperliquid TESTNET path
+  (internal/integration/hyperliquid/, provider venue_{foundation,public,rules,
+  symbol_mapping}.go, `/api/venue-*`, three readiness requirements, frontend types,
+  dashboard/scripts/step33..37, DASHBOARD_HYPERLIQUID_* settings). The real provider
+  (API and watchdog) now accepts only PAPER (SIMULATED/PAPER/backend) or Kraken LIVE
+  (KRAKEN/LIVE/venue) via `provider.ValidateChainBoundary`, which is what deploy/chain sets.
+  The standalone dashboard overlays docker-compose.real*.yml no longer start as they are
+  (header says so); proposal: retire that standalone deployment track in favour of
+  deploy/chain.
+- C (Python and chain scripts): kraken_account.py, kraken_account_monitor.py,
+  deploy/chain/monitor.py, logging/clean_daily_logs.py restructured with byte-identical
+  outputs (C-equivalence.py: 25 normalization/error cases, monitor bytes/SQLite rows
+  through failure/recovery/restart, 32 container states).
+- B2 (research/src): the HTML, BTC moving-average and XH studies shared ~1,000 copied lines
+  each; now research/src/common/parameter_sweep.* (also used by the initial-parameter study)
+  and sensitivity_study.*; scenario_reports.cpp split into scenario_reports + plotly_chart_html;
+  dead backtest_helpers functions, a commented-out block and migration wording removed
+  (5,834 lines removed from existing files). 15 study runs before/after: 192 CSV/HTML/JSON
+  outputs byte-identical. research_html_report_gate.py fixtures follow the new names.
+- Found, not fixed: `research/replay.py fast` fails locally ("undefined symbol
+  TradingEngine::onBarClose") because it prepends deploy/historical_replay/.runtime_bundle/lib,
+  whose libalgolib (2026-10-11) predates the `extraCapital` parameter; with that path
+  disabled the 30-day run matches RealTest 1/1. validation/t19_realtest_gate_audit.sh
+  requires research/src/realtest.h (moved to research/src/common/ long ago). lib's
+  `Backtester::closeTrades()` is an empty stub with no caller left.
+
+Final validation in D (WSL, after every task; full output in the session scratchpad):
+full meson build OK; mock_component_tests "All 16 component tests pass"; venue adapter
+"PASS (110 checks, 0 failures)"; Python kraken_account 29, kraken_account_monitor 20
+(1 optional skipped), kraken_portfolio_summary 6, kraken_shadow 14, paper_comparison 14,
+chain_installation_root 1, daily_service_logs 8, host_monitor 3 (1 skipped),
+resource_profile 4, exchange_coverage 5, universe_coverage_history 2, ai_index 4,
+shadow_trading --unit 5, historical_replay_time_env PASS - all OK;
+transport_persistence_integration (real NATS + PostgreSQL 16) rollback/crash, recover,
+verify, equity PASS; go vet + go test ./... (golang:1.23-alpine, --network none) all ok;
+verify-project-contracts PASS; 14 audits (7 *_time_handler, no_legacy_clock,
+live_contract_identity, live_daily_gate, live_deploy_topology, live_pre_exchange_e2e,
+live_runtime_clock, live_sqlite_ownership) exit 0; research_html_report_gate
+(INITIAL, BTC-MA, XH, XH-ATR, XH-ROBUSTNESS, HTML) and research_scenario_gate PASS;
+Step59 PASS, fingerprint 94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2,
+107 days, 50 fills, RealTest 25/25, 0 differences. `.ai` index regenerated, --check PASS.
+Repo-wide check: no relative Markdown link points to a missing file; the deleted paths
+are named only in history or "removed" notes.
+
+Release: needed. ExecutionState (equity fix), exchange-gateway (mode removed),
+dash-api/watchdog (chain boundary, removed endpoints) and dash-web change on the VPS.
+VPS repair of the two overwritten rows, after the release is active and away from
+23:30-00:30 UTC (needs explicit authorization): `sudo /algoTrading/chain/algo backup`;
+`DELETE FROM trading_equity_daily WHERE date IN (20261013, 20261014);` (projection table,
+rebuilt from trading_fills); `sudo /algoTrading/chain/algo restart execution`; expect
+"Backfilled 2 days of equity history from the fills" in logs/execution, then check
+20261013 cash 45,535.43 and 20261014 equity 91,699.43.
 
 ## VPS release 20261015_090303-d11699d-dirty (2026-10-15, deployed)
 
@@ -3254,28 +4135,9 @@ delivery, real midnight expiry and VPS restart/retention acceptance remain pendi
 
 ## Next task
 
-The original six-consumer source inventory is in `research/REPLAY.md`. All useful
-consumers now have current paths and the frozen runtime is removed. Generated
-`.ai/` source navigation is available. The bounded local resource study is available
-as a single command and its five-minute campaign passes. At the user's request,
-remaining service fault/recreation/overnight-retention acceptance is deferred to
-the VPS. Local disk inventory is complete. Prepare the Linux 2-vCPU/2-GB sandbox
-deployment configuration and transfer scope next, then create the VPS when requested.
-Install and accept persistent daily logging, verify VPS equivalence
-and continue private TESTNET/shadow readiness. Keep those roadmap checks pending;
-the local resource report does not accept VPS hardware or real trading capacity.
-
-`docs/ROADMAP.md` now owns the full ordered pending requirements, including the
-user's dashboard chart/timeframe and empty-section investigations, funding/BTC
-collateral, Telegram setup, Manual Control and simplest-backtest comparison,
-complete-backtest/live CPU/RAM profiles and gradual small-capital testing.
-Kraken is the likely initial live venue, subject to a Kraken/Hyperliquid perpetual
-coverage comparison over the same top 50 Binance coins by the last 25 completed
-days' volume and verification of account/collateral eligibility. Unavailable
-perpetual positions must be skipped without an unsupported fallback. The unfinished
-exchange-analysis criterion remains open. These are recorded requirements;
-this documentation update did not implement features, run the venue study or
-authorize private trading/deployment.
-
-See the [handoff](docs/codex/CONTEXT_FULL.txt), [architecture](docs/codex/ARCHITECTURE_FULL.md)
-and [validation guide](validation/README.md) for navigation and checks.
+The ordered next steps are in [docs/ROADMAP.md, Next steps](docs/ROADMAP.md#next-steps-2026-10-15-in-this-order):
+the authorized release with the equity fix and the VPS row repair, then the cleanup
+task A questions, the stale replay bundle, the pending proposals and the first small
+Kraken orders. See the [handoff](docs/codex/CONTEXT_FULL.txt),
+[architecture](docs/codex/ARCHITECTURE_FULL.md) and [validation guide](validation/README.md)
+for navigation and checks.

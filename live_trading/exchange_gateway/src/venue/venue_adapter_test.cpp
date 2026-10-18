@@ -14,8 +14,12 @@
 #include <functional>
 #include <iostream>
 #include <map>
+#include <limits>
 #include <string>
 #include <vector>
+
+#include <nlohmann/json.hpp>
+#include <sqlite3.h>
 
 #include "venue/http_transport.h"
 #include "venue/kraken_futures_protocol.h"
@@ -227,6 +231,397 @@ struct Harness {
 };
 
 bool near(double a, double b) { return std::abs(a - b) < 1e-9 * std::max(1.0, std::abs(b)); }
+
+SubmitOrderCommand positionStop(OrderID id, const Coin& coin = "BTCUSDT", double quantity = 0.0012,
+                               double stopPrice = 43400.9)
+{
+    SubmitOrderCommand command;
+    command.metadata.message_id = "stop-" + std::to_string(id);
+    command.order = ExecutionOrder(id, 1, TODAY, TODAY, coin, OrderSide::Sell, quantity);
+    command.order.reference_price = REFERENCE_PRICES.at(coin);
+    command.order.position_stop_price = stopPrice;
+    return command;
+}
+
+std::string stopAccepted(const std::string& venueId)
+{
+    return nlohmann::json{{"result", "success"},
+        {"sendStatus", {{"status", "placed"}, {"order_id", venueId}}}}.dump();
+}
+
+std::string listedStop(OrderID id, const std::string& venueId, const std::string& symbol = "PF_XBTUSD",
+                       double size = 0.0012, bool withClientId = true)
+{
+    nlohmann::json row{{"order_id", venueId}, {"symbol", symbol}, {"side", "sell"},
+        {"orderType", "stp"}, {"stopPrice", 43400}, {"reduceOnly", true}, {"triggerSignal", "mark"},
+        {"filledSize", 0}, {"unfilledSize", size}};
+    if (withClientId)
+        row["cliOrdId"] = "algo-t1-" + std::to_string(id);
+    return row.dump();
+}
+
+void scriptRestingStop(Harness& h, const std::string& venueId, const std::string& listing)
+{
+    h.transport.responses["sendorder"] = {ok(stopAccepted(venueId))};
+    h.transport.responses["fills"] = {ok(fills(""))};
+    h.transport.responses["openorders"] = {ok(openOrders(listing))};
+}
+
+// ------------------------------------------------------------------ position stops
+
+void testPositionStopBodyAndScale()
+{
+    Harness h("stop-body");
+    scriptRestingStop(h, "stop-7", listedStop(7, "stop-7"));
+    auto command = positionStop(7);
+    command.order.active_from = TODAY + 1; // Stop activation follows created_at, not the next open.
+    h.adapter->submitOrder(command);
+    h.poll();
+    CHECK(h.bodyOf("sendorder") == "orderType=stp&symbol=PF_XBTUSD&side=sell&size=0.0012&cliOrdId=algo-t1-7"
+                                     "&stopPrice=43400&reduceOnly=true&triggerSignal=mark");
+    CHECK(h.journal->order(7)->type == VenueOrderType::PositionStop);
+    CHECK(h.journal->order(7)->position_stop_price == 43400.9);
+    CHECK(h.journal->order(7)->venue_stop_price == 43400.0);
+    CHECK(h.journal->order(7)->active_from == TODAY);
+    CHECK(h.journal->order(7)->state == OrderState::Open);
+
+    Harness scaled("stop-scaled");
+    scriptRestingStop(scaled, "pepe-stop", listedStop(8, "pepe-stop", "PF_PEPEUSD", 5000));
+    scaled.adapter->submitOrder(positionStop(8, "1000PEPEUSDT", 5.0009, 0.007123456));
+    scaled.poll();
+    CHECK(scaled.bodyOf("sendorder") == "orderType=stp&symbol=PF_PEPEUSD&side=sell&size=5000&cliOrdId=algo-t1-8"
+                                          "&stopPrice=0.0000071234&reduceOnly=true&triggerSignal=mark");
+    CHECK(scaled.journal->order(8)->unit_scale == 1000);
+    CHECK(scaled.journal->order(8)->venue_stop_price <= 0.007123456 / 1000);
+
+    Harness fractional("stop-quarter-tick");
+    auto instruments = nlohmann::json::parse(INSTRUMENTS);
+    instruments["instruments"][0]["tickSize"] = 0.25;
+    fractional.transport.responses["instruments"] = {ok(instruments.dump())};
+    scriptRestingStop(fractional, "quarter-stop", listedStop(7, "quarter-stop"));
+    fractional.adapter->submitOrder(positionStop(7, "BTCUSDT", 0.0012, 43400.37));
+    fractional.poll();
+    CHECK(fractional.bodyOf("sendorder").find("&stopPrice=43400.25&") != std::string::npos);
+
+    // Decimal ticks must remain on tick both at and between boundaries.
+    for (const auto& [price, expected] : std::vector<std::pair<double, std::string>>{
+            {43400.3, "43400.3"}, {43400.38, "43400.3"}}) {
+        Harness decimal("stop-decimal-tick");
+        instruments["instruments"][0]["tickSize"] = 0.1;
+        decimal.transport.responses["instruments"] = {ok(instruments.dump())};
+        scriptRestingStop(decimal, "decimal-stop", listedStop(7, "decimal-stop"));
+        decimal.adapter->submitOrder(positionStop(7, "BTCUSDT", 0.0012, price));
+        decimal.poll();
+        CHECK(decimal.bodyOf("sendorder").find("&stopPrice=" + expected + "&") != std::string::npos);
+    }
+}
+
+void testPositionStopLocalRejections()
+{
+    Harness disabled("stop-disabled", false);
+    disabled.adapter->submitOrder(positionStop(7));
+    disabled.poll();
+    CHECK(disabled.journal->order(7)->reason.find("submission disabled") != std::string::npos);
+    for (const auto& request : disabled.transport.requests)
+        CHECK(request.method == "GET");
+    CHECK(disabled.transport.count("sendorder") == 0);
+
+    for (const nlohmann::json& tick : {nlohmann::json(nullptr), nlohmann::json(0), nlohmann::json(-1),
+                                    nlohmann::json("NaN"), nlohmann::json("invalid")}) {
+        Harness h("stop-bad-tick");
+        auto instruments = nlohmann::json::parse(INSTRUMENTS);
+        if (tick.is_null())
+            instruments["instruments"][0].erase("tickSize");
+        else
+            instruments["instruments"][0]["tickSize"] = tick;
+        h.transport.responses["instruments"] = {ok(instruments.dump())};
+        h.adapter->submitOrder(positionStop(7));
+        h.poll();
+        CHECK(h.journal->order(7)->state == OrderState::Rejected);
+        CHECK(h.journal->order(7)->reason.find("INVALID_STOP_TICK") == 0);
+        CHECK(h.transport.count("sendorder") == 0);
+    }
+    for (double price : {62000.0, 62001.0, 0.1, -1.0, std::numeric_limits<double>::infinity(),
+                         std::numeric_limits<double>::quiet_NaN()}) {
+        Harness h("stop-bad-price");
+        h.adapter->submitOrder(positionStop(7, "BTCUSDT", 0.0012, price));
+        h.poll();
+        CHECK(h.journal->order(7)->state == OrderState::Rejected);
+        CHECK(h.transport.count("sendorder") == 0);
+        CHECK(h.journal->order(7)->reason.find(price >= 62000 && std::isfinite(price)
+            ? "STOP_NOT_BELOW_MARK" : "INVALID_STOP_PRICE") == 0 ||
+              h.journal->order(7)->reason.find("INVALID_POSITION_STOP") == 0);
+    }
+    for (bool buy : {false, true}) {
+        Harness h("stop-bad-condition");
+        auto command = positionStop(7);
+        command.order.side = buy ? OrderSide::Buy : OrderSide::Sell;
+        command.order.fill_at_reference_price = !buy;
+        h.adapter->submitOrder(command);
+        CHECK(h.journal->order(7)->state == OrderState::Rejected);
+        CHECK(h.transport.count("sendorder") == 0);
+    }
+    Harness mismatch("stop-notional", true, true, testSymbolMap(1.0));
+    mismatch.adapter->submitOrder(positionStop(7, "1000PEPEUSDT", 5, 0.007));
+    CHECK(mismatch.journal->order(7)->reason.find("NOTIONAL_MISMATCH") == 0);
+    CHECK(mismatch.transport.count("sendorder") == 0);
+}
+
+void testPositionStopRestsAndRecoversWithoutResend()
+{
+    Harness h("stop-resting");
+    scriptRestingStop(h, "stop-7", listedStop(7, "stop-7"));
+    const auto command = positionStop(7);
+    h.adapter->submitOrder(command);
+    h.poll();
+    for (int i = 0; i < 30; ++i) {
+        h.poll(30000); // Far beyond the ordinary settle interval, with evidence each time.
+        CHECK(h.journal->order(7)->state == OrderState::Open);
+    }
+    h.today = TODAY + 1;
+    h.poll(86400000); // Crossing a business-day boundary does not expire a listed stop.
+    CHECK(h.journal->order(7)->state == OrderState::Open);
+    CHECK(h.events.updates.size() == 1 && h.events.fills.empty());
+    h.open(true);
+    h.adapter->submitOrder(command);
+    h.poll();
+    CHECK(h.journal->order(7)->state == OrderState::Open);
+    CHECK(h.journal->order(7)->position_stop_price == command.order.position_stop_price);
+    CHECK(h.journal->order(7)->venue_stop_price == 43400);
+    CHECK(h.transport.count("sendorder") == 1);
+    CHECK(h.events.updates.size() == 1);
+
+    // Recovery from a crash after committing SENDING, before persisting the answer.
+    auto interrupted = *h.journal->order(7);
+    interrupted.state = OrderState::Sending;
+    interrupted.venue_order_id.clear();
+    h.journal->updateOrder(interrupted);
+    h.open(true);
+    h.poll();
+    CHECK(h.journal->order(7)->state == OrderState::Open);
+    CHECK(h.journal->order(7)->venue_order_id == "stop-7");
+    CHECK(h.transport.count("sendorder") == 1);
+
+    auto changed = command;
+    changed.order.position_stop_price += 0.01; // Different command even if it rounds to the same tick.
+    bool refused = false;
+    try { h.adapter->submitOrder(changed); } catch (const std::invalid_argument&) { refused = true; }
+    CHECK(refused);
+    changed.order.position_stop_price = 0;
+    refused = false;
+    try { h.adapter->submitOrder(changed); } catch (const std::invalid_argument&) { refused = true; }
+    CHECK(refused);
+}
+
+void testPositionStopReplacementAndCancel()
+{
+    for (double nextPrice : {42000.0, 45000.0}) {
+        Harness h("stop-replacement");
+        scriptRestingStop(h, "old-stop", listedStop(7, "old-stop"));
+        h.adapter->submitOrder(positionStop(7));
+        h.poll();
+        h.today = TODAY + 1;
+        h.poll(86400000);
+        h.transport.responses["sendorder"] = {ok(stopAccepted("new-stop"))};
+        h.transport.responses["openorders"] = {ok(openOrders(
+            listedStop(7, "old-stop") + "," + listedStop(8, "new-stop", "PF_XBTUSD", 0.001)))};
+        auto replacement = positionStop(8, "BTCUSDT", 0.001, nextPrice);
+        replacement.order.created_at = h.today;
+        replacement.order.active_from = h.today;
+        h.adapter->submitOrder(replacement);
+        h.poll();
+        CHECK(h.journal->order(7)->state == OrderState::Open);
+        CHECK(h.journal->order(8)->state == OrderState::Open);
+        CHECK(h.events.updates.back().update.order_id == 8);
+        CHECK(h.events.updates.back().update.status == ExecutionOrderStatus::Accepted);
+        CHECK(h.transport.count("cancelorder") == 0);
+
+        // Both ids must still be distinguished if Kraken omits cliOrdId in a later listing.
+        h.transport.responses["openorders"] = {ok(openOrders(
+            listedStop(7, "old-stop", "PF_XBTUSD", 0.0012, false) + "," +
+            listedStop(8, "new-stop", "PF_XBTUSD", 0.001, false)))};
+        h.poll(20000);
+        CHECK(h.journal->order(7)->state == OrderState::Open && h.journal->order(8)->state == OrderState::Open);
+
+        h.transport.responses["cancelorder"] = {ok(R"({"result":"success","cancelStatus":{"status":"cancelled"}})")};
+        CancelOrderCommand cancel;
+        cancel.order_id = 7;
+        h.adapter->cancelOrder(cancel);
+        h.transport.responses["openorders"] = {ok(openOrders(listedStop(8, "new-stop", "PF_XBTUSD", 0.001)))};
+        h.poll();
+        CHECK(h.bodyOf("cancelorder") == "cliOrdId=algo-t1-7");
+        CHECK(h.journal->order(7)->state == OrderState::Cancelled);
+        CHECK(h.journal->order(8)->state == OrderState::Open);
+        CHECK(h.transport.count("sendorder") == 2);
+    }
+    Harness rejected("stop-replacement-rejected");
+    scriptRestingStop(rejected, "old-stop", listedStop(7, "old-stop"));
+    rejected.adapter->submitOrder(positionStop(7));
+    rejected.poll();
+    rejected.transport.responses["sendorder"] = {ok(R"({"result":"success","sendStatus":{"status":"insufficientAvailableFunds"}})")};
+    rejected.adapter->submitOrder(positionStop(8));
+    rejected.poll();
+    CHECK(rejected.journal->order(7)->state == OrderState::Open);
+    CHECK(rejected.journal->order(8)->state == OrderState::Rejected);
+    CHECK(rejected.transport.count("cancelorder") == 0);
+}
+
+void testTriggeredPositionStopFillsAndCancelRaces()
+{
+    for (bool withClientId : {true, false}) {
+        for (const std::string cancelStatus : {"filled", "notFound"}) {
+            Harness h("stop-triggered");
+            const std::string venueId = "11111111-1111-1111-1111-111111111111";
+            scriptRestingStop(h, venueId, listedStop(7, venueId, "PF_PEPEUSD", 5000));
+            h.adapter->submitOrder(positionStop(7, "1000PEPEUSDT", 5, 0.007));
+            h.poll();
+            h.transport.responses["cancelorder"] = {ok(nlohmann::json{{"result", "success"},
+                {"cancelStatus", {{"status", cancelStatus}}}}.dump())};
+            CancelOrderCommand cancel;
+            cancel.order_id = 7;
+            h.adapter->cancelOrder(cancel);
+            auto row = nlohmann::json::parse(fill("trigger-fill", "algo-t1-7", "PF_PEPEUSD", "sell", "5000", "0.0000069"));
+            if (!withClientId)
+                row.erase("cliOrdId");
+            h.transport.responses["fills"] = {ok(fills(row.dump()))};
+            h.transport.responses["openorders"] = {ok(openOrders(""))};
+            h.poll();
+            CHECK(h.events.fills.size() == 1);
+            if (!h.events.fills.empty()) {
+                const auto& event = h.events.fills[0];
+                CHECK(event.fill.order_id == 7 && event.fill.strategy_id == 1 && event.fill.coin == "1000PEPEUSDT");
+                CHECK(event.fill.side == OrderSide::Sell && event.fill.timestamp == TODAY);
+                CHECK(near(event.fill.quantity, 5) && near(event.fill.price, 0.0069));
+                CHECK(event.fill.commission == 0);
+                CHECK(event.metadata.message_id == "kraken-futures-fill:trigger-fill");
+            }
+            CHECK(h.journal->order(7)->state == OrderState::Filled);
+            CHECK(h.events.updates.back().update.status == ExecutionOrderStatus::Filled);
+            h.open(true);
+            h.poll();
+            CHECK(h.events.fills.size() == 1 && h.transport.count("sendorder") == 1);
+        }
+    }
+}
+
+void testPositionStopSnapshotAndVenueIdListing()
+{
+    Harness h("stop-snapshot");
+    scriptRestingStop(h, "stop-7", listedStop(7, "stop-7", "PF_PEPEUSD", 5000, false));
+    h.adapter->submitOrder(positionStop(7, "1000PEPEUSDT", 5, 0.007));
+    h.poll();
+    h.open(true);
+    h.poll(30000);
+    CHECK(h.journal->order(7)->state == OrderState::Open);
+    CHECK(h.transport.count("sendorder") == 1);
+    h.transport.responses["accounts"] = {ok(R"({"result":"success","accounts":{"flex":{
+        "type":"multiCollateralMarginAccount","currencies":{"USD":{"quantity":100}}}}})")};
+    h.transport.responses["openpositions"] = {ok(R"({"result":"success","openPositions":[]})")};
+    ExchangeSnapshotRequest request;
+    request.metadata.message_id = "stop-snapshot";
+    for (bool withClientId : {true, false}) {
+        h.transport.responses["openorders"] = {ok(openOrders(listedStop(7, "stop-7", "PF_PEPEUSD", 5000, withClientId)))};
+        h.adapter->requestSnapshot(request);
+        const auto& orders = h.events.snapshots.back().snapshot.open_orders;
+        CHECK(orders.size() == 1);
+        if (!orders.empty()) {
+            CHECK(orders[0].local_order_id == 7 && orders[0].exchange_order_id == "stop-7");
+            CHECK(orders[0].coin == "1000PEPEUSDT" && orders[0].side == OrderSide::Sell);
+            CHECK(near(orders[0].quantity, 5) && orders[0].filled_quantity == 0);
+        }
+    }
+}
+
+void testPositionStopPartialFillsAndIdentityGuards()
+{
+    Harness h("stop-partial");
+    const std::string venueId = "11111111-1111-1111-1111-111111111111";
+    scriptRestingStop(h, venueId, listedStop(7, venueId, "PF_PEPEUSD", 5000));
+    h.adapter->submitOrder(positionStop(7, "1000PEPEUSDT", 5, 0.007));
+    h.poll();
+    h.transport.responses["fills"] = {ok(fills(fill("stop-partial-1", "", "PF_PEPEUSD", "sell", "2000", "0.0000069")))};
+    auto listing = nlohmann::json::parse(listedStop(7, venueId, "PF_PEPEUSD", 3000));
+    listing["filledSize"] = 2000;
+    h.transport.responses["openorders"] = {ok(openOrders(listing.dump()))};
+    h.poll(20000);
+    CHECK(h.journal->order(7)->state == OrderState::Open);
+    CHECK(h.journal->order(7)->filled_venue_quantity == 2000);
+    CHECK(h.events.fills.size() == 1 && h.events.fills[0].fill.quantity == 2);
+    h.transport.responses["fills"] = {ok(fills(
+        fill("stop-partial-2", "", "PF_PEPEUSD", "sell", "3000", "0.0000068", "2026-10-12T00:00:08.000Z") + "," +
+        fill("stop-partial-1", "", "PF_PEPEUSD", "sell", "2000", "0.0000069")))};
+    h.transport.responses["openorders"] = {ok(openOrders(""))};
+    h.poll(20000); // only resting stops are open: the venue is checked every 15 s
+    CHECK(h.journal->order(7)->state == OrderState::Filled);
+    CHECK(h.events.fills.size() == 2 && h.events.fills.back().fill.quantity == 3);
+    CHECK(near(h.events.fills.back().fill.price, 0.0068));
+
+    Harness guards("stop-identity-guards");
+    scriptRestingStop(guards, venueId, listedStop(7, venueId));
+    guards.adapter->submitOrder(positionStop(7));
+    guards.poll();
+    guards.transport.responses["fills"] = {ok(fills(
+        fill("foreign-client", "manual-id", "PF_XBTUSD", "sell", "0.0012", "43000") + "," +
+        fill("wrong-side", "", "PF_XBTUSD", "buy", "0.0012", "43000") + "," +
+        fill("old-venue-id", "", "PF_XBTUSD", "sell", "0.0012", "43000", "2026-09-01T00:00:00.000Z")))};
+    // A resting stop is not checked again within 15 s; after that the fills are read.
+    const auto fillReads = [&guards] { return guards.transport.count("fills"); };
+    const auto readsBefore = fillReads();
+    guards.poll(5000);
+    CHECK(fillReads() == readsBefore);
+    guards.poll(20000);
+    CHECK(fillReads() == readsBefore + 1);
+    CHECK(guards.events.fills.empty());
+    CHECK(guards.journal->order(7)->state == OrderState::Open);
+    CHECK(guards.journal->knowsFill("foreign-client") && guards.journal->knowsFill("wrong-side") &&
+          guards.journal->knowsFill("old-venue-id"));
+}
+
+void testOldJournalMigration()
+{
+    const auto path = std::filesystem::temp_directory_path() / "venue-test-old-schema.sqlite";
+    for (const char* suffix : {"", "-wal", "-shm"})
+        std::filesystem::remove(path.string() + suffix);
+    sqlite3* db = nullptr;
+    CHECK(sqlite3_open(path.c_str(), &db) == SQLITE_OK);
+    const char* sql =
+        "CREATE TABLE context(id INTEGER PRIMARY KEY, venue TEXT, account_namespace TEXT);"
+        "INSERT INTO context VALUES(1,'kraken-futures','t1');"
+        "CREATE TABLE orders(local_order_id INTEGER PRIMARY KEY, strategy_id INTEGER NOT NULL,"
+        "client_order_id TEXT NOT NULL UNIQUE, coin TEXT NOT NULL, symbol TEXT NOT NULL, side INTEGER NOT NULL,"
+        "source_quantity REAL NOT NULL, venue_quantity REAL NOT NULL, unit_scale REAL NOT NULL,"
+        "active_from INTEGER NOT NULL, state TEXT NOT NULL, venue_order_id TEXT NOT NULL,"
+        "filled_venue_quantity REAL NOT NULL, reason TEXT NOT NULL, cancel_requested INTEGER NOT NULL,"
+        "sent_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL, published_state TEXT);"
+        "INSERT INTO orders VALUES(7,1,'algo-t1-7','BTCUSDT','PF_XBTUSD',0,0.0012,0.0012,1,20261012,"
+        "'OPEN','old-market',0,'accepted by venue',0,1791763203000,1791763203000,'OPEN');";
+    CHECK(sqlite3_exec(db, sql, nullptr, nullptr, nullptr) == SQLITE_OK);
+    sqlite3_close(db);
+    for (int restart = 0; restart < 2; ++restart) {
+        VenueJournal journal(path.string(), "kraken-futures", "t1");
+        const auto old = journal.order(7);
+        CHECK(old && old->type == VenueOrderType::Market && old->position_stop_price == 0 && old->venue_stop_price == 0);
+        CHECK(old && old->state == OrderState::Open && old->published_state == OrderState::Open);
+        CHECK(old && old->venue_order_id == "old-market" && old->source_quantity == 0.0012);
+        CHECK(journal.unpublishedOrders().empty());
+        if (restart == 0) {
+            JournalOrder stop = *old;
+            stop.local_order_id = 8;
+            stop.client_order_id = "algo-t1-8";
+            stop.type = VenueOrderType::PositionStop;
+            stop.side = OrderSide::Sell;
+            stop.position_stop_price = 43400.9;
+            stop.venue_stop_price = 43400;
+            stop.venue_order_id = "new-stop";
+            journal.insertOrder(stop);
+            stop.cancel_requested = true;
+            journal.updateOrder(stop);
+        }
+        CHECK(journal.order(8)->type == VenueOrderType::PositionStop);
+        CHECK(journal.order(8)->position_stop_price == 43400.9 && journal.order(8)->venue_stop_price == 43400);
+        CHECK(journal.order(8)->cancel_requested);
+    }
+}
 
 // ------------------------------------------------------------------ tests
 
@@ -588,7 +983,9 @@ void testFeesAndFundingFromAccountLog()
     h.transport.responses["openorders"] = {ok(openOrders(""))};
     const std::string older = logRow(1, "futures trade", "0.5", "null", "f-old");
     const std::string fee = logRow(2, "futures trade", "0.0372", "null", "f-1");
-    const std::string funding = logRow(3, "funding rate change", "null", "-0.0123", "");
+    // Real funding rows name the contract in lower case; it must still reach BTCUSDT.
+    std::string funding = logRow(3, "funding rate change", "null", "-0.0123", "");
+    funding.replace(funding.find("PF_XBTUSD"), 9, "pf_xbtusd");
     const std::string transfer = logRow(4, "transfer", "null", "null", "");
     const std::string btcFee = logRow(5, "futures trade", "0.000001", "null", "f-1", "xbt");
     const std::string early = logRow(6, "futures trade", "0.02", "null", "f-2", "usd", "2026-10-12T00:00:30.000Z");
@@ -727,7 +1124,7 @@ void testRealAccountLogShape()
           byId["4:fee"].venue_fill_id == "synthetic-e-4" && byId["4:fee"].day == 20261007);
     CHECK(byId.contains("6:fee") && near(byId["6:fee"].amount_usd, -0.15));
     CHECK(byId.contains("6:funding") && byId["6:funding"].kind == VenueCostKind::Funding &&
-          near(byId["6:funding"].amount_usd, 0.0106) && byId["6:funding"].symbol == "pf_hypeusd");
+          near(byId["6:funding"].amount_usd, 0.0106) && byId["6:funding"].symbol == "PF_HYPEUSD"); // sent as pf_hypeusd; the symbol map uses upper case
     // Booked USD changes plus the fill-derived realized PnL equal the balance changes.
     double booked = 0.0;
     for (const CashEntry& entry : log.entries)
@@ -835,6 +1232,14 @@ int main(int argc, char** argv)
         {"interest and capital flows from the account history", testInterestAndCapitalFlowsFromAccountLog},
         {"real account history shape (2026-10-15)", testRealAccountLogShape},
         {"permissions", testPermissions},
+        {"position stop request, tick rounding and scaled units", testPositionStopBodyAndScale},
+        {"position stop local rejections", testPositionStopLocalRejections},
+        {"resting position stop and restart without resend", testPositionStopRestsAndRecoversWithoutResend},
+        {"daily stop replacement, resizing and independent cancellation", testPositionStopReplacementAndCancel},
+        {"triggered stop fills, id fallback and cancel races", testTriggeredPositionStopFillsAndCancelRaces},
+        {"stop snapshot and listing without client id", testPositionStopSnapshotAndVenueIdListing},
+        {"stop partial fills and identity guards", testPositionStopPartialFillsAndIdentityGuards},
+        {"old journal migration preserves market orders", testOldJournalMigration},
     };
     for (const auto& [name, test] : tests) {
         const int before = failures;

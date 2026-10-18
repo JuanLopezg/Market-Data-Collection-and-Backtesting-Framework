@@ -34,7 +34,7 @@ bool compareBacktestCampaigns(
 );
 
 // Choose the RealTest validation automatically from the configured sizing method.
-// EqualWeight keeps the exhaustive legacy comparison; VolatilityTarget compares
+// EqualWeight keeps the exhaustive trade-by-trade comparison; VolatilityTarget compares
 // strategic campaign boundaries while quantity/PnL magnitude remain intentionally free.
 bool compareBacktestBySizing(
     PortfolioSizerKind sizingKind,

@@ -122,7 +122,7 @@ func buildRealShellStatus(
 	}
 
 	exchangeState := "FOUNDATION"
-	exchangeDetail := fmt.Sprintf("%s TESTNET public metadata connectivity is observed separately by Step 34; execution-gateway/private connectivity remains unverified and fail-closed.", infra.Exchange.Venue)
+	exchangeDetail := fmt.Sprintf("%s venue: no retained exchange snapshot yet; gateway connectivity is not verified here and stays fail-closed.", infra.Exchange.Venue)
 	if reconErr == nil && recon.ComparisonAvailable {
 		if recon.EvidenceFresh {
 			exchangeState = "EVIDENCE FRESH"

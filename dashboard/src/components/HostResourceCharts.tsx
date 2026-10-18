@@ -13,11 +13,12 @@ import type { TimeRange } from './TimeRangePicker'
 // Time range: presets ending now, an explicit From/To, or a drag-selection on any chart.
 // The page owns the range and shows the picker in its heading, like Overview.
 
-export const HOST_PRESETS: { value: HostHistoryRange; label: string; title: string; ms: number }[] = [
+export const HOST_PRESETS: { value: HostHistoryRange; label: string; title: string; ms: number | null }[] = [
   { value: '1h', label: '1H', title: 'Last 1 hour', ms: 3_600_000 },
   { value: '6h', label: '6H', title: 'Last 6 hours', ms: 6 * 3_600_000 },
   { value: '24h', label: '24H', title: 'Last 24 hours', ms: 24 * 3_600_000 },
   { value: '7d', label: '7D', title: 'Last 7 days', ms: 7 * 24 * 3_600_000 },
+  { value: 'all', label: 'ALL', title: 'All time', ms: null },
 ]
 export const DEFAULT_HOST_RANGE: TimeRange = { kind: 'preset', preset: '1h' }
 // One line per container; only beyond this many are the lightest summed as "Other containers".
@@ -158,7 +159,9 @@ export function HostResourceCharts({ range, onRangeChange }: { range: TimeRange;
   // Visible window: presets end now; custom ranges are exact.
   const now = Date.now()
   const visible = range.kind === 'custom' ? { from: range.from, to: range.to }
-    : { from: now - (HOST_PRESETS.find(item => item.value === range.preset)?.ms ?? HOST_PRESETS[0].ms), to: now }
+    : range.preset === 'all' && view?.times.length
+      ? { from: Date.parse(data?.oldestAt ?? '') || view.times[0], to: Math.max(now, view.times[view.times.length - 1]) }
+      : { from: now - (HOST_PRESETS.find(item => item.value === range.preset)?.ms ?? 3_600_000), to: now }
   const select = (from: number, to: number) => onRangeChange({ kind: 'custom', from, to })
   const reset = () => onRangeChange(DEFAULT_HOST_RANGE)
   const shared = { window: visible, onSelectRange: select, onReset: reset }

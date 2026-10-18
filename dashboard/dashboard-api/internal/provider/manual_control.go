@@ -75,7 +75,6 @@ type ManualControlData struct {
 	ExecutionBoundary            string                  `json:"executionBoundary"`
 	ExchangeConstraintsValidated bool                    `json:"exchangeConstraintsValidated"`
 	SymbolMapCheckedAt           string                  `json:"symbolMapCheckedAt,omitempty"`
-	VenueRulesCheckedAt          string                  `json:"venueRulesCheckedAt,omitempty"`
 	TradingControlSink           string                  `json:"tradingControlSink"`
 	PrivateAuth                  string                  `json:"privateAuth"`
 	OrderLifecycle               string                  `json:"orderLifecycle"`
@@ -228,13 +227,11 @@ func (p *Real) PreviewManualControl(ctx context.Context, req ManualControlPrevie
 	}
 
 	// Step 46 additionally validates that every non-CASH target delta has a
-	// verified Kraken symbol mapping and a valid public venue-rule row.
-	// This is admission evidence only: exact executable quantities remain the
-	// responsibility of the normal OrderPlanner pipeline.
+	// verified Kraken symbol mapping. This is admission evidence only: exact
+	// executable quantities remain the responsibility of the normal OrderPlanner
+	// pipeline (and the gateway's venue checks).
 	if result.ValidationPassed {
-		symbolMap := p.SymbolMapStatus(ctx)
-		rules := p.VenueTradingRulesStatus(ctx)
-		applyManualExecutionConstraints(&result, symbolMap, rules)
+		applyManualExecutionConstraints(&result, p.SymbolMapStatus(ctx))
 	} else {
 		result.RouteBlockers = append(result.RouteBlockers, "PREVIEW_VALIDATION_FAILED")
 	}
@@ -409,20 +406,15 @@ func buildManualPreviewWithPairs(checkpoint pgstore.PipelineCheckpoint, pairs []
 	return result, requested
 }
 
-func applyManualExecutionConstraints(result *ManualControlData, symbolMap SymbolMapStatus, rules VenueTradingRulesStatus) {
+func applyManualExecutionConstraints(result *ManualControlData, symbolMap SymbolMapStatus) {
 	if result == nil || !result.ValidationPassed {
 		return
 	}
 	result.SymbolMapCheckedAt = symbolMap.CheckedAt
-	result.VenueRulesCheckedAt = rules.CheckedAt
 
 	mappingByAsset := make(map[string]SymbolMapRow, len(symbolMap.Rows))
 	for _, row := range symbolMap.Rows {
 		mappingByAsset[row.Source] = row
-	}
-	rulesByAsset := make(map[string]VenueTradingRuleRow, len(rules.Rows))
-	for _, row := range rules.Rows {
-		rulesByAsset[row.Internal] = row
 	}
 
 	valid := true
@@ -430,11 +422,6 @@ func applyManualExecutionConstraints(result *ManualControlData, symbolMap Symbol
 		valid = false
 		result.ValidationIssues = append(result.ValidationIssues, ManualValidationIssue{Severity: "ERROR", Field: "symbol mapping", Message: "The Kraken symbol mapping is not verified against current prices; manual routing admission fails closed."})
 		result.RouteBlockers = append(result.RouteBlockers, "SYMBOL_MAP_NOT_VERIFIED")
-	}
-	if !rules.Validated {
-		valid = false
-		result.ValidationIssues = append(result.ValidationIssues, ManualValidationIssue{Severity: "ERROR", Field: "venue rules", Message: "Current public venue trading rules are not validated; manual routing admission fails closed."})
-		result.RouteBlockers = append(result.RouteBlockers, "VENUE_RULES_NOT_VALIDATED")
 	}
 
 	checked := 0
@@ -448,23 +435,12 @@ func applyManualExecutionConstraints(result *ManualControlData, symbolMap Symbol
 			valid = false
 			result.ValidationIssues = append(result.ValidationIssues, ManualValidationIssue{Severity: "ERROR", Field: order.Asset + " execution", Message: "Target delta has no verified Kraken symbol mapping; no heuristic symbol conversion is allowed."})
 			result.RouteBlockers = append(result.RouteBlockers, "ASSET_NOT_ROUTABLE:"+order.Asset)
-			continue
-		}
-		rule, ok := rulesByAsset[order.Asset]
-		if !ok || rule.State != "VALID" {
-			valid = false
-			result.ValidationIssues = append(result.ValidationIssues, ManualValidationIssue{Severity: "ERROR", Field: order.Asset + " venue rules", Message: "Target delta has no current validated public venue-rule row."})
-			result.RouteBlockers = append(result.RouteBlockers, "VENUE_RULES_BLOCKED:"+order.Asset)
-			continue
-		}
-		if order.EstimatedNotionalUSD > 0 && order.EstimatedNotionalUSD+1e-9 < rule.MinOrderNotionalUSD {
-			result.ValidationIssues = append(result.ValidationIssues, ManualValidationIssue{Severity: "WARN", Field: order.Asset + " min notional", Message: fmt.Sprintf("Reference target delta $%.2f is below the current public minimum order notional $%.2f. OrderPlanner must decide the final no-op/aggregation outcome; the dashboard does not fabricate an executable order.", order.EstimatedNotionalUSD, rule.MinOrderNotionalUSD)})
 		}
 	}
 	if checked == 0 {
 		result.ValidationIssues = append(result.ValidationIssues, ManualValidationIssue{Severity: "INFO", Field: "execution", Message: "No non-CASH target delta requires an execution mapping in this preview."})
 	} else if valid {
-		result.ValidationIssues = append(result.ValidationIssues, ManualValidationIssue{Severity: "INFO", Field: "execution", Message: fmt.Sprintf("%d non-CASH target delta(s) have explicit current execution mappings and validated public venue-rule rows. Exact orders remain exclusively owned by OrderPlanner.", checked)})
+		result.ValidationIssues = append(result.ValidationIssues, ManualValidationIssue{Severity: "INFO", Field: "execution", Message: fmt.Sprintf("%d non-CASH target delta(s) have explicit verified Kraken symbol mappings. Exact orders remain exclusively owned by OrderPlanner.", checked)})
 	}
 	result.ExchangeConstraintsValidated = valid
 	if !valid {

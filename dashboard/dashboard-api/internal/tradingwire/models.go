@@ -38,19 +38,21 @@ type StrategyStateSnapshot struct {
 }
 
 type PersistedTrackedOrder struct {
-	OrderID         uint64  `json:"order_id"`
-	StrategyID      uint64  `json:"strategy_id"`
-	CreatedAt       uint64  `json:"created_at"`
-	ActiveFrom      uint64  `json:"active_from"`
-	Coin            string  `json:"coin"`
-	Side            int     `json:"side"`
-	Quantity        float64 `json:"quantity"`
-	Status          int     `json:"status"`
-	FilledQuantity  float64 `json:"filled_quantity"`
-	UpdatedAt       uint64  `json:"updated_at"`
-	CancelRequested bool    `json:"cancel_requested"`
-	ExchangeOrderID string  `json:"exchange_order_id"`
-	LastMessage     string  `json:"last_message"`
+	OrderID           uint64  `json:"order_id"`
+	StrategyID        uint64  `json:"strategy_id"`
+	CreatedAt         uint64  `json:"created_at"`
+	ActiveFrom        uint64  `json:"active_from"`
+	Coin              string  `json:"coin"`
+	Side              int     `json:"side"`
+	Quantity          float64 `json:"quantity"`
+	ReferencePrice    float64 `json:"reference_price,omitempty"`
+	PositionStopPrice float64 `json:"position_stop_price,omitempty"`
+	Status            int     `json:"status"`
+	FilledQuantity    float64 `json:"filled_quantity"`
+	UpdatedAt         uint64  `json:"updated_at"`
+	CancelRequested   bool    `json:"cancel_requested"`
+	ExchangeOrderID   string  `json:"exchange_order_id"`
+	LastMessage       string  `json:"last_message"`
 }
 
 type TradingStateSnapshot struct {
@@ -67,15 +69,16 @@ type TradingStateSnapshot struct {
 }
 
 type Fill struct {
-	FillID     uint64  `json:"fill_id"`
-	OrderID    uint64  `json:"order_id"`
-	StrategyID uint64  `json:"strategy_id"`
-	Timestamp  uint64  `json:"timestamp"`
-	Coin       string  `json:"coin"`
-	Side       int     `json:"side"`
-	Quantity   float64 `json:"quantity"`
-	Price      float64 `json:"price"`
-	Commission float64 `json:"commission"`
+	FillID      uint64  `json:"fill_id"`
+	OrderID     uint64  `json:"order_id"`
+	StrategyID  uint64  `json:"strategy_id"`
+	Timestamp   uint64  `json:"timestamp"`
+	Coin        string  `json:"coin"`
+	Side        int     `json:"side"`
+	Quantity    float64 `json:"quantity"`
+	Price       float64 `json:"price"`
+	Commission  float64 `json:"commission"`
+	FeeRecorded bool    `json:"fee_recorded,omitempty"`
 }
 
 type MarketDataUpdated struct {

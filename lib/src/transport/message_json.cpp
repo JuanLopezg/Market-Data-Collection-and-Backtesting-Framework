@@ -60,6 +60,10 @@ json executionOrderToJson(const ExecutionOrder& order)
         result["reference_price"] = order.reference_price;
     if (order.fill_at_reference_price)
         result["fill_at_reference_price"] = true;
+    if (order.isPositionStop()) {
+        order.validateConditional();
+        result["position_stop_price"] = order.position_stop_price;
+    }
     return result;
 }
 
@@ -81,6 +85,8 @@ ExecutionOrder executionOrderFromJson(const json& value)
     order.fill_at_reference_price = value.value("fill_at_reference_price", false);
     if (order.fill_at_reference_price && !(order.reference_price > 0.0))
         throw std::invalid_argument("An order filled at its reference price needs a positive reference price");
+    order.position_stop_price = value.value("position_stop_price", 0.0);
+    order.validateConditional();
     return order;
 }
 

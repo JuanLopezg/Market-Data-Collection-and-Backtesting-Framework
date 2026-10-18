@@ -273,11 +273,8 @@ def settlement_preferences(response):
     return result
 
 
-def normalize_account(bundle, policy, now):
-    clocks = validate_bundle(bundle, now)
-    wallet = bundle['wallets']['accounts']['flex']
-    if wallet['type'] != 'multiCollateralMarginAccount':
-        raise ValueError('Supported Multi-M wallet unavailable; do not use another wallet')
+def normalize_currencies(wallet):
+    """Normalize collateral aliases without estimating venue haircuts."""
     currencies = {}
     if not isinstance(wallet['currencies'], dict):
         raise ValueError('Missing collateral currency mapping')
@@ -286,16 +283,14 @@ def normalize_account(bundle, policy, now):
         if code in currencies:
             raise ValueError('Duplicate collateral currency alias')
         currencies[code] = economic_fields(row, ('quantity', 'value', 'collateral', 'available'))
-    totals = economic_fields(wallet, ('collateralValue', 'marginEquity', 'availableMargin',
-        'initialMargin', 'initialMarginWithOrders', 'maintenanceMargin', 'pnl', 'unrealizedFunding',
-        'totalUnrealized', 'totalUnrealizedAsMargin'),
-        ('initialMargin', 'initialMarginWithOrders', 'maintenanceMargin'))
-    if number(totals['initialMarginWithOrders']) < number(totals['initialMargin']):
-        raise ValueError('Order-inclusive margin is smaller than position margin')
-    preferences = settlement_preferences(bundle['preferences'])
-    positions, symbols = [], set()
+    return currencies
+
+
+def normalize_positions(response, preferences):
+    """Keep venue entry prices, signed quantities and settlement evidence explicit."""
     reasons = []
-    for entry in required_rows(bundle['positions'], 'openPositions'):
+    positions, symbols = [], set()
+    for entry in required_rows(response, 'openPositions'):
         symbol, side = entry['symbol'], entry['side']
         if not isinstance(symbol, str) or symbol in symbols or side not in ('long', 'short'):
             raise ValueError('Invalid or duplicate account position')
@@ -314,8 +309,14 @@ def normalize_account(bundle, policy, now):
             'pnl_currency': reported_currency or preference})
         if not symbol.startswith('PF_'):
             reasons.append('OTHER_DERIVATIVE_PRODUCT_REQUIRES_REVIEW')
+    return positions, reasons
+
+
+def normalize_orders(response, now):
+    """Validate open-order identity, partial fills and lifecycle timestamps."""
+    reasons = []
     orders, identities = [], set()
-    for entry in required_rows(bundle['orders'], 'openOrders'):
+    for entry in required_rows(response, 'openOrders'):
         identity = entry['order_id']
         if not isinstance(identity, str) or not identity or identity in identities or entry['side'] not in ('buy', 'sell'):
             raise ValueError('Invalid or duplicate account order')
@@ -334,19 +335,12 @@ def normalize_account(bundle, policy, now):
             'partially_filled': number(values['filledSize']) > 0 and number(values['unfilledSize']) > 0})
         if not entry['symbol'].startswith('PF_'):
             reasons.append('OTHER_DERIVATIVE_PRODUCT_REQUIRES_REVIEW')
-    if any(code not in ('BTC', 'USD') and number(row['quantity']) != 0 for code, row in currencies.items()):
-        reasons.append('OTHER_COLLATERAL_REQUIRES_REVIEW')
-    if 'BTC' in currencies and number(currencies['BTC']['quantity']) < 0:
-        reasons.append('BTC_BALANCE_NEGATIVE')
-    if any(currency != 'USD' for currency in preferences.values()) or any(row['pnl_currency'] != 'USD' for row in positions):
-        reasons.append('NON_USD_PROFIT_SETTLEMENT')
-    # Use venue totals directly: PnL/funding are already reflected in marginEquity.
-    initial_headroom = number(totals['marginEquity']) - number(totals['initialMarginWithOrders'])
-    maintenance_headroom = number(totals['marginEquity']) - number(totals['maintenanceMargin'])
-    if initial_headroom < 0 or number(totals['availableMargin']) < 0:
-        reasons.append('INITIAL_MARGIN_SHORTFALL')
-    if maintenance_headroom < 0:
-        reasons.append('MAINTENANCE_MARGIN_BREACH')
+    return orders, reasons
+
+
+def reserve_assessment(policy, currencies, totals):
+    """Return warning evidence only; thresholds never stop or size trading."""
+    reasons = []
     reserve = None
     equity = number(totals['marginEquity'])
     equity_policy = None
@@ -396,6 +390,40 @@ def normalize_account(bundle, policy, now):
             reasons.append('USD_DEBITS_REQUIRE_CONVERSION')
         if loss > max(Decimal(0), usd - cash_debits):
             reasons.append('UNREALIZED_LOSS_NOT_BACKED_BY_USD')
+    return reserve, equity_policy, reasons
+
+
+def normalize_account(bundle, policy, now):
+    clocks = validate_bundle(bundle, now)
+    wallet = bundle['wallets']['accounts']['flex']
+    if wallet['type'] != 'multiCollateralMarginAccount':
+        raise ValueError('Supported Multi-M wallet unavailable; do not use another wallet')
+    currencies = normalize_currencies(wallet)
+    totals = economic_fields(wallet, ('collateralValue', 'marginEquity', 'availableMargin',
+        'initialMargin', 'initialMarginWithOrders', 'maintenanceMargin', 'pnl', 'unrealizedFunding',
+        'totalUnrealized', 'totalUnrealizedAsMargin'),
+        ('initialMargin', 'initialMarginWithOrders', 'maintenanceMargin'))
+    if number(totals['initialMarginWithOrders']) < number(totals['initialMargin']):
+        raise ValueError('Order-inclusive margin is smaller than position margin')
+    preferences = settlement_preferences(bundle['preferences'])
+    positions, reasons = normalize_positions(bundle['positions'], preferences)
+    orders, order_reasons = normalize_orders(bundle['orders'], now)
+    reasons.extend(order_reasons)
+    if any(code not in ('BTC', 'USD') and number(row['quantity']) != 0 for code, row in currencies.items()):
+        reasons.append('OTHER_COLLATERAL_REQUIRES_REVIEW')
+    if 'BTC' in currencies and number(currencies['BTC']['quantity']) < 0:
+        reasons.append('BTC_BALANCE_NEGATIVE')
+    if any(currency != 'USD' for currency in preferences.values()) or any(row['pnl_currency'] != 'USD' for row in positions):
+        reasons.append('NON_USD_PROFIT_SETTLEMENT')
+    # Use venue totals directly: PnL/funding are already reflected in marginEquity.
+    initial_headroom = number(totals['marginEquity']) - number(totals['initialMarginWithOrders'])
+    maintenance_headroom = number(totals['marginEquity']) - number(totals['maintenanceMargin'])
+    if initial_headroom < 0 or number(totals['availableMargin']) < 0:
+        reasons.append('INITIAL_MARGIN_SHORTFALL')
+    if maintenance_headroom < 0:
+        reasons.append('MAINTENANCE_MARGIN_BREACH')
+    reserve, equity_policy, reserve_reasons = reserve_assessment(policy, currencies, totals)
+    reasons.extend(reserve_reasons)
     return {'scope': bundle['scope'], 'environment': bundle['environment'],
         'account_identity_hash': bundle['permissions']['account_identity_hash'],
         'observed_at': bundle['observed_at'], 'server_times': clocks,

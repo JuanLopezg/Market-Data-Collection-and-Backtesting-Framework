@@ -18,12 +18,13 @@ need "$FILE" '#include "time_handler_factory.h"'
 need "$FILE" 'TimeHandler time_handler_;'
 need "$FILE" 'TimeHandlerFactory::createFromEnvironment()'
 need "$FILE" 'currentBusinessUtcDate(time_handler_)'
-need "$FILE" 'newestCompletedUtcDate(time_handler_)'
 need "$FILE" 'validateBackendEventTime('
 need "$FILE" 'value.update.timestamp'
 need "$FILE" 'value.fill.timestamp'
 need "$FILE" 'value.snapshot.timestamp'
-need "$FILE" 'plan.decision_timestamp > newestCompleted'
+# (The newest-completed-day gate on NotionalOrderPlan belonged to the hyperliquid-dry-run
+# mode, removed on 2026-10-15; the gateway no longer consumes plans.)
+forbid "$FILE" 'NOTIONAL_ORDER_PLAN|hyperliquid-dry-run'
 need "$FILE" 'adapter_->poll(options_.poll_timeout_ms);'
 need "$FILE" 'bus_.poll('
 

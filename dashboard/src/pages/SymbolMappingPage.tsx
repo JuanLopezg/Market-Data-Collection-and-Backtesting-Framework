@@ -86,12 +86,11 @@ export function SymbolMappingPage() {
 
     <section className="positions-layout">
       {data.alarms.length > 0 && <Panel title={`Problems Found (${data.alarms.length})`}>
-        <div className="table-wrap"><table><thead><tr><th>Severity</th><th>Asset</th><th>Problem</th><th>Detail</th></tr></thead><tbody>
+        <div className="table-wrap"><table><thead><tr><th>Severity</th><th>Asset</th><th>Problem</th></tr></thead><tbody>
           {data.alarms.map(alarm => <tr key={`${alarm.eventType}-${alarm.asset}`}>
             <td><strong className={alarm.severity === 'CRITICAL' ? 'negative' : 'warning'}>{alarm.severity}</strong></td>
             <td><strong>{alarm.asset ?? '—'}</strong></td>
             <td>{alarm.title}</td>
-            <td className="muted">{alarm.detail}</td>
           </tr>)}
         </tbody></table></div>
       </Panel>}

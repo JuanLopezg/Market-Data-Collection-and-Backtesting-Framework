@@ -1,341 +1,69 @@
 #include "backtester.h"
-#include "research_strategy_definitions.h"
-#include "backtest_metrics.h"
-#include "backtest_html_report.h"
 #include "database_utils.h"
 #include "logger.h"
+#include "parameter_sweep.h"
+#include "research_strategy_definitions.h"
+#include "sensitivity_study.h"
 
-#include <algorithm>
+#include <boost/program_options.hpp>
+
 #include <chrono>
 #include <cmath>
 #include <filesystem>
-#include <functional>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <limits>
-#include <map>
 #include <memory>
-#include <sstream>
+#include <stdexcept>
 #include <string>
-#include <utility>
 #include <vector>
-#include <fstream>
-#include <boost/program_options.hpp>
 
 namespace {
 
 using namespace research_studies;
 
-bool compactSensitivity = false;
-
-struct ActiveSensitivityParameter {
-    const SensitivityParameterDefinition* definition = nullptr;
-    std::vector<double> values;
-};
-
-struct SensitivityAccumulator {
-    std::vector<double> finalReturnPercentValues;
-    std::vector<double> maxDrawdownPercentValues;
-    std::vector<double> tradeCountValues;
-    std::size_t positiveCombinationCount = 0U;
-    std::size_t zeroTradeCombinationCount = 0U;
-
-    void add(const BacktestMetrics& metrics)
-    {
-        finalReturnPercentValues.push_back(metrics.netReturnPercent);
-        maxDrawdownPercentValues.push_back(metrics.maxDrawdownPercent);
-        tradeCountValues.push_back(static_cast<double>(metrics.tradeCount));
-
-        if (metrics.netReturnPercent > 0.0) {
-            ++positiveCombinationCount;
-        }
-        if (metrics.tradeCount == 0U) {
-            ++zeroTradeCombinationCount;
-        }
-    }
-};
-
-class SensitivityProgressReporter {
-public:
-    explicit SensitivityProgressReporter(std::size_t totalRuns)
-        : totalRuns_(totalRuns), start_(std::chrono::steady_clock::now())
-    {
-        if (totalRuns_ > 0U) {
-            std::cout << "\nParameter sensitivity: " << totalRuns_
-                      << " isolated backtests planned.\n";
-            render(true);
-        }
-    }
-
-    void setStrategy(const std::string& strategyName)
-    {
-        strategyName_ = strategyName;
-        render(true);
-    }
-
-    void advance()
-    {
-        if (completedRuns_ < totalRuns_) {
-            ++completedRuns_;
-        }
-
-        const std::size_t renderInterval = std::max<std::size_t>(
-            1U,
-            totalRuns_ / 1000U
-        );
-
-        if (completedRuns_ == totalRuns_ ||
-            completedRuns_ % renderInterval == 0U) {
-            render(false);
-        }
-    }
-
-    void finish()
-    {
-        if (totalRuns_ > 0U) {
-            render(true);
-            std::cout << '\n';
-        }
-    }
-
-private:
-    static std::string formatDuration(std::chrono::seconds duration)
-    {
-        const auto totalSeconds = duration.count();
-        const auto hours = totalSeconds / 3600;
-        const auto minutes = (totalSeconds % 3600) / 60;
-        const auto seconds = totalSeconds % 60;
-
-        std::ostringstream output;
-        if (hours > 0) {
-            output << hours << "h ";
-        }
-        if (hours > 0 || minutes > 0) {
-            output << minutes << "m ";
-        }
-        output << seconds << "s";
-        return output.str();
-    }
-
-    void render(bool force)
-    {
-        if (totalRuns_ == 0U) {
-            return;
-        }
-
-        const auto now = std::chrono::steady_clock::now();
-        const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-            now - start_
-        );
-
-        const double ratio = static_cast<double>(completedRuns_) /
-            static_cast<double>(totalRuns_);
-        constexpr int barWidth = 34;
-        const int filled = static_cast<int>(std::round(ratio * barWidth));
-
-        std::chrono::seconds remaining(0);
-        if (completedRuns_ > 0U && completedRuns_ < totalRuns_) {
-            const double remainingSeconds =
-                static_cast<double>(elapsed.count()) *
-                static_cast<double>(totalRuns_ - completedRuns_) /
-                static_cast<double>(completedRuns_);
-            remaining = std::chrono::seconds(
-                static_cast<long long>(std::max(0.0, remainingSeconds))
-            );
-        }
-
-        std::cout << '\r' << '[';
-        for (int index = 0; index < barWidth; ++index) {
-            std::cout << (index < filled ? '=' : ' ');
-        }
-        std::cout << "] " << std::fixed << std::setprecision(1)
-                  << (ratio * 100.0) << "% "
-                  << completedRuns_ << '/' << totalRuns_
-                  << " | " << strategyName_
-                  << " | elapsed " << formatDuration(elapsed)
-                  << " | ETA " << formatDuration(remaining)
-                  << std::flush;
-
-        (void)force;
-    }
-
-    std::size_t totalRuns_ = 0U;
-    std::size_t completedRuns_ = 0U;
-    std::string strategyName_ = "Preparing";
-    std::chrono::steady_clock::time_point start_;
-};
-
-std::vector<double> makeSweepValues(
-    const SensitivityParameterDefinition& parameter
-)
-{
-    std::vector<double> values;
-
-    if (!parameter.enabled ||
-        !std::isfinite(parameter.minimum) ||
-        !std::isfinite(parameter.maximum) ||
-        !std::isfinite(parameter.spacing) ||
-        parameter.spacing <= 0.0 ||
-        parameter.maximum < parameter.minimum) {
-        return values;
-    }
-
-    constexpr std::size_t safetyLimit = 100000U;
-    constexpr double epsilon = 1e-10;
-
-    for (std::size_t index = 0U; index < safetyLimit; ++index) {
-        const double value = parameter.minimum +
-            static_cast<double>(index) * parameter.spacing;
-
-        if (value > parameter.maximum + epsilon) {
-            break;
-        }
-
-        values.push_back(value);
-    }
-
-    return values;
-}
-
-std::vector<ActiveSensitivityParameter> activeSensitivityParameters(
-    const StrategyDefinition& definition
-)
-{
-    std::vector<ActiveSensitivityParameter> active;
-
-    for (const SensitivityParameterDefinition& parameter :
-         definition.sensitivityParameters) {
-        if (!parameter.enabled) {
-            continue;
-        }
-
-        std::vector<double> values = makeSweepValues(parameter);
-        if (values.empty()) {
-            LG_WARN(
-                "Skipping invalid sensitivity parameter '{}.{}'",
-                definition.name,
-                parameter.key
-            );
-            continue;
-        }
-
-        if (compactSensitivity && values.size() > 2)
-            values = {values.front(), values.back()};
-        active.push_back(ActiveSensitivityParameter{&parameter, std::move(values)});
-    }
-
-    return active;
-}
-
+// Unlike the HTML, BTC and XH studies, this study skips combinations rejected by
+// isValidCombination instead of recording them, and its <name>_sensitivity.csv
+// holds only run_id, return, drawdown, trade count and the parameter values.
 template <typename Callback>
-void enumerateSensitivityCombinations(
+void forEachValidCombination(
     const StrategyDefinition& definition,
-    const std::vector<ActiveSensitivityParameter>& activeParameters,
-    std::size_t parameterIndex,
-    ParameterValues& parameters,
+    const std::vector<ActiveSensitivityParameter>& active,
     Callback&& callback
 )
 {
-    if (parameterIndex >= activeParameters.size()) {
-        if (!definition.isValidCombination || definition.isValidCombination(parameters)) {
-            callback(parameters);
+    ParameterValues parameters = definition.currentParameters;
+    auto validOnly = [&](const ParameterValues& combination) {
+        if (!definition.isValidCombination || definition.isValidCombination(combination)) {
+            callback(combination);
         }
-        return;
-    }
-
-    const ActiveSensitivityParameter& active = activeParameters[parameterIndex];
-    for (const double value : active.values) {
-        parameters.insert_or_assign(active.definition->key, value);
-        enumerateSensitivityCombinations(
-            definition,
-            activeParameters,
-            parameterIndex + 1U,
-            parameters,
-            std::forward<Callback>(callback)
-        );
-    }
+    };
+    enumerateSensitivityCombinations(active, 0U, parameters, validOnly);
 }
 
-std::size_t countSensitivityCombinations(
-    const StrategyDefinition& definition
-)
+std::size_t countValidCombinations(const StrategyDefinition& definition, bool keepEndpointsOnly)
 {
     const std::vector<ActiveSensitivityParameter> active =
-        activeSensitivityParameters(definition);
-
+        activeSensitivityParameters(definition, keepEndpointsOnly);
     if (active.empty()) {
         return 0U;
     }
 
-    ParameterValues parameters = definition.currentParameters;
     std::size_t count = 0U;
-
-    enumerateSensitivityCombinations(
-        definition,
-        active,
-        0U,
-        parameters,
-        [&count](const ParameterValues&) { ++count; }
-    );
-
+    forEachValidCombination(definition, active, [&count](const ParameterValues&) { ++count; });
     return count;
 }
 
-BacktestMetrics runSingleBacktest(
-    const StrategyDefinition& definition,
-    const ParameterValues& parameters,
-    const OHLCVData& ohlcvData,
-    double initialBalance,
-    double feeMaker,
-    double feeTaker,
-    const BacktestMetricsSettings& metricsSettings
-)
-{
-    (void)feeMaker;
-    BacktestContext context(ohlcvData, makeStudyPortfolio(definition, parameters), initialBalance, feeTaker);
-    Backtester tester(context);
-    tester.loop();
-    tester.closeTrades();
-
-    return calculateBacktestMetrics(
-        definition.name,
-        context.GetTradesHistory(),
-        context.GetBalanceEquityHistoric(),
-        context.GetMarketData(),
-        initialBalance,
-        metricsSettings
-    );
-}
-
-double median(std::vector<double> values)
-{
-    if (values.empty()) {
-        return 0.0;
-    }
-
-    std::sort(values.begin(), values.end());
-    const std::size_t middle = values.size() / 2U;
-
-    if (values.size() % 2U == 0U) {
-        return (values[middle - 1U] + values[middle]) / 2.0;
-    }
-
-    return values[middle];
-}
-
-std::vector<ParameterSensitivityReport> runParameterSensitivity(
+std::vector<ParameterSensitivityReport> runInitialSensitivity(
     const StrategyDefinition& definition,
     const OHLCVData& ohlcvData,
-    double initialBalance,
-    double feeMaker,
-    double feeTaker,
-    const BacktestMetricsSettings& baseMetricsSettings,
+    const StudyRunSettings& settings,
     const std::filesystem::path& resultsPath,
     SensitivityProgressReporter& progress
 )
 {
     const std::vector<ActiveSensitivityParameter> active =
-        activeSensitivityParameters(definition);
+        activeSensitivityParameters(definition, settings.keepEndpointsOnly);
 
     if (active.empty()) {
         return {};
@@ -344,27 +72,11 @@ std::vector<ParameterSensitivityReport> runParameterSensitivity(
     // Parameter sensitivity needs only return, drawdown, and trade count.
     // Disabling Monte Carlo here avoids running 10,000 simulations for every
     // grid point. The normal report still uses the configured Monte Carlo run.
-    BacktestMetricsSettings sensitivityMetricsSettings = baseMetricsSettings;
+    BacktestMetricsSettings sensitivityMetricsSettings = settings.metricsSettings;
     sensitivityMetricsSettings.monteCarloSimulationCount = 0U;
     sensitivityMetricsSettings.monteCarloFanPointCount = 0U;
 
-    std::vector<std::vector<SensitivityAccumulator>> accumulators;
-    accumulators.reserve(active.size());
-    for (const ActiveSensitivityParameter& parameter : active) {
-        accumulators.emplace_back(parameter.values.size());
-    }
-
-    std::vector<std::map<double, std::size_t>> valueIndexes;
-    valueIndexes.reserve(active.size());
-    for (const ActiveSensitivityParameter& parameter : active) {
-        std::map<double, std::size_t> indexes;
-        for (std::size_t index = 0U; index < parameter.values.size(); ++index) {
-            indexes.insert_or_assign(parameter.values[index], index);
-        }
-        valueIndexes.push_back(std::move(indexes));
-    }
-
-    ParameterValues parameters = definition.currentParameters;
+    SensitivityAggregator aggregator(active);
     progress.setStrategy(definition.name);
     std::ofstream results(resultsPath);
     results.exceptions(std::ios::failbit | std::ios::badbit);
@@ -376,98 +88,47 @@ std::vector<ParameterSensitivityReport> runParameterSensitivity(
     results << '\n' << std::setprecision(17);
     std::size_t runId = 0;
 
-    enumerateSensitivityCombinations(
-        definition,
-        active,
-        0U,
-        parameters,
-        [&](const ParameterValues& combination) {
-            const BacktestMetrics metrics = runSingleBacktest(
-                definition,
-                combination,
-                ohlcvData,
-                initialBalance,
-                feeMaker,
-                feeTaker,
-                sensitivityMetricsSettings
-            );
-            results << ++runId << ',' << metrics.netReturnPercent << ','
-                    << metrics.maxDrawdownPercent << ',' << metrics.tradeCount;
-            for (const auto& [key, value] : combination) {
-                (void)key;
-                results << ',' << value;
-            }
-            results << '\n';
-
-            for (std::size_t parameterIndex = 0U;
-                 parameterIndex < active.size();
-                 ++parameterIndex) {
-                const double value = parameterOr(
-                    combination,
-                    active[parameterIndex].definition->key,
-                    0.0
-                );
-                const auto valueIndex = valueIndexes[parameterIndex].find(value);
-                if (valueIndex != valueIndexes[parameterIndex].end()) {
-                    accumulators[parameterIndex][valueIndex->second].add(metrics);
-                }
-            }
-
-            progress.advance();
+    forEachValidCombination(definition, active, [&](const ParameterValues& combination) {
+        const BacktestMetrics metrics = runSingleBacktest(
+            definition,
+            combination,
+            ohlcvData,
+            settings,
+            sensitivityMetricsSettings
+        );
+        results << ++runId << ',' << metrics.netReturnPercent << ','
+                << metrics.maxDrawdownPercent << ',' << metrics.tradeCount;
+        for (const auto& [key, value] : combination) {
+            (void)key;
+            results << ',' << value;
         }
-    );
+        results << '\n';
 
-    std::vector<ParameterSensitivityReport> reports;
-    reports.reserve(active.size());
+        aggregator.add(combination, metrics);
+        progress.advance();
+    });
 
-    for (std::size_t parameterIndex = 0U;
-         parameterIndex < active.size();
-         ++parameterIndex) {
-        const ActiveSensitivityParameter& parameter = active[parameterIndex];
-        ParameterSensitivityReport report;
-        report.parameterName = parameter.definition->key;
-        report.displayName = parameter.definition->displayName;
-        report.points.reserve(parameter.values.size());
-
-        for (std::size_t valueIndex = 0U;
-             valueIndex < parameter.values.size();
-             ++valueIndex) {
-            const SensitivityAccumulator& accumulator =
-                accumulators[parameterIndex][valueIndex];
-
-            report.points.push_back(ParameterSensitivityPoint{
-                parameter.values[valueIndex],
-                median(accumulator.finalReturnPercentValues),
-                median(accumulator.maxDrawdownPercentValues),
-                median(accumulator.tradeCountValues),
-                accumulator.positiveCombinationCount,
-                accumulator.finalReturnPercentValues.size(),
-                accumulator.zeroTradeCombinationCount
-            });
-        }
-
-        reports.push_back(std::move(report));
-    }
-
-    return reports;
+    return aggregator.reports();
 }
 
-BacktestMetrics runStrategyAndWriteReport(
+// Baseline run with <name>_trades.csv and <name>_account.csv, the optional grid,
+// then the HTML report.
+BacktestMetrics runInitialStrategyReport(
     const StrategyDefinition& definition,
     const OHLCVData& ohlcvData,
-    double initialBalance,
-    double feeMaker,
-    double feeTaker,
-    const BacktestMetricsSettings& metricsSettings,
+    const StudyRunSettings& settings,
     const std::filesystem::path& reportPath,
     SensitivityProgressReporter* progress
 )
 {
-    (void)feeMaker;
-    BacktestContext context(ohlcvData, makeStudyPortfolio(definition, definition.currentParameters), initialBalance, feeTaker);
+    BacktestContext context(
+        ohlcvData,
+        settings.makePortfolio(definition, definition.currentParameters),
+        settings.initialBalance,
+        settings.feeTaker
+    );
     Backtester tester(context);
     tester.loop();
-    tester.closeTrades();
 
     tester.storeTradesCSV(reportPath.parent_path() / (definition.name + "_trades.csv"));
     std::ofstream accountOutput(reportPath.parent_path() / (definition.name + "_account.csv"));
@@ -481,19 +142,16 @@ BacktestMetrics runStrategyAndWriteReport(
         context.GetTradesHistory(),
         context.GetBalanceEquityHistoric(),
         context.GetMarketData(),
-        initialBalance,
-        metricsSettings
+        settings.initialBalance,
+        settings.metricsSettings
     );
 
     std::vector<ParameterSensitivityReport> parameterSensitivity;
     if (progress != nullptr) {
-        parameterSensitivity = runParameterSensitivity(
+        parameterSensitivity = runInitialSensitivity(
             definition,
             ohlcvData,
-            initialBalance,
-            feeMaker,
-            feeTaker,
-            metricsSettings,
+            settings,
             reportPath.parent_path() / (definition.name + "_sensitivity.csv"),
             *progress
         );
@@ -569,17 +227,19 @@ try
     std::filesystem::create_directories(directory.parent_path());
     if (!std::filesystem::create_directory(directory))
         throw std::runtime_error("Study directory already exists: " + directory.string());
-    compactSensitivity = grid == "compact";
+    const bool keepEndpointsOnly = grid == "compact";
     std::size_t runs = 0;
     if (grid != "none") {
         for (const auto& definition : definitions)
-            runs += countSensitivityCombinations(definition);
+            runs += countValidCombinations(definition, keepEndpointsOnly);
     }
     std::unique_ptr<SensitivityProgressReporter> progress;
     if (runs > 0)
         progress = std::make_unique<SensitivityProgressReporter>(runs);
     BacktestMetricsSettings settings{.periodsPerYear = 365.0, .excludeSimulatedTrades = true,
         .databaseTimeframe = "1d", .annualizationBenchmarkSymbol = "BTC"};
+    const StudyRunSettings runSettings{.makePortfolio = makeStudyPortfolio, .initialBalance = 100000.0,
+        .feeTaker = feeTaker, .metricsSettings = settings, .keepEndpointsOnly = keepEndpointsOnly};
     std::ofstream summary(directory / "metrics.csv");
     summary.exceptions(std::ios::failbit | std::ios::badbit);
     summary << "strategy,net_return_percent,max_drawdown_percent,trade_count,final_equity\n" << std::setprecision(17);
@@ -595,8 +255,8 @@ try
             ranges << definition.name << ',' << parameter.key << ',' << definition.currentParameters.at(parameter.key)
                    << ',' << parameter.minimum << ',' << parameter.maximum << ',' << parameter.spacing
                    << ',' << parameter.enabled << '\n';
-        const auto metrics = runStrategyAndWriteReport(definition, data, 100000.0, 0.0, feeTaker,
-            settings, directory / (definition.name + ".html"), progress.get());
+        const auto metrics = runInitialStrategyReport(definition, data, runSettings,
+            directory / (definition.name + ".html"), progress.get());
         logBacktestMetrics(metrics);
         summary << definition.name << ',' << metrics.netReturnPercent << ',' << metrics.maxDrawdownPercent
                 << ',' << metrics.tradeCount << ',' << metrics.finalEquity << '\n';

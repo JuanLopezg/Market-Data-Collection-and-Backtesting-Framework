@@ -43,6 +43,20 @@ class HostMonitorTest(unittest.TestCase):
         finally:
             subprocess.run(['docker', 'rm', '-f', name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+    def test_default_services_follow_the_installed_mode(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            chain_env = Path(directory) / 'chain.env'
+            self.assertEqual(monitor.default_services(chain_env), monitor.CHAIN_SERVICES)  # no file: PAPER
+            chain_env.write_text('# MODE=live in a comment is ignored\nMODE=paper\n')
+            self.assertIn('sim-exchange', monitor.default_services(chain_env))
+            chain_env.write_text('RUNTIME_IMAGE=x\nMODE=live\n')
+            live = monitor.default_services(chain_env)
+            self.assertIn('gateway-kraken', live)
+            self.assertNotIn('gateway', live)
+            self.assertNotIn('sim-exchange', live)
+            self.assertEqual(monitor.TRADING_PROCESSES['gateway-kraken'], 'algotrading_exchange_gateway')
+
     def test_clock_verified_unsynchronized_and_unavailable(self):
         for value, synced in [('yes', True), ('no', False)]:
             with patch.object(monitor.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, value + '\n')):

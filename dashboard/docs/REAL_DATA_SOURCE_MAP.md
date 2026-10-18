@@ -21,12 +21,20 @@ Paths in this guide are relative to the repository root.
 - `trading_fills`: append-only by `fill_id`; fields include
   `order_id`, `strategy_id`, `timestamp`, `coin`, `side`,
   `quantity`, `price` and `commission`.
+- `trading_venue_costs`: delayed venue cash events, append-only by `cost_id`.
+  Fill reads group FEE rows by `fill_id` and add `sum(-amount)` to fill commission,
+  matching ExecutionState accounting without multiplying fills. Missing old tables
+  use fill-only commission; funding and other cash movements are not fill fees.
 
 Important runtime snapshot keys: `schema_version`, `last_bar_close_timestamp`,
 `last_execution_timestamp`, `next_order_id`, `account_cash`,
 `account_positions`, `strategies`, `pending_plans`, `orders`
 and `processed_fill_ids`. Current tracked orders include lifecycle status,
-filled quantity, timestamps and exchange identity. This is current state, not a
+filled quantity, timestamps, exchange identity and optional `reference_price` /
+`position_stop_price`. Execution reference slippage compares fills with the planning
+price (the stop trigger for stops), with side-aware signs and daily USD-notional
+weighting. It includes price gaps and venue differences, not a measured mark at
+submission. Missing historical references stay unavailable. This is current state, not a
 separate complete append-only history of all order transitions.
 
 Service checkpoints:
@@ -102,7 +110,7 @@ cannot be declared a current reconciliation result.
 | Shell / global readiness | Source diagnostics, runtime/checkpoint/market/reconciliation evidence and alerts. Private execution, common service liveness and host clock synchronization remain unproven. |
 | Overview | Runtime cash/positions, canonical closes and fills. Complete cost basis, durable attributed PnL and equity history remain unavailable. |
 | Positions | Runtime quantities/orders, strategy positions, approved targets and timestamped canonical prices. Missing valuation stays unavailable. |
-| Execution | Runtime order snapshot, bounded fills and planner evidence. Unpersisted latency/slippage/replacement lineage is not inferred. |
+| Execution | Runtime order snapshot and bounded fills with linked venue FEE events. Reference slippage uses persisted planning/stop prices; unpersisted latency and correlation/replacement lineage remain unavailable. |
 | Reconciliation | Local snapshot plus retained exchange snapshot through the verified reconciler; missing/stale evidence stays pending. |
 | Pipeline / Why | Timestamp-aligned daily checkpoint chain and order/fill proof. Quiet/HOLD cycles retain observed assets and explain empty lineage; absent first decision/planner remains pending. Replay uses market/account/retained-order observations without claiming cycle-aligned proof. Unpersisted intermediate transformations remain unavailable. |
 | Risk | Exact approved DecisionBatch and persisted signals/account inputs; policy from `portfolio_risk_service_metadata.portfolio_config`. New cycles store optional `risk_diagnostics_payload` atomically in the risk decision checkpoint: sized/capped weights, annualized volatility, cap reductions, HOLD/FLAT/TARGET_WEIGHT actions and cycle configuration identity. Its SHA-256 is the displayed fingerprint. Old schemas/rows and canonical replay snapshots retain unavailable evaluations. Combined approved weights use combined notionals/reference capital. Whole-account/venue breaches and marked real PnL remain unavailable. |
@@ -135,10 +143,10 @@ in-memory and is unrelated to durable alerts/audit.
 
 ## Public venue and registry boundary
 
-The public client queries fixed Hyperliquid TESTNET metadata/mid-price operations.
-Symbol registry and precision/rule checks are explicit and detect mapping drift.
-These public reads do not verify private authentication, account balances, signing,
-submit/cancel/fill behavior or MAINNET readiness.
+The Symbol Mapping page compares the Binance -> Kraken table with public Kraken tickers
+(`/api/symbol-map`). The earlier Hyperliquid TESTNET metadata/registry/rule checks
+(`/api/venue-*`) were retired on 2026-10-15. Public reads do not verify private
+authentication, account balances, signing or submit/cancel/fill behavior.
 
 See [API_CONTRACT.md](API_CONTRACT.md) for routes and
 [the dashboard README](../README.md) for current overlays and run commands.

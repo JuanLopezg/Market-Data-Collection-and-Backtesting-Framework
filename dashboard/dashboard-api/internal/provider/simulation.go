@@ -627,14 +627,14 @@ func (p *Simulation) execution(s simulationSnapshot) map[string]any {
 // Execution slippage in basis points against the expected price; positive = adverse
 // (paid more on a buy, received less on a sell).
 func slippageBpsFor(side string, expected, fill float64) (float64, bool) {
-	if expected <= 0 || fill <= 0 {
+	if !finitePositive(expected) || !finitePositive(fill) {
 		return 0, false
 	}
 	bps := (fill - expected) / expected * 10000
 	if side == "SELL" {
 		bps = -bps
 	}
-	return bps, true
+	return bps, isFiniteLedger(bps)
 }
 
 func formatBps(value float64) string {
@@ -815,10 +815,6 @@ func (p *Simulation) LedgerStatus(_ context.Context) LedgerStatus {
 	result.RecentWindowCount = len(result.Entries)
 	result.TotalFeesLabel = formatUSD2(result.TotalFees)
 	return result
-}
-
-func (p *Simulation) VenueFoundation(_ context.Context) VenueFoundation {
-	return VenueFoundation{Status: "MOCK_REPLAY_READY", FoundationReady: true, Venue: "MOCK", TargetEnvironment: "MOCK", GatewayMode: "canonical-adapter", PublicConnectivity: "IN_PROCESS", PrivateAuth: "DISABLED", OrderRouting: "MOCK_ONLY", SymbolMapping: "EXPLICIT_STEP49", ExchangeFilters: "STEP49_RULES", SecretsRequired: false, CapitalRequired: false, ReadOnly: true, SourceContract: "CanonicalVenueAdapter -> MockExchangeAdapterV1", Note: "Step58 simulation venue only; no Hyperliquid/private credentials or capital."}
 }
 
 func finiteSimulation(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }

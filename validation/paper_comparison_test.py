@@ -40,11 +40,19 @@ def market_database(output, wiggle=False):
     return database
 
 
-def run_baseline(output, portfolio=None, start=None):
+def add_unranked_coin(database, pair):
+    """A coin with the same 100 days of history that is absent from the day's ranking."""
+    with sqlite3.connect(database) as db:
+        rows = db.execute("SELECT date,open,high,low,close,volume,quote_volume FROM ohlcv_data "
+                          "WHERE pair='BTCUSDT' AND date<=20261009").fetchall()
+        db.executemany('INSERT INTO ohlcv_data VALUES(?,?,?,?,?,?,?,?)', [(pair, *row) for row in rows])
+
+
+def run_baseline(output, portfolio=None, start=None, open_prices=None):
     manifest = {'strategy_config': str(comparison.PROFILE), 'portfolio_config': str(portfolio or comparison.PORTFOLIO),
                 'initial_cash': 100000, 'commission_rate': .001, 'warmup_days': 100,
                 'cycles': [{'database': str(output / 'market.sqlite'), 'decision_date': 20261009,
-                            'execution_date': 20261010, 'open_prices': {'BTCUSDT': 400}}],
+                            'execution_date': 20261010, 'open_prices': open_prices or {'BTCUSDT': 400}}],
                 'output': str(output / 'result.json')}
     if start:
         manifest['start'] = start
@@ -99,6 +107,22 @@ class PaperBaselineTest(unittest.TestCase):
             start['strategies'][0]['strategy_id'] = 9
             with self.assertRaises(subprocess.CalledProcessError):
                 run_baseline(output, EQUAL_WEIGHT, start)
+
+    def test_held_coin_outside_the_top_50_is_priced_and_resized(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            add_unranked_coin(market_database(output, wiggle=True), 'ETHUSDT')
+            # ETH is held with an active signal but has left the ranking (top 50).
+            start = {'cash': 98000, 'positions': {'ETHUSDT': 10},
+                     'strategies': [{'strategy_id': 1, 'signals': {'ETHUSDT': 1}, 'desired_weights': {'ETHUSDT': 0.02},
+                                     'virtual_positions': {'ETHUSDT': 10}}]}
+            row = run_baseline(output, VOL_TARGET, start, {'BTCUSDT': 400, 'ETHUSDT': 400})['rows'][0]
+            # Its close(T) still prices the 20% relative rule (risk service window), so the
+            # small 2% position is resized to the volatility target like a ranked coin.
+            self.assertEqual(row['signals']['ETHUSDT'], 1)
+            self.assertGreater(row['positions']['ETHUSDT'], 10)
+            # Signals still come from the ranked universe only: BTC enters as before.
+            self.assertEqual(row['signals']['BTCUSDT'], 1)
 
     def test_configuration_change_archives_and_seeds_a_new_study(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <set>
 #include <stdexcept>
 #include <thread>
 
@@ -175,16 +176,55 @@ void verifyAcknowledgedRestart()
             "Acknowledged message reappeared after broker restart");
     bus.close(subscription);
 }
+
+double singleNumber(const char* query)
+{
+    PGconn* connection = PQconnectdb(setting("TEST_POSTGRES_DSN"));
+    PGresult* result = PQexec(connection, query);
+    const bool success = result && PQresultStatus(result) == PGRES_TUPLES_OK && PQntuples(result) == 1;
+    const double value = success ? std::strtod(PQgetvalue(result, 0, 0), nullptr) : 0.0;
+    PQclear(result);
+    PQfinish(connection);
+    require(success, "Expected exactly one numeric row");
+    return value;
+}
+
+// A day's equity row is written once (2026-10-15 fix): after a restart the market update
+// of the last completed day is redelivered while the account already holds the next
+// open's fills; that second write must not replace the row of close(T).
+void equityDayWrittenOnce()
+{
+    PostgresStateStore store(setting("TEST_POSTGRES_DSN"));
+    EquityDay atClose;
+    atClose.date = 20200102;
+    atClose.cash = 968.75;
+    atClose.positions_value = 31.25;
+    atClose.equity = 1000.0;
+    atClose.open_positions = 1;
+    require(store.insertEquityDay(atClose), "First equity row of a day was not written");
+
+    EquityDay afterNextOpen = atClose;
+    afterNextOpen.cash = 1001.0;
+    afterNextOpen.positions_value = 0.0;
+    afterNextOpen.equity = 1001.0;
+    afterNextOpen.open_positions = 0;
+    require(!store.insertEquityDay(afterNextOpen), "A second equity row of the same day was written");
+    require(store.equityDays() == std::set<Timestamp>{20200102}, "Unexpected equity days");
+    require(singleNumber("SELECT equity FROM trading_equity_daily WHERE date=20200102;") == 1000.0 &&
+            singleNumber("SELECT cash FROM trading_equity_daily WHERE date=20200102;") == 968.75,
+            "The first equity row of the day was replaced");
+}
 } // namespace
 
 int main(int argc, char** argv)
 {
     try {
-        require(argc == 2, "Expected seed, recover or verify phase");
+        require(argc == 2, "Expected seed, recover, verify or equity phase");
         const std::string phase = argv[1];
         if (phase == "seed") seedAndCrash();
         else if (phase == "recover") recoverAndAcknowledge();
         else if (phase == "verify") verifyAcknowledgedRestart();
+        else if (phase == "equity") equityDayWrittenOnce();
         else throw std::runtime_error("Unknown test phase");
         std::cout << "TRANSPORT-PERSISTENCE: PASS: " << phase << '\n';
         return 0;

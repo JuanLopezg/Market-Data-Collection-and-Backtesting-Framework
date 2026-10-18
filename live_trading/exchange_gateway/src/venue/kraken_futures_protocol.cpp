@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <charconv>
 #include <cmath>
 #include <ctime>
 #include <filesystem>
@@ -441,7 +442,13 @@ std::vector<Market> KrakenFuturesProtocol::parseMarkets(const HttpResponse& resp
             if (!precision.is_number_integer() || precision.get<int>() < -12 || precision.get<int>() > 12)
                 throw ProtocolError(endpoint + ": invalid quantity precision for " + symbol);
             market.quantity_step = std::pow(10.0, -precision.get<int>());
-            market.tick_size = number(instrument, "tickSize", endpoint);
+            try {
+                market.tick_size = number(instrument, "tickSize", endpoint);
+            }
+            catch (const ProtocolError&) {
+                // Retain the instrument so the order receives a local, explicit rejection.
+                market.tick_size = 0.0;
+            }
             market.trading = market.tick_size > 0.0;
             if (!market.trading)
                 market.unavailable_reason = "invalid tick size";
@@ -496,6 +503,21 @@ HttpRequest KrakenFuturesProtocol::submitRequest(const OrderRequest& order)
     if (!size.empty() && size.back() == '.')
         size.pop_back();
 
+    if (order.type == VenueOrderType::PositionStop) {
+        if (order.side != OrderSide::Sell || !std::isfinite(order.stop_price) || order.stop_price <= 0.0)
+            throw std::invalid_argument("Kraken position stop must be a positive-price SELL");
+        // Shortest fixed decimal that round-trips the tick-rounded price. Unlike the
+        // market-size formatter this also supports ticks smaller than 1e-12.
+        char price[384];
+        const auto formatted = std::to_chars(price, price + sizeof(price), order.stop_price, std::chars_format::fixed);
+        if (formatted.ec != std::errc{})
+            throw std::invalid_argument("Kraken stop price cannot be represented");
+        const std::string body = "orderType=stp&symbol=" + urlEncode(order.symbol) +
+            "&side=sell&size=" + size + "&cliOrdId=" + urlEncode(order.client_order_id) +
+            "&stopPrice=" + std::string(price, formatted.ptr) + "&reduceOnly=true&triggerSignal=mark";
+        // Omitting limitPrice selects stop-market, not stop-limit.
+        return privatePost("sendorder", "sendorder", body);
+    }
     const std::string body = "orderType=mkt&symbol=" + urlEncode(order.symbol) +
                              "&side=" + std::string(order.side == OrderSide::Buy ? "buy" : "sell") +
                              "&size=" + size + "&cliOrdId=" + urlEncode(order.client_order_id);
@@ -714,12 +736,14 @@ AccountLog KrakenFuturesProtocol::parseAccountLog(const HttpResponse& response) 
                 log.unaccounted.push_back(info + " in " + currency);
                 continue;
             }
+            // Seen 2026-10-18: funding rows name the contract in lower case ("pf_strkusd");
+            // the symbol map and every other endpoint use "PF_STRKUSD".
+            const std::string contract = upper(optionalText(row, "contract"));
             if (fee != 0.0)
-                log.entries.push_back({id + ":fee", VenueCostKind::Fee, day, timeMs, optionalText(row, "contract"),
+                log.entries.push_back({id + ":fee", VenueCostKind::Fee, day, timeMs, contract,
                                        optionalText(row, "execution"), -fee});
             if (funding != 0.0)
-                log.entries.push_back({id + ":funding", VenueCostKind::Funding, day, timeMs,
-                                       optionalText(row, "contract"), {}, funding});
+                log.entries.push_back({id + ":funding", VenueCostKind::Funding, day, timeMs, contract, {}, funding});
             continue;
         }
         // A trade's PnL follows from the fills; nothing else to book.

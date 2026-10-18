@@ -43,6 +43,15 @@ type realMarketData struct {
 	CanonicalTopN         int                        `json:"canonicalTopN"`
 	LiquidityLabel        string                     `json:"liquidityLabel"`
 	HistoryDays           int                        `json:"historyDays"`
+	// Liquidity rank, SMA and RSI of every ranked candidate (not only the universe), for
+	// the Pipeline trace; not part of the Market Data JSON.
+	assets map[string]marketAssetView
+}
+
+type marketAssetView struct {
+	rank, candidates, universeN int
+	smaVolume, rsi              float64
+	latestDate                  uint64
 }
 
 type realMarketFreshness struct {
@@ -171,11 +180,9 @@ func buildRealMarketData(
 	if len(configs) > 0 {
 		cfg = configs[0]
 	}
-	liquidityLabel := "SMA Volume 25"
+	liquidityLabel := cfg.liquidityLabel()
 	entry, exit := cfg.rsiThresholds()
-	if cfg.QuoteVolume {
-		liquidityLabel = "SMA Quote Volume 25 (USDT)"
-	}
+
 	barsByAsset := make(map[string][]sqlitemarket.Bar)
 	for _, bar := range window.Bars {
 		barsByAsset[bar.Pair] = append(barsByAsset[bar.Pair], bar)
@@ -191,19 +198,19 @@ func buildRealMarketData(
 		if !hasBarOnDate(bars, window.LatestDate) {
 			continue
 		}
-		if cfg.QuoteVolume && len(bars) >= pureRSILiquidityLength {
-			for _, bar := range bars[len(bars)-pureRSILiquidityLength:] {
+		if cfg.QuoteVolume && len(bars) >= cfg.liquidityLength() {
+			for _, bar := range bars[len(bars)-cfg.liquidityLength():] {
 				if !isFinite(liquidityValue(bar, true)) {
 					missingQuoteRows++
 				}
 			}
 		}
-		sma := latestSMAOnRows(bars, pureRSILiquidityLength, func(bar sqlitemarket.Bar) float64 { return liquidityValue(bar, cfg.QuoteVolume) })
+		sma := latestSMAOnRows(bars, cfg.liquidityLength(), func(bar sqlitemarket.Bar) float64 { return liquidityValue(bar, cfg.QuoteVolume) })
 		if !isFinite(sma) {
 			continue
 		}
 		candidates = append(candidates, marketCandidate{
-			asset: ranked.Pair, smaVolume: sma, rsi: latestRSIOnRows(bars, pureRSILength), bars: bars,
+			asset: ranked.Pair, smaVolume: sma, rsi: latestRSIOnRows(bars, cfg.rsiLength()), bars: bars,
 		})
 	}
 	sort.Slice(candidates, func(i, j int) bool {
@@ -216,6 +223,11 @@ func buildRealMarketData(
 		universeN = len(candidates)
 	}
 	universe := append([]marketCandidate(nil), candidates[:universeN]...)
+	assetViews := make(map[string]marketAssetView, len(candidates))
+	for index, candidate := range candidates {
+		assetViews[candidate.asset] = marketAssetView{rank: index + 1, candidates: len(candidates), universeN: universeN,
+			smaVolume: candidate.smaVolume, rsi: candidate.rsi, latestDate: window.LatestDate}
+	}
 
 	aligned := checkpointErr == nil && checkpoint.Timestamp == window.LatestDate && checkpoint.Update.CompletedThrough == window.LatestDate && checkpoint.Intents.Timestamp == window.LatestDate && int(checkpoint.Update.ActiveTopN) == canonicalTopN
 	if cfg.QuoteVolume && cfg.QuoteVolumeFrom != "" && fmt.Sprintf("%08d", checkpoint.Timestamp) < cfg.QuoteVolumeFrom {
@@ -239,7 +251,7 @@ func buildRealMarketData(
 	}
 	availableSlots := 0
 	if aligned {
-		availableSlots = pureRSIMaxSignals - activeSignals
+		availableSlots = cfg.maxActiveSignals() - activeSignals
 		if availableSlots < 0 {
 			availableSlots = 0
 		}
@@ -252,6 +264,7 @@ func buildRealMarketData(
 	stale := 0
 	missingCandles := 0
 	gapCount := 0
+	freshnessNow := time.Now().UTC()
 
 	for i, candidate := range universe {
 		latestBar := latestBar(candidate.bars)
@@ -260,13 +273,12 @@ func buildRealMarketData(
 		lastCandle := "—"
 		if latestBar != nil {
 			lastCandle = formatMarketDate(latestBar.Date)
+			ageLabel = marketCandleAgeLabel(latestBar.Date, freshnessNow)
 			days := calendarDaysBetween(latestBar.Date, window.LatestDate)
 			if days == 0 {
 				state = "HEALTHY"
-				ageLabel = "current canonical day"
 				healthy++
 			} else {
-				ageLabel = fmt.Sprintf("%d calendar day(s) behind", days)
 				stale++
 			}
 		} else {
@@ -277,7 +289,7 @@ func buildRealMarketData(
 			StaleThresholdLabel: "target-day candle required", Source: "canonical SQLite", State: state,
 		})
 
-		missing, gaps := recentCalendarIntegrity(candidate.bars, window.LatestDate, pureRSILiquidityLength)
+		missing, gaps := recentCalendarIntegrity(candidate.bars, window.LatestDate, cfg.liquidityLength())
 		missingCandles += missing
 		gapCount += gaps
 
@@ -292,11 +304,11 @@ func buildRealMarketData(
 			SlotState: slotState, Diagnostic: diagnostic, DiagnosticTone: tone,
 		})
 
-		if aligned && signalValue <= 1e-12 && isFinite(candidate.rsi) && candidate.rsi > pureRSIEntry {
-			if activeSignals >= pureRSIMaxSignals {
+		if aligned && signalValue <= 1e-12 && isFinite(candidate.rsi) && candidate.rsi > entry {
+			if activeSignals >= cfg.maxActiveSignals() {
 				rejections = append(rejections, realCandidateRejection{
 					Asset: candidate.asset, Reason: "MAX ACTIVE SIGNALS",
-					Detail: "RSI entry condition is met, but the durable final signal is flat while the 10-signal cap is occupied.", Severity: "WARN",
+					Detail: "RSI entry condition is met, but the durable final signal is flat while the " + fmt.Sprint(cfg.maxActiveSignals()) + "-signal cap is occupied.", Severity: "WARN",
 				})
 			} else {
 				rejections = append(rejections, realCandidateRejection{
@@ -311,7 +323,7 @@ func buildRealMarketData(
 	if aligned && strings.TrimSpace(checkpoint.Update.Source) != "" {
 		source = checkpoint.Update.Source + " → canonical SQLite"
 	}
-	note := fmt.Sprintf("OHLCV and the daily exchange ranking are read directly from the canonical SQLite database. %s and RSI(7) are recomputed with the same formulas over the same bounded %d-calendar-day strategy window. Durable StrategyIntent state is joined only when its checkpoint timestamp exactly matches the SQLite ranking frontier.", liquidityLabel, historyDays)
+	note := fmt.Sprintf("OHLCV and the daily exchange ranking are read directly from the canonical SQLite database. %s and %s are recomputed with the same formulas over the same bounded %d-calendar-day strategy window. Durable StrategyIntent state is joined only when its checkpoint timestamp exactly matches the SQLite ranking frontier.", liquidityLabel, cfg.rsiLabel(), historyDays)
 	if cfg.QuoteVolumeFrom != "" {
 		note += " Quote-volume strategy takes effect from completed candle " + cfg.QuoteVolumeFrom + "; earlier durable cycles are preserved."
 	}
@@ -339,9 +351,9 @@ func buildRealMarketData(
 		CandidateRejections: rejections,
 		StrategySnapshot: realMarketStrategySnapshot{
 			Ranking:      fmt.Sprintf("Top %d by %s inside canonical top-%d", universeN, liquidityLabel, canonicalTopN),
-			EntryRule:    fmt.Sprintf("RSI(7) > %g", entry),
-			ExitRule:     fmt.Sprintf("RSI(7) < %g", exit),
-			MaxPositions: "10 persistent signals",
+			EntryRule:    fmt.Sprintf("%s > %g", cfg.rsiLabel(), entry),
+			ExitRule:     fmt.Sprintf("%s < %g", cfg.rsiLabel(), exit),
+			MaxPositions: fmt.Sprintf("%d persistent signals", cfg.maxActiveSignals()),
 			Semantics:    "LEVEL",
 		},
 		SourceMode:          "REAL",
@@ -352,6 +364,7 @@ func buildRealMarketData(
 		CanonicalTopN:       canonicalTopN,
 		HistoryDays:         historyDays,
 		LiquidityLabel:      liquidityLabel,
+		assets:              assetViews,
 	}
 }
 
@@ -374,10 +387,10 @@ func describeMarketSignal(rsi, signal float64, aligned bool, activeSignals int, 
 		return "SHORT", "ACTIVE", "OCCUPIED", "Unexpected negative PureRSI signal observed in the durable checkpoint.", "bad"
 	}
 	if !isFinite(rsi) {
-		return "FLAT", "NO INDICATOR", "FREE", "Insufficient bounded history to compute RSI(7).", "warn"
+		return "FLAT", "NO INDICATOR", "FREE", "Insufficient bounded history to compute " + cfg.rsiLabel() + ".", "warn"
 	}
 	if rsi > entry {
-		if activeSignals >= pureRSIMaxSignals {
+		if activeSignals >= cfg.maxActiveSignals() {
 			return "FLAT", "BLOCKED", "FREE", "Entry condition is met, but the persistent signal cap is already occupied.", "warn"
 		}
 		return "FLAT", "CHECK", "FREE", "Entry condition is met but the aligned durable signal is flat; investigate checkpoint/config parity.", "bad"
@@ -530,6 +543,22 @@ func calendarDaysBetween(from, to uint64) int {
 		return 0
 	}
 	return int(right.Sub(left).Hours() / 24)
+}
+
+// A daily candle becomes due on the following UTC day. Its age increases only
+// at UTC midnight, even if the whole canonical database stops advancing.
+func marketCandleAgeLabel(candleDate uint64, now time.Time) string {
+	candle, valid := parseMarketDate(candleDate)
+	if !valid {
+		return "—"
+	}
+	utc := now.UTC()
+	completedDay := time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, -1)
+	days := int(completedDay.Sub(candle).Hours() / 24)
+	if days < 0 {
+		days = 0
+	}
+	return fmt.Sprintf("%dd", days)
 }
 
 func safeDisplayRSI(value float64) float64 {

@@ -20,7 +20,7 @@ func TestBuildRealExecutionMapsDurableOrdersAndFillsWithoutInventingQuality(t *t
 		{FillID: 101, OrderID: 12, StrategyID: 1, Timestamp: 20260924, Coin: "BTC", Side: 0, Quantity: 0.2, Price: 50000, Commission: 2.5},
 	}}
 
-	data := buildRealExecution(state, orders, len(orders), fills)
+	data := buildRealExecution(state, orders, len(orders), fills, false)
 	if data.SourceMode != "REAL" || data.OpenOrders != 1 || data.PartialOrders != 1 || data.RejectCount != 1 || data.FillCount != 1 {
 		t.Fatalf("unexpected execution summary: %+v", data)
 	}
@@ -45,7 +45,7 @@ func TestVenueSkipsAreShownApartFromRejects(t *testing.T) {
 		{OrderID: 2, Coin: "ETHUSDT", Status: 6, CreatedAt: 20261014, UpdatedAt: 20261014, LastMessage: "BELOW_MINIMUM_QUANTITY: 0.0001 ETH is below the venue minimum 0.001"},
 		{OrderID: 1, Coin: "1000PEPEUSDT", Status: 6, CreatedAt: 20261014, UpdatedAt: 20261014, LastMessage: "NOTIONAL_MISMATCH: $5,000.00 at the venue vs $5.00 planned"},
 	}
-	data := buildRealExecution(state, orders, len(orders), pgstore.FillWindow{})
+	data := buildRealExecution(state, orders, len(orders), pgstore.FillWindow{}, false)
 	if data.SkippedCount != 2 || data.RejectCount != 1 || data.RejectRateLabel != "33.3%" {
 		t.Fatalf("skips must not count as rejects: skipped=%d rejected=%d rate=%s", data.SkippedCount, data.RejectCount, data.RejectRateLabel)
 	}

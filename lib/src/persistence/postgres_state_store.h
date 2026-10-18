@@ -60,7 +60,10 @@ public:
     void replaceLedger(const PositionLedger& ledger);
     // After a fill: rewrite the open positions and add the positions it closed.
     void saveLedger(const PositionLedger& ledger, const std::vector<PositionLot>& newlyClosed);
-    void saveEquityDay(const EquityDay& day);
+    // A day's equity row is written once: the first write wins and later ones (a market
+    // update redelivered after a restart, when the account already holds the next open's
+    // fills) are ignored. Returns whether this call wrote the row.
+    bool insertEquityDay(const EquityDay& day);
     std::set<Timestamp> equityDays() const;
     std::vector<FundingPayment> loadFunding() const;
 

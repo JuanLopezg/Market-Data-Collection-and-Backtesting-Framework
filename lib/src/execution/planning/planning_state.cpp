@@ -131,6 +131,11 @@ ExecutionPlanningStateSnapshot makeExecutionPlanningStateSnapshot(
     result.orders.reserve(orderManager.orders().size());
     for (const auto& [orderId, order] : orderManager.orders()) {
         (void)orderId;
+        // A resting position stop (LIVE stop-loss) is protection, not a pending trade: the
+        // order planner neither counts it nor cancels it, and its replacements do not change
+        // this revision (execution owns its lifecycle, see position_stops.h).
+        if (order.request.isPositionStop())
+            continue;
         result.orders.push_back(order);
     }
 

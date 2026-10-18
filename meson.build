@@ -65,3 +65,4 @@ global_deps = {
 subdir('lib')
 subdir('live_trading')
 subdir('research')
+subdir('standby')

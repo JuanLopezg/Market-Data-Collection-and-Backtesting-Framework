@@ -103,6 +103,28 @@ func TestBuildRealMarketDataDoesNotMixUnalignedStrategyCycle(t *testing.T) {
 	}
 }
 
+func TestMarketCandleAgeCountsDaysAfterNextUTCMidnight(t *testing.T) {
+	for _, test := range []struct {
+		now  string
+		want string
+	}{
+		{"2026-10-18T00:00:00Z", "0d"},
+		{"2026-10-18T23:59:59Z", "0d"},
+		{"2026-10-19T00:00:00Z", "1d"},
+		{"2026-10-20T12:00:00Z", "2d"},
+		{"2026-10-19T01:59:59+02:00", "0d"},
+		{"2026-10-19T02:00:00+02:00", "1d"},
+	} {
+		now, err := time.Parse(time.RFC3339, test.now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := marketCandleAgeLabel(20261017, now); got != test.want {
+			t.Fatalf("age at %s: got %q, want %q", test.now, got, test.want)
+		}
+	}
+}
+
 func makeTrendBars(pair string, startDate int, count int) []sqlitemarket.Bar {
 	start, _ := time.Parse("20060102", formatIntDate(startDate))
 	result := make([]sqlitemarket.Bar, 0, count)

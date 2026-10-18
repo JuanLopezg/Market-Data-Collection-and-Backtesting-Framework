@@ -24,6 +24,7 @@ Neither is a cumulative development diary.
 | Live service ownership, timing and durability | [live_trading](../live_trading/README.md) |
 | Real exchanges behind the gateway (Kraken Futures) | [Exchange gateway](../live_trading/exchange_gateway/README.md) |
 | Replay modes, cutoff, pacing and resume | [research/replay](../research/REPLAY.md) |
+| Local standby: the VPS's next orders computed here | [standby](../standby/README.md) |
 | Tests, structural audits and integration checks | [validation](../validation/README.md) |
 | Controlled local service/recovery environment before renting a VPS | [Local campaign](../validation/LOCAL_SERVICE_CAMPAIGN.md) |
 | Generated local repository navigation | [AI index](codex/AI_INDEX.md) |
@@ -31,7 +32,7 @@ Neither is a cumulative development diary.
 | Dashboard HTTP boundary | [API contract](../dashboard/docs/API_CONTRACT.md) |
 | Dashboard source ownership | [Source map](../dashboard/docs/REAL_DATA_SOURCE_MAP.md) |
 | Dashboard access controls | [Authentication](../dashboard/docs/AUTH_SECURITY.md) |
-| Dashboard VPS deployment | [Deployment](../dashboard/docs/AWS_DEPLOYMENT.md) |
+| Dashboard standalone deployment (superseded by deploy/chain) | [Deployment](../dashboard/docs/AWS_DEPLOYMENT.md) |
 | Dashboard production review | [Checklist](../dashboard/docs/PRODUCTION_CHECKLIST.md) |
 | Runtime layout, single Compose file and `algo` launcher | [Chain](../deploy/chain/README.md) |
 | Live Compose stack | [Live deploy](../deploy/live/README.md) |
@@ -58,8 +59,12 @@ consumers migrated; accepted migration evidence remains in `CURRENT_STATE.md`.
 
 `storage/` and `deploy/historical_replay/run/` contain datasets, user reports,
 accepted replay output and generated evidence/logs. They are not the current
-documentation tree and were not pruned by this cleanup. Historical tools under
-`tools/historical_replay/` may still depend on these captures.
+documentation tree. The 2026-10-15 cleanup removed old releases, temporary
+profiles/images, old campaigns and finished logs from `storage/` (list in
+`storage/cleanup_notes/A-deletion-result.json`); datasets, backtests, Kraken shadow
+evidence and the current/previous releases were kept. Older `CURRENT_STATE.md` entries
+still cite some removed logs; their accepted results stand, the files are gone.
+Historical tools under `tools/historical_replay/` may still depend on retained captures.
 
 ## Cleanup policy
 

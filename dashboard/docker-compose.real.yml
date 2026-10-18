@@ -1,3 +1,6 @@
+# Superseded by deploy/chain (2026-10-15): the real provider now reads the trading chain only
+# (PAPER or Kraken LIVE, set by deploy/chain/algo); the Hyperliquid TESTNET boundary this
+# standalone overlay used was retired, so it no longer starts as it is.
 # Real-source/control-preview/streaming overlay through Step 46B.
 # Start deploy/live first, then run this compose with deploy/live/.env.
 services:
@@ -14,11 +17,6 @@ services:
       DASHBOARD_MARKET_HISTORY_DAYS: "${MARKET_WARMUP_DAYS:-100}"
       DASHBOARD_STRATEGY_UNIVERSE_N: "20"
       DASHBOARD_SOURCE_PROBE_TIMEOUT: "1s"
-      DASHBOARD_EXECUTION_VENUE: "HYPERLIQUID"
-      DASHBOARD_VENUE_TARGET_ENVIRONMENT: "TESTNET"
-      DASHBOARD_EXCHANGE_GATEWAY_MODE: "hyperliquid-dry-run"
-      DASHBOARD_HYPERLIQUID_PUBLIC_INFO_URL: "https://api.hyperliquid-testnet.xyz/info"
-      DASHBOARD_HYPERLIQUID_PUBLIC_TIMEOUT: "3s"
       DASHBOARD_ALERT_STORE_DIR: "/data/watchdog"
       DASHBOARD_MANUAL_AUDIT_DIR: "/data/manual-audit"
       DASHBOARD_ALERT_ACK_DIR: "/data/alert-ack"
@@ -56,11 +54,6 @@ services:
       DASHBOARD_MARKET_HISTORY_DAYS: "${MARKET_WARMUP_DAYS:-100}"
       DASHBOARD_STRATEGY_UNIVERSE_N: "20"
       DASHBOARD_SOURCE_PROBE_TIMEOUT: "1s"
-      DASHBOARD_EXECUTION_VENUE: "HYPERLIQUID"
-      DASHBOARD_VENUE_TARGET_ENVIRONMENT: "TESTNET"
-      DASHBOARD_EXCHANGE_GATEWAY_MODE: "hyperliquid-dry-run"
-      DASHBOARD_HYPERLIQUID_PUBLIC_INFO_URL: "https://api.hyperliquid-testnet.xyz/info"
-      DASHBOARD_HYPERLIQUID_PUBLIC_TIMEOUT: "3s"
       DASHBOARD_ALERT_STORE_DIR: "/data/watchdog"
       DASHBOARD_WATCHDOG_INTERVAL: "15s"
       DASHBOARD_WATCHDOG_SWEEP_TIMEOUT: "8s"

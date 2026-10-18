@@ -232,6 +232,36 @@ int MarketDataStore::countRowsFor(const std::string& symbol) const
     return result;
 }
 
+int MarketDataStore::countRankedFor(std::chrono::year_month_day date) const
+{
+    const char* sql = "SELECT COUNT(*) FROM market_volume_rank_daily WHERE date = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)
+        throw std::runtime_error("Cannot prepare daily ranking count query");
+    sqlite3_bind_int(stmt, 1, toYYYYMMDD(date));
+
+    int result = 0;
+    if (sqlite3_step(stmt) == SQLITE_ROW)
+        result = sqlite3_column_int(stmt, 0);
+    sqlite3_finalize(stmt);
+    return result;
+}
+
+std::vector<std::string> MarketDataStore::symbolsWithBarOn(std::chrono::year_month_day date) const
+{
+    const char* sql = "SELECT pair FROM ohlcv_data WHERE date = ? ORDER BY pair;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)
+        throw std::runtime_error("Cannot prepare daily symbols query");
+    sqlite3_bind_int(stmt, 1, toYYYYMMDD(date));
+
+    std::vector<std::string> symbols;
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+        symbols.emplace_back(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)));
+    sqlite3_finalize(stmt);
+    return symbols;
+}
+
 std::optional<int> MarketDataStore::earliestMissingDateInRecentWindow(
     const std::string& symbol,
     std::chrono::year_month_day targetDate,

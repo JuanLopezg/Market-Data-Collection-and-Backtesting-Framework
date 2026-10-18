@@ -22,10 +22,6 @@ import type {
   ShellStatus,
   SafetyGateData,
   GlobalReadinessData,
-  VenueFoundationData,
-  VenuePublicData,
-  VenueSymbolMappingData,
-  VenueTradingRulesData,
   SymbolMapData,
   LedgerData,
   HostHistoryData,
@@ -39,10 +35,6 @@ export class ApiDashboardDataSource implements DashboardDataSource {
   getDiagnostics() { return this.client.get<DashboardDiagnostics>('/diagnostics') }
   getSafetyGate() { return this.client.get<SafetyGateData>('/safety-gate') }
   getGlobalReadiness() { return this.client.get<GlobalReadinessData>('/global-readiness') }
-  getVenueFoundation() { return this.client.get<VenueFoundationData>('/venue-foundation') }
-  getVenuePublic() { return this.client.get<VenuePublicData>('/venue-public') }
-  getVenueSymbolMapping() { return this.client.get<VenueSymbolMappingData>('/venue-symbol-map') }
-  getVenueTradingRules() { return this.client.get<VenueTradingRulesData>('/venue-rules') }
   getSymbolMap() { return this.client.get<SymbolMapData>('/symbol-map') }
   getLedger() { return this.client.get<LedgerData>('/ledger') }
   getShellStatus() { return this.client.get<ShellStatus>('/shell-status') }

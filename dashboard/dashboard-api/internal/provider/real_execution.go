@@ -43,33 +43,40 @@ type realExecutionData struct {
 	SourceNote            string                  `json:"sourceNote"`
 	LatencyAvailable      bool                    `json:"latencyAvailable"`
 	SlippageAvailable     bool                    `json:"slippageAvailable"`
+	SlippageHistory       []executionSlippageDay  `json:"slippageHistory"`
+	SlippageFillCount     int                     `json:"slippageFillCount"`
+	SlippageBasis         string                  `json:"slippageBasis"`
+	FeesPendingCount      int64                   `json:"feesPendingCount"`
 	OrderWindowTruncated  bool                    `json:"orderWindowTruncated"`
 	FillWindowTruncated   bool                    `json:"fillWindowTruncated"`
 }
 
 type realExecutionOrder struct {
-	OrderID            string                   `json:"orderId"`
-	ExchangeOrderID    string                   `json:"exchangeOrderId"`
-	CycleID            string                   `json:"cycleId"`
-	CorrelationID      string                   `json:"correlationId"`
-	StrategyID         uint64                   `json:"strategyId"`
-	Asset              string                   `json:"asset"`
-	Side               string                   `json:"side"`
-	Quantity           float64                  `json:"quantity"`
-	FilledQty          float64                  `json:"filledQty"`
-	RemainingQty       float64                  `json:"remainingQty"`
-	State              string                   `json:"state"`
-	Age                string                   `json:"age"`
-	ExpectedPriceLabel string                   `json:"expectedPriceLabel"`
-	AvgFillPriceLabel  string                   `json:"avgFillPriceLabel"`
-	FeesLabel          string                   `json:"feesLabel"`
-	SlippageBps        float64                  `json:"slippageBps"`
-	SlippageBpsLabel   string                   `json:"slippageBpsLabel"`
-	SubmitLatencyMs    int                      `json:"submitLatencyMs"`
-	FillLatencyMs      *int                     `json:"fillLatencyMs"`
-	SubmittedAt        string                   `json:"submittedAt"`
-	LastUpdateAt       string                   `json:"lastUpdateAt"`
-	Lifecycle          []realExecutionLifecycle `json:"lifecycle"`
+	OrderType           string                   `json:"orderType,omitempty"`
+	PositionStopPrice   float64                  `json:"positionStopPrice,omitempty"`
+	OrderID             string                   `json:"orderId"`
+	ExchangeOrderID     string                   `json:"exchangeOrderId"`
+	CycleID             string                   `json:"cycleId"`
+	CorrelationID       string                   `json:"correlationId"`
+	StrategyID          uint64                   `json:"strategyId"`
+	Asset               string                   `json:"asset"`
+	Side                string                   `json:"side"`
+	Quantity            float64                  `json:"quantity"`
+	FilledQty           float64                  `json:"filledQty"`
+	RemainingQty        float64                  `json:"remainingQty"`
+	State               string                   `json:"state"`
+	Age                 string                   `json:"age"`
+	ExpectedPriceLabel  string                   `json:"expectedPriceLabel"`
+	ExpectedPriceSource string                   `json:"expectedPriceSource,omitempty"`
+	AvgFillPriceLabel   string                   `json:"avgFillPriceLabel"`
+	FeesLabel           string                   `json:"feesLabel"`
+	SlippageBps         float64                  `json:"slippageBps"`
+	SlippageBpsLabel    string                   `json:"slippageBpsLabel"`
+	SubmitLatencyMs     int                      `json:"submitLatencyMs"`
+	FillLatencyMs       *int                     `json:"fillLatencyMs"`
+	SubmittedAt         string                   `json:"submittedAt"`
+	LastUpdateAt        string                   `json:"lastUpdateAt"`
+	Lifecycle           []realExecutionLifecycle `json:"lifecycle"`
 }
 
 type realExecutionLifecycle struct {
@@ -150,9 +157,10 @@ type realCancelReplacement struct {
 }
 
 type orderFillAggregate struct {
-	Quantity   float64
-	Notional   float64
-	Commission float64
+	Quantity    float64
+	Notional    float64
+	Commission  float64
+	PendingFees bool
 }
 
 func (p *Real) execution(ctx context.Context) (realExecutionData, error) {
@@ -182,10 +190,10 @@ func (p *Real) execution(ctx context.Context) (realExecutionData, error) {
 		return realExecutionData{}, fmt.Errorf("read durable execution fills: %w", err)
 	}
 
-	return buildRealExecution(state, tracked, totalOrders, fills), nil
+	return buildRealExecution(state, tracked, totalOrders, fills, p.cfg.RuntimeMode == "LIVE" && p.cfg.ExecutionVenue == "KRAKEN"), nil
 }
 
-func buildRealExecution(state pgstore.RuntimeState, tracked []tradingwire.PersistedTrackedOrder, totalOrders int, fills pgstore.FillWindow) realExecutionData {
+func buildRealExecution(state pgstore.RuntimeState, tracked []tradingwire.PersistedTrackedOrder, totalOrders int, fills pgstore.FillWindow, krakenLive bool) realExecutionData {
 	fillsTruncated := len(fills.Rows) >= maxExecutionFills
 	fillsByOrder := make(map[uint64]orderFillAggregate)
 	cumulative := make(map[uint64]float64)
@@ -195,6 +203,7 @@ func buildRealExecution(state pgstore.RuntimeState, tracked []tradingwire.Persis
 		agg.Quantity += fill.Quantity
 		agg.Notional += fill.Quantity * fill.Price
 		agg.Commission += fill.Commission
+		agg.PendingFees = agg.PendingFees || (krakenLive && !fill.FeeRecorded && fill.Commission == 0)
 		fillsByOrder[fill.OrderID] = agg
 
 		cumulative[fill.OrderID] += fill.Quantity
@@ -209,7 +218,7 @@ func buildRealExecution(state pgstore.RuntimeState, tracked []tradingwire.Persis
 			Quantity:        fill.Quantity,
 			PriceLabel:      formatPriceUSD(fill.Price),
 			CumulativeLabel: cumulativeLabel,
-			FeesLabel:       formatUSD(fill.Commission),
+			FeesLabel:       executionFeesLabel(fill.Commission, krakenLive && !fill.FeeRecorded && fill.Commission == 0),
 			Timestamp:       formatTradingTimestamp(fill.Timestamp),
 		})
 	}
@@ -246,7 +255,17 @@ func buildRealExecution(state pgstore.RuntimeState, tracked []tradingwire.Persis
 
 		fillAgg := fillsByOrder[order.OrderID]
 		avgFill := "—"
-		feesLabel := formatUSD(fillAgg.Commission)
+		feesLabel := "—"
+		if fillAgg.Quantity > 0 {
+			feesLabel = executionFeesLabel(fillAgg.Commission, fillAgg.PendingFees)
+		}
+		expected, expectedSource := executionReferencePrice(order)
+		slippage, slippageLabel := 0.0, "—"
+		if finitePositive(expected) && finitePositive(fillAgg.Quantity) && !fillsTruncated {
+			if value, ok := slippageBpsFor(sideLabel(order.Side), expected, fillAgg.Notional/fillAgg.Quantity); ok {
+				slippage, slippageLabel = value, formatBps(value)
+			}
+		}
 		if fillsTruncated {
 			avgFill = "Bounded window"
 			feesLabel = "Bounded window"
@@ -270,25 +289,29 @@ func buildRealExecution(state pgstore.RuntimeState, tracked []tradingwire.Persis
 
 		remaining := math.Max(0, order.Quantity-order.FilledQuantity)
 		orders = append(orders, realExecutionOrder{
-			OrderID:            strconv.FormatUint(order.OrderID, 10),
-			ExchangeOrderID:    order.ExchangeOrderID,
-			CycleID:            "Not persisted",
-			CorrelationID:      "Not persisted",
-			StrategyID:         order.StrategyID,
-			Asset:              order.Coin,
-			Side:               sideLabel(order.Side),
-			Quantity:           order.Quantity,
-			FilledQty:          order.FilledQuantity,
-			RemainingQty:       remaining,
-			State:              stateLabel,
-			Age:                "—",
-			ExpectedPriceLabel: "Not persisted",
-			AvgFillPriceLabel:  avgFill,
-			FeesLabel:          feesLabel,
-			SlippageBpsLabel:   "Not available",
-			SubmittedAt:        formatTradingTimestamp(order.CreatedAt),
-			LastUpdateAt:       formatTradingTimestamp(order.UpdatedAt),
-			Lifecycle:          lifecycle,
+			OrderType:           positionStopOrderType(order),
+			PositionStopPrice:   order.PositionStopPrice,
+			OrderID:             strconv.FormatUint(order.OrderID, 10),
+			ExchangeOrderID:     order.ExchangeOrderID,
+			CycleID:             "Not persisted",
+			CorrelationID:       "Not persisted",
+			StrategyID:          order.StrategyID,
+			Asset:               order.Coin,
+			Side:                sideLabel(order.Side),
+			Quantity:            order.Quantity,
+			FilledQty:           order.FilledQuantity,
+			RemainingQty:        remaining,
+			State:               stateLabel,
+			Age:                 "—",
+			ExpectedPriceLabel:  formatPriceUSD(expected),
+			ExpectedPriceSource: expectedSource,
+			AvgFillPriceLabel:   avgFill,
+			FeesLabel:           feesLabel,
+			SlippageBps:         slippage,
+			SlippageBpsLabel:    slippageLabel,
+			SubmittedAt:         formatTradingTimestamp(order.CreatedAt),
+			LastUpdateAt:        formatTradingTimestamp(order.UpdatedAt),
+			Lifecycle:           lifecycle,
 		})
 	}
 
@@ -299,7 +322,15 @@ func buildRealExecution(state pgstore.RuntimeState, tracked []tradingwire.Persis
 		rejectRate = fmt.Sprintf("%.1f%%", 100*float64(rejectedOrders)/float64(len(tracked)))
 	}
 
-	note := "Orders come from trading_runtime_state.snapshot.orders and fills from trading_fills. Price/slippage and gateway latency are not inferred because the durable runtime contract does not persist a canonical expected price or wall-clock latency trace. Replacement lineage is not persisted."
+	quality := realExecutionSlippage(tracked, fills.Rows)
+	if fillsTruncated {
+		quality = realExecutionSlippage(nil, nil)
+	}
+	pendingFees := int64(0)
+	if krakenLive {
+		pendingFees = fills.PendingFeeRows
+	}
+	note := "Orders come from trading_runtime_state.snapshot.orders. Fees are fill commission plus linked FEE events from trading_venue_costs; funding and other cash movements are excluded. Totals cover all persisted fills; order and slippage details use the bounded window. Gateway wall-clock latency and correlation/replacement lineage remain unavailable."
 	if totalOrders > maxExecutionOrders {
 		note += fmt.Sprintf(" Showing the newest %d of %d tracked orders.", maxExecutionOrders, totalOrders)
 	}
@@ -316,10 +347,11 @@ func buildRealExecution(state pgstore.RuntimeState, tracked []tradingwire.Persis
 		FillCount:             fills.TotalRows,
 		RejectCount:           rejectedOrders,
 		SkippedCount:          skippedOrders,
-		AvgSlippageBpsLabel:   "Not available",
-		BestSlippageBpsLabel:  "Not available",
-		WorstSlippageBpsLabel: "Not available",
-		TotalFeesLabel:        formatUSD(fills.TotalCommission),
+		AvgSlippageBpsLabel:   quality.averageLabel,
+		BestSlippageBpsLabel:  quality.bestLabel,
+		WorstSlippageBpsLabel: quality.worstLabel,
+		TotalFeesLabel:        executionFeesLabel(fills.TotalCommission, false),
+		FeesPendingCount:      pendingFees,
 		RejectRateLabel:       rejectRate,
 		Orders:                orders,
 		PartialFills:          fillRows,
@@ -329,7 +361,10 @@ func buildRealExecution(state pgstore.RuntimeState, tracked []tradingwire.Persis
 		SourceUpdatedAt:       state.UpdatedAt,
 		SourceNote:            note,
 		LatencyAvailable:      false,
-		SlippageAvailable:     false,
+		SlippageAvailable:     quality.fills > 0,
+		SlippageHistory:       quality.daily,
+		SlippageFillCount:     quality.fills,
+		SlippageBasis:         "Market orders: fill vs persisted planning price (normally Binance daily close; manual orders use their planning quote). Stops: fill vs stop trigger. Positive means adverse, negative means favorable. Includes overnight gaps and cross-venue price differences; this is not execution-only slippage against the Kraken mark at submission.",
 		OrderWindowTruncated:  totalOrders > maxExecutionOrders,
 		FillWindowTruncated:   fillsTruncated,
 	}

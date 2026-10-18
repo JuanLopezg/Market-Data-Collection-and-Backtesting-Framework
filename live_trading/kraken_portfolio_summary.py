@@ -114,6 +114,29 @@ def position_lines(result, market, now):
     return lines
 
 
+def position_table(lines):
+    """Render persisted position lines too, so yesterday survives an upgrade unchanged."""
+    if not lines:
+        return ['None']
+    rows = [('Asset', 'Side', 'USD', '% Eq')]
+    for line in lines:
+        heading, separator, value = line.partition(': ')
+        asset, space, side = heading.rpartition(' ')
+        if not separator or not space or side not in ('LONG', 'SHORT'):
+            # Never invent columns from an unfamiliar historical snapshot.
+            return lines
+        exposure, _, share = value.partition(' (')
+        exposure = 'N/A' if exposure == 'USD value unavailable' else exposure
+        share = share.removesuffix(' equity)') if share.endswith('% equity)') else 'N/A'
+        rows.append((asset, side, exposure, share))
+    widths = [max(len(row[column]) for row in rows) for column in range(4)]
+    def formatted(row):
+        return '  '.join(value.ljust(widths[column]) if column < 2 else value.rjust(widths[column])
+                         for column, value in enumerate(row))
+    return [formatted(rows[0]), '  '.join('-' * width for width in widths),
+            *(formatted(row) for row in rows[1:])]
+
+
 class DailyPortfolio:
     """Persist each UTC day's latest observation; never invent yesterday's holdings."""
 
@@ -146,12 +169,12 @@ class DailyPortfolio:
                  'Balance: ' + dollars(snapshot['balance']), 'Equity: ' + dollars(snapshot['equity'])]
         lines.extend(collateral_lines(collateral_risk(result, market, now)))
         lines.append('Active positions (USD exposure):')
-        lines.extend(snapshot['positions'] or ['None'])
+        lines.extend(position_table(snapshot['positions']))
         if previous:
             prior = json.loads(previous[0])
             clock = datetime.fromisoformat(prior['observed_at']).strftime('%Y-%m-%d %H:%M UTC')
             lines.append("Yesterday's positions (last snapshot " + clock + '):')
-            lines.extend(prior['positions'] or ['None'])
+            lines.extend(position_table(prior['positions']))
         else:
             lines.append("Yesterday's positions: unavailable (no snapshot)")
         identity = 'kraken-account:' + result['account_identity_hash'] + ':DAILY_PORTFOLIO'

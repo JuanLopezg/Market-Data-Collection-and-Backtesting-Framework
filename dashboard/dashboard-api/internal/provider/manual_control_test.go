@@ -105,7 +105,7 @@ func TestManualPreviewTreatsOmittedCurrentAssetAsTargetZero(t *testing.T) {
 	}
 }
 
-func TestManualExecutionConstraintsRequireExplicitRoutableRegistryAndRules(t *testing.T) {
+func TestManualExecutionConstraintsRequireVerifiedKrakenSymbolMapping(t *testing.T) {
 	result, _ := buildManualPreviewWithPairs(
 		manualCheckpoint(),
 		[]string{"BTCUSDT", "ETHUSDT"},
@@ -122,17 +122,9 @@ func TestManualExecutionConstraintsRequireExplicitRoutableRegistryAndRules(t *te
 			{Source: "ETHUSDT", State: symbolMapStateOK},
 		},
 	}
-	rules := VenueTradingRulesStatus{
-		Validated: true,
-		CheckedAt: "2026-09-26T00:00:00Z",
-		Rows: []VenueTradingRuleRow{
-			{Internal: "BTCUSDT", State: "VALID", MinOrderNotionalUSD: 10},
-			{Internal: "ETHUSDT", State: "VALID", MinOrderNotionalUSD: 10},
-		},
-	}
-	applyManualExecutionConstraints(&result, symbolMap, rules)
+	applyManualExecutionConstraints(&result, symbolMap)
 	if !result.ValidationPassed || !result.ExchangeConstraintsValidated {
-		t.Fatalf("verified symbol mapping and rules should validate execution constraints: %+v", result)
+		t.Fatalf("verified symbol mapping should validate execution constraints: %+v", result)
 	}
 
 	blocked, _ := buildManualPreviewWithPairs(
@@ -145,7 +137,7 @@ func TestManualExecutionConstraintsRequireExplicitRoutableRegistryAndRules(t *te
 		{Source: "BTCUSDT", State: symbolMapStateOK},
 		{Source: "ETHUSDT", State: symbolMapStateNotMapped},
 	}
-	applyManualExecutionConstraints(&blocked, blockedMap, rules)
+	applyManualExecutionConstraints(&blocked, blockedMap)
 	if blocked.ValidationPassed || blocked.ExchangeConstraintsValidated {
 		t.Fatalf("non-routable omitted-current sell must fail closed: %+v", blocked)
 	}
