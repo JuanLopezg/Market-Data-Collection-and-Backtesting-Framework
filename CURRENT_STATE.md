@@ -2,6 +2,19 @@
 
 Last synchronized: 2026-10-16. Current source and test output take precedence.
 
+## Release 20261019_161639-5a4f5aa (2026-10-19, deployed 16:22 UTC, user-authorized)
+
+Clean release of commit 5a4f5aa; previous 20261018_185456-9bed096-dirty for rollback. Versus
+that release it carries only the sections below marked 2026-10-18/19 local only (dashboard,
+ALERT severity, DEBUG logging, funding rates); no lib/, execution or gateway change.
+Pre-deploy: chain image build OK, Step59 PASS fingerprint 94fdf8d8...68da2. The Windows scp
+copy dropped file modes; restored to 644/755 before `activate` (checksums OK). The updated
+algotrading-kraken.service (EnvironmentFile chain.env) was installed, daemon-reload, restarted.
+LOG_DEBUG is now 1 on the VPS (MODE=live). After activation: containers healthy, execution
+reconciliation clean (cash 41.91 USD, 3 positions, 3 open orders), market-data republished
+2026-10-18 and backfilled funding: 56 pairs, 25,865 settlements from 2026-07-09 (the VPS
+database's first candle) to 16:00 UTC, every stored pair covered.
+
 ## Binance funding rates in the market database (2026-10-19, local only)
 
 User request: store a daily funding figure per perpetual for backtests and fill the whole
