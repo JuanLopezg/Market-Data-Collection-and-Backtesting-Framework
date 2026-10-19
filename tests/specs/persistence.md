@@ -209,6 +209,19 @@ The two R8 cases were moved from the shared typed suite into backend-specific te
 so only the observed SQLite failures carry `DISABLED_` and `// FINDING:` comments.
 Their PostgreSQL equivalents remain enabled. No expected value was changed.
 
+### F3 — PostgreSQL loads a snapshot of an unknown schema version (R6)
+
+Found when the Docker-backed executable first ran against a real PostgreSQL 16
+(orchestrator, 2026-10-19; it was skipped during step 3). A snapshot saved with
+`schema_version = CURRENT_SCHEMA_VERSION + 1` is returned by
+`PostgresStateStore::load` after reopening, while `SQLiteStateStore::load` refuses
+it as R6 requires. Both implement the same `StateStore` contract, and PostgreSQL is
+the store the VPS chain uses, so an older binary reading newer durable state would
+not fail closed at this layer (the release `STATE_FORMAT` check in `deploy/chain/algo`
+is a separate, coarser guard). R6 is now checked per backend:
+`SQLiteBackend.R6_LoadRejectsUnknownSchema` passes and
+`PostgresBackend.DISABLED_R6_LoadRejectsUnknownSchema` keeps the expectation.
+
 ### Step 3 validation
 
 - `ninja -C build -j2` compiled both persistence executables without warnings.

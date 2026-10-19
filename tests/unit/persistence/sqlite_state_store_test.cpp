@@ -10,6 +10,16 @@ INSTANTIATE_TYPED_TEST_SUITE_P(SQLite, StateStoreContract, SQLiteTypes);
 // the equivalent PostgreSQL checks.
 // FINDING: SQLite restores reference_price=0 and fill_at_reference_price=false;
 // R8 requires preserving the staged manual order's price 75 and immediate-fill flag.
+// R6 is checked per backend: the PostgreSQL store disagrees (finding F3).
+TEST_F(SQLiteBackend, R6_LoadRejectsUnknownSchema)
+{
+    auto snapshot = exampleSnapshot();
+    snapshot.schema_version = TradingStateSnapshot::CURRENT_SCHEMA_VERSION + 1;
+    store_->save(snapshot);
+    reopen();
+    EXPECT_THROW((void)store_->load(), std::exception);
+}
+
 TEST_F(SQLiteBackend, DISABLED_R8_ManualReferencePriceAndImmediateFillIntentSurvive)
 {
     auto snapshot = exampleSnapshot();

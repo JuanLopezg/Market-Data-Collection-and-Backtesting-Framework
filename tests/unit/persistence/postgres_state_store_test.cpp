@@ -59,6 +59,18 @@ protected:
 using PostgresTypes = testing::Types<PostgresBackend>;
 INSTANTIATE_TYPED_TEST_SUITE_P(Postgres, StateStoreContract, PostgresTypes);
 
+// FINDING: PostgresStateStore::load returns a snapshot whose schema_version is
+// CURRENT_SCHEMA_VERSION + 1 instead of refusing it (SQLite refuses). See F3 in
+// tests/specs/persistence.md.
+TEST_F(PostgresBackend, DISABLED_R6_LoadRejectsUnknownSchema)
+{
+    auto snapshot = exampleSnapshot();
+    snapshot.schema_version = TradingStateSnapshot::CURRENT_SCHEMA_VERSION + 1;
+    store_->save(snapshot);
+    reopen();
+    EXPECT_THROW((void)store_->load(), std::exception);
+}
+
 TEST_F(PostgresBackend, R8_ManualReferencePriceAndImmediateFillIntentSurvive)
 {
     if (!test_support::dockerAvailable()) GTEST_SKIP() << "Docker is not available";

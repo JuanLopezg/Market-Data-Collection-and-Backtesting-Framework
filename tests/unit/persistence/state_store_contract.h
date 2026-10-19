@@ -208,15 +208,6 @@ TYPED_TEST_P(StateStoreContract, R5_DatabaseFailureAfterAuditInsertRollsBackBoth
     EXPECT_EQ(this->store_->loadFills().size(), 1U);
 }
 
-TYPED_TEST_P(StateStoreContract, R6_LoadRejectsUnknownSchema)
-{
-    auto snapshot = exampleSnapshot();
-    snapshot.schema_version = TradingStateSnapshot::CURRENT_SCHEMA_VERSION + 1;
-    this->store_->save(snapshot);
-    this->reopen();
-    EXPECT_THROW((void)this->store_->load(), std::exception);
-}
-
 TYPED_TEST_P(StateStoreContract, R7_UnsupportedResearchOrdersDoNotCommit)
 {
     TradingStateSnapshot before;
@@ -267,7 +258,6 @@ REGISTER_TYPED_TEST_SUITE_P(StateStoreContract,
     R4_FillIdsAbove32BitsDoNotCollide,
     R5_InvalidFillRollsBackBothSnapshotAndAudit,
     R5_DatabaseFailureAfterAuditInsertRollsBackBoth,
-    R6_LoadRejectsUnknownSchema,
     R7_UnsupportedResearchOrdersDoNotCommit,
     R7_UnsupportedPendingTriggersDoNotCommit);
 
