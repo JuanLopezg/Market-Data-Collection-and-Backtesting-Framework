@@ -224,4 +224,59 @@ and evidence are deterministic for the same explicit fault sequence/config/input
 
 ## Findings
 
-Steps 1–2 only: tests have not been built or run. No validated findings yet.
+### F1 — Modification can reduce request size below already-filled quantity (R4)
+
+Disabled test: `MockAdmission.DISABLED_R4_ModifyCannotShrinkBelowAlreadyExecutedQuantity`.
+BUY 0.2 at limit 100 fills 0.1 on a volume-1 bar. Modifying it to quantity 0.05
+and limit 200 (still USD 10 minimum notional) returns an accepted item, replaces
+request quantity with 0.05 and sets remainder to zero while cumulative filled stays
+0.1. R4's assumed safety rule requires rejecting that amendment and retaining the
+original quantity 0.2 and remainder 0.1. `MockOrders::processModifyItem` reruns
+admission but does not compare replacement quantity against cumulative fills;
+it assigns the replacement then clamps the calculated remainder to zero.
+
+### F2 — Reduce-only is admitted but does not constrain matching exposure (R9)
+
+Disabled tests:
+
+- `MockVenueSafety.DISABLED_R9_ReduceOnlyOrderFromFlatCannotCreateExposure`
+- `MockVenueSafety.DISABLED_R9_OversizedReduceOnlyExitCannotFlipLongToShort`
+
+Through real `MockRecovery`, including admission, matching and account projection:
+
+- From flat, reduce-only BUY 0.2 at 100 fills all 0.2, opens +0.2 and charges
+  USD 0.008, reducing cash from 100,000 to 99,999.992 (9,999,999,200,000 scaled units).
+- After a normal BUY opens +0.2, reduce-only SELL 0.3 fills all 0.3 and leaves
+  short -0.1. The expected maximum exit fill is 0.2, with no negative remainder.
+
+R9 deliberately allows rejection or clamping, so neither failure depends on an
+invented rejection phase. Source inspection finds the flag checked for declared
+rule support at admission and retained in request/codec state, but no economic
+reduce-only check in the matching/account pipeline. This disagrees with R9's
+explicitly assumed enforcement of the advertised capability. The original
+assertions remain unchanged; production code is untouched.
+
+### Test registration correction and validation scope
+
+The pre-run commit contained 23 tests in `admission_test.cpp` and
+`matching_test.cpp`, but its `meson.build` was still a placeholder. Consequently,
+the initially requested `ninja -C build -j2` reported no work and compiled no MOCK
+tests. Step 3 corrects that test-registration mistake by registering those existing
+sources as `test_unit_mock_exchange` in this area's Meson file; no new test bodies
+or changed economic expectations were introduced after the pre-run commit.
+
+These 23 tests cover catalog/admission, request identity, cancel/modify, matching,
+capacity, timing/slippage and the two end-to-end reduce-only invariants. Dedicated
+decimal, accounting, recovery/codec, reconciliation and fault-simulation tests
+described by R10–R18 were not present in that commit and remain unvalidated by
+this suite. The spec describes intended behaviour, not evidence of complete coverage.
+
+Validation (WSL, 2026-10-19): after registration,
+`ninja -C build -j2` compiled and linked without warnings.
+`ALGOTRADING_SOURCE_ROOT="$PWD" build/tests/unit/mock_exchange/test_unit_mock_exchange --gtest_brief=1`
+ran 23 tests: 20 passed and 3 failed, covering F1/F2. No assertion/API mistakes
+or specification corrections were identified in the failing tests. Their bodies
+are retained with `DISABLED_` names and `// FINDING:` comments.
+
+After triage, `ninja -C build -j2` rebuilt without warnings and the same direct
+execution command exited 0: **23 total, 20 passed, 3 disabled, 0 active failures**.
