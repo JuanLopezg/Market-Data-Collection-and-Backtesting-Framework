@@ -18,7 +18,7 @@ const BALANCE = { key: 'balance', label: 'Balance', color: 'var(--series-1)' }  
 const EQUITY = { key: 'equity', label: 'Equity', color: 'var(--series-2)' }      // orange
 const EXPECTED = { key: 'expected', label: 'Expected', color: 'var(--series-neutral)' }
 
-const SEVERITY_RANK: Record<Severity, number> = { CRITICAL: 0, WARN: 1, INFO: 2 }
+const SEVERITY_RANK: Record<Severity, number> = { CRITICAL: 0, ALERT: 1, WARN: 2, INFO: 3 }
 
 function signedUsd(value: number) {
   return `${value >= 0 ? '+' : '-'}${usd(Math.abs(value))}`
@@ -48,7 +48,7 @@ function orderAlerts(alerts: OperationalAlert[]) {
     .sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || b.timestamp.localeCompare(a.timestamp))
 }
 
-const severityTone = (severity: Severity) => severity === 'CRITICAL' ? 'negative' : severity === 'WARN' ? 'warning' : 'info'
+const severityTone = (severity: Severity) => severity === 'CRITICAL' ? 'negative' : severity === 'ALERT' ? 'alert-priority' : severity === 'WARN' ? 'warning' : 'info'
 
 // Shows as many alerts as the positions table has rows (at least 3), in the same table
 // layout, so both panels take roughly the same height.

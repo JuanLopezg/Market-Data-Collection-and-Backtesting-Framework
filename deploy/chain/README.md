@@ -308,12 +308,13 @@ were deployed on 2026-10-14; all five retained rows have zero signal differences
 
 Telegram severity routing uses optional `DASHBOARD_TELEGRAM_CRITICAL_CHAT_ID` in
 `secrets/chain.env`: CRITICAL alerts and their recoveries go to that group; other
-messages keep the original chat. INFO/resolved updates are silent; WARN/CRITICAL
-use normal notifications, controlled by phone/chat settings. The Kraken notifier
+messages keep the original chat. ALERT is the orange level between WARN and
+CRITICAL; active signals on assets unavailable at Kraken use ALERT and the original
+chat. INFO/resolved updates are silent; WARN/ALERT/CRITICAL use normal notifications, controlled by phone/chat settings. The Kraken notifier
 is active in TELEGRAM mode. The general watchdog notifier (all watchdog alerts, WARN and
 up) holds a new CRITICAL alert until it has lasted `DASHBOARD_NOTIFIER_CRITICAL_DELAY`
 (5m in Compose; 0 sends at once): one resolved within that time, such as the ten or so
-process alerts of a restart, is never sent; WARN alerts are not delayed. The user decided
+process alerts of a restart, is never sent; WARN and ALERT alerts are not delayed. The user decided
 on 2026-10-16 to switch it to TELEGRAM (`NOTIFIER_SINK=TELEGRAM` in chain/chain.env);
 until that authorized change it remains TEST_FILE. Its first Telegram start sends the
 alerts active at that moment once. After each sweep that changes a chat's alerts, both

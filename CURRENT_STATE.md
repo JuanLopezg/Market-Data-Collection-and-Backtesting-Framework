@@ -2,6 +2,34 @@
 
 Last synchronized: 2026-10-16. Current source and test output take precedence.
 
+## Position fee colors (2026-10-19, local only)
+
+Open/closed position fee cells and Total Fees now use the existing sign-based
+color helper: negative red, positive green, zero and unavailable neutral.
+Amounts and fee accounting are unchanged. Frontend TypeScript and production
+Vite build PASS. No backtesting or VPS deployment.
+
+## ALERT severity for unavailable Kraken signals (2026-10-19, local only)
+
+Added INFO < WARN < ALERT < CRITICAL throughout dashboard alert types, priority
+sorting, filters, independent ALERT counts, durable watchdog heartbeats and notifier
+severity admission. An active strategy signal on an asset Kraken cannot trade is
+now ALERT; unavailable assets without active signals remain WARN/INFO as before.
+Wrong symbol conversion scales remain CRITICAL. Mapping admission and automatic
+trading behavior are unchanged; alarm severity does not enable unsupported orders.
+
+Telegram ALERT notifications and active-summary entries use an orange circle and
+the general chat, including resolutions (green/silent). Only CRITICAL and their
+resolutions use the optional critical group. ALERT retains normal notification
+sound and does not use the CRITICAL-only delay. Existing receipts/history remain
+intact; previously delivered critical messages are not rewritten.
+
+Debian Linux cloud validation: go vet and all Go package tests PASS, including loopback-only
+Telegram payload/chat routing tests, severity filtering/escalation, normal-chat
+summaries, durable ALERT persistence/counts and symbol-map severity/counts.
+Frontend TypeScript + production Vite build PASS. No backtesting, real Telegram
+messages, exchange orders or VPS deployment were performed.
+
 ## Infrastructure ALL range (2026-10-18, local only)
 
 Added ALL to the infrastructure time selector and range=all to the host-history API.

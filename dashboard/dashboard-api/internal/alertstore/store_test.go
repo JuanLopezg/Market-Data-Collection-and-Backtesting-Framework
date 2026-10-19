@@ -219,3 +219,23 @@ func TestReadHeartbeatRequiresInitializedStep43Store(t *testing.T) {
 		t.Fatalf("unexpected heartbeat: %+v", hb)
 	}
 }
+
+func TestAlertSeverityPersistsAndCountsSeparately(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alert := Alert{ID: "coverage", Status: "ACTIVE", Severity: "ALERT", Service: "SymbolMap", EventType: "SYMBOL_MAP_SIGNAL_NOT_TRADEABLE", Title: "Not tradeable"}
+	hb, err := store.Apply(time.Now().UTC(), []Alert{alert})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hb.ActiveCount != 1 || hb.ActiveAlerts != 1 || hb.ActiveCritical != 0 || hb.ActiveWarnings != 0 {
+		t.Fatalf("wrong counts: %+v", hb)
+	}
+	snapshot := ReadSnapshot(dir, 10)
+	if !snapshot.Available || len(snapshot.Events) != 1 || snapshot.Events[0].Alert.Severity != "ALERT" || snapshot.Heartbeat.ActiveAlerts != 1 {
+		t.Fatalf("ALERT not preserved: %+v", snapshot)
+	}
+}

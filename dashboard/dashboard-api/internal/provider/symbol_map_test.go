@@ -97,7 +97,7 @@ func TestSymbolMapAlarms(t *testing.T) {
 		severity[alarm.Asset+" "+alarm.EventType] = alarm.Severity
 	}
 	want := map[string]string{
-		"WUSDT SYMBOL_MAP_SIGNAL_NOT_TRADEABLE":      "CRITICAL",
+		"WUSDT SYMBOL_MAP_SIGNAL_NOT_TRADEABLE":      "ALERT",
 		"ARCUSDT SYMBOL_MAP_STRATEGY_NOT_TRADEABLE":  "WARN",
 		"OLDUSDT SYMBOL_MAP_STRATEGY_NOT_TRADEABLE":  "WARN",
 		"HALTUSDT SYMBOL_MAP_STRATEGY_NOT_TRADEABLE": "WARN",
@@ -248,8 +248,8 @@ func TestKrakenPublicTickers(t *testing.T) {
 func TestMergeSymbolMapAlerts(t *testing.T) {
 	status := buildSymbolMapStatus(testSymbolMapInput(t), time.Date(2026, 10, 13, 18, 0, 0, 0, time.UTC))
 	got := mergeSymbolMapAlerts(realAlertsAuditData{}, status)
-	if got.ActiveCritical != 1 || got.ActiveWarnings != 3 {
-		t.Fatalf("critical=%d warnings=%d, want 1 and 3", got.ActiveCritical, got.ActiveWarnings)
+	if got.ActiveCritical != 0 || got.ActiveAlerts != 1 || got.ActiveWarnings != 3 {
+		t.Fatalf("critical=%d alerts=%d warnings=%d, want 0, 1 and 3", got.ActiveCritical, got.ActiveAlerts, got.ActiveWarnings)
 	}
 	if got.Alerts[0].ID != "derived-symbol-map-symbol-map-signal-not-tradeable-wusdt" || got.Alerts[0].Service != "SymbolMap" {
 		t.Fatalf("unexpected first alert: %+v", got.Alerts[0])

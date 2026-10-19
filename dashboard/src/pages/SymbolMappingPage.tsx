@@ -44,7 +44,7 @@ function strategyLabel(row: SymbolMapRow) {
 }
 
 function MappingRow({ row }: { row: SymbolMapRow }) {
-  const tone = STATE_TONE[row.state]
+  const tone = row.activeSignal && !['OK', 'NO_PRICE', 'SCALE_MISMATCH'].includes(row.state) ? 'alert' : STATE_TONE[row.state]
   return <tr title={row.detail}>
     <td><strong>{row.source}</strong></td>
     <td className={row.venueSymbol ? 'mono' : 'muted'}>{row.venueSymbol ?? '—'}</td>
@@ -88,7 +88,7 @@ export function SymbolMappingPage() {
       {data.alarms.length > 0 && <Panel title={`Problems Found (${data.alarms.length})`}>
         <div className="table-wrap"><table><thead><tr><th>Severity</th><th>Asset</th><th>Problem</th></tr></thead><tbody>
           {data.alarms.map(alarm => <tr key={`${alarm.eventType}-${alarm.asset}`}>
-            <td><strong className={alarm.severity === 'CRITICAL' ? 'negative' : 'warning'}>{alarm.severity}</strong></td>
+            <td><strong className={alarm.severity === 'CRITICAL' ? 'negative' : alarm.severity === 'ALERT' ? 'alert-priority' : alarm.severity === 'WARN' ? 'warning' : 'info'}>{alarm.severity}</strong></td>
             <td><strong>{alarm.asset ?? '—'}</strong></td>
             <td>{alarm.title}</td>
           </tr>)}

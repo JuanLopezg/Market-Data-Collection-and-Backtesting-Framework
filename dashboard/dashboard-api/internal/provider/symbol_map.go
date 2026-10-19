@@ -158,7 +158,7 @@ func buildSymbolMapStatus(in symbolMapInput, checkedAt time.Time) SymbolMapStatu
 	// INFO alarms (top-50 assets Kraken does not list) do not change the status.
 	for _, alarm := range result.Alarms {
 		switch alarm.Severity {
-		case "CRITICAL":
+		case "CRITICAL", "ALERT":
 			result.Status = "BLOCKED"
 		case "WARN":
 			if result.Status == "OK" {
@@ -260,7 +260,7 @@ func checkUnmappedSymbol(row *SymbolMapRow, in symbolMapInput) {
 
 // Alarms:
 //   - a wrong scale is CRITICAL: the table itself is wrong;
-//   - a universe asset Kraken cannot take is WARN, CRITICAL while its signal is active,
+//   - a universe asset Kraken cannot take is WARN, ALERT while its signal is active,
 //     because that order would be rejected;
 //   - a top-ranking asset missing from an out-of-date table is WARN (rebuild the table);
 //   - a top-ranking asset Kraken does not list is INFO: visible, but not a warning,
@@ -283,7 +283,7 @@ func symbolMapAlarm(row SymbolMapRow) (SymbolMapAlarm, bool) {
 			Detail: row.Detail + " If the strategy selects it, its signals will not be executed."}, true
 	}
 	if row.ActiveSignal {
-		return SymbolMapAlarm{Severity: "CRITICAL", EventType: "SYMBOL_MAP_SIGNAL_NOT_TRADEABLE", Asset: row.Source,
+		return SymbolMapAlarm{Severity: "ALERT", EventType: "SYMBOL_MAP_SIGNAL_NOT_TRADEABLE", Asset: row.Source,
 			Title:  "Active signal on an asset Kraken cannot trade",
 			Detail: row.Detail + " Its orders would be rejected by the exchange gateway."}, true
 	}

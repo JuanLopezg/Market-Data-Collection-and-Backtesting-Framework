@@ -319,6 +319,8 @@ func telegramSeverityMarker(severity string) string {
 	switch strings.ToUpper(strings.TrimSpace(severity)) {
 	case "CRITICAL":
 		return "🔴"
+	case "ALERT":
+		return "🟠"
 	case "WARN":
 		return "🟡"
 	case "INFO":

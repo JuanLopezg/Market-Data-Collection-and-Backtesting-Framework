@@ -282,8 +282,10 @@ func severityRank(raw string) int {
 		return 1
 	case "WARN":
 		return 2
-	case "CRITICAL":
+	case "ALERT":
 		return 3
+	case "CRITICAL":
+		return 4
 	default:
 		return 0
 	}

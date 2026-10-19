@@ -26,17 +26,19 @@ const (
 
 func (p *Simulation) alertsAudit(s simulationSnapshot) map[string]any {
 	alerts := simulationAlerts(s)
-	critical, warn := 0, 0
+	critical, elevated, warn := 0, 0, 0
 	for _, a := range alerts {
 		switch a["severity"] {
 		case "CRITICAL":
 			critical++
+		case "ALERT":
+			elevated++
 		case "WARN":
 			warn++
 		}
 	}
 	return map[string]any{
-		"activeCritical": critical, "activeWarnings": warn, "acknowledged": 0, "resolved24h": 0,
+		"activeCritical": critical, "activeAlerts": elevated, "activeWarnings": warn, "acknowledged": 0, "resolved24h": 0,
 		"alerts": alerts, "audit": p.manualAuditLog(), "sourceMode": "MOCK",
 		"sourceUpdatedAt": s.HistoricalDate, "acknowledgementAvailable": false,
 		"durableAlertHistoryAvailable": false, "humanAuditAvailable": true,

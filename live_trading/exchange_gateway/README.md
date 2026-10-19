@@ -219,7 +219,7 @@ the git diff before committing. Three checks keep it honest afterwards:
 1. the gateway's USD value check on every order (above);
 2. the dashboard compares Binance closes with Kraken mark prices for the strategy universe
    and top-50 ranking every minute: a wrong scale is a CRITICAL alert, a strategy asset
-   Kraken cannot trade a WARN (CRITICAL while its signal is active), a top-50 asset that
+   Kraken cannot trade a WARN (orange ALERT while its signal is active, delivered to the normal Telegram chat), a top-50 asset that
    Kraken lists but the table lacks a WARN (rebuild the table), and a top-50 asset Kraken
    does not list an INFO;
 3. at market reload the gateway logs mapped contracts Kraken no longer lists.

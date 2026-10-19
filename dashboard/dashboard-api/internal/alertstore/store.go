@@ -51,6 +51,7 @@ type Heartbeat struct {
 	ActiveCount    int    `json:"activeCount"`
 	ActiveCritical int    `json:"activeCritical"`
 	ActiveWarnings int    `json:"activeWarnings"`
+	ActiveAlerts   int    `json:"activeAlerts"`
 	EventCount     int64  `json:"eventCount"`
 	LastError      string `json:"lastError,omitempty"`
 }
@@ -200,6 +201,8 @@ func (s *Store) Apply(now time.Time, alerts []Alert) (Heartbeat, error) {
 		switch strings.ToUpper(alert.Severity) {
 		case "CRITICAL":
 			hb.ActiveCritical++
+		case "ALERT":
+			hb.ActiveAlerts++
 		case "WARN":
 			hb.ActiveWarnings++
 		}

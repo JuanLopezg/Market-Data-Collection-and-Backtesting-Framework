@@ -23,11 +23,11 @@ const maxSecretFileBytes = 8 * 1024
 
 func main() {
 	testMessage := flag.Bool("test-message", false, "send one explicit Telegram setup test and exit")
-	testSeverity := flag.String("test-severity", "INFO", "severity of the explicit setup test: INFO, WARN or CRITICAL")
+	testSeverity := flag.String("test-severity", "INFO", "severity of the explicit setup test: INFO, WARN, ALERT or CRITICAL")
 	flag.Parse()
 	severity := strings.ToUpper(strings.TrimSpace(*testSeverity))
-	if severity != "INFO" && severity != "WARN" && severity != "CRITICAL" {
-		fmt.Fprintln(os.Stderr, "test-severity must be INFO, WARN or CRITICAL")
+	if severity != "INFO" && severity != "WARN" && severity != "ALERT" && severity != "CRITICAL" {
+		fmt.Fprintln(os.Stderr, "test-severity must be INFO, WARN, ALERT or CRITICAL")
 		os.Exit(1)
 	}
 	if !*testMessage && severity != "INFO" {
@@ -259,7 +259,7 @@ func loadConfig() (config, error) {
 	if cfg.sink == "TEST_FILE" && cfg.testSinkFile == "" {
 		return config{}, fmt.Errorf("TEST_FILE notifier sink path must be configured")
 	}
-	if cfg.minSeverity != "INFO" && cfg.minSeverity != "WARN" && cfg.minSeverity != "CRITICAL" {
+	if cfg.minSeverity != "INFO" && cfg.minSeverity != "WARN" && cfg.minSeverity != "ALERT" && cfg.minSeverity != "CRITICAL" {
 		return config{}, fmt.Errorf("invalid DASHBOARD_NOTIFIER_MIN_SEVERITY %q", cfg.minSeverity)
 	}
 	var err error

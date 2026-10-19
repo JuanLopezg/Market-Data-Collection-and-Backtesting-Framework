@@ -11,13 +11,15 @@ Actual private exchange submission remains disabled.
 ## Telegram alert priority
 
 Telegram priority presentation: CRITICAL uses a red circle and CRITICAL label,
-WARN yellow, INFO blue, resolved alerts green. Operational alerts show the
-account/system header and title only; descriptions remain in the web and journals.
+ALERT orange, WARN yellow, INFO blue, resolved alerts green. The priority order is
+INFO < WARN < ALERT < CRITICAL. An active strategy signal that Kraken cannot trade
+is ALERT and goes to the normal chat; a wrong conversion scale remains CRITICAL.
+Operational alerts show the account/system header and title only; descriptions remain in the web and journals.
 Active-alert summaries show only a colored circle and short name on each row
 (for example, `🔴 gateway-kraken down`), without bracketed severity labels. Critical-group summaries use
 "Critical alerts". This format change is local pending an authorized deployment.
 INFO updates (including daily portfolios) and resolved alerts request silent
-notifications; WARN/CRITICAL keep normal notifications. Phone/chat settings
+notifications; WARN/ALERT/CRITICAL keep normal notifications. Phone/chat settings
 control audible playback. Unknown severity keeps normal notification behavior.
 The Bot API supports silence per message, not a custom tone per severity; different
 tones require separate destination chats with sounds configured in Telegram.
@@ -35,7 +37,7 @@ is enabled on the VPS. The Kraken notifier uses TELEGRAM; the general watchdog
 notifier retains its TEST_FILE sink. Existing receipts prevent
 replaying earlier alerts when this setting is added.
 
-Explicit setup tests accept `--test-message --test-severity INFO|WARN|CRITICAL`.
+Explicit setup tests accept `--test-message --test-severity INFO|WARN|ALERT|CRITICAL`.
 Only a TEST-labelled message is sent; CRITICAL tests exercise the configured group.
 
 ## Mobile viewing
@@ -177,7 +179,7 @@ overlay no longer starts as it is. Changing provider mode does not enable privat
 ## Local Telegram setup
 
 Telegram alerts use compact importance, account/system and title only.
-WARN remains WARN, CRITICAL remains CRITICAL, and resolutions display
+WARN remains WARN, ALERT remains ALERT, CRITICAL remains CRITICAL, and resolutions display
 INFO with a resolved title. Optional alert account labels pass through to the sink;
 infrastructure alerts identify their system/service rather than invent an account.
 Internal notification/alert/correlation IDs and machine timestamps remain in journals
@@ -217,7 +219,7 @@ docker exec notifier /dashboard-alert-notifier --test-message
 For one explicit setup message, use the installation's notifier with `--test-message`
 as documented in the [chain guide](../deploy/chain/README.md#telegram-setup-message).
 Continuous delivery sends
-active WARN/CRITICAL alerts at startup, subsequent openings/escalations, eligible
+active WARN/ALERT/CRITICAL alerts at startup, subsequent openings/escalations, eligible
 updates after the default five-minute cooldown and resolution of notified alerts.
 It does not send resolved historical alerts. Changing sinks uses a separate default
 Telegram journal so prior TEST_FILE decisions do not suppress Telegram delivery.

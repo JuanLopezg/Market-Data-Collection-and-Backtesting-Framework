@@ -108,12 +108,13 @@ func TestSingleChatSummaryMarksCriticalAndSkipsUnreported(t *testing.T) {
 func TestSummaryShowsColorAndNameWithoutSeverityLabels(t *testing.T) {
 	text := summaryText("Kraken", []activeAlert{
 		{Label: "margin breach", Severity: "CRITICAL"},
+		{Label: "signal unavailable", Severity: "ALERT"},
 		{Label: "reserve low", Severity: "WARN"},
 		{Label: "information", Severity: "INFO"},
 		{Label: "other", Severity: "NEW_LEVEL"},
 	}, false, false)
 	for _, line := range []string{
-		"🔴 margin breach", "🟡 reserve low",
+		"🔴 margin breach", "🟠 signal unavailable", "🟡 reserve low",
 		"🔵 information", "⚪ other",
 	} {
 		if !strings.Contains(text, line) {

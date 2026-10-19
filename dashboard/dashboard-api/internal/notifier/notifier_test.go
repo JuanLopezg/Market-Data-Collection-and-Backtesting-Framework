@@ -314,3 +314,56 @@ func mustDuration(t *testing.T, raw string) time.Duration {
 	}
 	return value
 }
+
+func TestAlertSeverityBetweenWarningAndCritical(t *testing.T) {
+	for _, minimum := range []string{"WARN", "ALERT", "CRITICAL"} {
+		t.Run(minimum, func(t *testing.T) {
+			store, err := OpenStore(filepath.Join(t.TempDir(), "state"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			sink := &summaryRecorder{separate: true, summaries: map[bool][]string{}}
+			engine, err := NewEngine(store, sink, minimum, 5*time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := engine.SetCriticalDelay(5 * time.Minute); err != nil {
+				t.Fatal(err)
+			}
+			engine.SetSummarySource("Watchdog")
+			engine.now = func() time.Time { return time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC) }
+			if _, err := engine.Process(context.Background(), nil); err != nil {
+				t.Fatal(err)
+			}
+			event := lifecycle("active-signal", "2026-10-19T12:00:00Z", "OPENED", "coverage", "ALERT", "not listed")
+			event.Alert.Asset, event.Alert.EventType = "BTWUSDT", "SYMBOL_MAP_SIGNAL_NOT_TRADEABLE"
+			stats, err := engine.Process(context.Background(), []alertstore.LifecycleEvent{event})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if minimum == "CRITICAL" {
+				if stats.Delivered != 0 || stats.Deferred != 0 {
+					t.Fatalf("ALERT passed CRITICAL filter: %+v", stats)
+				}
+				return
+			}
+			if stats.Delivered != 1 || stats.Deferred != 0 {
+				t.Fatalf("ALERT must deliver without critical delay: %+v", stats)
+			}
+			if len(sink.summaries[true]) != 0 || len(sink.summaries[false]) != 1 || !strings.Contains(sink.summaries[false][0], "🟠 BTWUSDT") {
+				t.Fatalf("ALERT must appear only in general summary: %+v", sink.summaries)
+			}
+			// Escalation to CRITICAL still outranks ALERT even inside the update cooldown.
+			engine.now = func() time.Time { return time.Date(2026, 10, 19, 12, 6, 0, 0, time.UTC) }
+			escalated := lifecycle("critical-signal", "2026-10-19T12:00:01Z", "UPDATED", "coverage", "CRITICAL", "risk")
+			stats, err = engine.Process(context.Background(), []alertstore.LifecycleEvent{event, escalated})
+			if err != nil || stats.Delivered != 1 {
+				t.Fatalf("critical escalation: %+v %v", stats, err)
+			}
+			last := sink.delivered[len(sink.delivered)-1]
+			if last.Reason != "SEVERITY_ESCALATION" {
+				t.Fatalf("wrong priority: %+v", last)
+			}
+		})
+	}
+}

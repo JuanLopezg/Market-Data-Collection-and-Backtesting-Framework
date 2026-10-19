@@ -1,7 +1,7 @@
 export type HealthState = 'READY' | 'DEGRADED' | 'PAUSED'
 export type ReconciliationState = 'CLEAN' | 'PENDING' | 'DRIFT' | 'BLOCKED'
 export type PositionAlignmentState = 'ALIGNED' | 'PENDING' | 'DRIFT' | 'BLOCKED' | 'UNKNOWN'
-export type Severity = 'INFO' | 'WARN' | 'CRITICAL'
+export type Severity = 'INFO' | 'WARN' | 'ALERT' | 'CRITICAL'
 export type TradingMode = 'LIVE' | 'TESTNET' | 'REPLAY' | 'PAPER'
 export type PipelineStageState = 'OK' | 'CHANGED' | 'PENDING' | 'BLOCKED'
 
@@ -985,6 +985,7 @@ export interface DurableAlertLifecycleEvent {
 export interface AlertsAuditData {
   activeCritical: number
   activeWarnings: number
+  activeAlerts?: number
   acknowledged: number
   resolved24h: number
   alerts: OperationalAlert[]

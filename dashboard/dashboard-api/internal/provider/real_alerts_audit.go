@@ -19,6 +19,7 @@ import (
 type realAlertsAuditData struct {
 	ActiveCritical               int                         `json:"activeCritical"`
 	ActiveWarnings               int                         `json:"activeWarnings"`
+	ActiveAlerts                 int                         `json:"activeAlerts"`
 	Acknowledged                 int                         `json:"acknowledged"`
 	Resolved24h                  int                         `json:"resolved24h"`
 	Alerts                       []realOperationalAlert      `json:"alerts"`
@@ -358,7 +359,7 @@ func buildRealAlertsAudit(
 		Detail: fmt.Sprintf("PostgreSQL=%s; NATS=%s. This health observation is computed on request and is not append-only persisted.", infra.Postgres.State, infra.NATS.State),
 	})
 
-	critical, warnings := 0, 0
+	critical, elevated, warnings := 0, 0, 0
 	for _, alert := range alerts {
 		if alert.Status != "ACTIVE" {
 			continue
@@ -366,6 +367,8 @@ func buildRealAlertsAudit(
 		switch alert.Severity {
 		case "CRITICAL":
 			critical++
+		case "ALERT":
+			elevated++
 		case "WARN":
 			warnings++
 		}
@@ -378,6 +381,7 @@ func buildRealAlertsAudit(
 	return realAlertsAuditData{
 		ActiveCritical:               critical,
 		ActiveWarnings:               warnings,
+		ActiveAlerts:                 elevated,
 		Acknowledged:                 0,
 		Resolved24h:                  0,
 		Alerts:                       alerts,
@@ -408,6 +412,8 @@ func sourceHealthResult(infra realInfrastructure) string {
 func alertSeverityRank(value string) int {
 	switch value {
 	case "CRITICAL":
+		return 4
+	case "ALERT":
 		return 3
 	case "WARN":
 		return 2
@@ -441,7 +447,7 @@ func mergeSymbolMapAlerts(result realAlertsAuditData, status SymbolMapStatus) re
 		})
 	}
 
-	critical, warnings := 0, 0
+	critical, elevated, warnings := 0, 0, 0
 	for _, alert := range result.Alerts {
 		if alert.Status == "RESOLVED" {
 			continue
@@ -449,12 +455,15 @@ func mergeSymbolMapAlerts(result realAlertsAuditData, status SymbolMapStatus) re
 		switch alert.Severity {
 		case "CRITICAL":
 			critical++
+		case "ALERT":
+			elevated++
 		case "WARN":
 			warnings++
 		}
 	}
 	result.ActiveCritical = critical
 	result.ActiveWarnings = warnings
+	result.ActiveAlerts = elevated
 	sort.SliceStable(result.Alerts, func(i, j int) bool {
 		return alertSeverityRank(result.Alerts[i].Severity) > alertSeverityRank(result.Alerts[j].Severity)
 	})
@@ -673,7 +682,7 @@ func mergeManualAuditHistory(result realAlertsAuditData, dir string) realAlertsA
 }
 
 func recountAlerts(result *realAlertsAuditData) {
-	critical, warnings := 0, 0
+	critical, elevated, warnings := 0, 0, 0
 	for _, alert := range result.Alerts {
 		if alert.Status == "RESOLVED" {
 			continue
@@ -681,12 +690,15 @@ func recountAlerts(result *realAlertsAuditData) {
 		switch alert.Severity {
 		case "CRITICAL":
 			critical++
+		case "ALERT":
+			elevated++
 		case "WARN":
 			warnings++
 		}
 	}
 	result.ActiveCritical = critical
 	result.ActiveWarnings = warnings
+	result.ActiveAlerts = elevated
 	sort.SliceStable(result.Alerts, func(i, j int) bool {
 		return alertSeverityRank(result.Alerts[i].Severity) > alertSeverityRank(result.Alerts[j].Severity)
 	})

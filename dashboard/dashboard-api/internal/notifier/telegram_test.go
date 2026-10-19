@@ -195,6 +195,9 @@ func TestTelegramPriorityAndSoundPayload(t *testing.T) {
 		silent                             bool
 	}{
 		{"critical", "CRITICAL", "OPENED", "🔴 [CRITICAL]", false},
+		{"alert", "ALERT", "OPENED", "🟠 [ALERT]", false},
+		{"alert recovery", "ALERT", "RESOLVED", "🟢 [INFO]", true},
+		{"normalized alert", " alert ", "OPENED", "🟠 [ALERT]", false},
 		{"warning", "WARN", "OPENED", "🟡 [WARN]", false},
 		{"daily information", "INFO", "OPENED", "🔵 [INFO]", true},
 		{"critical recovery", "CRITICAL", "RESOLVED", "🟢 [INFO]", true},

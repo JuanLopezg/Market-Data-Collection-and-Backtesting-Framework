@@ -10,8 +10,8 @@ import type { AlertStatus, Severity } from '../types/dashboard'
 // Alerts & Audit: what needs attention now, and who did what. Alerts are notices only;
 // acknowledging one records that an operator saw it, it does not resolve the condition.
 
-const SEVERITY_ORDER: Record<Severity, number> = { CRITICAL: 0, WARN: 1, INFO: 2 }
-const SEVERITY_LABEL: Record<Severity, string> = { CRITICAL: 'Critical', WARN: 'Warning', INFO: 'Info' }
+const SEVERITY_ORDER: Record<Severity, number> = { CRITICAL: 0, ALERT: 1, WARN: 2, INFO: 3 }
+const SEVERITY_LABEL: Record<Severity, string> = { CRITICAL: 'Critical', ALERT: 'Alert', WARN: 'Warning', INFO: 'Info' }
 const STATUS_LABEL: Record<AlertStatus, string> = { ACTIVE: 'Open', ACKNOWLEDGED: 'Seen', RESOLVED: 'Resolved' }
 const PAGE = 20
 
@@ -21,7 +21,7 @@ function DetailsButton({ open, onClick }: { open: boolean; onClick: () => void }
 }
 
 function SeverityPill({ severity }: { severity: Severity }) {
-  const tone = severity === 'CRITICAL' ? 'bad' : severity === 'WARN' ? 'warn' : 'info'
+  const tone = severity === 'CRITICAL' ? 'bad' : severity === 'ALERT' ? 'alert' : severity === 'WARN' ? 'warn' : 'info'
   return <span className={`alert-severity alert-severity--${tone}`}>{SEVERITY_LABEL[severity]}</span>
 }
 
@@ -80,6 +80,7 @@ export function AlertsAuditPage() {
 
     <section className="overview-stats">
       <div className="overview-stat"><span>Critical</span><strong className={data.activeCritical > 0 ? 'negative' : ''}>{data.activeCritical}</strong></div>
+      <div className="overview-stat"><span>Alerts</span><strong className="alert-priority">{data.activeAlerts ?? open.filter(alert => alert.severity === 'ALERT').length}</strong></div>
       <div className="overview-stat"><span>Warnings</span><strong className={data.activeWarnings > 0 ? 'leverage--elevated' : ''}>{data.activeWarnings}</strong></div>
       <div className="overview-stat"><span>Info</span><strong>{info}</strong></div>
       {ackAvailable && <div className="overview-stat"><span>Seen by Operator</span><strong>{data.acknowledged}</strong></div>}
@@ -91,7 +92,7 @@ export function AlertsAuditPage() {
       <div className="alert-toolbar">
         <div className="search-box"><Search size={13}/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search alerts"/></div>
         <label><span>Severity</span><select value={severity} onChange={e => setSeverity(e.target.value as 'ALL' | Severity)}>
-          <option value="ALL">All</option><option value="CRITICAL">Critical</option><option value="WARN">Warning</option><option value="INFO">Info</option>
+          <option value="ALL">All</option><option value="CRITICAL">Critical</option><option value="ALERT">Alert</option><option value="WARN">Warning</option><option value="INFO">Info</option>
         </select></label>
       </div>
       <div className="table-wrap"><table className="wide-table alerts-table">
