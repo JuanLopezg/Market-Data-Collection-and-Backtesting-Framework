@@ -56,7 +56,7 @@ abs(high-previous_close),abs(low-previous_close)); the first bar has no previous
 close. Example bars (O,H,L,C) are (100,102,98,100), (102,103,99,102),
 (104,108,102,106), (110,116,108,112). TR[1..3] are 4,6,10. ATR(2) is
 NaN,NaN,5,8, where the final value is (6+10)/2=8. This requirement is from the
-header; a recursive Wilder result of 7 would disagree with it. Gaps must count:
+header; a recursive Wilder result of 7.5 would disagree with it. Gaps must count:
 the last true range is 116-106=10, larger than its intrabar range 8.
 
 R7. Highest/Lowest use the full latest N observations including T (assumed current
@@ -166,5 +166,71 @@ three stages. Repeating this evaluation leaves input observations unchanged.
 
 ## Findings
 
-Not evaluated. This specification and its tests precede the first indicators build
-or run. Assumptions and the public ATR definition remain explicit for later triage.
+The first build passed without compiler warnings in the new tests. The first direct
+run registered 57 tests, with 51 passes and six failures (exit 1). All six failures
+are code-versus-spec disagreements, retained below as `DISABLED_` tests with their
+original assertions. No test expected values were changed. Findings involving
+corrupt inputs and unavailable-score tie order retain their explicit assumed policy
+status; they do not claim normal validated feed inputs are corrupt.
+
+Spec corrected: R6's illustrative recursive Wilder value was miscalculated as 7.
+Starting with ATR(2)=5 and then TR=10, Wilder gives (5*1+10)/2=7.5. The
+specified simple-window result remains (6+10)/2=8, and the test still expects 8.
+This corrects only the explanatory arithmetic; it does not adopt the implementation
+as the expected contract.
+
+F1 (R6, ATR differs from public definition). For the worked true ranges 4,6,10,
+`calculateATR(...,2)` returns 7.5 at index 3, versus the required simple average 8.
+Inspection confirms the implementation recursively smooths the prior ATR using
+Wilder's formula, while `indicator_calculators.h` specifies a simple average. The
+seed test still passes with 5; the disagreement begins at the next window. Retained
+test: `IndicatorCalculations.DISABLED_R6_AtrUsesSimpleRollingTrueRangeIncludingGaps`.
+
+F2 (R10, infinity advertised as available). With BTC high=+infinity and requested
+Highest(High,1), `IndicatorEngine::has("BTC",20240101,spec)` returns true instead
+of the assumed `has=false` result. The availability implementation checks
+`v==v`, which excludes NaN but includes infinity. Separate default selector/ranker
+tests pass: they independently exclude infinite scores. Retained test:
+`IndicatorCache.DISABLED_R10_InfiniteFeatureCannotAdvertiseAvailability`.
+
+F3 (R12, missing-liquidity boundary lacks alphabetical tie handling). All scores
+are unavailable, `skipInvalid=false`, top-N=1. Candidate insertion orders C,B,A
+and A,B,C both return {B} in the observed run; the assumed tie policy requires {A}.
+The comparator's numeric equality/ordering does not order NaN ties by symbol.
+This run demonstrates the alphabetical-policy disagreement, not differing results
+between those two insertion orders. Retained test:
+`LiquiditySelection.DISABLED_R12_UnavailableTiesStillHaveADeterministicAlphabeticalBoundary`.
+
+F4 (R13, retained missing ranking scores lack alphabetical tie handling). Only C's
+finite zero return is precomputed; A and B have unavailable scores. With
+`skipInvalid=false`, both tested candidate insertion orders produce C,B,A instead
+of the assumed C,A,B. Finite-before-missing ordering works; missing-symbol tie
+ordering does not. As in liquidity selection, NaN comparisons bypass the symbol
+tie-breaker. Retained test:
+`EntryRanking.DISABLED_R13_RetainedUnavailableScoresHaveDeterministicOrderAfterFiniteScores`.
+
+F5 (R14, alphabetical ranks remain zero). AlphabeticalRanker returns symbols A,B,C
+in the required order, but all three `rank` values are 0, versus the public
+RankedCoin contract's 1,2,3. The same six assertions fail across both candidate
+insertion orders. Current bar references remain valid; the missing rank assignment
+is the disagreement. Retained test:
+`EntryRanking.DISABLED_R14_AlphabeticalRankingIsDeterministicAndAssignsOneBasedRanks`.
+
+F6 (R15, infinite benchmark close permits entries). With a finite precomputed
+SMA(3)=20, substituting +infinity for the current market benchmark close makes
+`passes(...)` return true, contrary to the assumed fail-closed corrupt-input rule.
+The NaN-close case fails closed as expected. The filter validates SMA finiteness
+but not current-close finiteness. Retained test:
+`BenchmarkGate.DISABLED_R15_NonfiniteCurrentBenchmarkCloseCannotAllowEntries`.
+
+Initial evidence: `ninja -C build -j2`, then
+`ALGOTRADING_SOURCE_ROOT=$PWD build/tests/unit/indicators/test_unit_indicators
+--gtest_output=xml:build/tests/unit/indicators/first_run.xml`. To reproduce a
+retained finding after triage, add `--gtest_also_run_disabled_tests` and select its
+full disabled test name using `--gtest_filter`.
+
+Final verification after triage: `ninja -C build -j2` passed without test-code
+warnings. `meson test -C build --no-rebuild --suite unit unit_indicators
+--print-errorlogs --verbose` exited 0 (1/1 executable passed). GoogleTest reported
+57 registered tests: 51 passed, 6 disabled, zero enabled failures. Production code
+and all test assertions/expected values remain unchanged.
