@@ -292,4 +292,36 @@ connection -> `std::runtime_error` (header contract), never a partial result.
 
 ## Findings
 
-(Filled in after the first build and run.)
+Run 2026-10-19: 80 tests, 74 pass, 6 disabled as findings (code disagrees with this spec).
+
+1. **A12 entry-day funding is dropped from the row's funding total**
+   (`DISABLED_A12_FundingOnTheEntryDayIsInTheRowFundingTotal`). `equityDaysFromFills` applies
+   a day's funding before that day's fills; funding dated on the day a position opens finds no
+   open position, and `PositionLedger::applyFunding` ignores it. Evidence: buy 0.1 BTC at 60,000
+   (fee 3) and funding -2 on 20261012: cash 3,995 and equity 10,095 are right, but
+   `funding = 0` instead of -2, so equity - initial (95) != gross - fees + funding + unrealized
+   (97). The same ordering is used by `PositionLedger::rebuild`. With daily cost timestamps
+   the order of a funding payment and a same-day fill is not known; a funding payment that finds
+   no position is lost from the PnL breakdown while cash keeps it.
+2. **A13 a repeated fill id is applied twice to cash/positions**
+   (`DISABLED_A13_DuplicateFillIdIsAppliedOnce`). `Account::applyFill` does not de-duplicate
+   (its comment leaves that to the caller) while the ledger does, so a duplicated fill row gives
+   cash -2,006 instead of 3,997 and equity 10,194 instead of 10,097 on 20261012. Low risk while
+   the input comes from `trading_fills` keyed by fill id; the rows are inconsistent if it does not.
+3. **A14 `fillsReachAccount` ignores live positions the fills never had**
+   (`DISABLED_A14_LivePositionNoFillExplainsIsNotReached`). Only the coins of the replayed
+   account are compared; a live account with cash 3,994, BTC 0.1 **and 1 ETH** is reported as
+   reached (`true`). Then a history rebuilt from fills that do not explain the account would be
+   written as if it did.
+4. **C4 an out-of-range weight is not an `std::invalid_argument`**
+   (`DISABLED_C4_OutOfRangeWeightIsAnInvalidRequest`). `target=SOLUSDT,1e400` makes `std::stod`
+   throw `std::out_of_range` ("stod"). The request is still refused, but `main()` records it as
+   `Failed: stod` with an ALERT instead of a readable `Invalid request` rejection.
+5. **C9 trailing text after `created_at` is accepted**
+   (`DISABLED_C9_OffsetOrTrailingTextGivesNothing`). `parseUtcSeconds("2026-10-14T12:00:00Zjunk")`
+   returns 12:00:00 UTC; `std::get_time` stops after `Z` and the rest is not checked. Low impact
+   (the dashboard writes the field); the `+02:00` offset form is correctly refused.
+6. **D3 a non-JSON Binance answer escapes as `nlohmann::json::parse_error`**
+   (`DISABLED_D3_AnswerThatIsNotJsonThrowsRuntimeError`), not the `std::runtime_error` the
+   header promises. `main()` catches `std::exception`, so a manual request is still rejected
+   with the reason; only the documented contract is broken.
