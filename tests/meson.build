@@ -1,6 +1,6 @@
 # Behaviour tests for lib/ and the C++ services that run on the VPS (tests/README.md).
 #   meson test -C build --suite unit      fast, in-process
-#   meson test -C build --suite service   real service binaries + Docker NATS/PostgreSQL
+#   meson test -C build --suite service   components against Docker NATS/PostgreSQL
 #   meson test -C build --suite chain     the whole trading chain over several days
 
 gtest_dep = dependency('gtest_main')
@@ -40,5 +40,4 @@ endforeach
 
 # One folder per work package, each with its own meson.build.
 subdir('unit')
-subdir('service')
 subdir('chain')

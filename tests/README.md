@@ -7,12 +7,12 @@ the trading system is supposed to do. They are not a mirror of the current code.
 ```bash
 ninja -C build
 meson test -C build --suite unit       # in-process, seconds
-meson test -C build --suite service    # one real service binary + Docker NATS/PostgreSQL
+meson test -C build --suite service    # components against real Docker NATS/PostgreSQL
 meson test -C build --suite chain      # the whole chain over several business days
 meson test -C build                    # everything
 ```
 
-Service and chain tests start throwaway `nats:2.10-alpine` and `postgres:16-alpine`
+Service-suite and chain tests start throwaway `nats:2.10-alpine` and `postgres:16-alpine`
 containers on random loopback ports and skip themselves when Docker is unavailable.
 `ALGOTRADING_TEST_KEEP_TMP=1` keeps each test's temporary folder (logs, SQLite files).
 The existing release gate (`validation/step59_canonical_replay_release_gate.sh`) stays
@@ -24,9 +24,8 @@ the accepted RealTest/economic fingerprint; these suites do not replace it.
 | --- | --- |
 | `specs/` | One behaviour specification per area: what the code must do, with worked examples. |
 | `support/` | `test_support.*`: temp folders, child processes, Docker NATS/PostgreSQL. |
-| `unit/<area>/` | In-process tests of one `lib/` area or one service's internal library. |
-| `service/<area>/` | Black-box tests of one service executable: messages in, messages/state out. |
-| `chain/` | The trading chain end to end over several simulated days. |
+| `unit/<area>/` | Tests of one `lib/` area or one service's internal library; executables that need Docker NATS/PostgreSQL are registered in suite `service`. |
+| `chain/` | The real service executables wired as the PAPER chain, end to end over several simulated days. |
 
 Each area folder owns its `meson.build`. A test executable is registered like this:
 
@@ -37,7 +36,7 @@ test('unit_planning',
     suite: ['unit'], env: test_env, protocol: 'gtest')
 ```
 
-Service and chain tests add `depends: service_depends`, a `timeout:` and use
+Chain tests add `depends: service_depends`, a `timeout:` and use
 `test_support::builtExecutable("ALGOTRADING_BIN_<NAME>")` for the binaries.
 Service internals are linkable as `market_data_core_dep`, `execution_state_core_dep`
 and `exchange_gateway_venue_dep`.
