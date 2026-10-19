@@ -246,4 +246,13 @@ fabricated zero exposure. No partial cash/position update is valid on bad input.
 
 ## Findings
 
-Steps 1–2 only: tests have not been built or run. No validated findings yet.
+No findings from step 3. All original assertions passed; no tests, expected values
+or specification rules required correction, and no tests were disabled.
+
+Validation (WSL, 2026-10-19): `ninja -C build -j2` compiled and linked successfully
+without warnings. The command
+`ALGOTRADING_SOURCE_ROOT="$PWD" ALGOTRADING_LOG_QUIET=1 build/tests/unit/accounting/test_unit_accounting --gtest_brief=1`
+exited 0: **58 tests total, 58 passed, 0 disabled, 0 failures**. Coverage includes
+12 account/position tests, 20 ledger tests, 13 campaign-recorder tests and 13
+Backtester/context tests. Only this spec changed during step 3; production code
+and test expectations are untouched.
