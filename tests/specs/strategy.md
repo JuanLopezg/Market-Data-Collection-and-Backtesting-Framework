@@ -161,5 +161,48 @@ must preserve the subsequent opinion path.
 
 ## Findings
 
-Not evaluated: specification and tests precede the first strategy build or run.
-Assumed restore/persistence policies remain explicit requirements for later triage.
+The first build passed without warnings in the new test code. The first run
+registered 58 tests: 56 passed and two failed (exit 1). No test mistakes or
+specification corrections were needed; no assertions or expected values were
+changed. The two failures exercise the same restore issue through different error
+paths and remain as disabled tests.
+
+F1 (R14, non-atomic cross-strategy checkpoint restore). Existing checkpoint:
+timestamp 20240103, ID 7 {A=1}, ID 9 {B=1}. A proposed checkpoint at 20240104
+changes ID 7 to {C=1}, then contains either an invalid name for ID 9 or its invalid
+signal {B=2}. Both calls throw the expected exception (invalid_argument for the
+name, out_of_range for the signal), but ID 7 has already changed to {C=1} instead
+of retaining {A=1}. ID 9 retains {B=1} and lastTimestamp remains 20240103.
+The resulting state therefore mixes an applied part of the rejected checkpoint
+with the prior checkpoint's other signals and frontier.
+
+Inspection of `StrategySignalEngine::restore` confirms it validates/restores each
+configured strategy in one loop; successful earlier instances are committed before
+later validation. A single instance's temporary validated SignalState is atomic,
+as its separate test verifies, but the engine does not stage the entire portfolio.
+This disagrees with the explicitly assumed transactional restore requirement in
+R14; that assumption is retained rather than weakened to match the implementation.
+
+Retained regression tests (both keep their original rejection/state assertions):
+
+- `StrategyIntents.DISABLED_R14_LaterStrategyNameErrorCannotPartiallyApplyACheckpoint`
+- `StrategyIntents.DISABLED_R14_LaterStrategySignalErrorCannotPartiallyApplyACheckpoint`
+
+Initial reproduction: `ninja -C build -j2`, then
+`ALGOTRADING_SOURCE_ROOT=$PWD build/tests/unit/strategy/test_unit_strategy
+--gtest_output=xml:build/tests/unit/strategy/first_run.xml`. After triage, reproduce
+either retained failure by adding `--gtest_also_run_disabled_tests` and selecting
+its full disabled name with `--gtest_filter`.
+
+Final verification: the rebuild with `ninja -C build -j2` passed without test-code
+warnings. Direct execution with `ALGOTRADING_SOURCE_ROOT=$PWD
+build/tests/unit/strategy/test_unit_strategy
+--gtest_output=xml:build/tests/unit/strategy/triaged.xml` exited 0: 58 registered
+tests, 56 passed, 2 disabled, zero enabled assertion failures.
+
+Runner anomaly (cause not established): both the verbose and nonverbose invocations
+of `meson test -C build --no-rebuild --suite unit unit_strategy --print-errorlogs`
+reported a 30.03-second timeout after GoogleTest printed its completed summary of
+56 passes and 2 disabled tests. Direct execution above completed successfully. This
+is recorded separately from F1; no additional test was disabled for a timeout with
+no failing assertion. Meson's run is not reported as passed.
