@@ -265,3 +265,5 @@ therefore remains unvalidated in this environment.
    `MockMatching::forwardLifecycleTransition` forwards the same update through
    the matcher handler, which recovery captures again. The public facade forwards
    both stream entries. Expected counts remain one update/three events.
+
+   Fixed (2026-10-19): Recovery captures matching lifecycle updates only through the lifecycle handler, removing duplicate statuses without changing fills or fees; stream sequences/fingerprints change.

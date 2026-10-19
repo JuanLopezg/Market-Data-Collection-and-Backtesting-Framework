@@ -210,6 +210,8 @@ rebalance plans without removing the previously stored strategy intent. The old
 close(3) entry survives under the newer batch timestamp. This disagrees with the
 explicitly assumed R4 rule. The empty-intent expectations were retained.
 
+Fixed (2026-10-19): A newer empty rebalance plan removes that strategy's obsolete pending intent; unavailable sizing still defers planning.
+
 ### F2 — TradingEngine admits same-close market execution (R5)
 
 `TradingBehaviour.DISABLED_R5_SameCloseExecutionCannotCreateAClosingPriceEntry`
@@ -255,6 +257,8 @@ expected money to match the blocking implementation. Added default-genesis contr
 also pass a full replay/restart/diagnostics comparison at cash 100050 and a manual
 five-unit round trip at cash 100125, computed from the worked examples in R10.
 
+Fixed (2026-10-19): Reconciliation and replay evidence seed their expected ledger from configured initial account cash, retaining the default USD 100000 genesis.
+
 ### F4 — Replay fills orders before validating the complete market slice (R15)
 
 `ReplayBehaviour.DISABLED_R15_InvalidCrossSectionCannotFillBeforeItsValidation`
@@ -264,6 +268,8 @@ position is 2, a parity fill exists, and tracked filled quantity is 2 instead of
 the expected 0. `ReplayRuntime::onClosedSlice` sends bars to the venue matcher before
 `RollingMarketState::append` rejects the duplicate. This violates the assumed
 validate-before-side-effects requirement R15. All original assertions are retained.
+
+Fixed (2026-10-19): Replay validates every venue bar and appends the complete validated cross-section before matching any orders.
 
 ### Step 3 validation and test setup
 

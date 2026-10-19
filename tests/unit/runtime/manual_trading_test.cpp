@@ -68,9 +68,7 @@ TEST_F(ManualBehaviour, R19_InvalidIdentitySumMappingAndMissingCloseCannotReachV
     }
 }
 
-// FINDING: F3. ManualTrading reports ReconciliationBlocked for valid initial cash
-// 1000 because the MOCK ledger assumes 100000, instead of submitting the Buy 5.
-TEST_F(ManualBehaviour, DISABLED_R19_CloseSizedFiveUnitsFillAndCashOnlyExitRealizes125Dollars)
+TEST_F(ManualBehaviour, R19_CloseSizedFiveUnitsFillAndCashOnlyExitRealizes125Dollars)
 {
     const auto entry = manual_.route(manualIntent("entry", 1, 0.5), prices(100.0), prices(125.0));
     ASSERT_EQ(entry.status, ManualControl::ManualRouteStatus::Submitted);

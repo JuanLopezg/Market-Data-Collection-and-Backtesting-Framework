@@ -167,8 +167,8 @@ private:
     std::filesystem::path journal_path_;
 
     MockOrders lifecycle_;
-    MockMatching matcher_;
     MockAccount account_;
+    MockMatching matcher_;
 
     std::vector<UserStreamEnvelope> stream_;
     std::vector<std::vector<std::uint8_t>> source_records_;

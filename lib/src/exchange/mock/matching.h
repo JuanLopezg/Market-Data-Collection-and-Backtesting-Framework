@@ -24,6 +24,8 @@
 // market observation event timestamp; this code never reads wall/monotonic clocks.
 namespace MockVenue {
 
+class MockAccount;
+
 using VenueContracts::V1::Error;
 using VenueContracts::V1::ErrorClass;
 using VenueContracts::V1::Event;
@@ -102,7 +104,8 @@ public:
 
     MockMatching(
         MockOrders& lifecycle,
-        MatchingFillConfig config = {});
+        MatchingFillConfig config = {},
+        const MockAccount* account = nullptr);
 
     void setEventHandler(EventHandler handler);
 
@@ -116,6 +119,7 @@ public:
 private:
     MockOrders& lifecycle_;
     MatchingFillConfig config_;
+    const MockAccount* account_;
     EventHandler handler_;
     std::vector<Event> emitted_events_;
     std::vector<MatchTrace> traces_;

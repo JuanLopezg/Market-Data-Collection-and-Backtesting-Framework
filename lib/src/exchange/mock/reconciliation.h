@@ -162,7 +162,8 @@ public:
             std::uint32_t trading_fee_ppm = 400U);
 
     LocalExpectedState buildLocalExpected(
-            const std::vector<UserStreamEnvelope>& stream) const;
+            const std::vector<UserStreamEnvelope>& stream,
+            const std::string& initial_cash = "100000.00") const;
 
     ReconciliationReport compare(
             const LocalExpectedState& local,
@@ -192,7 +193,7 @@ private:
     std::uint64_t last_reconciled_sequence_ = 0U;
     std::uint32_t trading_fee_ppm_ = 400U;
 
-    static LedgerProjection beginLedger();
+    static LedgerProjection beginLedger(const std::string& initial_cash);
 
     static const char* ledgerKindToken(
             LedgerEntryKind kind);

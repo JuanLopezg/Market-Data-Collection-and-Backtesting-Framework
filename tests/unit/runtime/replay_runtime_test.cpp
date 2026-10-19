@@ -13,9 +13,7 @@ protected:
     test_support::TempDir directory_{"runtime-replay"};
 };
 
-// FINDING: F3. Valid initial cash 1000 disagrees with MOCK's fixed 100000 ledger
-// genesis; reconciliation blocks the expected USD 250 entry and its later PnL.
-TEST_F(ReplayBehaviour, DISABLED_R10_CloseNotionalBecomesNextOpenQuantityAndFinalProfit)
+TEST_F(ReplayBehaviour, R10_CloseNotionalBecomesNextOpenQuantityAndFinalProfit)
 {
     ReplayRig rig(directory_ / "venue");
     rig.through(3);
@@ -75,9 +73,7 @@ TEST_F(ReplayBehaviour, R11_OpenOnlyZeroVolumeEvidenceFillsWithoutFutureCloseLea
     EXPECT_EQ(falling.runtime.parityFills().front().price, 125.0);
 }
 
-// FINDING: F3. The fixed 100000 reconciliation genesis blocks the valid 1000-cash
-// fixture's initial buy, so the required held position and exit plan never exist.
-TEST_F(ReplayBehaviour, DISABLED_R12_DuplicateAndOldClosesCannotReapplyFillsOrAdvanceThePlan)
+TEST_F(ReplayBehaviour, R12_DuplicateAndOldClosesCannotReapplyFillsOrAdvanceThePlan)
 {
     ReplayRig rig(directory_ / "venue");
     rig.through(4);
@@ -142,9 +138,7 @@ TEST_F(ReplayBehaviour, R13_NormalMockCannotResumeAndInconsistentSignalCheckpoin
     }
 }
 
-// FINDING: F3. Fixed-genesis reconciliation blocks all entries with initial cash
-// 1000; both restart boundaries remain at 1000 instead of the specified 1050.
-TEST_F(ReplayBehaviour, DISABLED_R14_CompletedDayRestartMatchesUninterruptedEconomicAndStreamState)
+TEST_F(ReplayBehaviour, R14_CompletedDayRestartMatchesUninterruptedEconomicAndStreamState)
 {
     ReplayRig continuous(directory_ / "continuous");
     continuous.through(5);
@@ -205,9 +199,7 @@ TEST_F(ReplayBehaviour, R15_UnavailableVenueBlocksSubmissionWithoutInventingFill
     EXPECT_EQ(rig.venue.chaos().runtime().account().marginState(openTime(4)).settled_cash, 1000.0);
 }
 
-// FINDING: F4. Replay fills the admitted Buy 2 before RollingMarketState rejects
-// the duplicate asset, leaving position/fills mutated despite the invalid slice.
-TEST_F(ReplayBehaviour, DISABLED_R15_InvalidCrossSectionCannotFillBeforeItsValidation)
+TEST_F(ReplayBehaviour, R15_InvalidCrossSectionCannotFillBeforeItsValidation)
 {
     ReplayRig rig(directory_ / "venue", true, {StrategyConfig{7, 1.0, 0.0025}}, 100.0, "100000.00");
     rig.through(3);
@@ -222,9 +214,7 @@ TEST_F(ReplayBehaviour, DISABLED_R15_InvalidCrossSectionCannotFillBeforeItsValid
     EXPECT_EQ(order->filled_quantity, 0.0);
 }
 
-// FINDING: F3. Both 1000-cash diagnostic runs are blocked by fixed-genesis
-// reconciliation; expected trading cash 1050 is never reached.
-TEST_F(ReplayBehaviour, DISABLED_R16_DiagnosticsLeaveCashFillsAndFingerprintsUnchanged)
+TEST_F(ReplayBehaviour, R16_DiagnosticsLeaveCashFillsAndFingerprintsUnchanged)
 {
     ReplayRig normal(directory_ / "normal");
     ReplayRig observed(directory_ / "observed");
@@ -242,9 +232,7 @@ TEST_F(ReplayBehaviour, DISABLED_R16_DiagnosticsLeaveCashFillsAndFingerprintsUnc
     EXPECT_EQ(observed.runtime.lastDecisionBatch()->decision_timestamp, closeTime(5));
 }
 
-// FINDING: F3. After correctly rejecting .31, the permitted .30 manual target is
-// blocked by the 100000 ledger genesis versus configured initial cash 1000.
-TEST_F(ReplayBehaviour, DISABLED_R17_StrictestManualLimitsRejectInsteadOfClipping)
+TEST_F(ReplayBehaviour, R17_StrictestManualLimitsRejectInsteadOfClipping)
 {
     ReplayRig rig(directory_ / "venue", true,
         {StrategyConfig{7, 0.5, 0.25, 0.75, 0.5}, StrategyConfig{9, 0.5, 0.25, 1.0, 0.3}});
@@ -283,9 +271,7 @@ TEST_F(ReplayBehaviour, R17_InvalidManualWeightsTimesAndPricesPreservePendingSta
     EXPECT_TRUE(rig.venue.chaos().runtime().lifecycle().orders().empty());
 }
 
-// FINDING: F3. Fixed-genesis reconciliation blocks the valid 1000-cash manual
-// allocation before the specified discard, fill and target re-sync can occur.
-TEST_F(ReplayBehaviour, DISABLED_R18_ManualTargetDiscardsOldPlanAndResyncsHoldAtNextClose)
+TEST_F(ReplayBehaviour, R18_ManualTargetDiscardsOldPlanAndResyncsHoldAtNextClose)
 {
     ReplayRig rig(directory_ / "venue", true, {StrategyConfig{}}, 130.0);
     rig.through(3);
@@ -309,9 +295,7 @@ TEST_F(ReplayBehaviour, DISABLED_R18_ManualTargetDiscardsOldPlanAndResyncsHoldAt
     EXPECT_EQ(state.pending_plan->submit_orders.front().target_notional_usd, 255.0);
 }
 
-// FINDING: F3. Fixed-genesis reconciliation blocks the initial 1000-cash entry
-// and subsequent manual route; expected cash-only flattening cannot proceed.
-TEST_F(ReplayBehaviour, DISABLED_R18_CashOnlyManualTargetClosesOmittedHoldingsAndNeedsTheirPrices)
+TEST_F(ReplayBehaviour, R18_CashOnlyManualTargetClosesOmittedHoldingsAndNeedsTheirPrices)
 {
     ReplayRig rig(directory_ / "venue");
     rig.through(3);

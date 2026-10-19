@@ -224,10 +224,8 @@ TEST(MockAdmission, R4_ModifyPreservesFilledUnitsAndRevalidatesIdentityAndGrid)
     }
 }
 
-TEST(MockAdmission, DISABLED_R4_ModifyCannotShrinkBelowAlreadyExecutedQuantity)
+TEST(MockAdmission, R4_ModifyCannotShrinkBelowAlreadyExecutedQuantity)
 {
-    // FINDING: F1 - Modify accepts quantity 0.05 after 0.1 has filled, rewriting
-    // the original 0.2 request; R4 requires rejection without changing progress.
     M::MockOrders life;
     const auto original = order();
     life.submit(submit(original));

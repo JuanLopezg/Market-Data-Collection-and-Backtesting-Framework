@@ -235,6 +235,8 @@ original quantity 0.2 and remainder 0.1. `MockOrders::processModifyItem` reruns
 admission but does not compare replacement quantity against cumulative fills;
 it assigns the replacement then clamps the calculated remainder to zero.
 
+Fixed (2026-10-19): Modifications below cumulative filled quantity reject before changing the order or reserving a replacement client ID.
+
 ### F2 — Reduce-only is admitted but does not constrain matching exposure (R9)
 
 Disabled tests:
@@ -255,6 +257,8 @@ rule support at admission and retained in request/codec state, but no economic
 reduce-only check in the matching/account pipeline. This disagrees with R9's
 explicitly assumed enforcement of the advertised capability. The original
 assertions remain unchanged; production code is untouched.
+
+Fixed (2026-10-19): Matching cancels reduce-only remainders without sufficient opposite-side account holdings, checking current holdings before each fill.
 
 ### Test registration correction and validation scope
 
