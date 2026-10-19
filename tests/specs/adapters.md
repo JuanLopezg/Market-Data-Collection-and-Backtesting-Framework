@@ -239,5 +239,29 @@ service, since the public constructor owns JetStreamBus.
 
 ## Findings
 
-Steps 1–2 only: 54 tests written (46 unit, 8 Docker-gated service), with no disabled
-tests. Neither executable has been built or run. No validated findings yet.
+Step 3: `ninja -C build -j2` completed without test compiler warnings. Both adapter
+executables were run directly with `ALGOTRADING_SOURCE_ROOT=$PWD`. Of 54 tests,
+44 unit tests passed, 2 unit tests are disabled for the findings below, and all
+8 service tests skipped because Docker is unavailable. BackendGateway behavior
+therefore remains unvalidated in this environment.
+
+1. **R4 — Malformed mutable market intent reaches the wire.**
+   `MessageExchange.DISABLED_R4_MalformedMutableMarketIntentCannotReachWire` retains
+   the assumed defensive rejection rule. Starting with a valid BUY2 DTO, each
+   independent mutation to quantity 0, -1, NaN or infinity, or an empty asset,
+   submitted without throwing and published a command. All five rejection and
+   empty-publication assertions failed. `MessageExchange::submitOrder` checks only
+   the order ID; the market-order JSON encoder does not revalidate quantity/asset,
+   whereas decoding constructs a validated ExecutionOrder. This can publish
+   commands the receiver cannot execute. Expected rejection values are unchanged.
+
+2. **R13 — Canonical partial status is published twice.**
+   `CanonicalAdapter.DISABLED_R13_OrderedStreamPublishesFillBeforeItsFeeAndPartialStatus`
+   received four events for the worked BUY0.2 example at timestamp20: Fill0.1 at100,
+   fee -0.00400000, then two PartiallyFilled updates for order1/cumulative0.1.
+   Fill, fee, identity and partial-status assertions passed; the expected one
+   lifecycle update and three total events failed with actual counts two/four.
+   `MockRecovery::wireHandlers` captures lifecycle output directly, and
+   `MockMatching::forwardLifecycleTransition` forwards the same update through
+   the matcher handler, which recovery captures again. The public facade forwards
+   both stream entries. Expected counts remain one update/three events.
