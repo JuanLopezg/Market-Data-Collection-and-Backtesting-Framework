@@ -7,7 +7,7 @@ sources = [
     'binance_http_server.cpp'
 ]
 
-executable(
+binance_simulator_exe = executable(
     'algotrading_binance_simulator',
     sources,
     include_directories: include_directories('.'),

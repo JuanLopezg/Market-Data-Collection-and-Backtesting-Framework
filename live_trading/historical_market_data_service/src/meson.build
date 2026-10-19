@@ -5,7 +5,7 @@ sources = [
     '../../market_data_service/src/market_store.cpp'
 ]
 
-executable(
+historical_market_data_service_exe = executable(
     'algotrading_historical_market_data_service',
     sources,
     include_directories: include_directories('.', '../../market_data_service/src'),

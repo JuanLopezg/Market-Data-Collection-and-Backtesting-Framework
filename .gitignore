@@ -66,3 +66,5 @@ dist/
 # Local standby: downloaded market data, plans and the profile copied from the VPS
 standby/run/
 standby/profile/
+subprojects/*
+!subprojects/*.wrap
