@@ -202,4 +202,32 @@ position-stop snapshot exclusion in R15.
 
 ## Findings
 
-Steps 1–2 only: tests have not been built or run. No validated findings yet.
+### F1 — Market quantity planning does not reject execution at/before the decision close (R11)
+
+`QuantityPlanner.DISABLED_R11_RejectsExecutionAtOrBeforeDecisionClose` retains
+the expected `std::invalid_argument` for both invalid execution dates. With decision
+date 20260105, capital USD 1,000, BTC weight 0.25 and reference price 100, calling
+`QuantityOrderPlanner::createPlan` with execution date 20260105 or 20260104 throws
+nothing. The first run reported both failed exception assertions; all other 58 tests
+passed. This disagrees with R11's explicitly assumed enforcement at this API boundary.
+
+Source inspection of `lib/src/execution/planning/quantity_order_planner.cpp` confirms
+that market orders receive the supplied execution date without comparing it to the
+decision date; the ordering check is conditional on a nonzero entry-stop price.
+The passing R16 rejection test exercises that stop-specific check. This finding is
+an API validation gap against the assumed rule, not evidence that an upstream
+runtime actually executes future decisions. The spec and expected exception remain
+unchanged; production code is untouched.
+
+Validation (WSL, 2026-10-19): `ninja -C build -j2` completed without compiler
+warnings. After disabling F1,
+`ALGOTRADING_SOURCE_ROOT="$PWD" build/tests/unit/planning/test_unit_planning --gtest_brief=1`
+exited 0: 59 tests total, 58 passed, 1 disabled, 0 active failures. Running directly
+with Meson's quiet-logging, allocator-perturbation and library-path settings also
+exited 0 with the same counts.
+
+Runner limitation: `meson test -C build --no-rebuild --suite unit unit_planning --print-errorlogs`
+reported a 30-second timeout despite capturing all 58 passing tests and reporting
+the child result as `exit status 0` in `build/meson-logs/testlog.txt`. The cause of
+the Meson runner timeout is unconfirmed; it is recorded separately from F1 and
+does not justify disabling additional behaviour tests or changing expectations.
