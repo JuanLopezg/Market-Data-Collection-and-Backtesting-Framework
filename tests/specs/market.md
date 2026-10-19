@@ -146,5 +146,47 @@ invalid argument. Reopening the reader preserves these answers.
 
 ## Findings
 
-Not evaluated: specification and tests are written before any market build or run.
-Assumptions above remain explicit requirements to assess during later triage.
+The first build passed without compiler warnings in the new tests. The first run
+found the three disagreements below; no expected values or specification rules were
+changed. Their tests retain their assertions and use the `DISABLED_` prefix.
+
+F1 (R4, rolling OHLC geometry). `RollingMarketState::append` accepts both
+`{open=100, high=105, low=90, close=110, volume=3, quote_volume=321}` and
+`{open=100, high=120, low=105, close=110, volume=3, quote_volume=321}`. In both
+cases, the expected invalid_argument is absent and market history becomes nonempty.
+The rolling validator checks signs/finiteness but not enclosure of open/close by
+high/low. Retained test:
+`RollingMarket.DISABLED_R4_HighAndLowMustEncloseOpenAndClose`. The assumption in
+R4 is retained; no higher-priority contract authorizes invalid OHLC geometry.
+
+F2 (R2, corrupt persisted quote turnover). With BTC's Mar 1 `quote_volume` set to
+SQL `-1` or `1e999` (positive infinity), both `loadWindow(20240301,3,1)` and
+`loadMarketDataWindow(20240301,3,{"BTC"})` return without throwing: all four
+rejection assertions fail. The canonical reader copies quote_volume but its bar
+validator does not validate that field. Retained test:
+`CanonicalMarket.DISABLED_R2_CorruptSuppliedQuoteTurnoverCannotReachStrategyOrRisk`.
+This is the explicitly assumed corrupt-row policy in R2, not a claim that the normal
+writer emits these values. Missing/NULL quote volume, legacy schemas and valid zero
+turnover pass their separate tests.
+
+F3 (R4, corrupt OHLCV error path crashes). The first case of the invalid-row test
+sets BTC's Mar 1 high to 105 while close remains 110. Its `loadWindow` call
+terminates the process with SIGSEGV (exit 139), rather than throwing an exception.
+Source inspection of `canonical_market_data_reader.cpp` shows both full-bar loader
+error branches call `sqlite3_finalize(stmt)` before using the SQLite-owned `pair`
+and calling `sqlite3_column_int64(stmt,1)` to build the error message. This is an
+unsafe use after finalization. The portfolio loader's equivalent branch and the
+remaining invalid-row cases were not reached in the crashing run. Retained test:
+`CanonicalMarket.DISABLED_R4_InvalidOhlcvRowsCannotReachStrategyOrRisk`.
+
+Reproduction: build with `ninja -C build -j2`, then run
+`ALGOTRADING_SOURCE_ROOT=$PWD build/tests/unit/market/test_unit_market`. The original
+run reaches F1, F2, then crashes at F3. To exercise retained regressions individually
+after triage, add `--gtest_also_run_disabled_tests` and select the full test name
+using `--gtest_filter`. The four R8 tests following F3 in registration order were
+run separately with `--gtest_filter=CanonicalMarket.R8_*`; all four passed.
+
+Final verification after disabling the three findings: `ninja -C build -j2` passed
+without test-code warnings; `meson test -C build --no-rebuild --suite unit
+unit_market --print-errorlogs --verbose` exited 0. GoogleTest reported 55 registered
+tests: 52 passed, 3 disabled, no enabled failures (Meson 1/1 executable passed).

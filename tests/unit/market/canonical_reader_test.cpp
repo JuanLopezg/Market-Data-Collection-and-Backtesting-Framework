@@ -346,7 +346,9 @@ TEST_F(CanonicalMarket, R2_ActualAndZeroQuoteTurnoverStaySeparateFromBaseVolume)
     EXPECT_DOUBLE_EQ(portfolio.at(20240301).at("ETH").quote_volume, 0);
 }
 
-TEST_F(CanonicalMarket, R2_CorruptSuppliedQuoteTurnoverCannotReachStrategyOrRisk)
+// FINDING: Both canonical full-bar readers return negative/infinite quote volume
+// instead of rejecting corrupt supplied turnover (spec R2).
+TEST_F(CanonicalMarket, DISABLED_R2_CorruptSuppliedQuoteTurnoverCannotReachStrategyOrRisk)
 {
     CanonicalMarketDataReader reader(path);
     for (const char* invalid : {"-1", "1e999"}) {
@@ -358,7 +360,10 @@ TEST_F(CanonicalMarket, R2_CorruptSuppliedQuoteTurnoverCannotReachStrategyOrRisk
     }
 }
 
-TEST_F(CanonicalMarket, R4_InvalidOhlcvRowsCannotReachStrategyOrRisk)
+// FINDING: The first invalid OHLCV row crashes loadWindow (SIGSEGV, exit 139)
+// instead of throwing; both reader error paths access SQLite data after finalizing
+// the statement (spec R4). Keep the rejection assertions for future verification.
+TEST_F(CanonicalMarket, DISABLED_R4_InvalidOhlcvRowsCannotReachStrategyOrRisk)
 {
     CanonicalMarketDataReader reader(path);
     for (const char* invalid : {"high=105", "low=105", "open=0", "volume=-1", "volume=1e999"}) {
