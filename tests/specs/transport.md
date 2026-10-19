@@ -215,4 +215,47 @@ An idle valid poll returns 0; closing an already closed local subscription is sa
 
 ## Findings
 
-Steps 1 and 2 only: no build or execution has been performed. No findings recorded.
+### F1 — Object-shaped collections silently become empty vectors (R3)
+
+`MessageJsonBehaviour.DISABLED_R3_CollectionsCannotBeReplacedByObjects` preserves
+the expected rejection from the assumed shape-safety rule R3. On the first run,
+each of these replacements decoded without an exception:
+
+- `MarketSliceSnapshot.bars = {}`
+- `StrategyIntentBatch.strategies = {}`
+- `DecisionBatch.strategies = {}`
+- `OrderPlanBatch.submit_orders = {}`
+- `NotionalOrderPlanBatch.submit_orders = {}`
+
+The corresponding loops in `lib/src/transport/message_json.cpp` iterate the supplied
+JSON without checking that it is an array. Iterating an empty object executes zero
+iterations, so malformed market/strategy/order collections are accepted as empty
+business state. The public DTOs declare vectors, and R3 explicitly requires array
+shape. This is a code/spec disagreement; the assumed rule and expectations are
+unchanged. The test is retained with `DISABLED_` and `// FINDING:`.
+
+### F2 — Conflicting decisions for the same asset are silently discarded (R9)
+
+`MessageJsonBehaviour.DISABLED_R9_DuplicateAssetDecisionCannotSilentlyChooseOneExposure`
+preserves the expected `std::invalid_argument`. The input contains the worked
+example's BTC TargetWeight .25 (USD 250 from capital 1000), followed by another BTC
+decision Flat (weight 0). The first run returned normally instead of rejecting the
+ambiguity. `decodeDecisionBatch` inserts decisions using `unordered_map::emplace`
+without checking whether insertion succeeded, keeping the first BTC decision and
+silently dropping the conflicting Flat. This disagrees with the assumed ambiguity
+rejection rule R9. Neither the spec rule nor the expected exception was changed;
+the test remains disabled with its finding comment.
+
+### Step 3 validation
+
+- `ninja -C build -j2` compiled both transport executables without warnings.
+- Initial in-process run: 45 cases, 43 passed, 2 failed (F1 and F2). All 21 message
+  round trips, all required-field rejection checks, and all three subject tests passed.
+- JetStream executable: all 13 cases skipped with `Docker is not available`; real
+  NATS durability/disposition behaviours remain unverified here. Skips are not passes.
+- After triage, rebuilt with `ninja -C build -j2` and ran
+  `meson test -C build --no-rebuild --print-errorlogs unit_transport unit_transport_jetstream`.
+  Final result: 58 registered cases = 43 passed, 2 disabled findings, 13 Docker
+  skips, 0 remaining failures. Meson reports both executables OK; the JetStream
+  result represents skips rather than broker-backed passes. Final output is in
+  `build/meson-logs/testlog.txt`. No test expectation or production code was changed.
