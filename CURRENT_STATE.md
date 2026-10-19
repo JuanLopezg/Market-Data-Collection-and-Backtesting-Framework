@@ -2,6 +2,28 @@
 
 Last synchronized: 2026-10-16. Current source and test output take precedence.
 
+## Application DEBUG for next VPS release (2026-10-19, local only)
+
+The chain installer now explicitly sets LOG_DEBUG=1 in new and existing chain.env
+files, so a retained LOG_DEBUG=0 does not silently keep the next release quiet.
+Reinstalling this diagnostic version enables it again; set LOG_DEBUG=0 after
+installation and recreate affected services to disable it. Other settings,
+credentials and trading data are preserved.
+
+All eight C++ trading containers and four Go application containers receive the
+shared setting. Go API/watchdog/notifier log handlers now honor it instead of
+hardcoding INFO. Python readable_log honors ALGOTRADING_LOG_DEBUG or host LOG_DEBUG;
+the Kraken monitor unit reads the non-secret chain.env (reload/restart the host
+unit when deploying its updated template). Infrastructure services retain their
+own logging; components with no DEBUG statements do not gain additional detail.
+Existing log destinations, retention and size caps remain unchanged. No per-asset
+Market Data download messages were added by this configuration change.
+
+Cloud validation PASS: installation/reinstallation test (existing LOG_DEBUG=0
+becomes 1; other config/secrets/data preserved), parsed Compose environment for
+all 12 application services, Python DEBUG on/off smoke checks, shell syntax,
+all Go package tests and go vet. No backtesting, VPS changes or restart performed.
+
 ## Position fee colors (2026-10-19, local only)
 
 Open/closed position fee cells and Total Fees now use the existing sign-based

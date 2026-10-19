@@ -38,7 +38,7 @@ x-runtime: &runtime
   logging: *logging
   networks: [chain]
   environment:
-    ALGOTRADING_LOG_DEBUG: ${LOG_DEBUG:-0}
+    ALGOTRADING_LOG_DEBUG: ${LOG_DEBUG:-1}
     ALGOTRADING_LOG_QUIET: "0"
     ALGOTRADING_LOG_DIR: ""
 
@@ -53,6 +53,7 @@ x-process-check: &process_check
 
 # Dashboard read model settings shared by dash-api and watchdog.
 x-dashboard-environment: &dashboard_environment
+  ALGOTRADING_LOG_DEBUG: ${LOG_DEBUG:-1}
   DASHBOARD_DATA_PROVIDER: real
   DASHBOARD_POSTGRES_DSN: host=postgres port=5432 dbname=algotrading_paper user=algotrading password=${POSTGRES_PASSWORD:?missing secrets/chain.env}
   DASHBOARD_NATS_URL: nats://nats:4222
@@ -512,6 +513,7 @@ services:
     logging: *logging
     networks: [chain]
     environment:
+      ALGOTRADING_LOG_DEBUG: ${LOG_DEBUG:-1}
       DASHBOARD_ALERT_STORE_DIR: /data/watchdog
       DASHBOARD_NOTIFIER_TEST_SINK_FILE: /data/notifier/test-sink.jsonl
       DASHBOARD_NOTIFIER_SOURCE_NAME: Watchdog
@@ -566,6 +568,7 @@ services:
     logging: *logging
     network_mode: bridge  # Telegram only; no access to the chain network.
     environment:
+      ALGOTRADING_LOG_DEBUG: ${LOG_DEBUG:-1}
       DASHBOARD_ALERT_STORE_DIR: /source
       DASHBOARD_NOTIFIER_STORE_DIR: /data/notifier
       DASHBOARD_NOTIFIER_SOURCE_NAME: Kraken

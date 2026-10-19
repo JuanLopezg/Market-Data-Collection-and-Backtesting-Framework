@@ -24,7 +24,11 @@ type alertsEnvelope struct {
 }
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logLevel := slog.LevelInfo
+	if debug, _ := strconv.ParseBool(os.Getenv("ALGOTRADING_LOG_DEBUG")); debug {
+		logLevel = slog.LevelDebug
+	}
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel}))
 	real, err := configuredRealProvider()
 	if err != nil {
 		logger.Error("invalid watchdog provider configuration", "error", err)

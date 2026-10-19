@@ -122,7 +122,15 @@ deploy/chain/algo build            # from the repository: build the images named
 <root>/chain/algo backup
 ```
 
-`install` never overwrites `chain.env`, `config/`, `secrets/` or `data/`. The dashboard
+`install` preserves `chain.env`, `config/`, `secrets/` and `data/`, except that
+this diagnostic release deliberately sets `LOG_DEBUG=1` in new and existing
+`chain.env` files. This enables existing DEBUG statements in all C++ trading
+services, the Go API/watchdog/notifiers, and the Python Kraken monitor. Services
+without DEBUG statements keep their current output; NATS, PostgreSQL and Caddy
+keep their existing logging configuration. Set `LOG_DEBUG=0` after installation
+to turn application DEBUG off again, then recreate affected containers and restart
+the Kraken host monitor. A later installation of this diagnostic version enables
+DEBUG again. Logs keep the existing destinations, retention and size limits. The dashboard
 viewer and operator passwords are in `secrets/chain.env` (`DASHBOARD_OPERATOR_PASSWORD`;
 an installation created before Manual Control has none: add the line to enable the
 operator login).

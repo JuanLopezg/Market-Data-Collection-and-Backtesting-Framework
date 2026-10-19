@@ -14,7 +14,7 @@ class InstallationRootTest(unittest.TestCase):
             root.mkdir()
             for name in ('chain', 'config', 'secrets', 'data'):
                 (root / name).mkdir()
-            (root / 'chain/chain.env').write_text('MODE=paper\nLOG_MODE=local\n')
+            (root / 'chain/chain.env').write_text('MODE=paper\nLOG_MODE=local\nLOG_DEBUG=0\n')
             (root / 'secrets/chain.env').write_text('TEST_ONLY=preserve\n')
             (root / 'config/market_data.json').write_text('{}')
             (root / 'data/owned-state').write_text('preserve')
@@ -53,7 +53,7 @@ class InstallationRootTest(unittest.TestCase):
             compose = (root / 'chain/compose.yml').read_text()
             self.assertIn(':/var/lib/postgresql/data', compose)
             self.assertIn(':/data/market', compose)
-            self.assertEqual((root / 'chain/chain.env').read_text(), 'MODE=paper\nLOG_MODE=local\n')
+            self.assertEqual((root / 'chain/chain.env').read_text(), 'MODE=paper\nLOG_MODE=local\nLOG_DEBUG=1\n')
             self.assertEqual((root / 'secrets/chain.env').read_text(), 'TEST_ONLY=preserve\n')
             self.assertEqual((root / 'config/market_data.json').read_text(), '{}')
             self.assertEqual((root / 'data/owned-state').read_text(), 'preserve')
@@ -61,6 +61,7 @@ class InstallationRootTest(unittest.TestCase):
             subprocess.run(['bash', str(ROOT / 'deploy/chain/algo'), 'install', str(root)],
                            check=True, capture_output=True)
             self.assertEqual((root / 'chain/logging/rsyslog.conf').read_text(), receiver)
+            self.assertEqual((root / 'chain/chain.env').read_text(), 'MODE=paper\nLOG_MODE=local\nLOG_DEBUG=1\n')
             # A restrictive administrator umask must not block the syslog user.
             subprocess.run(['bash', '-c', 'umask 077; bash "$1" install "$2"',
                             'root-test', str(ROOT / 'deploy/chain/algo'), str(root)],

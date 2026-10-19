@@ -6,6 +6,7 @@ Never log secrets.
 """
 
 import logging
+import os
 import sys
 import time
 
@@ -13,8 +14,11 @@ FORMAT = '%(asctime)s.%(msecs)03d [%(levelname)-5s] %(funcName)s : %(message)s'
 DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
 
 
-def setup_logging(debug: bool = False) -> None:
+def setup_logging(debug: bool | None = None) -> None:
     """Configure the root logger once for a command-line entrypoint."""
+    if debug is None:
+        setting = os.environ.get('ALGOTRADING_LOG_DEBUG', os.environ.get('LOG_DEBUG', '0'))
+        debug = setting.strip().lower() in ('1', 'true', 'yes', 'on')
     formatter = logging.Formatter(FORMAT, DATE_FORMAT)
     formatter.converter = time.gmtime
     handler = logging.StreamHandler(sys.stdout)

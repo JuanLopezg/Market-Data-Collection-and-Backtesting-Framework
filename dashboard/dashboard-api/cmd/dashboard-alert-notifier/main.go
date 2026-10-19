@@ -34,7 +34,11 @@ func main() {
 		fmt.Fprintln(os.Stderr, "test-severity requires test-message")
 		os.Exit(1)
 	}
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logLevel := slog.LevelInfo
+	if debug, _ := strconv.ParseBool(os.Getenv("ALGOTRADING_LOG_DEBUG")); debug {
+		logLevel = slog.LevelDebug
+	}
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel}))
 	cfg, err := loadConfig()
 	if err != nil {
 		logger.Error("invalid alert notifier configuration", "error", err)

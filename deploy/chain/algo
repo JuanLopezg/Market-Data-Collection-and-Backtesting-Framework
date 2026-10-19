@@ -46,7 +46,7 @@ Usage: algo <command> [service...]
                         (also runs from the release folder's own copy: <folder>/algo)
 
 Repository only:
-  install <root>        create or update an installation; never overwrites config/secrets/data
+  install <root>        create/update installation; enables DEBUG, preserves trading config/secrets/data
   build                 build the runtime and dashboard images used by chain.env
   release <folder>      save the built images and the source into <folder>/<version>/
 
@@ -157,7 +157,8 @@ NOTIFIER_SINK=TEST_FILE
 # (MODE is added as a profile by ./algo; list only extra profiles here.)
 COMPOSE_PROFILES=
 KRAKEN_NOTIFIER_SINK=TELEGRAM
-LOG_DEBUG=0
+# Diagnostic release: enable existing DEBUG statements in application services.
+LOG_DEBUG=1
 # MODE=live only (README "Switching to live"): Kraken USD balance at the switch, a new
 # namespace after any reset of data/live, and enabled only for authorized real orders.
 LIVE_INITIAL_CASH=
@@ -176,6 +177,21 @@ EOF
         echo "LOG_MODE=$log_mode" >> "$chain/chain.env"
         echo "Added LOG_MODE=$log_mode to $chain/chain.env"
     fi
+
+    # This diagnostic release explicitly enables DEBUG on existing installations too.
+    # Other chain settings, credentials and trading state remain untouched.
+    python3 - "$chain/chain.env" <<'PYDEBUG'
+from pathlib import Path
+import re
+import sys
+path = Path(sys.argv[1])
+text = path.read_text()
+if re.search(r'^LOG_DEBUG=', text, flags=re.MULTILINE):
+    text = re.sub(r'^LOG_DEBUG=.*$', 'LOG_DEBUG=1', text, flags=re.MULTILINE)
+else:
+    text += ('\n' if text and not text.endswith('\n') else '') + 'LOG_DEBUG=1\n'
+path.write_text(text)
+PYDEBUG
 
     # Configuration defaults are copied once; later edits stay in <root>/config.
     if [[ ! -d "$config/strategies" ]]; then cp -r "$repo/config/strategies" "$config/"; echo "Created $config/strategies"; fi

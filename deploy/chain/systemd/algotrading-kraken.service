@@ -7,6 +7,7 @@ ConditionPathExists=/secrets/kraken_readonly.env
 
 [Service]
 Type=simple
+EnvironmentFile=-/chain/chain.env
 # Reads the account every 30 s with a key that cannot trade or withdraw. Writes
 # /data/kraken_account (events.jsonl, status.json, SQLite journal, 3 days of raw
 # samples); the kraken-notifier container sends its events to Telegram.

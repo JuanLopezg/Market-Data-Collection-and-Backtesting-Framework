@@ -480,7 +480,10 @@ for prices/quantities. Long message IDs, hashes, stream/subject names and unroun
 values go in a separate `LG_DEBUG` line. `ALGOTRADING_LOG_DEBUG=1` shows DEBUG,
 `ALGOTRADING_LOG_QUIET=1` disables stdout and `ALGOTRADING_LOG_DIR` adds an append-only
 `<service>.log` copy. The live_trading Python tools use `readable_log.py` for the same
-shape; `research/replay.py` has its own setup and also honors `ALGOTRADING_LOG_DEBUG=1`.
+shape and honor the same switch (or `LOG_DEBUG` from the host chain settings);
+the Go dashboard services also honor `ALGOTRADING_LOG_DEBUG`. The diagnostic chain
+release enables `LOG_DEBUG=1` during installation, including existing installations.
+`research/replay.py` has its own setup and also honors `ALGOTRADING_LOG_DEBUG=1`.
 The host receiver (`deploy/chain/logging`) stores each service line unchanged in
 `<root>/logs/<service>/YYYYMMDD.log` (see `deploy/chain/README.md`).
 
