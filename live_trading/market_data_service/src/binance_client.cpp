@@ -546,3 +546,48 @@ std::unordered_map<Coin, double> BinanceMarketDataClient::fetchOpeningPrices(
         throw std::runtime_error("Paper execution requires a complete, correctly dated opening-price snapshot");
     return prices;
 }
+
+std::vector<FundingRatePage> BinanceMarketDataClient::fetchFundingRatePages(
+    const std::vector<FundingRateRequest>& requests,
+    std::size_t maxParallelRequests) const
+{
+    std::vector<std::string> urls;
+    for (const auto& request : requests)
+        urls.push_back(base_url_ + "/fapi/v1/fundingRate?symbol=" + request.symbol +
+                       "&startTime=" + std::to_string(request.start_ms) +
+                       "&limit=" + std::to_string(FUNDING_PAGE_LIMIT));
+    const auto bodies = getAll(urls, maxParallelRequests, "funding");
+
+    std::vector<FundingRatePage> pages(requests.size());
+    for (std::size_t index = 0; index < requests.size(); ++index) {
+        FundingRatePage& page = pages[index];
+        const FundingRateRequest& request = requests[index];
+        try {
+            if (!bodies[index])
+                throw std::runtime_error("request failed");
+            const json rows = json::parse(*bodies[index]);
+            if (!rows.is_array())
+                throw std::runtime_error("answer is not an array");
+            for (const auto& row : rows) {
+                FundingRateEvent event;
+                event.funding_time_ms = row.at("fundingTime").get<long long>();
+                event.rate = std::stod(row.at("fundingRate").get<std::string>());
+                // Old settlements have an empty markPrice.
+                const std::string mark = row.contains("markPrice") && row.at("markPrice").is_string()
+                    ? row.at("markPrice").get<std::string>() : std::string{};
+                event.mark_price = mark.empty() ? std::nan("") : std::stod(mark);
+                if (event.funding_time_ms < request.start_ms || !std::isfinite(event.rate))
+                    throw std::runtime_error("invalid or misdated settlement");
+                if (!page.events.empty() && event.funding_time_ms <= page.events.back().funding_time_ms)
+                    throw std::runtime_error("settlements are not in ascending time order");
+                page.events.push_back(event);
+            }
+        }
+        catch (const std::exception& error) {
+            LG_WARN("Skipped Binance funding rates of {}: {}", request.symbol, error.what());
+            page = FundingRatePage{};
+            page.failed = true;
+        }
+    }
+    return pages;
+}

@@ -2,6 +2,28 @@
 
 Last synchronized: 2026-10-16. Current source and test output take precedence.
 
+## Binance funding rates in the market database (2026-10-19, local only)
+
+User request: store a daily funding figure per perpetual for backtests and fill the whole
+history on the VPS. The market-data service now downloads Binance funding settlements
+(`/fapi/v1/fundingRate`) after each published day into `funding_rate_events`, with the
+daily view `funding_rate_daily` (settlements in (date 00:00, date+1 00:00] UTC = what a
+position held open(date)..open(date+1) pays). Outside the daily checkpoint: it starts no
+earlier than 00:02 UTC, after MARKET_DATA_UPDATED, never fails the cycle, paces itself
+below Binance's 500 requests/5 min and resumes from the newest stored settlement, so the
+first VPS run backfills every stored pair from its first candle. On by default
+(`download_funding_rates`; the existing VPS market_data.json needs no change); PAPER fixture
+sets it false. Details: `live_trading/README.md`, "Market-data files".
+
+Evidence: WSL build of algotrading_market_data_service clean; harness against real
+Binance on a copy of the local DB: 134 pairs, 203,062 settlements, 280 requests, 9 s; second
+run 12 requests, 0 new rows (idempotent); BTCUSDT daily rows 3 events, newest day partial.
+Audits: market_data_time_handler, live_daily_gate, live_deploy_topology PASS;
+live_sqlite_ownership, live_pre_exchange_e2e and distributed_anti_lookahead FAIL on
+pre-existing gateway findings (venue_adapter_test.cpp SQLite use, gateway future-plan
+guard), files not touched. step59 gate not run (no lib/canonical/replay change). Not
+deployed; no research consumer reads funding yet.
+
 ## Application DEBUG for next VPS release (2026-10-19, local only)
 
 The chain installer now explicitly sets LOG_DEBUG=1 in new and existing chain.env

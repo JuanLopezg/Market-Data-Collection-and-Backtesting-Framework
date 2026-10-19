@@ -27,6 +27,10 @@ struct MarketDataConfig {
     // from Binance itself (the next day's candle, or Binance's clock) before storing it.
     int midnight_delay_ms = 0;
     int retry_after_failure_seconds = 300;
+
+    // After each published day, download Binance funding settlements of every stored pair
+    // into funding_rate_events (research/backtests only; no live decision reads them).
+    bool download_funding_rates = true;
 };
 
 MarketDataConfig loadMarketDataConfig(const std::filesystem::path& path);

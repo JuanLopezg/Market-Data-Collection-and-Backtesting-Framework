@@ -58,6 +58,8 @@ MarketDataConfig loadMarketDataConfig(const std::filesystem::path& path)
         config.midnight_delay_ms = root.at("midnight_delay_ms").get<int>();
     if (root.contains("retry_after_failure_seconds"))
         config.retry_after_failure_seconds = root.at("retry_after_failure_seconds").get<int>();
+    if (root.contains("download_funding_rates"))
+        config.download_funding_rates = root.at("download_funding_rates").get<bool>();
 
     if (config.main_exchange != "binance")
         throw std::runtime_error("Market-data ingestion supports main_exchange='binance' only");

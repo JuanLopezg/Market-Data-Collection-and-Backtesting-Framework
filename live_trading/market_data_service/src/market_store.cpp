@@ -135,6 +135,29 @@ void MarketDataStore::ensureSchema()
         "  PRIMARY KEY(date, rank),"
         "  UNIQUE(date, pair)"
         ");"
+        // Raw Binance funding settlements, for research and backtests only: no live
+        // decision reads them. funding_time is Binance's fundingTime (Unix ms, a few ms
+        // after the hour); rate > 0 means longs pay shorts.
+        "CREATE TABLE IF NOT EXISTS funding_rate_events ("
+        "  pair TEXT NOT NULL,"
+        "  funding_time INTEGER NOT NULL,"
+        "  rate REAL NOT NULL,"
+        "  mark_price REAL,"
+        "  PRIMARY KEY(pair, funding_time)"
+        ");"
+        // Funding of the daily bar `date`: the settlements in (date 00:00, date+1 00:00] UTC,
+        // after rounding funding_time to the minute. A position opened at open(date) and
+        // closed at open(date+1) pays exactly these, including the one at the closing
+        // midnight. funding_rate_sum is that position's cost as a fraction of notional
+        // (long pays when positive); events shows how many settlements the day has (3 for
+        // 8-hour funding), so an incomplete newest day can be recognized.
+        "CREATE VIEW IF NOT EXISTS funding_rate_daily AS "
+        "SELECT pair,"
+        "  CAST(strftime('%Y%m%d', (funding_time + 30000) / 60000 * 60 - 1, 'unixepoch') AS INTEGER) AS date,"
+        "  SUM(rate) AS funding_rate_sum,"
+        "  AVG(rate) AS funding_rate_mean,"
+        "  COUNT(*) AS events "
+        "FROM funding_rate_events GROUP BY 1, 2;"
     );
     // Additive migration: keep old base volumes; download missing quote history from Binance.
     sqlite3_stmt* columns = nullptr;
@@ -491,6 +514,81 @@ void MarketDataStore::storeRankingNoTransaction(
         }
     }
     sqlite3_finalize(stmt);
+}
+
+std::vector<FundingRateRequest> MarketDataStore::buildFundingPlan() const
+{
+    const char* sql =
+        "SELECT o.pair, o.first_date, o.last_date, f.last_time FROM "
+        "(SELECT pair, MIN(date) AS first_date, MAX(date) AS last_date FROM ohlcv_data GROUP BY pair) o "
+        "LEFT JOIN (SELECT pair, MAX(funding_time) AS last_time FROM funding_rate_events GROUP BY pair) f "
+        "ON f.pair = o.pair ORDER BY o.pair;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)
+        throw std::runtime_error("Cannot prepare funding plan query: " + std::string(sqlite3_errmsg(db_)));
+
+    // fundingTime can be slightly before or after the hour; one minute of tolerance.
+    constexpr long long TOLERANCE_MS = 60'000;
+    const auto unixMs = [](std::chrono::sys_days day) {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(day.time_since_epoch()).count();
+    };
+
+    std::vector<FundingRateRequest> plan;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const std::string pair = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        const auto firstDay = std::chrono::sys_days{fromYYYYMMDD(sqlite3_column_int(stmt, 1))};
+        const auto lastDay = std::chrono::sys_days{fromYYYYMMDD(sqlite3_column_int(stmt, 2))};
+        const long long closingMidnightMs = unixMs(lastDay + std::chrono::days{1});
+        if (sqlite3_column_type(stmt, 3) == SQLITE_NULL) {
+            plan.push_back({pair, unixMs(firstDay)});
+            continue;
+        }
+        const long long lastTime = sqlite3_column_int64(stmt, 3);
+        if (lastTime < closingMidnightMs - TOLERANCE_MS)
+            plan.push_back({pair, lastTime + 1});
+    }
+    sqlite3_finalize(stmt);
+    return plan;
+}
+
+void MarketDataStore::storeFundingRates(const std::map<std::string, std::vector<FundingRateEvent>>& eventsBySymbol)
+{
+    exec("BEGIN IMMEDIATE TRANSACTION;");
+    sqlite3_stmt* stmt = nullptr;
+    try {
+        const char* sql =
+            "INSERT INTO funding_rate_events(pair, funding_time, rate, mark_price) VALUES(?, ?, ?, ?) "
+            "ON CONFLICT(pair, funding_time) DO UPDATE SET rate=excluded.rate, "
+            "mark_price=coalesce(excluded.mark_price, funding_rate_events.mark_price);";
+        if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)
+            throw std::runtime_error("Cannot prepare funding-rate upsert");
+        for (const auto& [symbol, events] : eventsBySymbol) {
+            for (const auto& event : events) {
+                // Binance caps funding far below 100% per settlement; anything else is corrupt.
+                if (event.funding_time_ms <= 0 || !std::isfinite(event.rate) || std::abs(event.rate) >= 1.0)
+                    throw std::runtime_error("Refusing to persist invalid funding rate for " + symbol);
+                sqlite3_reset(stmt);
+                sqlite3_clear_bindings(stmt);
+                sqlite3_bind_text(stmt, 1, symbol.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_int64(stmt, 2, event.funding_time_ms);
+                sqlite3_bind_double(stmt, 3, event.rate);
+                if (std::isfinite(event.mark_price) && event.mark_price > 0.0)
+                    sqlite3_bind_double(stmt, 4, event.mark_price);
+                else
+                    sqlite3_bind_null(stmt, 4);
+                if (sqlite3_step(stmt) != SQLITE_DONE)
+                    throw std::runtime_error("Cannot store funding rate: " + std::string(sqlite3_errmsg(db_)));
+            }
+        }
+        sqlite3_finalize(stmt);
+        stmt = nullptr;
+        exec("COMMIT;");
+    }
+    catch (...) {
+        sqlite3_finalize(stmt);
+        try { exec("ROLLBACK;"); } catch (...) {}
+        throw;
+    }
 }
 
 void MarketDataStore::commitDailyUpdate(

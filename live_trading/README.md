@@ -400,7 +400,7 @@ Within `market_data_service/src/`, filenames describe their local responsibility
 | `market_data_service_main.cpp` | Startup, daily schedule, retries and shutdown |
 | `config.h/.cpp` | Configuration values and JSON validation |
 | `binance_client.h/.cpp` | Binance REST calls and bounded parallel downloads |
-| `ingestion.h/.cpp` | One daily refresh, validation and commit coordination |
+| `ingestion.h/.cpp` | One daily refresh, validation and commit coordination; funding catch-up |
 | `market_store.h/.cpp` | Canonical SQLite transactions and tracked-symbol history |
 | `update_publisher.h/.cpp` | Durable notification after a successful commit |
 
@@ -417,6 +417,22 @@ ends after midnight (their `closeTime`). Symbols the ranking adds download after
 2026-10-15). Measured on the VPS (2026-10-18): each request answers in ~0.25 s; 100 klines take
 0.8 s multiplexed on one connection, 2.5 s on 16 connections. Each run logs its timing
 ("Daily download ... took").
+
+Funding rates (research/backtests only; no live decision reads them): after the day is
+published and no earlier than 00:02 UTC, the service downloads Binance funding settlements
+(`GET /fapi/v1/fundingRate`, 1000 per page) for every pair in `ohlcv_data` into
+`funding_rate_events(pair, funding_time ms, rate, mark_price)`, resuming after each pair's
+newest settlement, or from its first stored candle when it has none. So a new deployment
+backfills the whole stored history by itself (local DB on 2026-10-19: 134 pairs, 203,062
+settlements, 280 requests, 9 s). Binance allows 500 of these requests per 5 minutes per IP;
+the service sends at most 400 per window and stops 1 minute before the next run is
+prepared, resuming after it. A failure only logs a warning; it never fails or retries the
+daily cycle. `download_funding_rates: false` disables it (the PAPER fixture does). The view
+`funding_rate_daily(pair, date, funding_rate_sum, funding_rate_mean, events)` gives the
+funding of daily bar `date`: the settlements in (date 00:00, date+1 00:00] UTC, exactly what
+a position held from open(date) to open(date+1) pays (`rate > 0`: longs pay). The newest day
+is incomplete until its closing midnight (check `events`: 3 for 8-hour funding, 6 for 4-hour).
+Symbols Binance removed from the futures API (e.g. FTMUSDT, AGIXUSDT) have no funding history.
 
 The historical feed shares `market_store` so both writers use the same schema and commit
 rules. The HTTP simulator keeps its own candle store and HTTP server; it serves requests

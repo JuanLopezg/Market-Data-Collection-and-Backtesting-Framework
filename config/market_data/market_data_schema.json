@@ -54,6 +54,12 @@
     "retry_after_failure_seconds": {
       "type": "integer",
       "minimum": 1
+    },
+    "publish_paper_execution_prices": {
+      "type": "boolean"
+    },
+    "download_funding_rates": {
+      "type": "boolean"
     }
   },
   "required": [

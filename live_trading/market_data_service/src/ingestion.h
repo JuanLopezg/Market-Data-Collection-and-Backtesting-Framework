@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <functional>
 
 #include "binance_client.h"
 #include "config.h"
@@ -42,6 +43,12 @@ public:
     // again inside the run to check it did not change.
     MarketDataIngestionSummary run(std::chrono::year_month_day targetDate,
                                    const MarketDataPreparation* prepared = nullptr);
+
+    // Brings the stored Binance funding settlements of every stored pair up to date, from its
+    // first stored candle on (see MarketDataStore::buildFundingPlan). Research data only:
+    // never part of the daily checkpoint and never a reason to fail the cycle. Each round
+    // commits on its own, so stopping (stopRequested) loses nothing; the next call resumes.
+    void refreshFundingRates(const std::function<bool()>& stopRequested) const;
 
 private:
     MarketDataConfig config_;

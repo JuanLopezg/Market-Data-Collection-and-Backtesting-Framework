@@ -35,6 +35,11 @@ namespace {
 
 // The daily run is prepared this long before midnight (SQLite reads, plan, Binance connection).
 constexpr auto PREPARE_AHEAD = std::chrono::seconds(10);
+// Funding settlements download no earlier than this after the midnight that closes the
+// target day, so that midnight's settlement is already in Binance's history.
+constexpr auto FUNDING_AFTER_MIDNIGHT = std::chrono::minutes(2);
+// ...and stop this long before the next daily run is prepared.
+constexpr auto FUNDING_STOP_BEFORE_PREPARE = std::chrono::minutes(1);
 
 std::atomic<bool> running{true};
 
@@ -132,9 +137,34 @@ void interruptibleBusinessWaitUntil(
     }
 }
 
+// Research data after the published day: it never delays MARKET_DATA_UPDATED and its
+// failure never fails or retries the daily cycle.
+void refreshFundingRates(
+    const MarketDataIngestor& ingestor,
+    const MarketDataConfig& config,
+    const TimeHandler& timeHandler,
+    std::chrono::year_month_day targetDate)
+{
+    if (!config.download_funding_rates)
+        return;
+    const auto closingMidnight = std::chrono::system_clock::time_point{
+        std::chrono::sys_days{targetDate} + std::chrono::days{1}};
+    interruptibleBusinessWaitUntil(timeHandler, closingMidnight + FUNDING_AFTER_MIDNIGHT);
+    const auto stopAt = nextScheduledBusinessRun(timeHandler, config.midnight_delay_ms) -
+                        PREPARE_AHEAD - FUNDING_STOP_BEFORE_PREPARE;
+    try {
+        ingestor.refreshFundingRates([&] { return !running.load() || timeHandler.getTime() >= stopAt; });
+    }
+    catch (const std::exception& error) {
+        LG_WARN("Funding-rate download failed: {}; it is retried after the next daily run", error.what());
+    }
+}
+
 bool runTarget(
     MarketDataIngestor& ingestor,
     const MarketDataUpdatePublisher& publisher,
+    const MarketDataConfig& config,
+    const TimeHandler& timeHandler,
     std::chrono::year_month_day targetDate,
     const MarketDataPreparation* prepared = nullptr)
 {
@@ -143,12 +173,13 @@ bool runTarget(
         // The notification is intentionally the next step.
         const MarketDataIngestionSummary summary = ingestor.run(targetDate, prepared);
         publisher.publish(summary);
-        return true;
     }
     catch (const std::exception& error) {
         LG_ERROR("Daily cycle for {} failed: {}", formatYMD(targetDate), error.what());
         return false;
     }
+    refreshFundingRates(ingestor, config, timeHandler, targetDate);
+    return true;
 }
 
 } // namespace
@@ -197,7 +228,7 @@ int main(int argc, char** argv)
         catch (const std::exception& error) {
             LG_WARN("Could not prepare the catch-up download for {} ({}); it runs unprepared", formatYMD(targetDate), error.what());
         }
-        bool success = runTarget(ingestor, publisher, targetDate, startupPrepared ? &*startupPrepared : nullptr);
+        bool success = runTarget(ingestor, publisher, config, timeHandler, targetDate, startupPrepared ? &*startupPrepared : nullptr);
 
         if (options.run_once) {
             curl_global_cleanup();
@@ -213,7 +244,7 @@ int main(int argc, char** argv)
                 interruptibleTechnicalWaitUntil(retryAt);
                 if (!running.load())
                     break;
-                success = runTarget(ingestor, publisher, targetDate);
+                success = runTarget(ingestor, publisher, config, timeHandler, targetDate);
                 continue;
             }
 
@@ -222,7 +253,7 @@ int main(int argc, char** argv)
             const auto newestCompletedDate = newestCompletedBusinessUtcDate(timeHandler);
             if (std::chrono::sys_days{newestCompletedDate} > std::chrono::sys_days{targetDate}) {
                 targetDate = newestCompletedDate;
-                success = runTarget(ingestor, publisher, targetDate);
+                success = runTarget(ingestor, publisher, config, timeHandler, targetDate);
                 continue;
             }
 
@@ -247,7 +278,7 @@ int main(int argc, char** argv)
                 break;
 
             targetDate = newestCompletedBusinessUtcDate(timeHandler);
-            success = runTarget(ingestor, publisher, targetDate, prepared ? &*prepared : nullptr);
+            success = runTarget(ingestor, publisher, config, timeHandler, targetDate, prepared ? &*prepared : nullptr);
         }
 
         LG_INFO("Shutdown complete");

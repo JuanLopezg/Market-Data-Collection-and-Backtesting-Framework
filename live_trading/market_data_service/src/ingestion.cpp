@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <future>
+#include <map>
 #include <optional>
 #include <set>
 #include <stdexcept>
@@ -20,6 +21,9 @@ constexpr auto EMPTY_DATE = std::chrono::year{2000}/1/1;
 // ranking a 24h window ending after midnight), and how often that proof is asked again.
 constexpr auto NEXT_DAY_WAIT = std::chrono::seconds(30);
 constexpr auto NEXT_DAY_POLL = std::chrono::milliseconds(50);
+// Binance allows 500 funding-rate requests per 5 minutes per IP; stay well below it.
+constexpr std::size_t FUNDING_REQUESTS_PER_WINDOW = 400;
+constexpr auto FUNDING_WINDOW = std::chrono::minutes(5) + std::chrono::seconds(5);
 }
 
 MarketDataIngestor::MarketDataIngestor(MarketDataConfig config)
@@ -340,4 +344,72 @@ MarketDataIngestionSummary MarketDataIngestor::run(std::chrono::year_month_day t
             closurePolls, elapsedMs(), usePrepared ? " (prepared before midnight)" : "");
 
     return summary;
+}
+
+void MarketDataIngestor::refreshFundingRates(const std::function<bool()>& stopRequested) const
+{
+    MarketDataStore store(config_.database_path);
+    std::vector<FundingRateRequest> pending = store.buildFundingPlan();
+    if (pending.empty()) {
+        LG_INFO("Funding rates are up to date for every stored pair");
+        return;
+    }
+    LG_INFO("Downloading Binance funding rates for {} pair(s)", pending.size());
+
+    const auto started = std::chrono::steady_clock::now();
+    auto windowStart = started;
+    std::size_t windowRequests = 0;
+    std::size_t requests = 0;
+    std::size_t stored = 0;
+    std::set<std::string> failed;
+
+    while (!pending.empty() && !stopRequested()) {
+        if (windowRequests >= FUNDING_REQUESTS_PER_WINDOW) {
+            LG_INFO("Funding-rate request budget used; waiting for the next 5-minute window ({} pair(s) pending)",
+                    pending.size());
+            while (std::chrono::steady_clock::now() < windowStart + FUNDING_WINDOW && !stopRequested())
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            if (stopRequested())
+                break;
+            windowStart = std::chrono::steady_clock::now();
+            windowRequests = 0;
+        }
+
+        // One page per pending pair; a full page is followed by another one next round.
+        const std::size_t roundSize = std::min(pending.size(), FUNDING_REQUESTS_PER_WINDOW - windowRequests);
+        const std::vector<FundingRateRequest> round(pending.begin(), pending.begin() + static_cast<std::ptrdiff_t>(roundSize));
+        pending.erase(pending.begin(), pending.begin() + static_cast<std::ptrdiff_t>(roundSize));
+        const auto pages = binance_.fetchFundingRatePages(round, config_.max_parallel_requests);
+        windowRequests += round.size();
+        requests += round.size();
+
+        std::map<std::string, std::vector<FundingRateEvent>> events;
+        for (std::size_t index = 0; index < round.size(); ++index) {
+            if (pages[index].failed) {
+                failed.insert(round[index].symbol);
+                continue;
+            }
+            if (pages[index].events.empty())
+                continue;
+            stored += pages[index].events.size();
+            events[round[index].symbol] = pages[index].events;
+            if (pages[index].events.size() >= BinanceMarketDataClient::FUNDING_PAGE_LIMIT)
+                pending.push_back({round[index].symbol, pages[index].events.back().funding_time_ms + 1});
+        }
+        if (!events.empty())
+            store.storeFundingRates(events);
+    }
+
+    const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - started).count();
+    if (!pending.empty())
+        LG_WARN("Funding-rate download stopped before the next daily run with {} pair(s) pending; it resumes "
+                "after that run ({} settlements stored, {} requests, {} s)", pending.size(), stored, requests, seconds);
+    else
+        LG_INFO("Funding rates saved: {} settlements from {} requests in {} s", stored, requests, seconds);
+    if (!failed.empty()) {
+        std::string names;
+        for (const auto& symbol : failed)
+            names += (names.empty() ? "" : ",") + symbol;
+        LG_WARN("Funding rates not downloaded this cycle for: {}", names);
+    }
 }

@@ -146,7 +146,8 @@ def main():
         assert service['logging']['options']['cache-max-file']=='2'
     config = json.loads((ROOT / 'deploy/live/market_data_config.json').read_text())
     config.update(binance_base_url='http://fixture:8000', active_top_n=2, ranking_size=2,
-                  stream='ALGOTRADING_PAPER_RUNTIME', publish_paper_execution_prices=True)
+                  stream='ALGOTRADING_PAPER_RUNTIME', publish_paper_execution_prices=True,
+                  download_funding_rates=False)
     (directory / 'market_data_config.json').write_text(json.dumps(config))
     dc = ['docker','compose','--project-name',project,'--env-file',str(directory / '.env'),'-f',str(directory / 'compose.yml')]
     def compose(*args):return run([*dc,*args],directory)

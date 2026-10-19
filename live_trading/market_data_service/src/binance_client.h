@@ -43,6 +43,13 @@ struct BinanceDailySnapshot {
     BinanceFetchResult candles;
 };
 
+// One page of funding settlements per request, oldest first. failed: the request or its
+// answer was unusable; events is then empty.
+struct FundingRatePage {
+    std::vector<FundingRateEvent> events;
+    bool failed = false;
+};
+
 // Small Binance REST adapter used only by the market-data ingestion service.
 class BinanceMarketDataClient {
 public:
@@ -81,6 +88,14 @@ public:
     std::unordered_map<Coin, double> fetchOpeningPrices(
         std::chrono::year_month_day date,
         const std::vector<std::string>& symbols,
+        std::size_t maxParallelRequests) const;
+
+    // At most FUNDING_PAGE_LIMIT settlements per request from GET /fapi/v1/fundingRate,
+    // pages[i] answering requests[i]. A full page means more settlements follow. Binance
+    // limits this endpoint to 500 requests per 5 minutes per IP; the caller paces them.
+    static constexpr std::size_t FUNDING_PAGE_LIMIT = 1000;
+    std::vector<FundingRatePage> fetchFundingRatePages(
+        const std::vector<FundingRateRequest>& requests,
         std::size_t maxParallelRequests) const;
 
 private:

@@ -25,6 +25,20 @@ struct MarketDataDownloadRequest {
     std::chrono::year_month_day end_date;
 };
 
+// One Binance funding settlement. rate > 0: longs pay shorts, as a fraction of the position
+// notional at mark_price (NaN when Binance did not report it).
+struct FundingRateEvent {
+    long long funding_time_ms = 0;
+    double rate = 0.0;
+    double mark_price = 0.0;
+};
+
+// Funding settlements of one symbol from start_ms (inclusive) onwards.
+struct FundingRateRequest {
+    std::string symbol;
+    long long start_ms = 0;
+};
+
 // SQLite repository for canonical OHLCV and the tracked-symbol lifecycle.
 class MarketDataStore {
 public:
@@ -55,6 +69,15 @@ public:
         const OHLCVData& bars,
         const std::vector<std::pair<std::string, double>>& rankedTop,
         std::chrono::year_month_day targetDate);
+
+    // One request per stored pair whose funding does not reach the settlement that closes
+    // its newest stored candle (the next UTC midnight). It starts after the newest stored
+    // settlement, or at the pair's first stored candle when it has none.
+    std::vector<FundingRateRequest> buildFundingPlan() const;
+
+    // Upserts funding settlements in one transaction. They are research data, kept apart
+    // from the daily checkpoint (commitDailyUpdate).
+    void storeFundingRates(const std::map<std::string, std::vector<FundingRateEvent>>& eventsBySymbol);
 
 private:
     std::filesystem::path database_path_;
