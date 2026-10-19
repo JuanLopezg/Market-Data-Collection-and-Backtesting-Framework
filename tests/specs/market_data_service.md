@@ -9,8 +9,9 @@ research data and must not compromise the daily checkpoint.
 Sources: `docs/codex/ARCHITECTURE_FULL.md` (market-data durability boundary),
 `lib/README.md` (base and quote volume), `live_trading/README.md` ("Market-data
 files" and PAPER), the market-data public headers, and market/execution message
-contracts. Tests call the linkable core, real SQLite, and a loopback fake Binance
-HTTP server. Publisher tests use real Docker NATS in a separate service executable.
+contracts. Tests call the linkable core and real SQLite, with Binance HTTP responses
+scripted at the libcurl transport boundary. Publisher tests use real Docker NATS
+in a separate service executable.
 They do not exercise `main()` or contact Binance.
 
 ## Rules and worked examples
@@ -102,13 +103,14 @@ make a symbol eligible for selection.
 Persist only the requested inclusive UTC dates. Field 7 is quote turnover.
 Malformed JSON, invalid candle shapes or invalid quote turnover fail that symbol's
 entire request, without discarding independent successful symbols. Multi-page
-requests must respect Binance's 1000-row page limit, including the extra next-day
-open (public page-limit contract; assumed for boundary pagination).
+requests must respect the 1500-row kline limit accepted by the repository's Binance
+simulator, including the extra next-day open. Funding has its own 1000-event limit.
 
 Example: a request for Jan 2 receiving Jan 1,Jan 2,Jan 3 yields one completed bar
 at 20240102 with Q=731; a malformed second row makes that symbol fail with no
-partial bars. A 1000-day request plus its next open needs at least two pages, each
-limit <=1000; it must not request limit=1001.
+partial bars. A 1500-day request plus its next open needs at least two pages, each
+limit <=1500. All 1500 completed bars survive merging and the next open stays separate;
+the requested page intervals cover the whole range without gaps or overlap.
 
 ### R9 — Completed history and unfinished execution prices are separate
 
@@ -129,7 +131,7 @@ responses; they contain no sleeps or host-clock-based economic decisions.
 Validate and commit the full daily cycle before returning a summary. A failed
 symbol, invalid bar, insufficient ranking, or missing target candle for a newly
 selected symbol must not establish a completed checkpoint. Requiring the target
-bar when its next candle exists is assumed: a readiness event cannot announce a
+bar when its next candle exists is required (assumed): a readiness event cannot announce a
 day with no selected-symbol data.
 
 Example: top1 BTC, one completed BTC bar and one next open give ranked=1,
@@ -240,16 +242,69 @@ for 20241231. No current high/low/close, volume or funding enters this message.
   or introduce a later rolling ranking.
 - Actual quote turnover is never synthesized from close*base volume.
 - Funding sign and settlement identity survive persistence and retries.
-- Tests use fixed UTC dates and scripted loopback HTTP. NATS tests start with the
-  required Docker availability guard and use `test_support::DockerContainer`.
+- Tests use fixed UTC dates and scripted HTTP responses without sockets. NATS
+  tests start with the required Docker availability guard and use
+  `test_support::DockerContainer`.
 - Scheduler-only timing (00:02 funding start, configuration opt-out, 400/5-minute
   pacing and midnight scheduling) belongs to `main()` and is outside these core
   tests. The 30-second missing-proof timeout is not shortened with wall-clock tricks;
   tests cover arrival of proof through scripted successive responses instead.
 
-Steps 1 and 2 only: specification and tests written; no build or execution performed.
+Step 3 completed on 2026-10-19. `ninja -C build -j2` succeeds without test
+compiler warnings after the brace correction. Final validation command:
+
+```sh
+meson test -C build --no-rebuild --print-errorlogs unit_market_data_service unit_market_data_service_publisher
+```
+
+Both registered targets exit successfully. Across 56 declared cases: **50 passed,
+2 disabled findings, 4 skipped because Docker is unavailable, 0 active failures**.
+The unit target runs all 50 enabled cases (including all 24 HTTP-dependent cases);
+the separate publisher target retains the four real-NATS checks for an environment
+with Docker. Production code and shared test support were not changed.
 
 ## Findings
 
-None established before the first build/run. Any failing code/spec disagreement
-will be recorded with execution evidence during step 3.
+### F1 — Non-object configuration silently starts with defaults (R1)
+
+`loadMarketDataConfig` returned successfully for each of `[]`, `null`, `5`, and
+`"binance"`; all four `EXPECT_THROW` checks failed in the first unit run. This
+disagrees with R1 and `config/market_data/market_data_schema.json` (`type: object`).
+Kept the rejection expectations in
+`MarketDataConfigBehaviour.DISABLED_R1_RejectsNonObjectDocumentsRatherThanStartingWithDefaults`.
+
+### F2 — A next open can complete a day with no selected-symbol bar (R10)
+
+With a fresh database, top1=BTC and target=2024-01-02, the HTTP response contained
+only the 2024-01-03 opening candle at 125. `run(JAN2)` returned successfully and
+logged `0 rows downloaded for 1 symbols`. Independent SQLite reads found a
+nonempty tracker, one Jan 2 rank and one `date_of_start` row, although no Jan 2
+bar existed. The test's throw/no-checkpoint expectations failed. This violates
+R10's explicit completeness assumption: closure proof alone is not completed
+market data. A restart would see a committed tracker and reuse that incomplete
+checkpoint. Preserved the original expectations in
+`MarketIngestionBehaviour.DISABLED_R10_NextOpenWithoutTargetCandleCannotEstablishCompletedDay`.
+
+### Spec corrected — R8 kline limit and pagination example
+
+The original specification incorrectly assumed that the 1000-day internal page
+size was Binance's maximum accepted kline limit. The maintained in-repository
+Binance-compatible endpoint (`live_trading/binance_simulator/src/binance_http_server.cpp`,
+`/fapi/v1/klines`) caps `limit` at **1500**; the separate funding endpoint uses
+1000. Corrected R8 and replaced the 1000-day boundary check with 1500 completed
+days plus one next open, asserting complete data, bounded requests and contiguous
+coverage. This is a spec/test correction supported by the external API simulator,
+not an expected-value change to accommodate a returned production result.
+
+### Harness correction — Restricted environment forbids loopback sockets
+
+The first build succeeded with one test warning (a missing brace around a GTest
+assertion); the brace is corrected. Of 52 unit cases, 27 passed, F1 failed, and
+24 HTTP-dependent cases failed before reaching production code because the sandbox
+denied `socket(AF_INET, SOCK_STREAM, 0)` (`errno=1`, `Operation not permitted`).
+The initial four publisher cases skipped
+because Docker is unavailable. Replaced the loopback server with a test-only
+in-memory libcurl transport adapter, scoped to this area's unit target. It scripts
+only external HTTP and leaves real client parsing, orchestration and SQLite intact;
+it makes no socket/DNS/network calls. These environment failures are not findings
+or disabled behaviour tests.

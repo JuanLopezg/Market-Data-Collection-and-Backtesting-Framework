@@ -176,20 +176,48 @@ TEST(BinanceMarketDataBehaviour, R16_MalformedUnorderedDuplicateOrPreStartEvents
     }
 }
 
-TEST(BinanceMarketDataBehaviour, R8_ThousandDaySnapshotKeepsEveryRequestWithinBinancePageLimit)
+TEST(BinanceMarketDataBehaviour, R8_MultiPageSnapshotPreservesFifteenHundredDaysAndSeparateNextOpen)
 {
     FakeBinanceHttp http;
     BinanceMarketDataClient client(http.url());
-    const Date first{std::chrono::sys_days{JAN2} - std::chrono::days{999}};
+    const Date first{std::chrono::sys_days{JAN2} - std::chrono::days{1499}};
+    Json firstPage = Json::array();
+    Json lastPage = Json::array();
+    for (int offset = 0; offset < 1500; ++offset) {
+        const Date date{std::chrono::sys_days{first} + std::chrono::days{offset}};
+        (offset < 1000 ? firstPage : lastPage).push_back(kline(millis(date)));
+    }
+    lastPage.push_back(nextOpen());
+    http.script("/fapi/v1/klines:BTCUSDT", {firstPage.dump(), lastPage.dump()});
     const auto snapshot = client.fetchDailySnapshot({{"BTCUSDT", first, JAN2}}, false, 1, 2);
     EXPECT_TRUE(snapshot.candles.failed_symbols.empty());
-    // 1000 completed days + one opening candle cannot fit in a 1000-row page.
+    ASSERT_TRUE(snapshot.candles.bars.data.contains("BTCUSDT"));
+    EXPECT_EQ(snapshot.candles.bars.data.at("BTCUSDT").size(), 1500U);
+    EXPECT_DOUBLE_EQ(snapshot.candles.bars.data.at("BTCUSDT").at(20240102).quote_volume, 731);
+    EXPECT_FALSE(snapshot.candles.bars.data.at("BTCUSDT").contains(20240103));
+    EXPECT_EQ(snapshot.candles.next_opens, (std::unordered_map<Coin, double>{{"BTCUSDT", 125}}));
+    // The repository's Binance simulator accepts up to 1500, not 1000, klines.
+    // 1500 completed days plus an opening candle still require multiple pages.
     const auto requests = http.requests();
     EXPECT_GE(requests.size(), 2U);
+    std::vector<std::pair<long long, long long>> ranges;
     for (const auto& request : requests) {
         ASSERT_EQ(request.path, "/fapi/v1/klines");
-        EXPECT_LE(std::stoll(request.query.at("limit")), 1000);
+        const auto limit = std::stoll(request.query.at("limit"));
+        EXPECT_GT(limit, 0);
+        EXPECT_LE(limit, 1500);
+        const auto start = std::stoll(request.query.at("startTime"));
+        const auto end = std::stoll(request.query.at("endTime"));
+        EXPECT_EQ(end - start + 1, limit * 86400000LL);
+        ranges.emplace_back(start, end);
     }
+    std::sort(ranges.begin(), ranges.end());
+    long long nextStart = millis(first);
+    for (const auto& [start, end] : ranges) {
+        EXPECT_EQ(start, nextStart);
+        nextStart = end + 1;
+    }
+    EXPECT_EQ(nextStart, JAN3_MS + 86400000LL);
 }
 
 } // namespace
