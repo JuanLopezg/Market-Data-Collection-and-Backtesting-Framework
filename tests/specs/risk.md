@@ -185,6 +185,55 @@ requested or not. Future bars cannot change these T quantities or equity marks.
 
 ## Findings
 
-Not evaluated. Specification and tests precede the first risk build/run. Explicit
-assumptions about zero-target sizing and decimal threshold equality remain visible
-for later triage; test expectations must not be changed merely to match the code.
+The 60 tests were written from this specification before the first risk build/run.
+The first build passed without compiler warnings in the new tests. The first direct
+run exited 1 with 57 passes and three code-versus-spec disagreements. All three
+retain their original assertions under `DISABLED_` names with FINDING comments.
+No test mistakes or specification corrections were identified; expected values and
+production code remain unchanged. Explicit assumptions retain their policy status.
+
+F1 (R6, zero-target sizing still requires covariance). Active signal A=1, target
+volatility 0 and empty market history produce nullopt, rather than an available
+empty target. Inspection shows VolatilityTargetSizer requests covariance and
+returns early when it is unavailable, before applying VolatilityTarget's zero-target
+rule. The separate VolatilityTarget zero-target test and no-active-signals sizer
+test both pass. This disagrees with the explicitly assumed zero-target disable
+policy: deferral preserves old holdings, whereas an available empty target lets
+the rebalance policy remove exposure. Retained test:
+`RiskSizing.DISABLED_R6_ZeroVolatilityTargetDisablesExposureWithoutRequiringHistory`.
+
+F2 (R11, relative threshold misses its decimal equality boundary). Quantity 1,
+close 100,capital 1000 imply current weight 0.10. Desired weight 0.12 differs by
+0.02, exactly 20% of 0.10. The policy returns HOLD with target_weight=0 rather
+than TARGET_WEIGHT(0.12). Inspection confirms direct floating subtraction and
+comparison without a rounding allowance: the represented drift is slightly below
+the represented threshold product. Binary-exact boundary tests pass; this finding
+is specifically the published 10% -> 12% example and the spec's assumed economic
+decimal equality tolerance. Retained test:
+`RebalancePolicies.DISABLED_R11_PublishedTwentyPercentRuleResizesAtTwelvePercentEquality`.
+
+F3 (R15, manual resync rewrites an explicit exit). The input decision is A FLAT
+with USD0; the available evaluation has A weight 0.25 and B weight 0.5 at capital
+1000, with held A=1,B=2 and both prices available. Resync correctly adds B's
+USD500 target but replaces A's explicit FLAT with TARGET_WEIGHT(0.25)/USD250.
+The public `target_decisions.h` contract says every existing non-HOLD decision is
+kept. Inspection shows the implementation rebuilds all decisions from approved
+weights, including those already explicit, instead of only moving prior HOLDs.
+The original input remains unchanged; the returned decision is the disagreement.
+The test deliberately supplies differing explicit decision/evaluation intent to
+exercise that preservation promise; it does not claim normal engine evaluations
+always differ from their decisions. Retained test:
+`TargetDecisions.DISABLED_R15_ManualResyncPreservesAnExplicitExitWhileResizingOtherHolds`.
+
+Initial evidence: `ninja -C build -j2`, then
+`ALGOTRADING_SOURCE_ROOT=$PWD build/tests/unit/risk/test_unit_risk
+--gtest_output=xml:build/tests/unit/risk/first_run.xml`. To reproduce a retained
+finding after triage, add `--gtest_also_run_disabled_tests` and select its full
+disabled name with `--gtest_filter`.
+
+Final verification after triage: `ninja -C build -j2` passed without test-code
+warnings. Direct execution with `ALGOTRADING_SOURCE_ROOT=$PWD
+build/tests/unit/risk/test_unit_risk
+--gtest_output=xml:build/tests/unit/risk/triaged.xml` exited 0: 60 registered
+tests, 57 passed, 3 disabled, zero enabled failures. No production code or test
+assertions/expected values were changed during triage.
