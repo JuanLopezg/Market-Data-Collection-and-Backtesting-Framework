@@ -232,6 +232,11 @@ FillEvent 0.06, then the Filled update; sum of published quantities = 0.1.
 A fill with another namespace's client id, or without client id and with an unknown venue
 order id, produces no `FillEvent`.
 
+A fill **without** client id whose venue order id is journaled for one of our orders (same
+symbol and side) is ours (the Kraken REST examples omit `cliOrdId`). A fill carrying our client
+id but dated more than a minute before the order was sent (a reused client id) is not
+attributed.
+
 ### A16 Cancels
 
 A PREPARED order is cancelled locally (no request) and reported Canceled. An OPEN order gets
@@ -255,6 +260,20 @@ USD balance 10,000, long 0.1 PF_XBTUSD entered at 60,000, short 2,000 PF_PEPEUSD
 0.00001: positions BTCUSDT +0.1 and 1000PEPEUSDT -2; cash = 10,000 - (0.1 x 60,000 +
 (-2,000) x 0.00001) = 4,000.02; collateral passed through.
 
+### A20 Fees and funding from the account history, each published once
+
+The first read of a new journal is a baseline: existing entries are marked as seen and not
+published. Afterwards a fee of 0.75 USD on our fill F1 is published once as a
+`VenueCostEvent` Fee of -0.75 with the local fill id of F1 and the order's source coin; a
+funding entry on `pf_xbtusd` of -0.20 is published as Funding -0.20 on `BTCUSDT`. Reading the
+same history again publishes nothing new.
+
+### A21 An open order that disappears ends
+
+An OPEN order that the venue no longer lists, with no fills, for 15 s (`settle_after_ms`)
+is reported Canceled; with a partial fill it is reported Canceled after its fills (the
+remainder ended).
+
 ---
 
 ## Part J. Venue journal
@@ -276,4 +295,6 @@ An order and its fills survive closing and reopening the journal; local fill ids
 
 ## Findings
 
-(Filled in after the first build and run.)
+Run 2026-10-19: 79 tests, 79 pass, none disabled. The code agrees with every rule above;
+no finding. (Rules A15 fallback/reused id, A20 and A21 were added after the first run, from the
+README's safety rules, and passed on their first run.)

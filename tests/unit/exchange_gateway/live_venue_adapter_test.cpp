@@ -1,6 +1,7 @@
 // LiveVenueAdapter against a fake Kraken venue (tests/specs/exchange_gateway.md, Part A).
 
 #include <algorithm>
+#include <map>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -684,4 +685,105 @@ TEST_F(VenueAdapter, A19_SnapshotInSourceUnitsWithSpotStyleCash)
     EXPECT_NEAR(snapshot.collateral_usd, 613.8, 1e-12);
     EXPECT_EQ(snapshot.timestamp, TODAY);
     EXPECT_EQ(transport.posts(), 0);
+}
+
+// ---------------------------------------------------------------- A15 (venue id fallback, reused id)
+
+TEST_F(VenueAdapter, A15_FillWithoutClientIdIsMatchedByJournaledVenueOrderId)
+{
+    start(true);
+    transport.script("sendorder", {ok(placed("v-7"))});
+    adapter->submitOrder(orderCommand(7, "BTCUSDT", OrderSide::Buy, 0.1, 62000.0));
+    transport.script("fills", {ok(fillsBody({fillRow("F1", "", "PF_XBTUSD", "buy", "0.1", "62010",
+                                                     "2026-10-12T00:00:07.000Z", "v-7")}))});
+    pollAfter(1000);
+    ASSERT_EQ(events.fills.size(), 1u);
+    EXPECT_EQ(events.fills[0].fill.order_id, 7u);
+    EXPECT_EQ(stored(7).state, OrderState::Filled);
+}
+
+TEST_F(VenueAdapter, A15_FillOlderThanItsOrderIsNotAttributed)
+{
+    start(true);
+    transport.script("sendorder", {ok(placed("v-7"))});
+    transport.script("openorders", {ok(openOrdersBody({openOrderRow(clientId(7), "PF_XBTUSD", "buy", "0", "0.1", "v-7")}))});
+    adapter->submitOrder(orderCommand(7, "BTCUSDT", OrderSide::Buy, 0.1, 62000.0));
+    transport.script("fills", {ok(fillsBody({fillRow("OLD", clientId(7), "PF_XBTUSD", "buy", "0.1", "50000",
+                                                     "2026-10-11T12:00:00.000Z", "v-7")}))});
+    pollAfter(1000);
+    EXPECT_TRUE(events.fills.empty());
+    EXPECT_EQ(stored(7).state, OrderState::Open);
+}
+
+// ---------------------------------------------------------------- A20
+
+TEST_F(VenueAdapter, A20_FeesAndFundingArePublishedOnceAfterTheBaseline)
+{
+    const std::string baseline = R"({"logs":[
+     {"id":50,"date":"2026-10-11T10:00:00.000Z","asset":"usd","info":"futures trade","fee":1.0,"execution":"OLD-FILL",
+      "realized_funding":null,"contract":"pf_xbtusd","old_balance":1.0,"new_balance":0.0,"margin_account":"flex"}]})";
+    const std::string later = R"({"logs":[
+     {"id":52,"date":"2026-10-12T08:00:00.000Z","asset":"usd","info":"futures trade","fee":null,"execution":null,
+      "realized_funding":-0.2,"contract":"pf_xbtusd","old_balance":999.25,"new_balance":999.05,"margin_account":"flex"},
+     {"id":51,"date":"2026-10-12T00:00:08.000Z","asset":"usd","info":"futures trade","fee":0.75,"execution":"F1",
+      "realized_funding":null,"contract":"pf_xbtusd","old_balance":1000.0,"new_balance":999.25,"margin_account":"flex"},
+     {"id":50,"date":"2026-10-11T10:00:00.000Z","asset":"usd","info":"futures trade","fee":1.0,"execution":"OLD-FILL",
+      "realized_funding":null,"contract":"pf_xbtusd","old_balance":1.0,"new_balance":0.0,"margin_account":"flex"}]})";
+    start(true);
+    transport.script("account-log", {ok(baseline)});
+    pollAfter(1000);
+    EXPECT_TRUE(events.costs.empty()) << "the first read is only a baseline";
+
+    transport.script("sendorder", {ok(placed())});
+    transport.script("fills", {ok(fillsBody({fillRow("F1", clientId(7), "PF_XBTUSD", "buy", "0.1", "62010")}))});
+    adapter->submitOrder(orderCommand(7, "BTCUSDT", OrderSide::Buy, 0.1, 62000.0));
+    pollAfter(1000);
+    ASSERT_EQ(events.fills.size(), 1u);
+
+    transport.script("account-log", {ok(later)});
+    pollAfter(400000);
+    pollAfter(400000);
+    ASSERT_EQ(events.costs.size(), 2u);
+    std::map<VenueCostKind, VenueCostEvent> byKind;
+    for (const VenueCostEvent& cost : events.costs)
+        byKind[cost.kind] = cost;
+    ASSERT_TRUE(byKind.contains(VenueCostKind::Fee));
+    EXPECT_DOUBLE_EQ(byKind[VenueCostKind::Fee].amount_usd, -0.75);
+    EXPECT_EQ(byKind[VenueCostKind::Fee].fill_id, events.fills[0].fill.fill_id);
+    EXPECT_EQ(byKind[VenueCostKind::Fee].coin, "BTCUSDT");
+    ASSERT_TRUE(byKind.contains(VenueCostKind::Funding));
+    EXPECT_DOUBLE_EQ(byKind[VenueCostKind::Funding].amount_usd, -0.2);
+    EXPECT_EQ(byKind[VenueCostKind::Funding].coin, "BTCUSDT");
+    EXPECT_EQ(byKind[VenueCostKind::Funding].timestamp, TODAY);
+}
+
+// ---------------------------------------------------------------- A21
+
+TEST_F(VenueAdapter, A21_OpenOrderNoLongerListedEndsCancelled)
+{
+    start(true);
+    transport.script("sendorder", {ok(placed())});
+    adapter->submitOrder(orderCommand(7, "BTCUSDT", OrderSide::Buy, 0.1, 62000.0));
+    pollAfter(1000);
+    ASSERT_EQ(stored(7).state, OrderState::Open);
+    pollAfter(5000);
+    EXPECT_EQ(stored(7).state, OrderState::Open) << "not yet 15 s without evidence";
+    pollAfter(11000);
+    EXPECT_EQ(stored(7).state, OrderState::Cancelled);
+    EXPECT_EQ(events.statusesOf(7),
+              (std::vector<ExecutionOrderStatus>{ExecutionOrderStatus::Accepted, ExecutionOrderStatus::Canceled}));
+}
+
+TEST_F(VenueAdapter, A21_PartiallyFilledOrderEndsWithItsFillsFirst)
+{
+    start(true);
+    transport.script("sendorder", {ok(placed())});
+    transport.script("fills", {ok(fillsBody({fillRow("F1", clientId(7), "PF_XBTUSD", "buy", "0.04", "62000")}))});
+    adapter->submitOrder(orderCommand(7, "BTCUSDT", OrderSide::Buy, 0.1, 62000.0));
+    pollAfter(1000);
+    pollAfter(20000);
+    EXPECT_EQ(stored(7).state, OrderState::Cancelled);
+    ASSERT_EQ(events.fills.size(), 1u);
+    EXPECT_NEAR(events.fills[0].fill.quantity, 0.04, 1e-12);
+    EXPECT_EQ(events.sequence.back(), "update:7:canceled");
 }
