@@ -117,9 +117,10 @@ TEST(OrderManager, R4_TerminalOrdersIgnoreEarlierLifecycleEchoes)
     EXPECT_DOUBLE_EQ(manager.find(10)->filled_quantity, 5.0);
 }
 
-TEST(OrderManager, R4_OlderSameStageEchoCannotRegressBusinessTimeOrIdentity)
+TEST(OrderManager, DISABLED_R4_OlderSameStageEchoCannotRegressBusinessTimeOrIdentity)
 {
-    // R4 explicitly assumes timestamp ordering for same-stage echoes.
+    // FINDING: F1 — An older Accepted echo returns true and overwrites updated_at
+    // and exchange identity; R4 assumes stale same-stage echoes change nothing.
     OrderManager manager;
     submit(manager, order());
     ASSERT_TRUE(manager.onOrderUpdate({10, kOpen, ExecutionOrderStatus::Accepted, "current-id"}));
@@ -202,8 +203,10 @@ TEST(OrderManager, R7_DuplicateFillIdDoesNotConsumeRemainingQuantity)
     EXPECT_EQ(manager.processedFillIds(), std::vector<FillID>{101});
 }
 
-TEST(OrderManager, R7_RejectedMismatchedFillDoesNotPoisonCorrectedFillId)
+TEST(OrderManager, DISABLED_R7_RejectedMismatchedFillDoesNotPoisonCorrectedFillId)
 {
+    // FINDING: F2 — A rejected mismatched fill consumes its ID, so the corrected
+    // fill is silently skipped; R7 requires rejection without dedup-state mutation.
     for (int mismatch = 0; mismatch < 3; ++mismatch) {
         SCOPED_TRACE(mismatch);
         OrderManager manager;
@@ -219,8 +222,10 @@ TEST(OrderManager, R7_RejectedMismatchedFillDoesNotPoisonCorrectedFillId)
     }
 }
 
-TEST(OrderManager, R7_UnknownRejectedAndOverlargeAttemptsDoNotConsumeFillIds)
+TEST(OrderManager, DISABLED_R7_UnknownRejectedAndOverlargeAttemptsDoNotConsumeFillIds)
 {
+    // FINDING: F2 — Unknown-order, rejected-order and overlarge fills add their IDs
+    // before throwing; R7 requires these failed attempts to leave accepted IDs alone.
     for (int invalid = 0; invalid < 3; ++invalid) {
         SCOPED_TRACE(invalid);
         OrderManager manager;

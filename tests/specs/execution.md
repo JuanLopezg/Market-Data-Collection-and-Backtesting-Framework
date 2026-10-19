@@ -223,4 +223,66 @@ are rejected before side effects.
 
 ## Findings
 
-Steps 1–2 only: tests have not been built or run. No validated findings yet.
+### F1 — Older same-stage status updates overwrite newer state (R4)
+
+Disabled test: `OrderManager.DISABLED_R4_OlderSameStageEchoCannotRegressBusinessTimeOrIdentity`.
+Accepted at 20260106 with exchange ID `current-id`, followed by Accepted at
+20260105 with `older-id`, returns true and overwrites both `updated_at` (20260105)
+and exchange ID (`older-id`). R4 expects false and preservation of the newer state.
+`OrderManager::onOrderUpdate` checks lifecycle progression, but does not compare
+timestamps before updating the order. Lower-stage stale-echo tests pass; this
+finding concerns R4's explicitly assumed same-stage timestamp protection.
+
+### F2 — Rejected fills consume IDs and suppress corrected delivery (R7)
+
+Disabled tests:
+
+- `OrderManager.DISABLED_R7_RejectedMismatchedFillDoesNotPoisonCorrectedFillId`
+- `OrderManager.DISABLED_R7_UnknownRejectedAndOverlargeAttemptsDoNotConsumeFillIds`
+
+For an unfilled BUY 5 BTC, FillID 101 with the wrong asset, strategy or side throws,
+but the processed-ID set is no longer empty. Corrected BUY 2 BTC with the same ID
+then returns false, leaving filled quantity zero instead of the expected 2. Each
+of the three mismatch examples reproduces this. Unknown-order, rejected-order and
+overlarge (6 against request 5) attempts likewise throw after consuming ID 101.
+`OrderManager::onFill` inserts the ID before looking up the order and validating
+its status, identity and remaining quantity. This disagrees with R7's assumed
+atomic rejection guarantee. Duplicate *valid* fill and restart tests pass.
+
+### F3 — Mutable malformed market-order DTOs bypass validation (R5/R12)
+
+Disabled test: `ExecutionEngine.DISABLED_R5_MalformedMutableOrderDtoCannotBypassSubmissionValidation`.
+A valid order mutated to quantity 0, -1, NaN or infinity, or to an empty asset,
+is accepted by `applyOrderPlan`: it throws nothing, invokes persistence, dispatches
+one command to FakeExchange, tracks the order, advances next ID from 1 to 2 and
+sets execution date to 20260106. Each of the five payloads reproduces this.
+R5 expects rejection before any of these effects. `validateSubmitOrders` calls
+`validateConditional`, whose quantity checks depend on conditional fields, and
+does not revalidate ordinary market quantity or asset. Constructor rejection tests
+pass; this finding concerns R5's assumed defensive validation of mutable DTOs.
+It demonstrates malformed dispatch from the engine, not acceptance by a real venue.
+
+### F4 — Invalid global targets partially mutate cycle state before rejection (R12)
+
+Disabled test: `ExecutionEngine.DISABLED_R12_NonfiniteGlobalTargetCannotPartiallyAdvanceCycleState`.
+Starting with next ID 1, execution date 20260106 and BTC global target USD 100,
+submit a plan for date 20260107, next ID 2 and BTC target NaN or infinity. The
+expected `std::invalid_argument` occurs, with no persistence or exchange commands,
+but next ID becomes 2, date becomes 20260107 and the prior BTC target becomes zero.
+Both nonfinite examples reproduce the change. `applyOrderPlan` assigns the markers
+and clears the prior target before `Portfolio::set` rejects the invalid exposure.
+R12's assumed complete rejection guarantee requires all prior owned state to survive.
+
+### Validation
+
+WSL, 2026-10-19: `ninja -C build -j2` compiled and linked without warnings.
+First run:
+`ALGOTRADING_SOURCE_ROOT="$PWD" build/tests/unit/execution/test_unit_execution --gtest_brief=1`
+ran 60 tests: 55 passed and 5 failed, covering the four findings above. No failures
+required a test/API correction or a specification correction. The expected values
+and exception assertions remain unchanged; all five failing tests retain their
+bodies with `DISABLED_` names and `// FINDING:` comments. Production code is untouched.
+
+After triage, `ninja -C build -j2` rebuilt successfully without warnings. The same
+direct execution command exited 0: **60 tests total, 55 passed, 5 disabled, 0 active
+failures**. Only this area's spec and two test source files changed during step 3.
