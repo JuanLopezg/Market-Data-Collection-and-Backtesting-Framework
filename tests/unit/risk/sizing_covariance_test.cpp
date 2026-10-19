@@ -171,10 +171,7 @@ TEST(RiskSizing, R6_NoSignalsGiveAnAvailableEmptyTargetWithoutCovarianceHistory)
     EXPECT_TRUE(sized->values().empty());
 }
 
-// FINDING: A zero-target VolatilityTargetSizer returns nullopt without covariance
-// history instead of the available empty target required by the assumed disable
-// policy (spec R6). This defers rather than explicitly removing exposure.
-TEST(RiskSizing, DISABLED_R6_ZeroVolatilityTargetDisablesExposureWithoutRequiringHistory)
+TEST(RiskSizing, R6_ZeroVolatilityTargetDisablesExposureWithoutRequiringHistory)
 {
     const auto sized = volSizer(0)->size(signalState({{"A", 1}}), {}, date);
     ASSERT_TRUE(sized);

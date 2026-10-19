@@ -56,8 +56,8 @@ RankedUniverse IndicatorRanker::rank(
                 return aValid; // Finite scores sort before unavailable or invalid ones.
             }
 
-            if (a.score == b.score) {
-                return a.coin < b.coin; // Equal numeric scores use symbol order, independent of hash-map iteration.
+            if (!aValid || a.score == b.score) {
+                return a.coin < b.coin; // Equal or unavailable scores use symbol order, independent of hash-map iteration.
             }
 
             return descending_

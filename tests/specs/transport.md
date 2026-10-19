@@ -234,6 +234,8 @@ business state. The public DTOs declare vectors, and R3 explicitly requires arra
 shape. This is a code/spec disagreement; the assumed rule and expectations are
 unchanged. The test is retained with `DISABLED_` and `// FINDING:`.
 
+Fixed (2026-10-19): Require JSON array types for all manually decoded array collections, including nested planning state.
+
 ### F2 — Conflicting decisions for the same asset are silently discarded (R9)
 
 `MessageJsonBehaviour.DISABLED_R9_DuplicateAssetDecisionCannotSilentlyChooseOneExposure`
@@ -245,6 +247,8 @@ without checking whether insertion succeeded, keeping the first BTC decision and
 silently dropping the conflicting Flat. This disagrees with the assumed ambiguity
 rejection rule R9. Neither the spec rule nor the expected exception was changed;
 the test remains disabled with its finding comment.
+
+Fixed (2026-10-19): Reject duplicate asset decisions rather than silently keeping the first.
 
 ### Step 3 validation
 

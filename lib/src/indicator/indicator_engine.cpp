@@ -1,5 +1,6 @@
 #include "indicator_engine.h"
 
+#include <cmath>
 #include <limits>
 #include <unordered_map>
 #include <unordered_set>
@@ -155,7 +156,7 @@ bool IndicatorEngine::has(
 ) const
 {
     const double v = value(coin, ts, spec);
-    return v == v; // NaN is unequal to itself; this tests availability, not general finiteness.
+    return std::isfinite(v);
 }
 
 

@@ -106,9 +106,7 @@ TEST_F(MarketDataConfigBehaviour, R1_RejectsUnreadableMalformedOrMistypedConfigu
     }
 }
 
-// FINDING: loadMarketDataConfig accepts [], null, 5 and "binance" and returns
-// defaults; R1 and the configuration schema require an object and rejection.
-TEST_F(MarketDataConfigBehaviour, DISABLED_R1_RejectsNonObjectDocumentsRatherThanStartingWithDefaults)
+TEST_F(MarketDataConfigBehaviour, R1_RejectsNonObjectDocumentsRatherThanStartingWithDefaults)
 {
     for (const Json& bad : {Json::array(), Json(nullptr), Json(5), Json("binance")}) {
         SCOPED_TRACE(bad.dump());

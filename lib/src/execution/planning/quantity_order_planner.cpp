@@ -25,6 +25,9 @@ QuantityOrderPlannerResult QuantityOrderPlanner::createPlan(
         return empty;
     }
 
+    if (executionTimestamp <= decisions.decision_timestamp)
+        throw std::invalid_argument("Order execution must follow the decision close");
+
     std::unordered_set<StrategyID> configuredIds;
     configuredIds.reserve(strategyIds.size());
     for (const StrategyID strategyId : strategyIds) {

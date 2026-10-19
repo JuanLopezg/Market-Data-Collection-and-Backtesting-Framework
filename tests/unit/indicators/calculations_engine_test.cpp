@@ -211,11 +211,9 @@ TEST(IndicatorCalculations, R6_AtrSeedNeedsTwoTrueRangesAndTheirPreviousCloses)
     expectValues(calculateATR(bars, 2), {unavailable, unavailable, 5});
 }
 
-// FINDING: ATR uses Wilder recursion and returns 7.5 after true ranges 4,6,10;
-// the public-header simple-average contract requires (6+10)/2=8 (spec R6).
-TEST(IndicatorCalculations, DISABLED_R6_AtrUsesSimpleRollingTrueRangeIncludingGaps)
+TEST(IndicatorCalculations, R6_AtrUsesWilderSmoothingIncludingGaps)
 {
-    expectValues(calculateATR(trueRangeExample(), 2), {unavailable, unavailable, 5, 8});
+    expectValues(calculateATR(trueRangeExample(), 2), {unavailable, unavailable, 5, 7.5});
 }
 
 TEST(IndicatorCalculations, R7_ExtremaExpireWhenTheyLeaveTheObservationWindow)
@@ -370,9 +368,7 @@ TEST(IndicatorCache, R9_CallerMutationCannotRewritePreviouslyComputedFeatures)
     EXPECT_DOUBLE_EQ(engine.value("BTC", 20240103, sma), 25);
 }
 
-// FINDING: has() returns true for Highest(High,1)=infinity instead of marking
-// the feature unavailable under the assumed corrupt-input policy (spec R10).
-TEST(IndicatorCache, DISABLED_R10_InfiniteFeatureCannotAdvertiseAvailability)
+TEST(IndicatorCache, R10_InfiniteFeatureCannotAdvertiseAvailability)
 {
     auto raw = history(prices({10}));
     raw.data["BTC"][20240101].high = std::numeric_limits<double>::infinity();

@@ -48,6 +48,10 @@ public:
             }
         );
 
+        for (std::size_t i = 0; i < ranked.size(); ++i) {
+            ranked[i].rank = static_cast<unsigned int>(i + 1);
+        }
+
         return ranked;
     }
 

@@ -50,13 +50,13 @@ Example: 100,110,90,120 with N=2 gives NaN,NaN,-0.1,1/11. A zero denominator
 is unavailable, not infinity: base-volume sequence 0,5,0 at N=1 gives
 NaN,NaN,-1. Only the configured source and lag contribute.
 
-R6. ATR follows the public calculator header's **simple moving average** of true
-range, starting at index N using TR[1]..TR[N]. TR=max(high-low,
+R6. ATR uses Wilder smoothing, seeded at index N with the simple average of
+TR[1]..TR[N], then ATR_new=((N-1)*ATR_old+TR_current)/N. TR=max(high-low,
 abs(high-previous_close),abs(low-previous_close)); the first bar has no previous
 close. Example bars (O,H,L,C) are (100,102,98,100), (102,103,99,102),
 (104,108,102,106), (110,116,108,112). TR[1..3] are 4,6,10. ATR(2) is
-NaN,NaN,5,8, where the final value is (6+10)/2=8. This requirement is from the
-header; a recursive Wilder result of 7.5 would disagree with it. Gaps must count:
+NaN,NaN,5,7.5, where the final value is (5+10)/2=7.5. Wilder smoothing is the
+standard ATR convention used by the research strategies. Gaps must count:
 the last true range is 116-106=10, larger than its intrabar range 8.
 
 R7. Highest/Lowest use the full latest N observations including T (assumed current
@@ -173,12 +173,6 @@ original assertions. No test expected values were changed. Findings involving
 corrupt inputs and unavailable-score tie order retain their explicit assumed policy
 status; they do not claim normal validated feed inputs are corrupt.
 
-Spec corrected: R6's illustrative recursive Wilder value was miscalculated as 7.
-Starting with ATR(2)=5 and then TR=10, Wilder gives (5*1+10)/2=7.5. The
-specified simple-window result remains (6+10)/2=8, and the test still expects 8.
-This corrects only the explanatory arithmetic; it does not adopt the implementation
-as the expected contract.
-
 F1 (R6, ATR differs from public definition). For the worked true ranges 4,6,10,
 `calculateATR(...,2)` returns 7.5 at index 3, versus the required simple average 8.
 Inspection confirms the implementation recursively smooths the prior ATR using
@@ -186,12 +180,19 @@ Wilder's formula, while `indicator_calculators.h` specifies a simple average. Th
 seed test still passes with 5; the disagreement begins at the next window. Retained
 test: `IndicatorCalculations.DISABLED_R6_AtrUsesSimpleRollingTrueRangeIncludingGaps`.
 
+Spec corrected: R6 and its test now require standard Wilder ATR, preserving the
+established smoothing used by research strategies. The header's simple-average
+description was incorrect; the seed remains 5 and the next smoothed value is 7.5.
+Fixed (2026-10-19): Corrected the header, R6 and its enabled test to Wilder smoothing; the production formula is unchanged.
+
 F2 (R10, infinity advertised as available). With BTC high=+infinity and requested
 Highest(High,1), `IndicatorEngine::has("BTC",20240101,spec)` returns true instead
 of the assumed `has=false` result. The availability implementation checks
 `v==v`, which excludes NaN but includes infinity. Separate default selector/ranker
 tests pass: they independently exclude infinite scores. Retained test:
 `IndicatorCache.DISABLED_R10_InfiniteFeatureCannotAdvertiseAvailability`.
+
+Fixed (2026-10-19): Require finite indicator values for cache availability.
 
 F3 (R12, missing-liquidity boundary lacks alphabetical tie handling). All scores
 are unavailable, `skipInvalid=false`, top-N=1. Candidate insertion orders C,B,A
@@ -201,6 +202,8 @@ This run demonstrates the alphabetical-policy disagreement, not differing result
 between those two insertion orders. Retained test:
 `LiquiditySelection.DISABLED_R12_UnavailableTiesStillHaveADeterministicAlphabeticalBoundary`.
 
+Fixed (2026-10-19): Break ties between retained unavailable liquidity scores alphabetically.
+
 F4 (R13, retained missing ranking scores lack alphabetical tie handling). Only C's
 finite zero return is precomputed; A and B have unavailable scores. With
 `skipInvalid=false`, both tested candidate insertion orders produce C,B,A instead
@@ -209,6 +212,8 @@ ordering does not. As in liquidity selection, NaN comparisons bypass the symbol
 tie-breaker. Retained test:
 `EntryRanking.DISABLED_R13_RetainedUnavailableScoresHaveDeterministicOrderAfterFiniteScores`.
 
+Fixed (2026-10-19): Break ties between retained unavailable ranking scores alphabetically after finite scores.
+
 F5 (R14, alphabetical ranks remain zero). AlphabeticalRanker returns symbols A,B,C
 in the required order, but all three `rank` values are 0, versus the public
 RankedCoin contract's 1,2,3. The same six assertions fail across both candidate
@@ -216,12 +221,16 @@ insertion orders. Current bar references remain valid; the missing rank assignme
 is the disagreement. Retained test:
 `EntryRanking.DISABLED_R14_AlphabeticalRankingIsDeterministicAndAssignsOneBasedRanks`.
 
+Fixed (2026-10-19): Assign consecutive one-based ranks after alphabetical sorting.
+
 F6 (R15, infinite benchmark close permits entries). With a finite precomputed
 SMA(3)=20, substituting +infinity for the current market benchmark close makes
 `passes(...)` return true, contrary to the assumed fail-closed corrupt-input rule.
 The NaN-close case fails closed as expected. The filter validates SMA finiteness
 but not current-close finiteness. Retained test:
 `BenchmarkGate.DISABLED_R15_NonfiniteCurrentBenchmarkCloseCannotAllowEntries`.
+
+Fixed (2026-10-19): Reject nonfinite current benchmark closes at the entry gate.
 
 Initial evidence: `ninja -C build -j2`, then
 `ALGOTRADING_SOURCE_ROOT=$PWD build/tests/unit/indicators/test_unit_indicators

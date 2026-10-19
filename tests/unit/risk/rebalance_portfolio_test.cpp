@@ -105,10 +105,7 @@ TEST(RebalancePolicies, R11_RelativeThresholdScalesItsBandWithCurrentExposure)
     EXPECT_EQ(policy.decide(1, 0.1875, 0.5, 250, 1000).action, RebalanceAction::TargetWeight);
 }
 
-// FINDING: At current weight 0.10, desired 0.12 and relative threshold 0.20,
-// binary rounding makes the policy HOLD rather than TARGET(0.12) at the public
-// example's equality boundary (spec R11's assumed decimal-equality tolerance).
-TEST(RebalancePolicies, DISABLED_R11_PublishedTwentyPercentRuleResizesAtTwelvePercentEquality)
+TEST(RebalancePolicies, R11_PublishedTwentyPercentRuleResizesAtTwelvePercentEquality)
 {
     const RelativeThresholdRebalancePolicy policy(0.20);
     const auto decision = policy.decide(1, 0.12, 1, 100, 1000);

@@ -280,6 +280,18 @@ MarketDataIngestionSummary MarketDataIngestor::run(std::chrono::year_month_day t
         throw std::runtime_error("Binance OHLCV request failed for: " + names);
     }
 
+    // Closure proof cannot substitute for a selected symbol's completed candle.
+    const auto storedSymbols = store.symbolsWithBarOn(targetDate);
+    const std::set<std::string> completedSymbols(storedSymbols.begin(), storedSymbols.end());
+    const Timestamp targetTimestamp = static_cast<Timestamp>(toYYYYMMDD(targetDate));
+    for (std::size_t i = 0; i < config_.active_top_n; ++i) {
+        const auto& symbol = ranked[i].first;
+        const auto bars = fetched.bars.data.find(symbol);
+        if (!completedSymbols.contains(symbol) &&
+            (bars == fetched.bars.data.end() || !bars->second.contains(targetTimestamp)))
+            throw std::runtime_error("Missing completed candle for " + symbol + " on " + formatYMD(targetDate));
+    }
+
     // Opening prices of the next day, for the simulated exchange only: kept outside
     // completed-bar SQLite, they cannot enter strategy features. They come from the
     // next-day candles above; a maintained symbol outside the plan is asked separately. A

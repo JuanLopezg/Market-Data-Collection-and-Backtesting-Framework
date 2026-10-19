@@ -51,7 +51,7 @@ public:
     ) const override
     {
         TargetWeights empty;
-        if (signals.activeCount() == 0)
+        if (signals.activeCount() == 0 || volatilityTarget_.targetVolatility() == 0.0)
             return empty;
 
         PortfolioWeights signalShape;

@@ -202,6 +202,8 @@ policy: deferral preserves old holdings, whereas an available empty target lets
 the rebalance policy remove exposure. Retained test:
 `RiskSizing.DISABLED_R6_ZeroVolatilityTargetDisablesExposureWithoutRequiringHistory`.
 
+Fixed (2026-10-19): Return an available empty target for zero target volatility before requesting covariance.
+
 F2 (R11, relative threshold misses its decimal equality boundary). Quantity 1,
 close 100,capital 1000 imply current weight 0.10. Desired weight 0.12 differs by
 0.02, exactly 20% of 0.10. The policy returns HOLD with target_weight=0 rather
@@ -211,6 +213,8 @@ the represented threshold product. Binary-exact boundary tests pass; this findin
 is specifically the published 10% -> 12% example and the spec's assumed economic
 decimal equality tolerance. Retained test:
 `RebalancePolicies.DISABLED_R11_PublishedTwentyPercentRuleResizesAtTwelvePercentEquality`.
+
+Fixed (2026-10-19): Allow a small scale-dependent floating-point tolerance at the relative rebalance boundary.
 
 F3 (R15, manual resync rewrites an explicit exit). The input decision is A FLAT
 with USD0; the available evaluation has A weight 0.25 and B weight 0.5 at capital

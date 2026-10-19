@@ -41,6 +41,7 @@ bool BenchmarkAboveSMAFilter::passes(
     return
         std::isfinite(sma) &&
         sma > 0.0 &&
+        std::isfinite(benchmarkBar.close) &&
         benchmarkBar.close > sma;
 }
 

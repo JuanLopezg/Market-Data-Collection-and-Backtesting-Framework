@@ -304,7 +304,7 @@ MarketSliceSnapshot decodeMarketSliceSnapshot(const std::string& payload)
     result.metadata = metadataFromJson(value.at("metadata"));
     result.timestamp = value.at("timestamp").get<Timestamp>();
 
-    for (const json& barValue : value.at("bars")) {
+    for (const json& barValue : value.at("bars").get_ref<const json::array_t&>()) {
         MarketBarSnapshot item;
         item.coin = barValue.at("coin").get<Coin>();
         item.bar.open = barValue.at("open").get<double>();
@@ -346,7 +346,7 @@ StrategyIntentBatch decodeStrategyIntentBatch(const std::string& payload)
     result.metadata = metadataFromJson(value.at("metadata"));
     result.timestamp = value.at("timestamp").get<Timestamp>();
 
-    for (const json& strategyValue : value.at("strategies")) {
+    for (const json& strategyValue : value.at("strategies").get_ref<const json::array_t&>()) {
         StrategySignalIntent strategy;
         strategy.strategy_id = strategyValue.at("strategy_id").get<StrategyID>();
         strategy.strategy_name = strategyValue.at("strategy_name").get<std::string>();
@@ -402,7 +402,7 @@ DecisionBatch decodeDecisionBatch(const std::string& payload)
     result.metadata = metadataFromJson(value.at("metadata"));
     result.decision_timestamp = value.at("decision_timestamp").get<Timestamp>();
 
-    for (const json& strategyValue : value.at("strategies")) {
+    for (const json& strategyValue : value.at("strategies").get_ref<const json::array_t&>()) {
         StrategyDecisionIntent strategy;
         strategy.strategy_id = strategyValue.at("strategy_id").get<StrategyID>();
         strategy.decision_timestamp = strategyValue.at("decision_timestamp").get<Timestamp>();
@@ -412,13 +412,14 @@ DecisionBatch decodeDecisionBatch(const std::string& payload)
             std::unordered_map<Coin, double>{}
         );
 
-        for (const json& decisionValue : strategyValue.at("decisions")) {
+        for (const json& decisionValue : strategyValue.at("decisions").get_ref<const json::array_t&>()) {
             if (decisionValue.value("entry_stop_price", 0.0) != 0.0 || decisionValue.value("protective_stop_price", 0.0) != 0.0)
                 throw std::invalid_argument("Service wire contract does not support stop intents");
             RebalanceDecision decision;
             decision.action = static_cast<RebalanceAction>(decisionValue.at("action").get<int>());
             decision.target_weight = decisionValue.at("target_weight").get<double>();
-            strategy.decisions.emplace(decisionValue.at("coin").get<Coin>(), decision);
+            if (!strategy.decisions.emplace(decisionValue.at("coin").get<Coin>(), decision).second)
+                throw std::invalid_argument("Duplicate asset decision in decision batch");
         }
 
         result.strategies.push_back(std::move(strategy));
@@ -659,7 +660,7 @@ ExchangeSnapshotEvent decodeExchangeSnapshotEvent(const std::string& payload)
     if (!std::isfinite(result.snapshot.collateral_usd) || result.snapshot.collateral_usd < 0.0)
         throw std::invalid_argument("Exchange snapshot collateral_usd must be finite and not negative");
 
-    for (const json& item : snapshot.at("open_orders")) {
+    for (const json& item : snapshot.at("open_orders").get_ref<const json::array_t&>()) {
         ExchangeOpenOrderSnapshot order;
         order.local_order_id = item.at("local_order_id").get<OrderID>();
         order.exchange_order_id = item.at("exchange_order_id").get<std::string>();
@@ -734,7 +735,7 @@ OrderPlanningRequest decodeOrderPlanningRequest(const std::string& payload)
     result.state.strategy_ids = state.at("strategy_ids").get<std::vector<StrategyID>>();
     result.state.next_order_id = state.at("next_order_id").get<OrderID>();
 
-    for (const json& item : state.at("strategy_positions")) {
+    for (const json& item : state.at("strategy_positions").get_ref<const json::array_t&>()) {
         const StrategyID strategyId = item.at("strategy_id").get<StrategyID>();
         if (!result.state.strategy_positions.emplace(
                 strategyId,
@@ -743,7 +744,7 @@ OrderPlanningRequest decodeOrderPlanningRequest(const std::string& payload)
             throw std::invalid_argument("Duplicate strategy position id in planning request");
     }
 
-    for (const json& item : state.at("orders"))
+    for (const json& item : state.at("orders").get_ref<const json::array_t&>())
         result.state.orders.push_back(trackedOrderFromJson(item));
 
     return result;
@@ -785,7 +786,7 @@ OrderPlanBatch decodeOrderPlanBatch(const std::string& payload)
     result.global_target_exposure =
         value.at("global_target_exposure").get<std::unordered_map<Coin, double>>();
 
-    for (const json& item : value.at("submit_orders"))
+    for (const json& item : value.at("submit_orders").get_ref<const json::array_t&>())
         result.submit_orders.push_back(executionOrderFromJson(item));
 
     return result;
@@ -854,7 +855,7 @@ NotionalOrderPlanningRequest decodeNotionalOrderPlanningRequest(const std::strin
     result.state.strategy_ids = state.at("strategy_ids").get<std::vector<StrategyID>>();
     result.state.next_order_id = state.at("next_order_id").get<OrderID>();
 
-    for (const json& item : state.at("strategy_positions")) {
+    for (const json& item : state.at("strategy_positions").get_ref<const json::array_t&>()) {
         const StrategyID strategyId = item.at("strategy_id").get<StrategyID>();
         if (!result.state.strategy_positions.emplace(
                 strategyId,
@@ -863,7 +864,7 @@ NotionalOrderPlanningRequest decodeNotionalOrderPlanningRequest(const std::strin
             throw std::invalid_argument("Duplicate strategy position id in notional planning request");
     }
 
-    for (const json& item : state.at("orders"))
+    for (const json& item : state.at("orders").get_ref<const json::array_t&>())
         result.state.orders.push_back(trackedOrderFromJson(item));
 
     return result;
@@ -926,7 +927,7 @@ NotionalOrderPlanBatch decodeNotionalOrderPlanBatch(const std::string& payload)
             result.decision_timestamp, result.state_revision))
         throw std::invalid_argument("Invalid notional order plan identity payload");
 
-    for (const json& item : value.at("submit_orders")) {
+    for (const json& item : value.at("submit_orders").get_ref<const json::array_t&>()) {
         PlannedNotionalOrder order;
         order.economic_order_id = item.at("economic_order_id").get<std::string>();
         order.order_id = item.at("order_id").get<OrderID>();
