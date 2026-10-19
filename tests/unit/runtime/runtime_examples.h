@@ -158,10 +158,10 @@ inline MockVenue::MatchingFillConfig matchingConfig()
     return config;
 }
 
-inline MockVenue::MockAccountingConfig accountingConfig()
+inline MockVenue::MockAccountingConfig accountingConfig(const std::string& initialCash = "1000.00")
 {
     MockVenue::MockAccountingConfig config;
-    config.initial_cash = "1000.00";
+    config.initial_cash = initialCash;
     config.fee_ppm = 0;
     return config;
 }
@@ -187,9 +187,9 @@ struct ReplayRig {
 
     explicit ReplayRig(const std::filesystem::path& directory, bool parity = true,
                        const std::vector<StrategyConfig>& configs = {StrategyConfig{}},
-                       double fourthClose = 100.0)
+                       double fourthClose = 100.0, const std::string& initialCash = "1000.00")
         : history(marketHistory(fourthClose)), signals(signalStrategies(configs)), risk(riskConfigs(configs)),
-          venue(directory, chaosConfig(), matchingConfig(), accountingConfig()),
+          venue(directory, chaosConfig(), matchingConfig(), accountingConfig(initialCash)),
           runtime(signals, risk, planner, strategyIds(configs), venue, true, parity)
     {}
 

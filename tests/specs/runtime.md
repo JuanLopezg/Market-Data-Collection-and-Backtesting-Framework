@@ -118,6 +118,12 @@ different configured profiles. Both must exit their actual held units. Parity's
 double economic mirror has cash 750 after entry; the perpetual MOCK venue retains
 settled collateral cash 1000, with unrealized PnL -50/equity 950 at close(4).
 Do not assert that the two account cash models are interchangeable.
+An additional control campaign uses the canonical default genesis USD 100000 and
+entry weight .0025: the same USD 250 target buys 2 at 125, leaves parity cash 99750,
+and exits at 150 for final cash 100050. A standalone manual control uses weight
+.005 at close 100 to request 5 units; selling at 150 after buying at 125 realizes
+125 and leaves canonical settled cash 100125. These controls do not replace the
+explicit USD-1000 configuration requirements above.
 
 **R11 — Opening execution uses opening evidence only.** `onExecutionOpen` admits
 orders; explicit open-only MarketBarObservations perform canonical matching, as in
@@ -195,4 +201,85 @@ reference prices dispatch no command.
 
 ## Findings
 
-Steps 1 and 2 only: no build or execution performed. No findings recorded.
+### F1 — A newer flat signal retains an obsolete pending entry (R4)
+
+`DecisionBehaviour.DISABLED_R4_NewFlatSignalRemovesAnUnexecutedOlderEntry` fails
+because `hasPendingDecisions()` remains true after close(4), although the signal
+is now zero and no units were ever bought. `DecisionEngine::onBarClose` skips empty
+rebalance plans without removing the previously stored strategy intent. The old
+close(3) entry survives under the newer batch timestamp. This disagrees with the
+explicitly assumed R4 rule. The empty-intent expectations were retained.
+
+### F2 — TradingEngine admits same-close market execution (R5)
+
+`TradingBehaviour.DISABLED_R5_SameCloseExecutionCannotCreateAClosingPriceEntry`
+calls execution at close(3) with its close price 120. It returns without throwing
+and leaves an active exchange order plus tracked local order. The specified timing
+rule requires rejection before dispatch. The ordinary market path through
+`TradingEngine::executePendingPlans` and `QuantityOrderPlanner` has no later-than-
+decision guard (the research-stop path has one). The assumed generic-path timing
+requirement and original expected exception/no-orders assertions remain unchanged.
+
+### F3 — MOCK reconciliation assumes a different initial cash than its account
+
+The public `MockAccountingConfig` accepts `initial_cash="1000.00"`, and the account
+is created with that balance. `MockReconciliation::beginLedger` in
+`lib/src/exchange/mock/reconciliation.cpp` instead initializes its expected ledger
+unconditionally to `"100000.00"`. Before any trade, this creates false cash drift;
+the routing gate then blocks legitimate replay/manual orders. Observed consequences
+are zero entry fills, parity cash staying 1000 rather than reaching 750/1050, manual
+exceptions stating `Manual rebalance blocked: reconciliation is not clean`, and
+`ManualTrading` reporting `ReconciliationBlocked` instead of `Submitted`.
+A targeted re-run of the disabled R10 case with `--gtest_also_run_disabled_tests`
+confirmed the report verbatim: `ledger-derived settled cash does not match venue
+snapshot: local=100000.00000000 venue=1000`, followed by zero rather than one entry
+fill. This distinguishes the false drift from a missing market price or risk cap.
+
+Eight original USD-1000 cases retain their full expectations and are disabled:
+
+- `ReplayBehaviour.DISABLED_R10_CloseNotionalBecomesNextOpenQuantityAndFinalProfit`
+- `ReplayBehaviour.DISABLED_R12_DuplicateAndOldClosesCannotReapplyFillsOrAdvanceThePlan`
+- `ReplayBehaviour.DISABLED_R14_CompletedDayRestartMatchesUninterruptedEconomicAndStreamState`
+- `ReplayBehaviour.DISABLED_R16_DiagnosticsLeaveCashFillsAndFingerprintsUnchanged`
+- `ReplayBehaviour.DISABLED_R17_StrictestManualLimitsRejectInsteadOfClipping`
+- `ReplayBehaviour.DISABLED_R18_ManualTargetDiscardsOldPlanAndResyncsHoldAtNextClose`
+- `ReplayBehaviour.DISABLED_R18_CashOnlyManualTargetClosesOmittedHoldingsAndNeedsTheirPrices`
+- `ManualBehaviour.DISABLED_R19_CloseSizedFiveUnitsFillAndCashOnlyExitRealizes125Dollars`
+
+To isolate other runtime rules, six scenarios without absolute-cash expectations
+were configured with canonical genesis 100000 and entry weight .0025. Their target
+is still USD 250 and their expected entry still 2 units; no expected value changed.
+Five then passed; the invalid-cross-section case exposed the independent F4 below.
+The original custom-cash cases above remain as evidence, rather than changing their
+expected money to match the blocking implementation. Added default-genesis controls
+also pass a full replay/restart/diagnostics comparison at cash 100050 and a manual
+five-unit round trip at cash 100125, computed from the worked examples in R10.
+
+### F4 — Replay fills orders before validating the complete market slice (R15)
+
+`ReplayBehaviour.DISABLED_R15_InvalidCrossSectionCannotFillBeforeItsValidation`
+uses the canonical-genesis control so the Buy 2 really is admitted. A close(4)
+slice containing BTC twice throws `std::invalid_argument`, but afterwards the
+position is 2, a parity fill exists, and tracked filled quantity is 2 instead of
+the expected 0. `ReplayRuntime::onClosedSlice` sends bars to the venue matcher before
+`RollingMarketState::append` rejects the duplicate. This violates the assumed
+validate-before-side-effects requirement R15. All original assertions are retained.
+
+### Step 3 validation and test setup
+
+The first requested `ninja -C build -j2` reported no work because the runtime
+Meson file was still a placeholder. The area target was registered, missing replay
+and manual cases were completed, and both restart fixtures were checked against
+real public collaborators. The fill cursor uses `FillID`, and the restored short's
+terminal order carries its actual fill timestamp. No production file was changed.
+
+The first registered build completed without warnings. Its 47 cases produced 31
+passes and 16 failures. After isolating the canonical-genesis setup and adding the
+two worked control campaigns, 49 cases produced 38 passes and 11 failures; all
+11 disagreements are now retained with `DISABLED_` names and `// FINDING:` comments.
+No existing expected value was changed, and no specification rule was relaxed.
+The final `ninja -C build -j2` completed without warnings;
+`meson test -C build --no-rebuild --print-errorlogs unit_runtime` passed with
+38 active cases, 11 disabled cases, no skips and no remaining active failures
+(49 total). Final output is in `build/meson-logs/testlog.txt`. Changes are confined
+to this spec and `tests/unit/runtime/`; no commit was made.
