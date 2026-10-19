@@ -55,4 +55,12 @@ there are no fills, positions or durable restart counters in this area.
 
 ## Findings
 
-None before first run.
+No code-versus-spec disagreements found: all 22 behaviour tests passed, with zero
+disabled tests. No expected values or specification rules were changed during triage.
+
+Runner anomaly: the first `meson test -C build --no-rebuild --suite unit unit_utils
+--print-errorlogs` reported a 30-second timeout even though its captured GoogleTest
+output showed all 22 tests passing in 12 ms. Direct execution with
+`ALGOTRADING_SOURCE_ROOT=$PWD build/tests/unit/utils/test_unit_utils` exited 0 with
+22 passes; a Meson rerun with `--verbose` also exited 0 (1/1 executable, 22 passes).
+The timeout's cause was not established; no behavioural failure was reproduced.
