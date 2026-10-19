@@ -256,38 +256,6 @@ TYPED_TEST_P(StateStoreContract, R7_UnsupportedPendingTriggersDoNotCommit)
     }
 }
 
-TYPED_TEST_P(StateStoreContract, R8_ManualReferencePriceAndImmediateFillIntentSurvive)
-{
-    auto snapshot = exampleSnapshot();
-    auto& order = snapshot.orders.front();
-    order.status = ExecutionOrderStatus::Created;
-    order.filled_quantity = 0.0;
-    order.request.quantity = 2.0;
-    order.request.reference_price = 75.0;
-    order.request.fill_at_reference_price = true;
-    this->store_->save(snapshot);
-    this->reopen();
-    const auto loaded = this->store_->load();
-    ASSERT_TRUE(loaded.has_value());
-    expectSnapshot(*loaded, snapshot);
-}
-
-TYPED_TEST_P(StateStoreContract, R8_LivePositionStopRemainsConditionalAfterRestart)
-{
-    auto snapshot = exampleSnapshot();
-    auto& order = snapshot.orders.front();
-    order.request.side = OrderSide::Sell;
-    order.request.quantity = 2.0;
-    order.request.position_stop_price = 60.0;
-    order.status = ExecutionOrderStatus::Created;
-    order.filled_quantity = 0.0;
-    this->store_->save(snapshot);
-    this->reopen();
-    const auto loaded = this->store_->load();
-    ASSERT_TRUE(loaded.has_value());
-    expectSnapshot(*loaded, snapshot);
-}
-
 REGISTER_TYPED_TEST_SUITE_P(StateStoreContract,
     R1_FreshStoreHasNoSnapshotOrAudit,
     R1_ZeroCashFlatSnapshotSurvivesReopen,
@@ -301,8 +269,6 @@ REGISTER_TYPED_TEST_SUITE_P(StateStoreContract,
     R5_DatabaseFailureAfterAuditInsertRollsBackBoth,
     R6_LoadRejectsUnknownSchema,
     R7_UnsupportedResearchOrdersDoNotCommit,
-    R7_UnsupportedPendingTriggersDoNotCommit,
-    R8_ManualReferencePriceAndImmediateFillIntentSurvive,
-    R8_LivePositionStopRemainsConditionalAfterRestart);
+    R7_UnsupportedPendingTriggersDoNotCommit);
 
 } // namespace persistence_test

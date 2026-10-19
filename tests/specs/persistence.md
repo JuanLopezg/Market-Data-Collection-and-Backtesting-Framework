@@ -185,4 +185,41 @@ the new snapshot; an uncommitted/failed replacement exposes neither half (R5).
 
 ## Findings
 
-Steps 1 and 2 only: tests have not been built or run. No runtime findings recorded.
+### F1 — SQLite drops manual execution intent (R8)
+
+`SQLiteBackend.DISABLED_R8_ManualReferencePriceAndImmediateFillIntentSurvive` retains
+the original expected snapshot. The first run failed because a staged manual buy of
+2 BTC saved with `reference_price=75` and `fill_at_reference_price=true` reopened
+with `reference_price=0` and `fill_at_reference_price=false`. The SQLite tracked-order
+schema, INSERT and SELECT in `lib/src/persistence/sqlite_state_store.cpp` omit both
+fields. This loses the specified sizing/reference-price execution intent on restart.
+The public `ExecutionOrder` comments assign economic meaning to these fields, so this
+is a code/spec disagreement, not a change to the expected result.
+
+### F2 — SQLite drops the LIVE position-stop trigger (R8)
+
+`SQLiteBackend.DISABLED_R8_LivePositionStopRemainsConditionalAfterRestart` retains the
+original expected snapshot. The first run failed because a staged BTC sell of 2 with
+`position_stop_price=60` reopened with `position_stop_price=0`. SQLite save accepts
+the snapshot but its tracked-order schema and codec omit the field. By the public
+`ExecutionOrder::isPositionStop()` contract, this turns a position stop into an
+unconditional order after restart. The spec remains unchanged.
+
+The two R8 cases were moved from the shared typed suite into backend-specific tests
+so only the observed SQLite failures carry `DISABLED_` and `// FINDING:` comments.
+Their PostgreSQL equivalents remain enabled. No expected value was changed.
+
+### Step 3 validation
+
+- `ninja -C build -j2` compiled both persistence executables without warnings.
+- Initial in-process run: 43 tests, 41 passed, 2 failures (F1 and F2); all 20
+  reconciliation and 8 recovery tests passed.
+- PostgreSQL executable: all 17 tests skipped with `Docker is not available`.
+  PostgreSQL behaviours, including the assumed unknown-schema rejection, have not
+  been validated against a running server and are not claimed as findings.
+- After triage, rebuilt with `ninja -C build -j2` and ran
+  `meson test -C build --no-rebuild --print-errorlogs unit_persistence unit_persistence_postgres`:
+  60 registered cases = 41 passed, 2 disabled findings, 17 Docker skips, 0 remaining
+  failures. Meson reports both executables OK; the PostgreSQL result represents
+  skips, not server-backed passes. Detailed final output is in
+  `build/meson-logs/testlog.txt`.

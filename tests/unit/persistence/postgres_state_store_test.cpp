@@ -59,6 +59,40 @@ protected:
 using PostgresTypes = testing::Types<PostgresBackend>;
 INSTANTIATE_TYPED_TEST_SUITE_P(Postgres, StateStoreContract, PostgresTypes);
 
+TEST_F(PostgresBackend, R8_ManualReferencePriceAndImmediateFillIntentSurvive)
+{
+    if (!test_support::dockerAvailable()) GTEST_SKIP() << "Docker is not available";
+    auto snapshot = exampleSnapshot();
+    auto& order = snapshot.orders.front();
+    order.status = ExecutionOrderStatus::Created;
+    order.filled_quantity = 0.0;
+    order.request.quantity = 2.0;
+    order.request.reference_price = 75.0;
+    order.request.fill_at_reference_price = true;
+    store_->save(snapshot);
+    reopen();
+    const auto loaded = store_->load();
+    ASSERT_TRUE(loaded.has_value());
+    expectSnapshot(*loaded, snapshot);
+}
+
+TEST_F(PostgresBackend, R8_LivePositionStopRemainsConditionalAfterRestart)
+{
+    if (!test_support::dockerAvailable()) GTEST_SKIP() << "Docker is not available";
+    auto snapshot = exampleSnapshot();
+    auto& order = snapshot.orders.front();
+    order.request.side = OrderSide::Sell;
+    order.request.quantity = 2.0;
+    order.request.position_stop_price = 60.0;
+    order.status = ExecutionOrderStatus::Created;
+    order.filled_quantity = 0.0;
+    store_->save(snapshot);
+    reopen();
+    const auto loaded = store_->load();
+    ASSERT_TRUE(loaded.has_value());
+    expectSnapshot(*loaded, snapshot);
+}
+
 TEST_F(PostgresBackend, R17_CommittedStateAndAuditSurviveDatabaseRestart)
 {
     if (!test_support::dockerAvailable()) GTEST_SKIP() << "Docker is not available";
