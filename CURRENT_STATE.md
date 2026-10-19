@@ -2,6 +2,22 @@
 
 Last synchronized: 2026-10-16. Current source and test output take precedence.
 
+## Behaviour test suite (2026-10-19, branch test-suite, local only)
+
+New `tests/` (GoogleTest via Meson wrap; `tests/README.md`): 862 behaviour tests in 17
+unit areas covering lib/ and the VPS services' internal libraries, Docker-backed
+PostgreSQL/NATS component tests (suite `service`) and an end-to-end PAPER chain test
+(suite `chain`: the real historical feeder, strategy, risk, planner, execution-state,
+gateway and simulated exchange over 15 accelerated business days, with crash/restart).
+Each area has a behaviour spec in `tests/specs/`; tests were written from the spec and
+committed before their first run. Service build files now split non-main sources into
+static libraries for tests (executables unchanged). No production code changed.
+52 code/spec disagreements are kept as DISABLED_ tests and ranked in `tests/FINDINGS.md`
+(4 high: chain stalls for good when an account snapshot is ~20 s late; OrderManager fill-ID
+poisoning; manual resync overwrites an explicit exit; PostgreSQL loads unknown schemas).
+Evidence (WSL): `meson test -C build` 22/22 OK (chain 468 s); Step59 PASS fingerprint
+94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2.
+
 ## Release 20261019_161639-5a4f5aa (2026-10-19, deployed 16:22 UTC, user-authorized)
 
 Clean release of commit 5a4f5aa; previous 20261018_185456-9bed096-dirty for rollback. Versus
