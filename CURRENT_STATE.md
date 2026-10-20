@@ -2,6 +2,24 @@
 
 Last synchronized: 2026-10-16. Current source and test output take precedence.
 
+## Behaviour-test findings fixed (2026-10-20, branch test-suite, local only)
+
+All 52 findings in `tests/FINDINGS.md` are fixed in production code (lanes F1/F2 by Codex,
+F3 by the orchestrator) and every `DISABLED_` test is re-enabled unchanged. Live-relevant:
+service durable consumers use unlimited JetStream deliveries, and binding raises an older
+durable's `MaxDeliver` (the VPS has 20), so a late account snapshot no longer stops the
+chain (chain C10); OrderManager consumes a fill ID only after validation; manual resync
+keeps explicit exits; PostgreSQL rejects unknown schema versions; equity history applies a
+day's fills before its funding. Market data now fails (and retries) a daily run when a
+selected symbol lacks its own day candle. Not deployed.
+Step59 fingerprint changed to f27599267e09ca538edf05e1890c90d435bdf18c208e567c6d73081fde48c4ca
+(was 94fdf8d8...68da2): the MOCK user stream no longer records a duplicate PartiallyFilled
+update (M7). Fills CSV, economic fingerprint and all counts are identical to main;
+reverting only that line restores the old fingerprint. The frozen step58a full-history
+fingerprint (1551106e...) was not re-run and is expected to change for the same reason.
+Evidence (WSL): `meson test -C build` 22/22 OK (unit, service, chain C1-C10, chain 691 s);
+Step59 PASS (all 7 checks) with the new fingerprint.
+
 ## Behaviour test suite (2026-10-19, branch test-suite, local only)
 
 New `tests/` (GoogleTest via Meson wrap; `tests/README.md`): 862 behaviour tests in 17

@@ -477,7 +477,7 @@ The default WSL gate is `bash validation/step59_canonical_replay_release_gate.sh
 Its compact expected fingerprint is:
 
 ```text
-94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2
+f27599267e09ca538edf05e1890c90d435bdf18c208e567c6d73081fde48c4ca
 ```
 
 [validation/README.md](../../validation/README.md) maps component tests, current service

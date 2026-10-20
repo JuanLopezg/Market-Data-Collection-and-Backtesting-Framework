@@ -55,7 +55,7 @@ bash validation/step59_canonical_replay_release_gate.sh
 Expected compact fingerprint:
 
 ```text
-94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2
+f27599267e09ca538edf05e1890c90d435bdf18c208e567c6d73081fde48c4ca
 ```
 
 An unexpected fingerprint change is a regression until explained.

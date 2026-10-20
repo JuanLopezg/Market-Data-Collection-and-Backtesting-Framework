@@ -286,4 +286,4 @@ Some names still contain historical `StepXX` identifiers because they are part o
 
 Validate changes in WSL with `meson compile -C build`, followed by
 `bash validation/step59_canonical_replay_release_gate.sh`. The accepted compact fingerprint
-is `94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2`.
+is `f27599267e09ca538edf05e1890c90d435bdf18c208e567c6d73081fde48c4ca`.

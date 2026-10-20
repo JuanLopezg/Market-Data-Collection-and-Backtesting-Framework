@@ -18,7 +18,7 @@ containers on random loopback ports and skip themselves when Docker is unavailab
 The existing release gate (`validation/step59_canonical_replay_release_gate.sh`) stays
 the accepted RealTest/economic fingerprint; these suites do not replace it.
 
-Code/spec disagreements found by these tests, ranked by severity: [FINDINGS.md](FINDINGS.md).
+Code/spec disagreements found by these tests, ranked by severity and with their fix status: [FINDINGS.md](FINDINGS.md).
 
 ## Layout
 

@@ -330,10 +330,12 @@ required. Expected result: 25 matched campaigns, zero differences, 50 fills.
 Expected compact fingerprint:
 
 ```text
-94fdf8d84607dd31c8fa04ecde571738dfabfc234dedff75cd133793dc768da2
+f27599267e09ca538edf05e1890c90d435bdf18c208e567c6d73081fde48c4ca
 ```
 
-A changed fingerprint is a regression until explained. RealTest discrepancies are
+Accepted 2026-10-20 (previously `94fdf8d8...68da2`): the MOCK user stream no longer
+records a duplicate `PartiallyFilled` update per partial fill (tests/FINDINGS.md M7);
+fills and economics are byte-identical. A changed fingerprint is a regression until explained. RealTest discrepancies are
 compared directly with `storage/backtests/final_tests/pureRSI.csv`; historical
 mismatch identities are not an acceptance whitelist.
 
