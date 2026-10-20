@@ -2,6 +2,7 @@
 
 #include "rolling_market_state.h"
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <unordered_map>
@@ -20,6 +21,8 @@ void validateBar(const MarketBarSnapshot& value)
         !std::isfinite(bar.high) || bar.high <= 0.0 ||
         !std::isfinite(bar.low) || bar.low <= 0.0 ||
         !std::isfinite(bar.close) || bar.close <= 0.0 ||
+        bar.high < std::max(bar.open, bar.close) ||
+        bar.low > std::min(bar.open, bar.close) ||
         !std::isfinite(bar.volume) || bar.volume < 0.0 ||
         (!std::isnan(bar.quote_volume) && (!std::isfinite(bar.quote_volume) || bar.quote_volume < 0.0)))
         throw std::invalid_argument("Market slice contains invalid OHLCV data");

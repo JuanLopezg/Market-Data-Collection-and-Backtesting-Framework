@@ -27,6 +27,8 @@ MarketDataConfig loadMarketDataConfig(const std::filesystem::path& path)
 
     json root;
     input >> root;
+    if (!root.is_object())
+        throw std::runtime_error("Market-data config must be a JSON object");
 
     MarketDataConfig config;
 

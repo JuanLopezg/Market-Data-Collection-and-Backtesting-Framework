@@ -273,6 +273,8 @@ disagrees with R1 and `config/market_data/market_data_schema.json` (`type: objec
 Kept the rejection expectations in
 `MarketDataConfigBehaviour.DISABLED_R1_RejectsNonObjectDocumentsRatherThanStartingWithDefaults`.
 
+Fixed (2026-10-19): Reject non-object JSON configuration documents before applying defaults.
+
 ### F2 — A next open can complete a day with no selected-symbol bar (R10)
 
 With a fresh database, top1=BTC and target=2024-01-02, the HTTP response contained
@@ -284,6 +286,8 @@ R10's explicit completeness assumption: closure proof alone is not completed
 market data. A restart would see a committed tracker and reuse that incomplete
 checkpoint. Preserved the original expectations in
 `MarketIngestionBehaviour.DISABLED_R10_NextOpenWithoutTargetCandleCannotEstablishCompletedDay`.
+
+Fixed (2026-10-19): Require a stored or fetched target-day candle for every selected top-N symbol before committing the checkpoint.
 
 ### Spec corrected — R8 kline limit and pagination example
 

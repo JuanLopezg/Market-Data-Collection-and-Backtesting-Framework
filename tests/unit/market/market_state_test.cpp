@@ -175,9 +175,7 @@ TEST(RollingMarket, R2_InvalidSuppliedQuoteTurnoverIsRejected)
     }
 }
 
-// FINDING: RollingMarketState accepts high below close and low above open, publishing
-// invalid bars instead of rejecting them without changing history (spec R4).
-TEST(RollingMarket, DISABLED_R4_HighAndLowMustEncloseOpenAndClose)
+TEST(RollingMarket, R4_HighAndLowMustEncloseOpenAndClose)
 {
     for (const OHLCV invalid : {OHLCV{100, 105, 90, 110, 3, 321},
                                OHLCV{100, 120, 105, 110, 3, 321}}) {

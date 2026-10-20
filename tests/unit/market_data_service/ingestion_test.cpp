@@ -84,9 +84,7 @@ TEST_F(MarketIngestionBehaviour, R9_PaperOpenIsReturnedSeparatelyAndUnfinishedBa
     EXPECT_TRUE(reopened.symbolsWithBarOn(JAN3).empty());
 }
 
-// FINDING: A next-day open without any target-day bar commits the tracker, ranking
-// and date marker with zero downloaded rows; R10 requires rejection without a checkpoint.
-TEST_F(MarketIngestionBehaviour, DISABLED_R10_NextOpenWithoutTargetCandleCannotEstablishCompletedDay)
+TEST_F(MarketIngestionBehaviour, R10_NextOpenWithoutTargetCandleCannotEstablishCompletedDay)
 {
     http_.set("/fapi/v1/klines:BTCUSDT", Json::array({nextOpen()}));
     MarketDataIngestor ingestor(config());

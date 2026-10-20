@@ -44,7 +44,8 @@ bool validBar(const OHLCV& bar)
         !std::isfinite(bar.high) || bar.high <= 0.0 ||
         !std::isfinite(bar.low) || bar.low <= 0.0 ||
         !std::isfinite(bar.close) || bar.close <= 0.0 ||
-        !std::isfinite(bar.volume) || bar.volume < 0.0)
+        !std::isfinite(bar.volume) || bar.volume < 0.0 ||
+        (!std::isnan(bar.quote_volume) && (!std::isfinite(bar.quote_volume) || bar.quote_volume < 0.0)))
         return false;
 
     return bar.high >= std::max({bar.open, bar.close, bar.low}) &&
@@ -316,10 +317,11 @@ CanonicalMarketDataWindow CanonicalMarketDataReader::loadWindow(
         if (sqlite3_column_type(stmt, 7) != SQLITE_NULL)
             bar.quote_volume = sqlite3_column_double(stmt, 7);
         if (!validBar(bar)) {
-            sqlite3_finalize(stmt);
-            throw std::logic_error(
+            const std::string error =
                 "Canonical OHLCV row is invalid for " + std::string(pair) +
-                " date=" + std::to_string(sqlite3_column_int64(stmt, 1)));
+                " date=" + std::to_string(sqlite3_column_int64(stmt, 1));
+            sqlite3_finalize(stmt);
+            throw std::logic_error(error);
         }
 
         const Timestamp rowDate = static_cast<Timestamp>(sqlite3_column_int64(stmt, 1));
@@ -436,10 +438,11 @@ MarketData CanonicalMarketDataReader::loadMarketDataWindow(
         if (sqlite3_column_type(stmt, 7) != SQLITE_NULL)
             bar.quote_volume = sqlite3_column_double(stmt, 7);
         if (!validBar(bar)) {
-            sqlite3_finalize(stmt);
-            throw std::logic_error(
+            const std::string error =
                 "Canonical OHLCV row is invalid for " + std::string(pair) +
-                " date=" + std::to_string(sqlite3_column_int64(stmt, 1)));
+                " date=" + std::to_string(sqlite3_column_int64(stmt, 1));
+            sqlite3_finalize(stmt);
+            throw std::logic_error(error);
         }
 
         const Timestamp rowDate = static_cast<Timestamp>(sqlite3_column_int64(stmt, 1));

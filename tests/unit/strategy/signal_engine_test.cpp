@@ -290,9 +290,7 @@ TEST(StrategyIntents, R13_InvalidRestoredOpinionCannotChangeSignalsOrFrontier)
     }
 }
 
-// FINDING: restore() replaces ID 7's A=1 with C=1 before rejecting ID 9's name;
-// the assumed atomic-restore policy requires all prior signals to remain (spec R14).
-TEST(StrategyIntents, DISABLED_R14_LaterStrategyNameErrorCannotPartiallyApplyACheckpoint)
+TEST(StrategyIntents, R14_LaterStrategyNameErrorCannotPartiallyApplyACheckpoint)
 {
     auto engine = twoStrategyEngine();
     engine.restore(checkpoint(thirdClose,
@@ -305,9 +303,7 @@ TEST(StrategyIntents, DISABLED_R14_LaterStrategyNameErrorCannotPartiallyApplyACh
     EXPECT_EQ(engine.strategies().at(1).signalState().values(), (Opinions{{"B", 1}}));
 }
 
-// FINDING: restore() replaces ID 7's A=1 with C=1 before rejecting ID 9's signal=2;
-// the assumed atomic-restore policy requires all prior signals to remain (spec R14).
-TEST(StrategyIntents, DISABLED_R14_LaterStrategySignalErrorCannotPartiallyApplyACheckpoint)
+TEST(StrategyIntents, R14_LaterStrategySignalErrorCannotPartiallyApplyACheckpoint)
 {
     auto engine = twoStrategyEngine();
     engine.restore(checkpoint(thirdClose,

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 #include "rebalance_policy.h"
@@ -62,7 +64,12 @@ public:
             throw std::invalid_argument("Strategy capital must be positive for threshold rebalancing");
 
         const double currentWeight = currentQuantity * currentPrice / strategyCapital;
-        if (std::abs(desiredWeight - currentWeight) >= threshold_ * std::abs(currentWeight))
+        const double drift = std::abs(desiredWeight - currentWeight);
+        const double requiredDrift = threshold_ * std::abs(currentWeight);
+        // Decimal equality can round just below the boundary after subtraction.
+        const double tolerance = 8.0 * std::numeric_limits<double>::epsilon() *
+            std::max(std::abs(desiredWeight), std::abs(currentWeight));
+        if (drift >= requiredDrift || requiredDrift - drift <= tolerance)
             return RebalanceDecision::targetWeight(desiredWeight);
 
         return RebalanceDecision::hold();

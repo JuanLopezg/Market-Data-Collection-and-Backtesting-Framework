@@ -188,6 +188,8 @@ Retained regression tests (both keep their original rejection/state assertions):
 - `StrategyIntents.DISABLED_R14_LaterStrategyNameErrorCannotPartiallyApplyACheckpoint`
 - `StrategyIntents.DISABLED_R14_LaterStrategySignalErrorCannotPartiallyApplyACheckpoint`
 
+Fixed (2026-10-19): Stage and validate every strategy signal state before applying the complete checkpoint.
+
 Initial reproduction: `ninja -C build -j2`, then
 `ALGOTRADING_SOURCE_ROOT=$PWD build/tests/unit/strategy/test_unit_strategy
 --gtest_output=xml:build/tests/unit/strategy/first_run.xml`. After triage, reproduce

@@ -168,9 +168,7 @@ TEST(MessageJsonBehaviour, R3_MetadataTypesAreNotCoercedAndUnknownExtensionsAreI
     }
 }
 
-// FINDING: Five decoders accept {} as an empty bars/strategies/submit_orders
-// collection instead of rejecting its non-array shape as required by R3.
-TEST(MessageJsonBehaviour, DISABLED_R3_CollectionsCannotBeReplacedByObjects)
+TEST(MessageJsonBehaviour, R3_CollectionsCannotBeReplacedByObjects)
 {
     for (const auto& example : wireExamples()) {
         for (const std::string key : {"bars", "strategies", "submit_orders"}) {
@@ -466,9 +464,7 @@ TEST(MessageJsonBehaviour, R9_DuplicateStrategyPositionsAreRejectedInBothPlannin
     EXPECT_THROW((void)MessageJson::decodeNotionalOrderPlanningRequest(notional.dump()), std::invalid_argument);
 }
 
-// FINDING: decodeDecisionBatch accepts two BTC decisions and silently keeps the
-// first TargetWeight(.25), discarding the later Flat instead of rejecting R9 ambiguity.
-TEST(MessageJsonBehaviour, DISABLED_R9_DuplicateAssetDecisionCannotSilentlyChooseOneExposure)
+TEST(MessageJsonBehaviour, R9_DuplicateAssetDecisionCannotSilentlyChooseOneExposure)
 {
     auto payload = Json::parse(MessageJson::encode(decisionsExample()));
     payload["strategies"][0]["decisions"].push_back(

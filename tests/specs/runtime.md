@@ -222,6 +222,8 @@ rule requires rejection before dispatch. The ordinary market path through
 decision guard (the research-stop path has one). The assumed generic-path timing
 requirement and original expected exception/no-orders assertions remain unchanged.
 
+Fixed (2026-10-19): The shared quantity planner rejects same-close market execution before TradingEngine can dispatch orders.
+
 ### F3 — MOCK reconciliation assumes a different initial cash than its account
 
 The public `MockAccountingConfig` accepts `initial_cash="1000.00"`, and the account

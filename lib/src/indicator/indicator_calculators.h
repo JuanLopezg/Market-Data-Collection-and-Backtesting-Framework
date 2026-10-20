@@ -41,11 +41,10 @@ std::vector<double> calculateRSI(
 );
 
 
-// Calculate ATR as simple moving average of true range
+// Calculate ATR with Wilder smoothing of true range
 //
-// This follows the style of your current implementation:
-// ATR(14) first valid value appears at index 14,
-// using TR[1] through TR[14].
+// Seed with the simple average of TR[1] through TR[N] at index N,
+// then use ATR = ((N - 1) * previous ATR + current TR) / N.
 std::vector<double> calculateATR(
     const std::vector<OHLCV>& bars,
     unsigned int length

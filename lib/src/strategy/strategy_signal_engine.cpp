@@ -79,15 +79,24 @@ void StrategySignalEngine::restore(const StrategyIntentBatch& batch)
             throw std::invalid_argument("Strategy restore batch contains duplicate strategy ids");
     }
 
-    for (StrategySignalInstance& strategy : strategies_) {
+    // Stage every signal state before replacing any part of the checkpoint.
+    std::vector<SignalState> restored;
+    restored.reserve(strategies_.size());
+    for (const StrategySignalInstance& strategy : strategies_) {
         const auto it = intents.find(strategy.id());
         if (it == intents.end())
             throw std::invalid_argument("Strategy restore batch is missing a configured strategy");
         if (it->second->strategy_name != strategy.name())
             throw std::invalid_argument("Strategy restore batch name does not match configured strategy");
 
-        strategy.restoreSignals(it->second->signals);
+        SignalState signals;
+        for (const auto& [coin, signal] : it->second->signals)
+            signals.set(coin, signal);
+        restored.push_back(std::move(signals));
     }
+
+    for (std::size_t i = 0; i < strategies_.size(); ++i)
+        strategies_[i].signalState() = std::move(restored[i]);
 
     last_timestamp_ = batch.timestamp;
 }

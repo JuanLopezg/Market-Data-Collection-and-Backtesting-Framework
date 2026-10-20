@@ -50,9 +50,7 @@ TEST(TradingBehaviour, R5_FiveDayRoundTripClosesTwoUnitsForFiftyDollarsProfit)
     EXPECT_EQ(rig.engine.orderManager().processedFillIds().size(), 2U);
 }
 
-// FINDING: F2. Market execution at the decision close succeeds and submits an order;
-// R5 requires rejecting same-close execution before any exchange command.
-TEST(TradingBehaviour, DISABLED_R5_SameCloseExecutionCannotCreateAClosingPriceEntry)
+TEST(TradingBehaviour, R5_SameCloseExecutionCannotCreateAClosingPriceEntry)
 {
     TradingRig rig;
     rig.through(3);

@@ -212,10 +212,8 @@ TEST(QuantityPlanner, R8_PlanningDoesNotAdvanceFilledOrPendingState)
     EXPECT_TRUE(input.orders.orders().empty());
 }
 
-TEST(QuantityPlanner, DISABLED_R11_RejectsExecutionAtOrBeforeDecisionClose)
+TEST(QuantityPlanner, R11_RejectsExecutionAtOrBeforeDecisionClose)
 {
-    // FINDING: Market planning accepts execution at/before the decision close;
-    // R11 assumes this API rejects both dates. Only stop entries enforce ordering.
     for (const Timestamp date : {kClose, Timestamp{20260104}}) {
         SCOPED_TRACE(date);
         Inputs input;

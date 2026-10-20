@@ -219,6 +219,8 @@ an API validation gap against the assumed rule, not evidence that an upstream
 runtime actually executes future decisions. The spec and expected exception remain
 unchanged; production code is untouched.
 
+Fixed (2026-10-19): Reject nonempty quantity decision batches when execution is at or before the decision close.
+
 Validation (WSL, 2026-10-19): `ninja -C build -j2` completed without compiler
 warnings. After disabling F1,
 `ALGOTRADING_SOURCE_ROOT="$PWD" build/tests/unit/planning/test_unit_planning --gtest_brief=1`

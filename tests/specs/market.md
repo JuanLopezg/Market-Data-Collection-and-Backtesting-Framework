@@ -159,6 +159,8 @@ high/low. Retained test:
 `RollingMarket.DISABLED_R4_HighAndLowMustEncloseOpenAndClose`. The assumption in
 R4 is retained; no higher-priority contract authorizes invalid OHLC geometry.
 
+Fixed (2026-10-19): Reject rolling OHLC bars whose high/low do not enclose open/close before publishing the slice.
+
 F2 (R2, corrupt persisted quote turnover). With BTC's Mar 1 `quote_volume` set to
 SQL `-1` or `1e999` (positive infinity), both `loadWindow(20240301,3,1)` and
 `loadMarketDataWindow(20240301,3,{"BTC"})` return without throwing: all four
@@ -169,6 +171,8 @@ This is the explicitly assumed corrupt-row policy in R2, not a claim that the no
 writer emits these values. Missing/NULL quote volume, legacy schemas and valid zero
 turnover pass their separate tests.
 
+Fixed (2026-10-19): Reject supplied negative or nonfinite quote turnover in both canonical full-bar readers.
+
 F3 (R4, corrupt OHLCV error path crashes). The first case of the invalid-row test
 sets BTC's Mar 1 high to 105 while close remains 110. Its `loadWindow` call
 terminates the process with SIGSEGV (exit 139), rather than throwing an exception.
@@ -178,6 +182,8 @@ and calling `sqlite3_column_int64(stmt,1)` to build the error message. This is a
 unsafe use after finalization. The portfolio loader's equivalent branch and the
 remaining invalid-row cases were not reached in the crashing run. Retained test:
 `CanonicalMarket.DISABLED_R4_InvalidOhlcvRowsCannotReachStrategyOrRisk`.
+
+Fixed (2026-10-19): Copy invalid-row diagnostics before finalizing either canonical reader statement.
 
 Reproduction: build with `ninja -C build -j2`, then run
 `ALGOTRADING_SOURCE_ROOT=$PWD build/tests/unit/market/test_unit_market`. The original
