@@ -443,7 +443,9 @@ def collect_live(containers, output, binary, image=None):
     decision, execution = plan['decision_timestamp'], live['last_execution_timestamp']
     if live['last_bar_close_timestamp'] != decision or intent['timestamp'] != decision or execution <= decision:
         raise ValueError('Cycle is not fully joined/applied yet')
-    if any(row['status'] in (0, 1, 2, 3) for row in live['orders']):
+    # A position stop-loss rests at Kraken until it triggers or is replaced; it is not one
+    # of the cycle's orders, so only the others must reach a terminal status.
+    if any(row['status'] in (0, 1, 2, 3) and not row.get('position_stop_price') for row in live['orders']):
         raise ValueError('Waiting for terminal Kraken order lifecycle')
     # Expected fee rate at Kraken (chain.env; COMMISSION_RATE is the PAPER simulation's).
     commission_rate = float(os.environ.get('LIVE_COMMISSION_RATE', '0.0005'))

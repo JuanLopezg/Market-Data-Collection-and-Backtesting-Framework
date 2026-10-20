@@ -302,6 +302,34 @@ class KrakenLiveComparisonTest(unittest.TestCase):
                     setattr(comparison, name, original)
 
 
+class LiveRestingStopTest(unittest.TestCase):
+    def test_resting_stop_loss_does_not_block_the_live_study(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            strategies = [{'strategy_id': 1, 'signals': {}, 'desired_weights': {}, 'virtual_positions': {}}]
+            stop = {'order_id': 9, 'status': 2, 'active_from': 20261013, 'coin': 'BTCUSDT', 'side': 1,
+                    'last_message': 'accepted by venue', 'position_stop_price': 70.0}
+            market = {'order_id': 10, 'status': 2, 'active_from': 20261013, 'coin': 'BTCUSDT', 'side': 0,
+                      'last_message': 'accepted by venue'}
+            def observed(orders):
+                live = {'account_cash': 900, 'account_positions': {'BTCUSDT': 1}, 'strategies': strategies,
+                        'orders': orders, 'last_bar_close_timestamp': 20261012, 'last_execution_timestamp': 20261013}
+                return {'snapshot': live, 'plan': {'decision_timestamp': 20261012, 'submit_orders': []},
+                        'intent': {'timestamp': 20261012, 'strategies': [{'strategy_id': 1, 'signals': {'BTCUSDT': 1}}]},
+                        'strategyIdentity': comparison.PROFILE.read_text(), 'riskIdentity': comparison.PORTFOLIO.read_text(),
+                        'fills': [], 'costs': [], 'collateral': {}}
+            state = {'observed': observed([stop, market])}
+            with patch.object(comparison, 'query_live', lambda container: state['observed']):
+                with self.assertRaisesRegex(ValueError, 'terminal Kraken order lifecycle'):
+                    comparison.collect_live(('postgres', 'market-data'), output, Path('/nonexistent'))
+                self.assertFalse((output / 'study.json').exists())
+
+                state['observed'] = observed([stop])
+                comparison.collect_live(('postgres', 'market-data'), output, Path('/nonexistent'))
+                self.assertEqual(json.loads((output / 'study.json').read_text())['seed']['decision_date'], 20261012)
+                self.assertEqual(json.loads((output / 'comparison.json').read_text())['status'], 'OBSERVING')
+
+
 class BaselineSeedRegressionTest(unittest.TestCase):
     def seed(self):
         return {'decision_date': 20261008, 'execution_date': 20261009,
