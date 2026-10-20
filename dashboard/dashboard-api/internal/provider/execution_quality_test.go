@@ -28,12 +28,12 @@ func TestExecutionSlippageUsesPersistedReferencesAndWeightedFills(t *testing.T) 
 	if !data.SlippageAvailable || data.SlippageFillCount != 4 || len(data.SlippageHistory) != 2 {
 		t.Fatalf("unexpected quality coverage: %+v", data)
 	}
-	// Partial fills use VWAP for the order row; daily/overall values use actual USD notional.
+	// Partial fills use VWAP for the order row; the overall average uses actual USD notional.
 	if data.Orders[0].SlippageBpsLabel != "0.00 bps" || data.Orders[0].FeesLabel != "$0.005" {
 		t.Fatalf("partial fill aggregation lost: %+v", data.Orders[0])
 	}
-	if math.Abs(data.SlippageHistory[0].Bps-1) > 1e-8 {
-		t.Fatalf("daily result must be notional weighted: %+v", data.SlippageHistory)
+	if math.Abs(data.SlippageHistory[0].Bps) > 1e-8 || math.Abs(data.SlippageHistory[1].Bps-1100) > 1e-8 {
+		t.Fatalf("daily result must sum each fill's bps: %+v", data.SlippageHistory)
 	}
 	if data.AvgSlippageBpsLabel != "+53.72 bps" || data.BestSlippageBpsLabel != "-100.00 bps" || data.WorstSlippageBpsLabel != "+1000.00 bps" {
 		t.Fatalf("unexpected overall fill weighting: %+v", data)
@@ -49,6 +49,25 @@ func TestExecutionSlippageUsesPersistedReferencesAndWeightedFills(t *testing.T) 
 	}
 	if data.TotalFeesLabel != "$0.005" || data.LatencyAvailable {
 		t.Fatalf("small fees must remain visible and latency unavailable: %+v", data)
+	}
+}
+
+func TestRealExecutionSlippageDailySum(t *testing.T) {
+	orders := []tradingwire.PersistedTrackedOrder{{OrderID: 1, Coin: "BTC", ReferencePrice: 100}}
+	fills := []tradingwire.Fill{
+		{OrderID: 1, Coin: "BTC", Timestamp: 20261018, Quantity: 1, Price: 100.10},
+		{OrderID: 1, Coin: "BTC", Timestamp: 20261018, Quantity: 3, Price: 99.96},
+		{OrderID: 1, Coin: "BTC", Timestamp: 20261019, Quantity: 1, Price: 100.02},
+	}
+	got := realExecutionSlippage(orders, fills)
+	if got.fills != 3 || len(got.daily) != 2 {
+		t.Fatalf("unexpected fill coverage: %+v", got)
+	}
+	if got.daily[0].Label != "2026-10-18" || got.daily[0].Fills != 2 || math.Abs(got.daily[0].Bps-6) > 1e-8 {
+		t.Fatalf("10 and -4 bps must sum to 6 regardless of notional: %+v", got.daily)
+	}
+	if got.daily[1].Label != "2026-10-19" || got.daily[1].Fills != 1 || math.Abs(got.daily[1].Bps-2) > 1e-8 {
+		t.Fatalf("fills from another day must stay separate: %+v", got.daily)
 	}
 }
 

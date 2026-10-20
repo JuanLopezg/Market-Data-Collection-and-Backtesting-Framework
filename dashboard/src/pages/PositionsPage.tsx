@@ -57,7 +57,7 @@ function PositionRow({ position, showFunding }: { position: Position; showFundin
     <td>{targeted(position) ? percent(position.targetWeightPct) : '—'}</td>
     <td className={delta === null || Math.abs(delta) < 0.05 ? 'muted' : delta > 0 ? 'positive' : 'negative'}>{delta === null ? '—' : signedPercent(delta)}</td>
     <td className={!pnlKnown(position) ? 'muted' : tone(position.pnlUsd)}>{pnlKnown(position) ? signedUsd(position.pnlUsd) : '—'}</td>
-    <td className={position.feesAvailable ? tone(position.feesUsd ?? 0) : ''}>{position.feesAvailable ? usd(position.feesUsd ?? 0) : '—'}</td>
+    <td className={position.feesAvailable ? tone(-(position.feesUsd ?? 0)) : ''}>{position.feesAvailable ? usd(position.feesUsd ?? 0) : '—'}</td>
     {showFunding && <td className={fundingTone(position)}>{fundingRate(position)}</td>}
     {showFunding && <td className={tone(position.fundingUsd ?? 0)}>{position.fundingAvailable ? signedUsd(position.fundingUsd ?? 0) : '—'}</td>}
     <td className={netKnown ? tone(net!) : 'muted'}>{netKnown ? signedUsd(net!) : '—'}</td>
@@ -75,7 +75,7 @@ function ClosedRow({ position, showFunding }: { position: ClosedPosition; showFu
     <td>{price(position.entryPrice)}</td>
     <td>{price(position.exitPrice)}</td>
     <td className={tone(position.grossPnl)}>{signedUsd(position.grossPnl)}</td>
-    <td className={tone(position.fees)}>{usd(position.fees)}</td>
+    <td className={tone(-position.fees)}>{usd(position.fees)}</td>
     {showFunding && <td className={tone(position.funding)}>{signedUsd(position.funding)}</td>}
     <td className={tone(position.netPnl)}><strong>{signedUsd(position.netPnl)}</strong></td>
     <td className={tone(position.netPnl)}>{signedPercent(position.netPnlPct)}</td>
@@ -105,7 +105,7 @@ export function PositionsPage() {
     { label: 'Unrealized PnL', value: displayAmount(data.unrealizedPnl), tone: /\d/.test(data.unrealizedPnl) ? (data.unrealizedPnl.startsWith('-') ? 'negative' : 'positive') : '' },
     ...(data.closedAvailable ? [
       { label: 'Realized PnL (net)', value: signedUsd(realized), tone: tone(realized) },
-      { label: 'Total Fees', value: usd(fees), tone: tone(fees) },
+      { label: 'Total Fees', value: usd(fees), tone: tone(-fees) },
       ...(showFunding ? [{ label: 'Total Funding', value: signedUsd(funding), tone: tone(funding) }] : []),
     ] : []),
   ]

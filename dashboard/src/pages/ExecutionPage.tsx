@@ -140,11 +140,12 @@ export function ExecutionPage() {
     </section>
 
     <div className="execution-stack">
-    <Panel title="Slippage vs Reference" right={data.slippageAvailable ? <span className="muted">{data.avgSlippageBpsLabel} · {data.slippageFillCount ?? data.fillCount} fills</span> : undefined}>
+    <Panel title="Slippage vs Reference (daily sum)" right={data.slippageAvailable ? <span className="muted">{data.avgSlippageBpsLabel} · {data.slippageFillCount ?? data.fillCount} fills</span> : undefined}>
       {slippage.length > 0
-        ? <LineChart data={slippage} lines={[{ key: 'bps', label: 'Slippage', color: 'var(--series-2)' }]} formatValue={bps} compact/>
+        ? <LineChart data={slippage} lines={[{ key: 'bps', label: 'Slippage (sum of fills)', color: 'var(--series-2)' }]} formatValue={bps} compact/>
         : <div className="overview-unavailable overview-unavailable--compact"><strong>No measured fills in this window</strong><span>Slippage needs a filled order with a stored reference price.</span></div>}
       {data.slippageBasis && <p className="muted">{data.slippageBasis}</p>}
+      <p className="muted">Each daily point is the sum of that day's fills' slippage in bps. Positive means adverse; negative means favorable.</p>
     </Panel>
 
     {!!data.feesPendingCount && <p className="muted">Fees are still pending for {data.feesPendingCount} fill(s). Recorded fees update when Kraken account-history events arrive.</p>}

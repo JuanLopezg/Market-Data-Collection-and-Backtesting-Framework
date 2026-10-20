@@ -207,16 +207,9 @@ func (p *Real) loadInfrastructure(ctx context.Context) realInfrastructure {
 	result.NATS = buildNATSHealth(sources.NATS, natsStatus, natsErr, p.cfg.NATSMonitorURL != "")
 	result.Dependencies = buildDependencies(sources, pg, pgErr, natsStatus, natsErr, checkedAt, result.Exchange.Venue)
 
-	if pg.Runtime.Present {
-		result.Services = append(result.Services, realService{
-			Service:   "ExecutionState durable state",
-			Ready:     false,
-			Mode:      p.runtimeMode(),
-			LastEvent: pg.Runtime.UpdatedAt,
-			LagLabel:  "Persistence observed · process liveness not wired",
-			Health:    "UNKNOWN",
-		})
-	}
+	runtimeHealth := buildExecutionStateHealth(pg.Runtime, checkedAt)
+	runtimeHealth.Mode = p.runtimeMode()
+	result.Services = append(result.Services, runtimeHealth)
 
 	p.applyHostTelemetry(&result, checkedAt)
 	result.TradingProgress = buildTradingProgress(pg.Runtime, pgErr, sources.PostgreSQL.Reachable, p.currentDataChain(), checkedAt)
@@ -249,6 +242,36 @@ func (p *Real) loadInfrastructure(ctx context.Context) realInfrastructure {
 				result.Exchange.State = row.Health
 			}
 		}
+	}
+	return result
+}
+
+func buildExecutionStateHealth(runtime pgstore.RuntimeSummary, checkedAt time.Time) realService {
+	result := realService{
+		Service:   "ExecutionState durable state",
+		LastEvent: runtime.UpdatedAt,
+		LagLabel:  "Durable execution snapshot not present; start the runtime services to populate it",
+		Health:    "UNKNOWN",
+	}
+	if !runtime.Present {
+		return result
+	}
+	updatedAt, err := time.Parse(time.RFC3339Nano, runtime.UpdatedAt)
+	if err != nil {
+		result.LagLabel = "Snapshot persistence age unavailable: invalid update timestamp"
+		return result
+	}
+	age := checkedAt.Sub(updatedAt)
+	if age < 0 {
+		result.LagLabel = "Snapshot update timestamp is in the future"
+		return result
+	}
+	result.Health = "HEALTHY"
+	result.Ready = true
+	result.LagLabel = fmt.Sprintf("Snapshot updated %d min ago", int64(age/time.Minute))
+	if age > 26*time.Hour {
+		result.Health = "WARN"
+		result.Ready = false
 	}
 	return result
 }
@@ -347,17 +370,17 @@ func buildDependencies(
 		natsReason = "TCP reachable; monitor unavailable: " + natsErr.Error()
 	}
 
-	runtimeState := "UNKNOWN"
-	runtimeReason := "Durable execution snapshot not present; start the runtime services to populate it"
+	runtimeHealth := buildExecutionStateHealth(pg.Runtime, checkedAt)
+	runtimeReason := runtimeHealth.LagLabel
 	if pg.Runtime.Present {
-		runtimeReason = fmt.Sprintf("Durable snapshot updated %s · last execution %s", pg.Runtime.UpdatedAt, formatBusinessTimestamp(pg.Runtime.LastExecutionTimestamp))
+		runtimeReason += " · last execution " + formatBusinessTimestamp(pg.Runtime.LastExecutionTimestamp)
 	}
 
 	return []realReadinessDependency{
 		{Component: "PostgreSQL", State: postgresState, Reason: postgresReason, LastCheck: checked},
 		{Component: "NATS / JetStream", State: natsState, Reason: natsReason, LastCheck: checked},
 		{Component: "MarketData storage", State: stateFromProbe(sources.MarketData), Reason: sources.MarketData.Detail, LastCheck: checked},
-		{Component: "ExecutionState durable snapshot", State: runtimeState, Reason: runtimeReason, LastCheck: checked},
+		{Component: "ExecutionState durable snapshot", State: runtimeHealth.Health, Reason: runtimeReason, LastCheck: checked},
 		{Component: "Trading service liveness", State: "UNKNOWN", Reason: "No common service heartbeat/readiness contract is wired yet", LastCheck: checked},
 		{Component: "Reconciliation", State: "UNKNOWN", Reason: "Latest exchange snapshot/reconciliation result is not durably exposed yet", LastCheck: checked},
 		{Component: "Exchange", State: "UNKNOWN", Reason: fmt.Sprintf("%s venue: connectivity is shown by the exchange gateway and reconciliation, not probed here", executionVenue), LastCheck: checked},

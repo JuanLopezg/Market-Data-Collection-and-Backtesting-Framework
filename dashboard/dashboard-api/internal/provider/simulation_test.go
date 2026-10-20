@@ -10,6 +10,31 @@ import (
 	"testing"
 )
 
+func TestSimulationSlippageDailySum(t *testing.T) {
+	orders := map[string]simulationOrder{"order-1": {Side: "BUY", LimitPrice: 100}}
+	fills := []simulationFill{
+		{OrderID: "order-1", Timestamp: 202610189, Quantity: 1, Price: 100.10},
+		{OrderID: "order-1", Timestamp: 202610189, Quantity: 3, Price: 99.96},
+		{OrderID: "order-1", Timestamp: 202610199, Quantity: 1, Price: 100.02},
+	}
+	got := simulationSlippage(fills, orders)
+	if !got.available || len(got.daily) != 2 {
+		t.Fatalf("unexpected fill coverage: %+v", got)
+	}
+	if got.daily[0]["label"] != "2026-10-18" || got.daily[0]["fills"] != 2 || math.Abs(got.daily[0]["bps"].(float64)-6) > 1e-8 {
+		t.Fatalf("10 and -4 bps must sum to 6 regardless of notional: %+v", got.daily)
+	}
+	if got.daily[1]["label"] != "2026-10-19" || got.daily[1]["fills"] != 1 || math.Abs(got.daily[1]["bps"].(float64)-2) > 1e-8 {
+		t.Fatalf("fills from another day must stay separate: %+v", got.daily)
+	}
+	if got.averageLabel != "0.00 bps" {
+		t.Fatalf("overall average must remain notional weighted: %+v", got)
+	}
+	if got.bestLabel != "-4.00 bps" || got.worstLabel != "+10.00 bps" {
+		t.Fatalf("overall best and worst must remain per fill: %+v", got)
+	}
+}
+
 func writeSimulationFixture(t *testing.T, dir string) simulationSnapshot {
 	t.Helper()
 	s := simulationSnapshot{
@@ -175,7 +200,7 @@ func TestReplayDiagnosticsExposeObservationsWithoutFalseCycleProof(t *testing.T)
 	}
 }
 
-func TestSimulationSlippageIsAdversePositiveAndNotionalWeighted(t *testing.T) {
+func TestSimulationSlippageIsAdversePositiveAndSummedPerDay(t *testing.T) {
 	orders := map[string]simulationOrder{
 		"1": {OrderID: "1", Side: "BUY", LimitPrice: 100},
 		"2": {OrderID: "2", Side: "SELL", LimitPrice: 100},
@@ -189,8 +214,8 @@ func TestSimulationSlippageIsAdversePositiveAndNotionalWeighted(t *testing.T) {
 	if !summary.available || len(summary.daily) != 2 || summary.worstLabel != "+100.00 bps" || summary.bestLabel != "0.00 bps" {
 		t.Fatalf("summary = %+v", summary)
 	}
-	// Day 1: (100*101 + 0*300) / 401.
-	if day := summary.daily[0]; day["label"] != "2024-01-02" || math.Abs(day["bps"].(float64)-10100.0/401) > 1e-9 || day["fills"] != 2 {
+	// Day 1: the sum of the day's fills, +100 + 0 bps.
+	if day := summary.daily[0]; day["label"] != "2024-01-02" || math.Abs(day["bps"].(float64)-100) > 1e-9 || day["fills"] != 2 {
 		t.Fatalf("day 1 = %+v", day)
 	}
 }
