@@ -245,4 +245,31 @@ TEST(MockAdmission, R4_ModifyCannotShrinkBelowAlreadyExecutedQuantity)
     EXPECT_DOUBLE_EQ(life.findOrder(1)->remaining_quantity, 0.1);
 }
 
+// R4 (assumed): a modify to exactly the filled quantity leaves nothing to execute, so it
+// is rejected (stopping the remainder is a cancel). It must never leave a live order with
+// zero remaining; the original order keeps its remainder.
+TEST(MockAdmission, R4_ModifyToExactlyFilledQuantityIsRejectedAndKeepsTheRemainder)
+{
+    M::MockOrders life;
+    const auto original = order();
+    life.submit(submit(original));
+    M::MockMatching matcher(life, matching());
+    matcher.processBar(bar()); // Actual 0.1 fill.
+    auto replacement = original;
+    replacement.quantity = 0.1;
+    replacement.limit_price = 100.0;
+    life.clearEmittedEvents();
+    life.modify(modify(original, replacement));
+    const auto results = eventsOf<V::OperationResult>(life.emittedEvents());
+    ASSERT_EQ(results.size(), 1U);
+    ASSERT_EQ(results.front().item_results.size(), 1U);
+    EXPECT_FALSE(results.front().item_results.front().accepted);
+    const auto* stored = life.findOrder(1);
+    ASSERT_NE(stored, nullptr);
+    EXPECT_DOUBLE_EQ(stored->intent.quantity, 0.2);
+    EXPECT_DOUBLE_EQ(stored->cumulative_filled_quantity, 0.1);
+    EXPECT_NEAR(stored->remaining_quantity, 0.1, 1e-12);
+    EXPECT_TRUE(stored->active());
+}
+
 } // namespace

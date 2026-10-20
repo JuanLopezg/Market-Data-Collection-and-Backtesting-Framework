@@ -396,11 +396,12 @@ ItemResult MockOrders::processModifyItem(
             item.item_id, admission.classification,
             admission.detail, admission.native_reason);
 
-    if (item.replacement.quantity < it->second.cumulative_filled_quantity)
+    // A replacement must leave something to execute; stopping the remainder is a cancel.
+    if (item.replacement.quantity <= it->second.cumulative_filled_quantity)
         return rejectedItem(
             item.item_id, ErrorClass::InvalidRequest,
-            "replacement quantity is below already-filled quantity",
-            "QUANTITY_BELOW_FILLED");
+            "replacement quantity is not above already-filled quantity",
+            "QUANTITY_NOT_ABOVE_FILLED");
 
     const auto& new_client = item.replacement.client_order_id;
     if (!new_client.empty()) {

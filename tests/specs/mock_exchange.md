@@ -236,6 +236,9 @@ admission but does not compare replacement quantity against cumulative fills;
 it assigns the replacement then clamps the calculated remainder to zero.
 
 Fixed (2026-10-19): Modifications below cumulative filled quantity reject before changing the order or reserving a replacement client ID.
+Review (2026-10-20): a modify to exactly the filled quantity was still accepted and left a
+live order with zero remaining; it is now rejected too
+(`R4_ModifyToExactlyFilledQuantityIsRejectedAndKeepsTheRemainder`).
 
 ### F2 — Reduce-only is admitted but does not constrain matching exposure (R9)
 
