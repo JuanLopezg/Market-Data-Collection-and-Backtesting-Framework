@@ -6,11 +6,7 @@ namespace persistence_test {
 using SQLiteTypes = testing::Types<SQLiteBackend>;
 INSTANTIATE_TYPED_TEST_SUITE_P(SQLite, StateStoreContract, SQLiteTypes);
 
-// R8 cases are separate from the shared suite so SQLite findings do not disable
-// the equivalent PostgreSQL checks.
-// FINDING: SQLite restores reference_price=0 and fill_at_reference_price=false;
-// R8 requires preserving the staged manual order's price 75 and immediate-fill flag.
-// R6 is checked per backend: the PostgreSQL store disagrees (finding F3).
+// R6 and R8 are checked per backend, next to their PostgreSQL equivalents.
 TEST_F(SQLiteBackend, R6_LoadRejectsUnknownSchema)
 {
     auto snapshot = exampleSnapshot();
@@ -20,7 +16,7 @@ TEST_F(SQLiteBackend, R6_LoadRejectsUnknownSchema)
     EXPECT_THROW((void)store_->load(), std::exception);
 }
 
-TEST_F(SQLiteBackend, DISABLED_R8_ManualReferencePriceAndImmediateFillIntentSurvive)
+TEST_F(SQLiteBackend, R8_ManualReferencePriceAndImmediateFillIntentSurvive)
 {
     auto snapshot = exampleSnapshot();
     auto& order = snapshot.orders.front();
@@ -36,9 +32,7 @@ TEST_F(SQLiteBackend, DISABLED_R8_ManualReferencePriceAndImmediateFillIntentSurv
     expectSnapshot(*loaded, snapshot);
 }
 
-// FINDING: SQLite silently restores position_stop_price=0 instead of 60,
-// changing the staged position stop into an unconditional sell in violation of R8.
-TEST_F(SQLiteBackend, DISABLED_R8_LivePositionStopRemainsConditionalAfterRestart)
+TEST_F(SQLiteBackend, R8_LivePositionStopRemainsConditionalAfterRestart)
 {
     auto snapshot = exampleSnapshot();
     auto& order = snapshot.orders.front();

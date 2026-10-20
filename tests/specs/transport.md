@@ -207,11 +207,21 @@ publish cost-102 -> both are delivered once. Broker/container restart preserves
 file-backed retained messages and durable ACK progress after reconnecting a new bus.
 
 **R20 — Invalid local consumer/poll configuration fails explicitly.** Empty stream,
-durable or subject, a dotted durable name, nonpositive AckWait/MaxDeliver/MaxAckPending,
+durable or subject, a dotted durable name, nonpositive AckWait/MaxAckPending, a
+MaxDeliver that is neither positive nor `UNLIMITED_DELIVERIES` (-1),
 an empty handler, nonpositive poll limits/timeouts, or an unknown local subscription
 ID must throw. Example: batch size 0 may not be reported as a successful empty poll.
 Rebinding a durable to a different filter fails and preserves its old progress.
 An idle valid poll returns 0; closing an already closed local subscription is safe.
+
+**R21 — A daily message that is not ready yet is never dropped by a delivery count.**
+Trading services answer "not ready yet" (for example intents waiting for the day's account
+snapshot) with Retry, so a delivery limit would silently drop a trading day (chain finding
+F1). With `UNLIMITED_DELIVERIES` the message is redelivered until it is handled. A durable
+created earlier with a limit is changed to the requested limit when it is bound again,
+keeping its progress. Example: a durable created with MaxDeliver 3 is bound again with
+unlimited deliveries; a message answered Retry six times is delivered a seventh time and
+acknowledged then.
 
 ## Findings
 

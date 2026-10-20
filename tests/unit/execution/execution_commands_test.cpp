@@ -99,10 +99,8 @@ TEST(ExecutionEngine, R12_InvalidCancelIntentRejectsPlanBeforeStaging)
     }
 }
 
-TEST(ExecutionEngine, DISABLED_R5_MalformedMutableOrderDtoCannotBypassSubmissionValidation)
+TEST(ExecutionEngine, R5_MalformedMutableOrderDtoCannotBypassSubmissionValidation)
 {
-    // FINDING: F3 — Mutated market orders with invalid quantity/empty asset are staged,
-    // persisted and dispatched; R5 assumes defensive validation of mutable DTOs.
     for (int invalid = 0; invalid < 5; ++invalid) {
         SCOPED_TRACE(invalid);
         Harness<> h;
@@ -121,10 +119,8 @@ TEST(ExecutionEngine, DISABLED_R5_MalformedMutableOrderDtoCannotBypassSubmission
     }
 }
 
-TEST(ExecutionEngine, DISABLED_R12_NonfiniteGlobalTargetCannotPartiallyAdvanceCycleState)
+TEST(ExecutionEngine, R12_NonfiniteGlobalTargetCannotPartiallyAdvanceCycleState)
 {
-    // FINDING: F4 — A nonfinite target throws after next ID/date advance and the
-    // old global target is cleared; R12 requires complete validation before mutation.
     for (const double invalid : {std::numeric_limits<double>::quiet_NaN(),
              std::numeric_limits<double>::infinity()}) {
         Harness<> h;

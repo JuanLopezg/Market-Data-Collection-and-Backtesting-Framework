@@ -57,7 +57,10 @@ std::unordered_map<Coin, LastPrice> BinanceLastPrices::fetchAll() const
     if (status != 200)
         throw std::runtime_error("Binance price request answered HTTP " + std::to_string(status));
 
-    const nlohmann::json rows = nlohmann::json::parse(body);
+    // Parse without exceptions so a non-JSON answer fails like every other bad answer.
+    const nlohmann::json rows = nlohmann::json::parse(body, nullptr, false);
+    if (rows.is_discarded())
+        throw std::runtime_error("Binance price answer is not JSON");
     if (!rows.is_array())
         throw std::runtime_error("Binance price answer is not a list");
 

@@ -237,3 +237,10 @@ build/tests/unit/risk/test_unit_risk
 --gtest_output=xml:build/tests/unit/risk/triaged.xml` exited 0: 60 registered
 tests, 57 passed, 3 disabled, zero enabled failures. No production code or test
 assertions/expected values were changed during triage.
+
+### Fixed (2026-10-19, orchestrator)
+
+- F3: `resyncToApprovedTargets` moves only HOLD decisions to the approved weights; the
+  day's explicit entries and exits are kept.
+
+The corresponding tests are enabled again with their original expectations.

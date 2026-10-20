@@ -236,3 +236,11 @@ is a separate, coarser guard). R6 is now checked per backend:
   failures. Meson reports both executables OK; the PostgreSQL result represents
   skips, not server-backed passes. Detailed final output is in
   `build/meson-logs/testlog.txt`.
+
+### Fixed (2026-10-19, orchestrator)
+
+- F1/F2: `SQLiteStateStore` persists `reference_price`, `fill_at_reference_price` and
+  `position_stop_price`; older files gain the columns with neutral defaults.
+- F3: `PostgresStateStore::load` refuses a snapshot whose schema version is not current.
+
+The corresponding tests are enabled again with their original expectations.

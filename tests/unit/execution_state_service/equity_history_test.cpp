@@ -323,10 +323,7 @@ TEST(EquityHistory, A11_CollateralIsAskedPerDay)
 
 // ---------------------------------------------------------------- A12
 
-// FINDING: equityDaysFromFills applies a day's funding to the ledger before that day's fills, so funding
-// dated on the entry day finds no open position and PositionLedger drops it: cash includes the -2 but
-// the row's funding total is 0 (expected -2), breaking the A12 invariant for that row.
-TEST(EquityHistory, DISABLED_A12_FundingOnTheEntryDayIsInTheRowFundingTotal)
+TEST(EquityHistory, A12_FundingOnTheEntryDayIsInTheRowFundingTotal)
 {
     const std::vector<Fill> fills = {makeFill(1, 20261012, "BTCUSDT", OrderSide::Buy, 0.1, 60000.0, 3.0)};
     const std::vector<FundingPayment> payments = {funding("f-12", 20261012, "BTCUSDT", -2.0)};
@@ -369,9 +366,7 @@ TEST(EquityHistory, A12_EveryRowSatisfiesTheEconomicInvariant)
 
 // ---------------------------------------------------------------- A13
 
-// FINDING: a repeated fill id is applied twice to the Account (cash -2,006 instead of 3,997 on day 12)
-// while PositionLedger ignores it, so the row is inconsistent; expected each fill id applied once.
-TEST(EquityHistory, DISABLED_A13_DuplicateFillIdIsAppliedOnce)
+TEST(EquityHistory, A13_DuplicateFillIdIsAppliedOnce)
 {
     std::vector<Fill> fills = exampleFills();
     fills.insert(fills.begin() + 1, fills.front()); // fill 1 redelivered
@@ -424,9 +419,7 @@ TEST(EquityHistory, A14_DifferentPositionIsNotReached)
     EXPECT_FALSE(fillsReachAccount(c.fills, c.payments, c.movements, INITIAL_CASH, liveAccount(3994.0, {})));
 }
 
-// FINDING: fillsReachAccount compares only the coins the replay holds; a live position no fill explains
-// (1 ETH) is ignored and the function returns true. Expected false.
-TEST(EquityHistory, DISABLED_A14_LivePositionNoFillExplainsIsNotReached)
+TEST(EquityHistory, A14_LivePositionNoFillExplainsIsNotReached)
 {
     const ReachCase c;
     EXPECT_FALSE(fillsReachAccount(c.fills, c.payments, c.movements, INITIAL_CASH,

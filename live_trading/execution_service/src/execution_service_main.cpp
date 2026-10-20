@@ -451,7 +451,7 @@ private:
         result.durable_name = durable;
         result.subject = subject;
         result.ack_wait_ms = 30000;
-        result.max_deliver = 20;
+        result.max_deliver = DurableConsumerOptions::UNLIMITED_DELIVERIES; // never drop a daily message (message_bus.h)
         result.max_ack_pending = 256;
         return result;
     }

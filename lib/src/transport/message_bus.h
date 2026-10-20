@@ -21,11 +21,15 @@ enum class DurableMessageDisposition {
 
 // Transport-neutral durable consumer configuration
 struct DurableConsumerOptions {
+    // A daily trading message must never be dropped because it was not ready yet:
+    // trading services use no delivery limit and drop only with Terminate.
+    static constexpr std::int64_t UNLIMITED_DELIVERIES = -1;
+
     std::string stream;
     std::string durable_name;
     std::string subject;
     std::int64_t ack_wait_ms = 30000;
-    std::int64_t max_deliver = 10;
+    std::int64_t max_deliver = 10;  // or UNLIMITED_DELIVERIES
     std::int64_t max_ack_pending = 1024;
 };
 

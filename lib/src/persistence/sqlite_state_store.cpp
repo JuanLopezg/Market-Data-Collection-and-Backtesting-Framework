@@ -116,13 +116,30 @@ void SQLiteStateStore::createSchema()
         "coin TEXT NOT NULL, side INTEGER NOT NULL, quantity REAL NOT NULL,"
         "status INTEGER NOT NULL, filled_quantity REAL NOT NULL,"
         "updated_at INTEGER NOT NULL, cancel_requested INTEGER NOT NULL,"
-        "exchange_order_id TEXT NOT NULL, last_message TEXT NOT NULL);"
+        "exchange_order_id TEXT NOT NULL, last_message TEXT NOT NULL,"
+        "reference_price REAL NOT NULL DEFAULT 0,"
+        "fill_at_reference_price INTEGER NOT NULL DEFAULT 0,"
+        "position_stop_price REAL NOT NULL DEFAULT 0);"
 
         "CREATE TABLE IF NOT EXISTS fills ("
         "fill_id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL, strategy_id INTEGER NOT NULL,"
         "timestamp INTEGER NOT NULL, coin TEXT NOT NULL, side INTEGER NOT NULL,"
         "quantity REAL NOT NULL, price REAL NOT NULL, commission REAL NOT NULL);"
     );
+
+    // Order fields added on 2026-10-19 (reference price, immediate-fill intent, position
+    // stop): older state files get them with the neutral values they meant before.
+    const auto addOrderColumn = [this](const std::string& name, const std::string& definition) {
+        sqlite3_stmt* stmt = prepare(db_, "SELECT 1 FROM pragma_table_info('tracked_orders') WHERE name=?;");
+        bindText(stmt, 1, name);
+        const bool present = sqlite3_step(stmt) == SQLITE_ROW;
+        finish(stmt);
+        if (!present)
+            exec(("ALTER TABLE tracked_orders ADD COLUMN " + name + " " + definition + ";").c_str());
+    };
+    addOrderColumn("reference_price", "REAL NOT NULL DEFAULT 0");
+    addOrderColumn("fill_at_reference_price", "INTEGER NOT NULL DEFAULT 0");
+    addOrderColumn("position_stop_price", "REAL NOT NULL DEFAULT 0");
 }
 
 
@@ -252,8 +269,9 @@ void SQLiteStateStore::save(
         sqlite3_stmt* orderStmt = prepare(db_,
             "INSERT INTO tracked_orders"
             "(order_id,strategy_id,created_at,active_from,coin,side,quantity,status,"
-            "filled_quantity,updated_at,cancel_requested,exchange_order_id,last_message)"
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?);");
+            "filled_quantity,updated_at,cancel_requested,exchange_order_id,last_message,"
+            "reference_price,fill_at_reference_price,position_stop_price)"
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);");
         for (const TrackedOrder& order : snapshot.orders) {
             sqlite3_bind_int64(orderStmt, 1, order.request.order_id);
             sqlite3_bind_int64(orderStmt, 2, order.request.strategy_id);
@@ -268,6 +286,9 @@ void SQLiteStateStore::save(
             sqlite3_bind_int(orderStmt, 11, order.cancel_requested ? 1 : 0);
             bindText(orderStmt, 12, order.exchange_order_id);
             bindText(orderStmt, 13, order.last_message);
+            sqlite3_bind_double(orderStmt, 14, order.request.reference_price);
+            sqlite3_bind_int(orderStmt, 15, order.request.fill_at_reference_price ? 1 : 0);
+            sqlite3_bind_double(orderStmt, 16, order.request.position_stop_price);
             checkSqlite(sqlite3_step(orderStmt), db_, "save tracked order");
             sqlite3_reset(orderStmt); sqlite3_clear_bindings(orderStmt);
         }
@@ -383,7 +404,8 @@ std::optional<TradingStateSnapshot> SQLiteStateStore::load() const
 
     stmt = prepare(db_,
         "SELECT order_id,strategy_id,created_at,active_from,coin,side,quantity,status,"
-        "filled_quantity,updated_at,cancel_requested,exchange_order_id,last_message "
+        "filled_quantity,updated_at,cancel_requested,exchange_order_id,last_message,"
+        "reference_price,fill_at_reference_price,position_stop_price "
         "FROM tracked_orders ORDER BY order_id;");
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         ExecutionOrder request(
@@ -394,6 +416,9 @@ std::optional<TradingStateSnapshot> SQLiteStateStore::load() const
             reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4)),
             static_cast<OrderSide>(sqlite3_column_int(stmt, 5)),
             sqlite3_column_double(stmt, 6));
+        request.reference_price = sqlite3_column_double(stmt, 13);
+        request.fill_at_reference_price = sqlite3_column_int(stmt, 14) != 0;
+        request.position_stop_price = sqlite3_column_double(stmt, 15);
 
         TrackedOrder order(std::move(request));
         order.status = static_cast<ExecutionOrderStatus>(sqlite3_column_int(stmt, 7));

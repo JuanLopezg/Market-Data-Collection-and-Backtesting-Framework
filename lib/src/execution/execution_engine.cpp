@@ -175,6 +175,12 @@ void ExecutionEngine::validateSubmitOrders(
 {
     std::unordered_set<OrderID> submitIds;
     for (const ExecutionOrder& order : orders) {
+        // The order fields are public, so re-check what the constructor checked before
+        // anything is persisted or dispatched.
+        if (order.coin.empty())
+            throw std::invalid_argument("Order asset cannot be empty");
+        if (!std::isfinite(order.quantity) || order.quantity <= 0.0)
+            throw std::invalid_argument("Order quantity must be finite and positive");
         order.validateConditional();
         if (order.entry_stop_price != 0.0 && !exchange_.supportsStopEntries())
             throw std::invalid_argument("Exchange adapter does not support stop entries");
@@ -297,11 +303,14 @@ void ExecutionEngine::applyOrderPlan(
 
     validateSubmitOrders(plan.submit_orders, plan.next_order_id);
 
+    // Build the new global target first: an invalid exposure must leave every marker as it was.
+    TargetPortfolio globalTarget;
+    for (const auto& [coin, exposure] : plan.global_target_exposure)
+        globalTarget.set(coin, exposure);
+
     last_execution_timestamp_ = plan.execution_timestamp;
     next_order_id_ = plan.next_order_id;
-    last_global_target_.clear();
-    for (const auto& [coin, exposure] : plan.global_target_exposure)
-        last_global_target_.set(coin, exposure);
+    last_global_target_ = std::move(globalTarget);
 
     // Stage every local intent first, then commit one complete accepted-plan snapshot.
     for (const OrderID orderId : plan.cancel_order_ids)

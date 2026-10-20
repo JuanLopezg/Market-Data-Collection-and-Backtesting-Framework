@@ -436,14 +436,19 @@ std::optional<TradingStateSnapshot> PostgresStateStore::load() const
         return std::nullopt;
     }
 
+    TradingStateSnapshot snapshot;
     try {
-        TradingStateSnapshot snapshot = decodeSnapshot(json::parse(PQgetvalue(result, 0, 0)));
-        clear(result);
-        return snapshot;
+        snapshot = decodeSnapshot(json::parse(PQgetvalue(result, 0, 0)));
     } catch (...) {
         clear(result);
         throw;
     }
+    clear(result);
+
+    // Fail closed, as the SQLite store does: state written by another format is not recovered.
+    if (snapshot.schema_version != TradingStateSnapshot::CURRENT_SCHEMA_VERSION)
+        throw std::runtime_error("Unsupported trading state schema version");
+    return snapshot;
 }
 
 

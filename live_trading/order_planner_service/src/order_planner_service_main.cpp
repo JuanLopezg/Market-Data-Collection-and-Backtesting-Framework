@@ -315,7 +315,7 @@ private:
         result.durable_name = "order-planner-live-notional-requests";
         result.subject = MessageSubjects::NOTIONAL_ORDER_PLANNING_REQUEST;
         result.ack_wait_ms = 30000;
-        result.max_deliver = 20;
+        result.max_deliver = DurableConsumerOptions::UNLIMITED_DELIVERIES; // never drop a daily message (message_bus.h)
         result.max_ack_pending = 64;
         return result;
     }

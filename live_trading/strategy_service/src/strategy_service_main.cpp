@@ -878,7 +878,7 @@ public:
         consumer.durable_name = "strategy-service-market-updates";
         consumer.subject = MessageSubjects::MARKET_DATA_UPDATED;
         consumer.ack_wait_ms = 30000;
-        consumer.max_deliver = 20;
+        consumer.max_deliver = DurableConsumerOptions::UNLIMITED_DELIVERIES; // never drop a daily message (message_bus.h)
         consumer.max_ack_pending = 64;
 
         market_update_subscription_ = bus_.subscribe(

@@ -112,9 +112,7 @@ TEST(MessageExchange, R4_ZeroSubmitAndCancelIdsRejectBeforePublishing)
     EXPECT_TRUE(bus.attempts.empty());
 }
 
-// FINDING: MessageExchange publishes zero/negative/nonfinite quantities and empty
-// assets from mutable market DTOs instead of rejecting them before publication.
-TEST(MessageExchange, DISABLED_R4_MalformedMutableMarketIntentCannotReachWire)
+TEST(MessageExchange, R4_MalformedMutableMarketIntentCannotReachWire)
 {
     for (int invalid = 0; invalid < 5; ++invalid) {
         SCOPED_TRACE(invalid);

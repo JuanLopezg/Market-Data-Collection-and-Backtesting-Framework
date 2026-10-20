@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <unordered_set>
 
 #include "time_utils.h"
 
@@ -60,11 +61,16 @@ bool fillsReachAccount(
 
     const auto& livePositions = live.positions().values();
     bool matches = std::abs(replayed.cash() - live.cash()) <= 1e-6 * std::max(1.0, std::abs(replayed.cash()));
-    for (const auto& [coin, quantity] : replayed.positions().values()) {
+    const auto& replayedPositions = replayed.positions().values();
+    for (const auto& [coin, quantity] : replayedPositions) {
         const auto found = livePositions.find(coin);
         const double current = found == livePositions.end() ? 0.0 : found->second;
         matches = matches && std::abs(current - quantity) <= 1e-9 * std::max(1.0, std::abs(quantity));
     }
+    // A live position the fills never opened is not explained by them either.
+    for (const auto& [coin, quantity] : livePositions)
+        if (quantity != 0.0 && !replayedPositions.contains(coin))
+            matches = false;
     return matches;
 }
 
@@ -88,21 +94,27 @@ std::vector<EquityDay> equityDaysFromFills(
     std::size_t nextFill = 0;
     std::size_t nextFunding = 0;
     std::size_t nextMovement = 0;
+    std::unordered_set<FillID> appliedFillIds;
     for (Timestamp day = tradingDayOf(fills.front().timestamp); day <= lastDay;
          day = static_cast<Timestamp>(nextDay(static_cast<unsigned int>(day)))) {
         // Everything dated up to this day, so the row is the account at close(day): a fill
-        // of the next day's open belongs to the next row.
+        // of the next day's open belongs to the next row. The day's fills (at its open) go
+        // first: funding dated on that day accrues on the positions they opened.
+        while (nextFill < fills.size() && tradingDayOf(fills[nextFill].timestamp) <= day) {
+            // The ledger ignores a repeated fill id; the account must too, or the row's
+            // cash and positions no longer match its PnL breakdown.
+            const Fill& fill = fills[nextFill++];
+            if (fill.fill_id != 0 && !appliedFillIds.insert(fill.fill_id).second)
+                continue;
+            account.applyFill(fill);
+            ledger.applyFill(fill);
+        }
         while (nextFunding < funding.size() && tradingDayOf(funding[nextFunding].timestamp) <= day) {
             account.applyCashMovement(funding[nextFunding].amount);
             ledger.applyFunding(funding[nextFunding++]);
         }
         while (nextMovement < accountMovements.size() && tradingDayOf(accountMovements[nextMovement].timestamp) <= day)
             account.applyCashMovement(accountMovements[nextMovement++].amount_usd);
-        while (nextFill < fills.size() && tradingDayOf(fills[nextFill].timestamp) <= day) {
-            account.applyFill(fills[nextFill]);
-            ledger.applyFill(fills[nextFill]);
-            ++nextFill;
-        }
         if (existing.contains(day))
             continue;
 

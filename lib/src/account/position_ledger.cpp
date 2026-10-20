@@ -88,8 +88,16 @@ void PositionLedger::applyFunding(const FundingPayment& payment)
     if (!payment.payment_id.empty() && !applied_funding_.insert(payment.payment_id).second)
         return;
     const auto found = open_.find(payment.coin);
-    if (found != open_.end())
+    if (found != open_.end()) {
         found->second.funding += payment.amount;
+        return;
+    }
+    // Funding dated on the day a position closed belongs to that position: cash already
+    // holds it, so dropping it would break the PnL breakdown.
+    const auto closed = std::find_if(closed_.rbegin(), closed_.rend(),
+        [&](const PositionLot& lot) { return lot.coin == payment.coin; });
+    if (closed != closed_.rend())
+        closed->funding += payment.amount;
 }
 
 

@@ -149,7 +149,13 @@ ManualRequest ManualRequestFolder::read(const fs::path& file) const
             const std::string asset = value.substr(0, comma);
             std::size_t parsed = 0;
             const std::string weightText = value.substr(comma + 1);
-            const double weight = std::stod(weightText, &parsed);
+            double weight = 0.0;
+            try {
+                weight = std::stod(weightText, &parsed);
+            }
+            catch (const std::logic_error&) { // not a number, or out of double's range
+                throw std::invalid_argument("invalid weight for " + asset);
+            }
             if (!std::regex_match(asset, assetPattern))
                 throw std::invalid_argument("invalid asset name: " + asset);
             if (parsed != weightText.size() || !std::isfinite(weight) || weight < 0.0)
@@ -265,7 +271,8 @@ std::optional<std::chrono::system_clock::time_point> parseUtcSeconds(const std::
     std::tm utc{};
     std::istringstream input(text);
     input >> std::get_time(&utc, "%Y-%m-%dT%H:%M:%SZ");
-    if (input.fail())
+    // The whole text must be the timestamp: nothing may follow the Z.
+    if (input.fail() || input.peek() != std::char_traits<char>::eof())
         return std::nullopt;
     return std::chrono::system_clock::from_time_t(timegm(&utc));
 }

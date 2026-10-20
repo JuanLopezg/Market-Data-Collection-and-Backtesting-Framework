@@ -145,12 +145,14 @@ public:
     }
 
     // Returns false for a stale echo: a non-terminal status the order has already
-    // passed (ACCEPTED after FILLED, say), as a redelivered or replayed exchange event
-    // brings it. It changes nothing. Any other disallowed transition (FILLED then
-    // REJECTED) is a contradiction and still throws.
+    // passed (ACCEPTED after FILLED, say), or an older update of the status it is in,
+    // as a redelivered or replayed exchange event brings it. It changes nothing. Any
+    // other disallowed transition (FILLED then REJECTED) is a contradiction and still throws.
     bool onOrderUpdate(const OrderUpdate& update)
     {
         TrackedOrder& order = require(update.order_id);
+        if (update.status == order.status && update.timestamp < order.updated_at)
+            return false;
         if (!transitionAllowed(order.status, update.status)) {
             if (!isTerminalExecutionOrderStatus(update.status) &&
                 lifecycleStage(update.status) < lifecycleStage(order.status))
@@ -172,7 +174,7 @@ public:
     {
         fill.validate();
 
-        if (fill.fill_id != 0 && !processed_fill_ids_.insert(fill.fill_id).second)
+        if (fill.fill_id != 0 && processed_fill_ids_.contains(fill.fill_id))
             return false; // Idempotent replay protection for repeated exchange events.
 
         TrackedOrder& order = require(fill.order_id);
@@ -187,6 +189,10 @@ public:
         if (newFilledQuantity > order.request.quantity + quantity_epsilon_)
             throw std::logic_error("Order filled quantity exceeds requested quantity");
 
+        // Only an accepted fill consumes its ID: a rejected delivery must not hide the
+        // correct delivery of the same fill.
+        if (fill.fill_id != 0)
+            processed_fill_ids_.insert(fill.fill_id);
         order.filled_quantity = std::min(newFilledQuantity, order.request.quantity);
         order.updated_at = fill.timestamp;
 

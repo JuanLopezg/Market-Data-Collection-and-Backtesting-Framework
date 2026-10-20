@@ -172,6 +172,33 @@ TEST_F(JetStreamBehaviour, R16_RetryRedeliversTheSameMessageUntilAck)
     EXPECT_EQ(received.size(), 2U);
 }
 
+TEST_F(JetStreamBehaviour, R21_UnlimitedDeliveriesRaiseAnOlderLimitAndNeverDropAWaitingMessage)
+{
+    if (!test_support::dockerAvailable()) GTEST_SKIP() << "Docker is not available";
+    prepare();
+    // An older release created the durable with a delivery limit (3 here, 20 on the VPS).
+    auto limited = options();
+    limited.max_deliver = 3;
+    auto subscription = bus_->subscribe(limited, [](const BusMessage&) { return Disposition::Ack; });
+    bus_->close(subscription);
+
+    bus_->publish(MessageSubjects::FILL, "fill-101 payload", "fill-101");
+    auto unlimited = options();
+    unlimited.max_deliver = DurableConsumerOptions::UNLIMITED_DELIVERIES;
+    int deliveries = 0;
+    subscription = bus_->subscribe(unlimited, [&](const BusMessage& message) {
+        EXPECT_EQ(message.payload, "fill-101 payload");
+        return ++deliveries <= 6 ? Disposition::Retry : Disposition::Ack;
+    });
+    for (int attempt = 0; attempt < 60 && deliveries < 7; ++attempt)
+        (void)bus_->poll(subscription, 1, 500);
+    EXPECT_EQ(deliveries, 7) << "the seventh delivery, beyond the old limit of 3, acknowledges it";
+
+    // Acknowledged: nothing is delivered again.
+    EXPECT_EQ(bus_->poll(subscription, 1, 250), 0U);
+    EXPECT_EQ(deliveries, 7);
+}
+
 TEST_F(JetStreamBehaviour, R17_TerminateStopsRedeliveryButPreservesLaterMessages)
 {
     if (!test_support::dockerAvailable()) GTEST_SKIP() << "Docker is not available";

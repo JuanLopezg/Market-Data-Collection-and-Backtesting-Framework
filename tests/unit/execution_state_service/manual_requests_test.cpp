@@ -229,9 +229,7 @@ TEST_F(ManualFolder, C4_WeightMustBeAFiniteNonNegativeNumber)
     expectInvalid(VALID_REQUEST + "target=SOLUSDT\n", "target without weight");
 }
 
-// FINDING: a weight of 1e400 makes std::stod throw std::out_of_range, not std::invalid_argument as the
-// header promises; main() then records "Failed: stod" with an ALERT instead of "Invalid request".
-TEST_F(ManualFolder, DISABLED_C4_OutOfRangeWeightIsAnInvalidRequest)
+TEST_F(ManualFolder, C4_OutOfRangeWeightIsAnInvalidRequest)
 {
     expectInvalid(VALID_REQUEST + "target=SOLUSDT,1e400\n", "weight 1e400");
 }
@@ -457,9 +455,7 @@ TEST(ManualTime, C9_OtherShapesGiveNothing)
         EXPECT_FALSE(parseUtcSeconds(text).has_value()) << "'" << text << "'";
 }
 
-// FINDING: parseUtcSeconds accepts "2026-10-14T12:00:00Zjunk" (std::get_time stops after the Z and
-// trailing text is not checked); expected nothing for any other shape.
-TEST(ManualTime, DISABLED_C9_OffsetOrTrailingTextGivesNothing)
+TEST(ManualTime, C9_OffsetOrTrailingTextGivesNothing)
 {
     for (const char* text : {"2026-10-14T12:00:00+02:00", "2026-10-14T12:00:00Zjunk"})
         EXPECT_FALSE(parseUtcSeconds(text).has_value()) << "'" << text << "'";

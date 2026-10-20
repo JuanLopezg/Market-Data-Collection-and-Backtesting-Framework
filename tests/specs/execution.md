@@ -286,3 +286,13 @@ bodies with `DISABLED_` names and `// FINDING:` comments. Production code is unt
 After triage, `ninja -C build -j2` rebuilt successfully without warnings. The same
 direct execution command exited 0: **60 tests total, 55 passed, 5 disabled, 0 active
 failures**. Only this area's spec and two test source files changed during step 3.
+
+### Fixed (2026-10-19, orchestrator)
+
+- F1: `OrderManager::onOrderUpdate` ignores an update older than the order's current one
+  for the same status (returns false, changes nothing).
+- F2: `OrderManager::onFill` records a fill ID only after the fill is accepted.
+- F3: `ExecutionEngine::validateSubmitOrders` re-checks asset and quantity of every order.
+- F4: `ExecutionEngine::applyOrderPlan` builds the new global target before changing any marker.
+
+The corresponding tests are enabled again with their original expectations.

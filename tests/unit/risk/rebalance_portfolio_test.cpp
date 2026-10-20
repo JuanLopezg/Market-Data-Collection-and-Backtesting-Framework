@@ -203,9 +203,7 @@ TEST(TargetDecisions, R15_ManualResyncAddsAFormerlyAllHoldStrategyFromApprovedWe
     EXPECT_DOUBLE_EQ(held.at(7).get("A"), 2);
 }
 
-// FINDING: Resync changes an existing A FLAT/USD0 into TARGET(0.25)/USD250,
-// contrary to the public promise to preserve existing non-HOLD decisions (spec R15).
-TEST(TargetDecisions, DISABLED_R15_ManualResyncPreservesAnExplicitExitWhileResizingOtherHolds)
+TEST(TargetDecisions, R15_ManualResyncPreservesAnExplicitExitWhileResizingOtherHolds)
 {
     DecisionBatch approved;
     approved.decision_timestamp = date;

@@ -8,6 +8,8 @@
 
 #include <nats/nats.h>
 
+#include "logger.h"
+
 
 namespace {
 
@@ -79,8 +81,8 @@ void validateConsumerOptions(const DurableConsumerOptions& options)
         throw std::invalid_argument("Durable consumer subject cannot be empty");
     if (options.ack_wait_ms <= 0)
         throw std::invalid_argument("Durable consumer ack_wait_ms must be positive");
-    if (options.max_deliver <= 0)
-        throw std::invalid_argument("Durable consumer max_deliver must be positive");
+    if (options.max_deliver <= 0 && options.max_deliver != DurableConsumerOptions::UNLIMITED_DELIVERIES)
+        throw std::invalid_argument("Durable consumer max_deliver must be positive or unlimited (-1)");
     if (options.max_ack_pending <= 0)
         throw std::invalid_argument("Durable consumer max_ack_pending must be positive");
 }
@@ -390,6 +392,35 @@ MessageBus::SubscriptionID JetStreamBus::subscribe(
                 "Existing JetStream durable consumer is structurally incompatible:"
                 + details
             );
+        }
+
+        // The delivery limit is an editable server-side setting. A durable created by an
+        // older release keeps its limit until it is changed here; JetStream's create call
+        // updates editable fields of an existing durable.
+        if (config.MaxDeliver != options.max_deliver) {
+            jsConsumerConfig updated;
+            checkNats(jsConsumerConfig_Init(&updated), "Failed to initialize JetStream consumer config");
+            updated.Durable = options.durable_name.c_str();
+            updated.FilterSubject = options.subject.c_str();
+            updated.AckPolicy = js_AckExplicit;
+            updated.AckWait = config.AckWait;
+            updated.MaxDeliver = options.max_deliver;
+            updated.MaxAckPending = config.MaxAckPending;
+            const std::int64_t previousLimit = config.MaxDeliver;
+
+            jsConsumerInfo* updatedInfo = nullptr;
+            jsErrCode updateError = static_cast<jsErrCode>(0);
+            const natsStatus updateStatus = js_AddConsumer(
+                &updatedInfo, impl_->jetstream, options.stream.c_str(), &updated, nullptr, &updateError);
+            jsConsumerInfo_Destroy(updatedInfo);
+            // Keep running with the old limit rather than refuse to start the service.
+            if (updateStatus != NATS_OK)
+                LG_WARN("Cannot change the delivery limit of consumer {} from {} to {}: {} (JetStream error {})",
+                        options.durable_name, previousLimit, options.max_deliver,
+                        natsStatus_GetText(updateStatus), static_cast<int>(updateError));
+            else
+                LG_INFO("Changed the delivery limit of consumer {} from {} to {}",
+                        options.durable_name, previousLimit, options.max_deliver);
         }
 
         jsConsumerInfo_Destroy(consumerInfo);

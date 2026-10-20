@@ -55,7 +55,20 @@ DecisionBatch resyncToApprovedTargets(
             [&](const PortfolioRiskEvaluation& value) { return value.strategy_id == intent.strategy_id; });
         if (evaluation == evaluations.end() || !evaluation->sizing_available)
             continue;
-        setTargetDecisions(intent, approvedWeights(*evaluation), heldBy(intent.strategy_id), prices);
+        StrategyDecisionIntent moved = intent;
+        setTargetDecisions(moved, approvedWeights(*evaluation), heldBy(intent.strategy_id), prices);
+        // Only HOLDs move to the approved weight: the day's explicit entries and exits stand.
+        for (const auto& [asset, decision] : intent.decisions) {
+            if (decision.action == RebalanceAction::Hold)
+                continue;
+            moved.decisions.insert_or_assign(asset, decision);
+            const auto notional = intent.target_notional_usd.find(asset);
+            if (notional != intent.target_notional_usd.end())
+                moved.target_notional_usd.insert_or_assign(asset, notional->second);
+            else
+                moved.target_notional_usd.erase(asset);
+        }
+        intent = std::move(moved);
     }
 
     // Risk omits a strategy whose decisions were all HOLD; after a manual rebalance its

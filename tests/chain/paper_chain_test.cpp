@@ -252,10 +252,7 @@ namespace {
 // window) must delay trading, not stop it. The day's decision happens once execution is
 // back and the chain finishes every day; holdings at the end are the same as without
 // the outage (RUNUP held, SWING sold, SLIDE never traded).
-// FINDING: portfolio risk answers "account snapshot not here yet" with Retry; every
-// consumer has max_deliver = 20 (about 20 s), so JetStream drops the day's strategy
-// intents and every later day waits on that decision forever (tests/specs/chain.md).
-TEST_F(PaperChainTest, DISABLED_C10_LateAccountSnapshotDelaysButDoesNotStopTrading)
+TEST_F(PaperChainTest, C10_LateAccountSnapshotDelaysButDoesNotStopTrading)
 {
     const Market market = buildMarket();
     auto chain = startChain(market);

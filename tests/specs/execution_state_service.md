@@ -325,3 +325,17 @@ Run 2026-10-19: 80 tests, 74 pass, 6 disabled as findings (code disagrees with t
    (`DISABLED_D3_AnswerThatIsNotJsonThrowsRuntimeError`), not the `std::runtime_error` the
    header promises. `main()` catches `std::exception`, so a manual request is still rejected
    with the reason; only the documented contract is broken.
+
+### Fixed (2026-10-19, orchestrator)
+
+- A12: within a business day, `equityDaysFromFills` applies the day's fills (at its open)
+  before the day's funding, and `PositionLedger::applyFunding` gives funding that finds no open
+  position to that coin's most recently closed position. `PositionLedger::rebuild`, which has
+  exact timestamps, keeps funding at the same instant as a fill before it (accounting R12).
+- A13: `equityDaysFromFills` applies a repeated fill ID once to the account too.
+- A14: `fillsReachAccount` fails when the live account holds a position the fills never had.
+- C4: any unparsable or out-of-range weight is an `invalid_argument` ("invalid weight").
+- C9: `parseUtcSeconds` refuses text after the `Z`.
+- D3: a non-JSON Binance answer throws `std::runtime_error` ("not JSON").
+
+The corresponding tests are enabled again with their original expectations.

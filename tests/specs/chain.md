@@ -89,4 +89,8 @@ snapshot arrived at 17:21:16.2, and no service processed a decision after that w
 feeder and strategy continued to 2025-02-14. In LIVE the same happens when the snapshot
 of a day is more than about 20 s late (slow venue fills or reconciliation, an execution
 restart around midnight). Retained test: `DISABLED_C10_LateAccountSnapshotDelaysButDoesNotStopTrading`.
+Fixed (2026-10-19): every trading-service consumer now has no delivery limit
+(`DurableConsumerOptions::UNLIMITED_DELIVERIES`), and `JetStreamBus` raises the limit of a
+durable created earlier (the VPS consumers have 20) when the service binds it; a message is
+dropped only by `Terminate` (transport R21). Test enabled as `C10_...`.
 

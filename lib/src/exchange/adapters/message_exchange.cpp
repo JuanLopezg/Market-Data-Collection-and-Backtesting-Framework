@@ -3,6 +3,7 @@
 
 #include "message_exchange.h"
 
+#include <cmath>
 #include <stdexcept>
 #include <string>
 
@@ -35,6 +36,11 @@ void MessageExchange::submitOrder(const ExecutionOrder& order)
 {
     if (order.order_id == 0)
         throw std::invalid_argument("MessageExchange order id must be non-zero");
+    // The order fields are public: a malformed order must never reach the wire.
+    if (order.coin.empty())
+        throw std::invalid_argument("MessageExchange order asset cannot be empty");
+    if (!std::isfinite(order.quantity) || order.quantity <= 0.0)
+        throw std::invalid_argument("MessageExchange order quantity must be finite and positive");
 
     SubmitOrderCommand command;
     command.metadata.message_id = submitMessageId(order.order_id);
