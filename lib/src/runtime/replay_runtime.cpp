@@ -81,6 +81,15 @@ void ReplayRuntime::onClosedSlice(const MarketSliceSnapshot& slice)
             return a.coin < b.coin;
         });
 
+    // Reject the whole cross-section before any bar can change venue economics.
+    for (const auto& value : bars) {
+        if (!MockVenue::MarketBarObservation{value.coin, slice.timestamp, value.bar}.valid())
+            throw std::invalid_argument("Step56 closed slice contains an invalid market bar");
+    }
+    const bool appended = rolling_market_.append(slice);
+    if (!appended)
+        throw std::logic_error("Step56 unexpected duplicate closed slice");
+
     for (const auto& value : bars) {
         MockVenue::MarketBarObservation observation;
         observation.canonical_asset = value.coin;
@@ -95,10 +104,6 @@ void ReplayRuntime::onClosedSlice(const MarketSliceSnapshot& slice)
     }
 
     markCurrentPositionsAtClose(slice.timestamp, bars);
-
-    const bool appended = rolling_market_.append(slice);
-    if (!appended)
-        throw std::logic_error("Step56 unexpected duplicate closed slice");
 
     const StrategyIntentBatch signals = strategy_signal_.onBarClose(
             rolling_market_.rawData(),
@@ -399,7 +404,9 @@ ReplayEvidence ReplayRuntime::finalizeEvidence(Timestamp snapshot_time)
 
     MockVenue::MockReconciliation
         reconciler(mock_adapter_.chaos().runtime().account().config().fee_ppm);
-    const auto local = reconciler.buildLocalExpected(mock_adapter_.chaos().runtime().stream());
+    const auto local = reconciler.buildLocalExpected(
+        mock_adapter_.chaos().runtime().stream(),
+        mock_adapter_.chaos().runtime().account().config().initial_cash);
 
     evidence_.economic_fingerprint = mock_adapter_.chaos().runtime().account().
             economicFingerprint();

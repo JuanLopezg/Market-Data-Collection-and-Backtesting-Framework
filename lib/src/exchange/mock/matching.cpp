@@ -2,6 +2,7 @@
 // latency and slippage rules. A bar touch is synthetic execution evidence, not an order book.
 
 #include "matching.h"
+#include "account.h"
 
 #include <algorithm>
 #include <cmath>
@@ -13,8 +14,9 @@ namespace MockVenue {
 
 MockMatching::MockMatching(
     MockOrders& lifecycle,
-    MatchingFillConfig config)
-    : lifecycle_(lifecycle), config_(config)
+    MatchingFillConfig config,
+    const MockAccount* account)
+    : lifecycle_(lifecycle), config_(config), account_(account)
 {
     if (!config_.valid())
         throw std::invalid_argument("invalid MOCK Step51 matching/fill config");
@@ -162,6 +164,30 @@ void MockMatching::processBar(const MarketBarObservation& observation)
                 rules->size_scale,
                 &remaining_units))
             throw std::runtime_error("active MOCK order remaining quantity left size grid");
+
+        if (current->intent.reduce_only) {
+            // Check current account truth for each order, including earlier fills in this bar.
+            const std::int64_t held_units = account_ == nullptr
+                ? 0 : account_->signedQuantityUnits(observation.canonical_asset);
+            const bool reduces = current->intent.side == Side::Sell
+                ? held_units > 0 : held_units < 0;
+            const std::uint64_t held_magnitude = held_units < 0
+                ? static_cast<std::uint64_t>(-(held_units + 1)) + 1U
+                : static_cast<std::uint64_t>(held_units);
+            if (!reduces || remaining_units > held_magnitude) {
+                forwardLifecycleTransition(
+                    order_id,
+                    observation.event_time,
+                    OrderLifecycleStatus::Canceled,
+                    current->cumulative_filled_quantity,
+                    current->remaining_quantity,
+                    "REDUCE_ONLY_CANCELED",
+                    makeError(ErrorClass::InvalidRequest,
+                        "reduce-only remainder exceeds opposite-side held quantity",
+                        "REDUCE_ONLY_EXCEEDS_POSITION"));
+                continue;
+            }
+        }
 
         std::uint64_t fill_units =
             config_.ignore_volume_capacity

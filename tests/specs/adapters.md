@@ -272,3 +272,5 @@ therefore remains unvalidated in this environment.
   quantity before publishing.
 
 The corresponding tests are enabled again with their original expectations.
+
+   Fixed (2026-10-19): Recovery captures matching lifecycle updates only through the lifecycle handler, removing duplicate statuses without changing fills or fees; stream sequences/fingerprints change.

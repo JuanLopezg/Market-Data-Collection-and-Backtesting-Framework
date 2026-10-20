@@ -105,9 +105,7 @@ TEST(CanonicalAdapter, R12_MismatchedNativeIdentityRejectsWithoutFallbackOrFill)
     EXPECT_EQ(adapter.context().venue_id, "MOCK");
 }
 
-// FINDING: One partial fill emits two identical PartiallyFilled updates through
-// the canonical facade, yielding four events instead of Fill, fee, one update.
-TEST(CanonicalAdapter, DISABLED_R13_OrderedStreamPublishesFillBeforeItsFeeAndPartialStatus)
+TEST(CanonicalAdapter, R13_OrderedStreamPublishesFillBeforeItsFeeAndPartialStatus)
 {
     VenueFixture h;
     ASSERT_TRUE(h.venue.reconcile(9).clean());

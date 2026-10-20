@@ -193,10 +193,8 @@ TEST(MockMatching, R8_SlippageIsBoundedSideCorrectOnGridAndReproducible)
     }
 }
 
-TEST(MockVenueSafety, DISABLED_R9_ReduceOnlyOrderFromFlatCannotCreateExposure)
+TEST(MockVenueSafety, R9_ReduceOnlyOrderFromFlatCannotCreateExposure)
 {
-    // FINDING: F2 - Reduce-only BUY 0.2 from flat fills and opens +0.2, charging
-    // a fee; R9 requires the flag to prevent creating exposure.
     test_support::TempDir directory("mock-reduce-flat");
     M::MockRecovery runtime(directory.path(), matching());
     auto intent = order();
@@ -210,10 +208,8 @@ TEST(MockVenueSafety, DISABLED_R9_ReduceOnlyOrderFromFlatCannotCreateExposure)
     EXPECT_EQ(runtime.account().settledCashUnits(), 10000000000000LL);
 }
 
-TEST(MockVenueSafety, DISABLED_R9_OversizedReduceOnlyExitCannotFlipLongToShort)
+TEST(MockVenueSafety, R9_OversizedReduceOnlyExitCannotFlipLongToShort)
 {
-    // FINDING: F2 - Reduce-only SELL 0.3 against held +0.2 fills all 0.3 and
-    // leaves -0.1; R9 permits rejection/clamping but never crossing zero.
     test_support::TempDir directory("mock-reduce-exit");
     M::MockRecovery runtime(directory.path(), matching());
     ASSERT_EQ(runtime.submit(submit()), M::RecoverySourceResult::Applied);

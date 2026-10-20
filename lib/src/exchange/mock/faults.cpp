@@ -145,7 +145,7 @@ ReconciliationReport MockFaults::reconcile(Timestamp snapshot_time)
     }
 
     const LocalExpectedState local =
-        reconciler_.buildLocalExpected(runtime_.stream());
+        reconciler_.buildLocalExpected(runtime_.stream(), runtime_.account().config().initial_cash);
 
     UserStateSnapshot venue =
         runtime_.stateSnapshot(
@@ -684,7 +684,7 @@ ChaosFault MockFaults::consumeExplicitFault(
 ReconciliationReport MockFaults::pendingReportFromUnavailableEvidence() const
 {
     const LocalExpectedState local =
-        reconciler_.buildLocalExpected(runtime_.stream());
+        reconciler_.buildLocalExpected(runtime_.stream(), runtime_.account().config().initial_cash);
 
     UserStateSnapshot unavailable;
     unavailable.recovery_safe =

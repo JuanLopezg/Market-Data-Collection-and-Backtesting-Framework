@@ -396,6 +396,12 @@ ItemResult MockOrders::processModifyItem(
             item.item_id, admission.classification,
             admission.detail, admission.native_reason);
 
+    if (item.replacement.quantity < it->second.cumulative_filled_quantity)
+        return rejectedItem(
+            item.item_id, ErrorClass::InvalidRequest,
+            "replacement quantity is below already-filled quantity",
+            "QUANTITY_BELOW_FILLED");
+
     const auto& new_client = item.replacement.client_order_id;
     if (!new_client.empty()) {
         const auto existing = reserved_client_order_ids_.find(new_client);

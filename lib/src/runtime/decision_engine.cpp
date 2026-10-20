@@ -35,14 +35,8 @@ void DecisionEngine::onBarClose(
             executionPositions.at(strategy.id())
         );
 
-        if (!plan || plan->size() == 0)
+        if (!plan)
             continue;
-
-        StrategyDecisionIntent intent;
-        intent.strategy_id = strategy.id();
-        intent.decision_timestamp = plan->timestamp();
-        intent.reference_capital = plan->referenceCapital();
-        intent.decisions = plan->values();
 
         const auto existing = std::find_if(
             pending_decisions_.strategies.begin(),
@@ -51,6 +45,18 @@ void DecisionEngine::onBarClose(
                 return value.strategy_id == strategyId;
             }
         );
+
+        if (plan->size() == 0) {
+            if (existing != pending_decisions_.strategies.end())
+                pending_decisions_.strategies.erase(existing);
+            continue;
+        }
+
+        StrategyDecisionIntent intent;
+        intent.strategy_id = strategy.id();
+        intent.decision_timestamp = plan->timestamp();
+        intent.reference_capital = plan->referenceCapital();
+        intent.decisions = plan->values();
 
         if (existing == pending_decisions_.strategies.end())
             pending_decisions_.strategies.push_back(std::move(intent));

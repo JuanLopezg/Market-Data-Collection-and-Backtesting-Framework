@@ -136,6 +136,12 @@ public:
     std::int64_t rebatesUnits() const { return rebates_units_; }
     std::int64_t fundingUnits() const { return funding_units_; }
 
+    std::int64_t signedQuantityUnits(const std::string& canonical_asset) const
+    {
+        const auto it = positions_.find(canonical_asset);
+        return it == positions_.end() ? 0 : it->second.signed_quantity_units;
+    }
+
     bool setLeverageExact(
         const std::string& canonical_asset,
         unsigned int leverage);

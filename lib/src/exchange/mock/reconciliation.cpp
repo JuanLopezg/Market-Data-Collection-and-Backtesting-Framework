@@ -21,10 +21,11 @@ MockReconciliation::MockReconciliation(
 }
 
 LocalExpectedState MockReconciliation::buildLocalExpected(
-        const std::vector<UserStreamEnvelope>& stream) const
+        const std::vector<UserStreamEnvelope>& stream,
+        const std::string& initial_cash) const
 {
     LocalExpectedState local;
-    local.ledger = beginLedger();
+    local.ledger = beginLedger(initial_cash);
 
     std::uint64_t expected_sequence = 1U;
 
@@ -181,7 +182,7 @@ ReconciliationReport MockReconciliation::reconcile(
         Timestamp snapshot_time)
 {
     const LocalExpectedState local =
-        buildLocalExpected(runtime.stream());
+        buildLocalExpected(runtime.stream(), runtime.account().config().initial_cash);
 
     const UserStateSnapshot venue =
         runtime.stateSnapshot(
@@ -225,11 +226,11 @@ NewOrderRouteResult MockReconciliation::submitIfSafe(
         : NewOrderRouteResult::UnderlyingRejected;
 }
 
-LedgerProjection MockReconciliation::beginLedger()
+LedgerProjection MockReconciliation::beginLedger(const std::string& initial_cash)
 {
     LedgerProjection ledger;
     if (!parseSignedDecimalToScale(
-            "100000.00",
+            initial_cash,
             kMockMoneyScale,
             &ledger.settled_cash_units)) {
         ledger.valid = false;

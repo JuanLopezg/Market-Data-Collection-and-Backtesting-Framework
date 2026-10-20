@@ -22,8 +22,8 @@ MockRecovery::MockRecovery(
       checkpoint_path_(durable_directory_ / "checkpoint_v1.bin"),
       journal_path_(durable_directory_ / "incremental_v1.bin"),
       lifecycle_(),
-      matcher_(lifecycle_, matching_config),
-      account_(std::move(accounting_config))
+      account_(std::move(accounting_config)),
+      matcher_(lifecycle_, matching_config, &account_)
 {
     wireHandlers();
     recover();
@@ -426,7 +426,7 @@ void MockRecovery::wireHandlers()
                 }
                 return;
             }
-            capture(event);
+            // Matching updates are already captured by the lifecycle handler.
         });
 
     account_.setEventHandler(
