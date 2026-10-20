@@ -650,11 +650,11 @@ type simulationSlippageSummary struct {
 	daily                               []map[string]any // {label: YYYY-MM-DD, bps, fills}
 }
 
-// Notional-weighted slippage per execution day, plus overall average/best/worst.
+// Daily sums, a notional-weighted overall average, and fill best/worst.
 func simulationSlippage(fills []simulationFill, orders map[string]simulationOrder) simulationSlippageSummary {
 	type day struct {
-		weighted, notional float64
-		fills              int
+		bps   float64
+		fills int
 	}
 	days := map[string]*day{}
 	totalWeighted, totalNotional := 0.0, 0.0
@@ -674,8 +674,7 @@ func simulationSlippage(fills []simulationFill, orders map[string]simulationOrde
 		if days[label] == nil {
 			days[label] = &day{}
 		}
-		days[label].weighted += bps * notional
-		days[label].notional += notional
+		days[label].bps += bps
 		days[label].fills++
 		totalWeighted += bps * notional
 		totalNotional += notional
@@ -694,7 +693,7 @@ func simulationSlippage(fills []simulationFill, orders map[string]simulationOrde
 	sort.Strings(labels)
 	for _, label := range labels {
 		d := days[label]
-		summary.daily = append(summary.daily, map[string]any{"label": label, "bps": d.weighted / d.notional, "fills": d.fills})
+		summary.daily = append(summary.daily, map[string]any{"label": label, "bps": d.bps, "fills": d.fills})
 	}
 	return summary
 }

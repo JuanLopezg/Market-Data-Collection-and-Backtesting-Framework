@@ -51,15 +51,15 @@ type executionSlippageSummary struct {
 }
 
 // Each fill is measured in source units against its own immutable order reference.
-// Weight by actual filled USD notional; unfilled orders contribute nothing.
+// Sum daily bps; weight the overall average by actual filled USD notional.
 func realExecutionSlippage(orders []tradingwire.PersistedTrackedOrder, fills []tradingwire.Fill) executionSlippageSummary {
 	byID := make(map[uint64]tradingwire.PersistedTrackedOrder, len(orders))
 	for _, order := range orders {
 		byID[order.OrderID] = order
 	}
 	type day struct {
-		weighted, notional float64
-		fills              int
+		bps   float64
+		fills int
 	}
 	days := map[string]*day{}
 	totalWeighted, totalNotional := 0.0, 0.0
@@ -81,8 +81,7 @@ func realExecutionSlippage(orders []tradingwire.PersistedTrackedOrder, fills []t
 			days[label] = &day{}
 		}
 		d := days[label]
-		d.weighted += bps * notional
-		d.notional += notional
+		d.bps += bps
 		d.fills++
 		totalWeighted += bps * notional
 		totalNotional += notional
@@ -100,7 +99,7 @@ func realExecutionSlippage(orders []tradingwire.PersistedTrackedOrder, fills []t
 	sort.Strings(labels)
 	for _, label := range labels {
 		d := days[label]
-		result.daily = append(result.daily, executionSlippageDay{Label: label, Bps: d.weighted / d.notional, Fills: d.fills})
+		result.daily = append(result.daily, executionSlippageDay{Label: label, Bps: d.bps, Fills: d.fills})
 	}
 	return result
 }

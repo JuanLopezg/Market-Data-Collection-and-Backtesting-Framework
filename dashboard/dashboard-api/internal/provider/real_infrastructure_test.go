@@ -2,6 +2,7 @@ package provider
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,6 +10,41 @@ import (
 	pgstore "control-dashboard-api/internal/integration/postgres"
 	sourceprobe "control-dashboard-api/internal/integration/probe"
 )
+
+func TestExecutionStatePersistenceHealth(t *testing.T) {
+	checkedAt := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name    string
+		runtime pgstore.RuntimeSummary
+		state   string
+		ready   bool
+		label   string
+	}{
+		{"fresh", pgstore.RuntimeSummary{Present: true, UpdatedAt: "2026-10-20T11:48:00.000Z"}, "HEALTHY", true, "Snapshot updated 12 min ago"},
+		{"26 hour boundary", pgstore.RuntimeSummary{Present: true, UpdatedAt: "2026-10-19T10:00:00Z"}, "HEALTHY", true, "Snapshot updated 1560 min ago"},
+		{"stale", pgstore.RuntimeSummary{Present: true, UpdatedAt: "2026-10-19T09:59:00Z"}, "WARN", false, "Snapshot updated 1561 min ago"},
+		{"absent", pgstore.RuntimeSummary{}, "UNKNOWN", false, "Durable execution snapshot not present; start the runtime services to populate it"},
+		{"invalid timestamp", pgstore.RuntimeSummary{Present: true, UpdatedAt: "invalid"}, "UNKNOWN", false, "Snapshot persistence age unavailable: invalid update timestamp"},
+		{"future timestamp", pgstore.RuntimeSummary{Present: true, UpdatedAt: "2026-10-20T12:01:00Z"}, "UNKNOWN", false, "Snapshot update timestamp is in the future"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			service := buildExecutionStateHealth(tc.runtime, checkedAt)
+			if service.Service != "ExecutionState durable state" || service.Health != tc.state || service.Ready != tc.ready || service.LagLabel != tc.label || service.LastEvent != tc.runtime.UpdatedAt {
+				t.Fatalf("unexpected durable state service: %+v", service)
+			}
+			dependencies := buildDependencies(sourceprobe.Status{}, pgstore.OperationalSnapshot{Runtime: tc.runtime}, nil, natsdiag.MonitorStatus{}, nil, checkedAt, "SIMULATED")
+			for _, dependency := range dependencies {
+				if dependency.Component == "ExecutionState durable snapshot" {
+					if dependency.State != tc.state || !strings.HasPrefix(dependency.Reason, tc.label) || dependency.LastCheck != "12:00:00 UTC" {
+						t.Fatalf("unexpected durable snapshot dependency: %+v", dependency)
+					}
+					return
+				}
+			}
+			t.Fatal("durable snapshot dependency missing")
+		})
+	}
+}
 
 func TestDailyTradingProgressUsesBusinessDatesNotRecentWritesOrFills(t *testing.T) {
 	now := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
