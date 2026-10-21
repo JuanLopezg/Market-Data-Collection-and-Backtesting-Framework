@@ -324,3 +324,37 @@ func (s *Store) writeHeartbeat(hb Heartbeat) error {
 	}
 	return nil
 }
+
+// Last active-alert list sent to each chat ("critical" or "normal"), kept in a small file
+// so a restart does not send an unchanged list again (list-only mode, summary.go).
+const summariesFileName = "last-summaries.json"
+
+func (s *Store) LastSummary(chat string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.readSummaries()[chat]
+}
+
+func (s *Store) SetLastSummary(chat, text string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	summaries := s.readSummaries()
+	summaries[chat] = text
+	body, err := json.Marshal(summaries)
+	if err != nil {
+		return fmt.Errorf("encode notifier summaries: %w", err)
+	}
+	path := filepath.Join(s.dir, summariesFileName)
+	if err := os.WriteFile(path+".tmp", body, 0o640); err != nil {
+		return fmt.Errorf("write notifier summaries: %w", err)
+	}
+	return os.Rename(path+".tmp", path)
+}
+
+func (s *Store) readSummaries() map[string]string {
+	summaries := map[string]string{}
+	if body, err := os.ReadFile(filepath.Join(s.dir, summariesFileName)); err == nil {
+		_ = json.Unmarshal(body, &summaries)
+	}
+	return summaries
+}

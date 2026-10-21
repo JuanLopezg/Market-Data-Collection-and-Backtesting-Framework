@@ -2,6 +2,7 @@ package notifier
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -126,5 +127,92 @@ func TestSummaryShowsColorAndNameWithoutSeverityLabels(t *testing.T) {
 	}
 	if strings.ContainsAny(text, "[]") {
 		t.Fatalf("summary contains a severity label: %q", text)
+	}
+}
+
+// listOnlySink records summaries and fails the test on a per-alert message.
+type listOnlySink struct {
+	t         *testing.T
+	separate  bool
+	summaries []string
+	messages  []Notification
+}
+
+func (s *listOnlySink) Name() string { return "TELEGRAM" }
+func (s *listOnlySink) Deliver(_ context.Context, n Notification) (DeliveryResult, error) {
+	s.messages = append(s.messages, n)
+	return DeliveryResult{}, nil
+}
+func (s *listOnlySink) SeparateCriticalChat() bool { return s.separate }
+func (s *listOnlySink) SendSummary(_ context.Context, critical bool, text string) error {
+	chat := "normal"
+	if critical {
+		chat = "critical"
+	}
+	s.summaries = append(s.summaries, chat+": "+text)
+	return nil
+}
+
+func TestListOnlySendsOnlyChangedLists(t *testing.T) {
+	store, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &listOnlySink{t: t, separate: true}
+	engine, err := NewEngine(store, sink, "WARN", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine.SetSummarySource("Watchdog")
+	engine.SetListOnly(true)
+	at := func(minute int) string { return fmt.Sprintf("2026-10-21T10:%02d:00Z", minute) }
+	event := func(id, alertID, transition, severity, eventType string, minute int) alertstore.LifecycleEvent {
+		return alertstore.LifecycleEvent{EventID: id, RecordedAt: at(minute), Transition: transition,
+			Alert: alertstore.Alert{ID: alertID, Severity: severity, Service: "gateway-kraken", EventType: eventType, Title: "x"}}
+	}
+	var events []alertstore.LifecycleEvent
+	sweep := func(more ...alertstore.LifecycleEvent) {
+		events = append(events, more...)
+		if _, err := engine.Process(context.Background(), events); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sweep() // bootstrap with no history
+
+	sweep(event("e1", "a1", "OPENED", "WARN", "STALE_DATA", 1))
+	if len(sink.summaries) != 1 || !strings.HasPrefix(sink.summaries[0], "normal: ") || !strings.Contains(sink.summaries[0], "stale market data") {
+		t.Fatalf("one normal list expected: %q", sink.summaries)
+	}
+	// An update after the cooldown changes nothing in the list: nothing is sent.
+	sweep(event("e2", "a1", "UPDATED", "WARN", "STALE_DATA", 2))
+	if len(sink.summaries) != 1 {
+		t.Fatalf("unchanged list sent again: %q", sink.summaries)
+	}
+	// Escalation to CRITICAL moves it: the critical list gains it, the normal one empties.
+	sweep(event("e3", "a1", "UPDATED", "CRITICAL", "STALE_DATA", 3))
+	if len(sink.summaries) != 3 || !strings.HasPrefix(sink.summaries[1], "critical: ") ||
+		!strings.Contains(sink.summaries[2], "All clear") {
+		t.Fatalf("escalation lists: %q", sink.summaries)
+	}
+	sweep(event("e4", "a1", "RESOLVED", "CRITICAL", "STALE_DATA", 4))
+	if len(sink.summaries) != 4 || !strings.Contains(sink.summaries[3], "All clear") {
+		t.Fatalf("resolution list: %q", sink.summaries)
+	}
+	// The daily portfolio is still a message of its own.
+	sweep(event("e5", "kraken:DAILY_PORTFOLIO", "OPENED", "INFO", "DAILY_PORTFOLIO", 5))
+	if len(sink.messages) != 0 {
+		t.Fatalf("INFO below WARN must stay suppressed: %+v", sink.messages)
+	}
+	if len(sink.summaries) != 4 {
+		t.Fatalf("daily portfolio must not send a list: %q", sink.summaries)
+	}
+
+	// A restart keeps the last lists: nothing is sent until a list changes.
+	reopened, err := OpenStore(store.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.LastSummary("critical") == "" || reopened.LastSummary("normal") == "" {
+		t.Fatal("last lists must survive a restart")
 	}
 }

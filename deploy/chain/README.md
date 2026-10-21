@@ -339,7 +339,10 @@ process alerts of a restart, is never sent; WARN and ALERT alerts are not delaye
 on 2026-10-16 to switch it to TELEGRAM (`NOTIFIER_SINK=TELEGRAM` in chain/chain.env);
 until that authorized change it remains TEST_FILE. Its first Telegram start sends the
 alerts active at that moment once. After each sweep that changes a chat's alerts, both
-notifiers also post a silent summary there: "📋 Watchdog · Critical alerts now: N" (critical
+notifiers also post a silent summary there (since 2026-10-21 this list is the only message:
+`DASHBOARD_NOTIFIER_LIST_ONLY`, default true, sends no message per opened/resolved alert, and a
+chat's list only when it differs from the last one sent to it, kept in
+`last-summaries.json` across restarts; the daily portfolio is still its own message): "📋 Watchdog · Critical alerts now: N" (critical
 group, CRITICAL only) or "Active alerts now: N" (normal chat) with one short line per active,
 reported alert with only its colored circle and name (`🔴 gateway-kraken down`,
 `🟡 USD reserve low`), without bracketed severity labels, or
@@ -422,7 +425,7 @@ algotrading-kraken.service (host, python3)          kraken-notifier (container, 
   positions that would reach maintenance margin (`--maintenance-drop-warning` in the unit;
   changing it does not touch the journal). Thresholds: `config/kraken_account_policy.json`
   (installed once from `config/venues/kraken_futures/account_policy.json`).
-- One daily portfolio message at 09:00 UTC (balance, equity, BTC collateral before and
+- One daily portfolio message at 01:00 UTC (balance, equity, BTC collateral before and
   after haircut, maintenance margin and headroom, the price drop that would reach
   maintenance margin, positions in USD). Current positions and the previous UTC day's last
   snapshot are separate aligned Asset / Side / USD / % Eq tables; absent history stays unavailable.

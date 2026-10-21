@@ -385,7 +385,7 @@ def main():
     parser.add_argument('--environment', choices=('live', 'demo'), default='live')
     parser.add_argument('--interval', type=float, default=30)
     parser.add_argument('--account-name', default='Kraken')
-    parser.add_argument('--summary-hour-utc', type=int, default=9)
+    parser.add_argument('--summary-hour-utc', type=int, default=1)
     parser.add_argument('--daily-equity-drop-fraction', default='0.10')
     parser.add_argument('--gross-exposure-warning', default='5')
     parser.add_argument('--maintenance-drop-warning', default='0.25',

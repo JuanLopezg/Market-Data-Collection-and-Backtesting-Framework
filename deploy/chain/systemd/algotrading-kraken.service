@@ -16,7 +16,7 @@ ExecStart=/usr/bin/python3 /chain/tools/kraken_account_monitor.py \
     --credentials /secrets/kraken_readonly.env \
     --policy /config/kraken_account_policy.json \
     --state-root /data/kraken_account --output /data/kraken_account \
-    --interval 30 --summary-hour-utc 9 --retention-days 3 --maintenance-drop-warning 0.25 \
+    --interval 30 --summary-hour-utc 1 --retention-days 3 --maintenance-drop-warning 0.25 \
     --unreadable-warning-minutes 10
 Restart=on-failure
 RestartSec=30

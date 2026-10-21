@@ -89,6 +89,7 @@ func main() {
 	if err == nil {
 		err = engine.SetCriticalDelay(cfg.criticalDelay)
 		engine.SetSummarySource(cfg.sourceName)
+		engine.SetListOnly(cfg.listOnly)
 	}
 	if err != nil {
 		logger.Error("configure notifier engine", "error", err)
@@ -218,6 +219,7 @@ type config struct {
 	storeDir               string
 	testSinkFile           string
 	sink                   string
+	listOnly               bool
 	minSeverity            string
 	interval               time.Duration
 	cooldown               time.Duration
@@ -251,6 +253,8 @@ func loadConfig() (config, error) {
 		minSeverity:   strings.ToUpper(strings.TrimSpace(envOr("DASHBOARD_NOTIFIER_MIN_SEVERITY", "WARN"))),
 		sourceName:    strings.TrimSpace(envOr("DASHBOARD_NOTIFIER_SOURCE_NAME", "Watchdog")),
 	}
+	// List-only (default since 2026-10-21): each chat gets only its updated alert list.
+	cfg.listOnly, _ = strconv.ParseBool(envOr("DASHBOARD_NOTIFIER_LIST_ONLY", "true"))
 	if !notifier.ValidSourceName(cfg.sourceName) {
 		return config{}, errors.New("invalid DASHBOARD_NOTIFIER_SOURCE_NAME")
 	}

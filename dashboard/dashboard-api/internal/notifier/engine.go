@@ -19,7 +19,11 @@ type Engine struct {
 	criticalDelay time.Duration
 	// summarySource names the active-alert summaries (summary.go); empty = no summaries.
 	summarySource string
-	now           func() time.Time
+	// listOnly (user request 2026-10-21): no message per alert change; each chat gets only
+	// its updated active-alert list, and only when that list differs from the last one sent.
+	// The daily portfolio is still sent as a message.
+	listOnly bool
+	now      func() time.Time
 }
 
 type SweepStats struct {
@@ -53,6 +57,10 @@ func NewEngine(store *Store, sink Sink, minSeverity string, cooldown time.Durati
 // SetSummarySource enables active-alert summaries named after the alert source ("Watchdog",
 // "Kraken") when the sink supports them.
 func (e *Engine) SetSummarySource(source string) { e.summarySource = strings.TrimSpace(source) }
+
+// SetListOnly sends active-alert lists instead of one message per alert change. It needs
+// a summary source and a sink that supports summaries; otherwise messages are kept.
+func (e *Engine) SetListOnly(listOnly bool) { e.listOnly = listOnly }
 
 func (e *Engine) SetCriticalDelay(delay time.Duration) error {
 	if delay < 0 {
@@ -120,7 +128,13 @@ func (e *Engine) Process(ctx context.Context, events []alertstore.LifecycleEvent
 			Reason:           reason,
 		}
 
-		if action == "DELIVERED" {
+		listed := action == "DELIVERED" && e.listOnly && summaries && event.Alert.EventType != "DAILY_PORTFOLIO"
+		if listed {
+			// Recorded as reported (so it appears in the lists and its resolution counts),
+			// but announced only through the updated list below.
+			decision.NotificationID = "list:" + event.EventID
+			decision.Sink = e.sink.Name()
+		} else if action == "DELIVERED" {
 			notificationID := "notify:" + event.EventID
 			n := Notification{
 				Version:          NotificationVersion,
@@ -168,6 +182,35 @@ func (e *Engine) Process(ctx context.Context, events []alertstore.LifecycleEvent
 		active := e.activeReportedAlerts(events)
 		separate := summarySink.SeparateCriticalChat()
 		for _, critical := range []bool{true, false} {
+			if e.listOnly {
+				// Any change may move an alert between the two lists (an escalation to
+				// CRITICAL): both are rebuilt and each is sent only when it differs.
+				if critical && !separate {
+					continue
+				}
+				chat := map[bool]string{true: "critical", false: "normal"}[critical]
+				text := summaryText(e.summarySource, active, critical, separate)
+				last := e.store.LastSummary(chat)
+				if text == last {
+					continue
+				}
+				if last == "" && strings.Contains(text, "All clear") {
+					// Nothing was ever listed in this chat: an empty list is not news.
+					if err := e.store.SetLastSummary(chat, text); err != nil {
+						stats.SummaryError = err.Error()
+					}
+					continue
+				}
+				if err := summarySink.SendSummary(ctx, critical, text); err != nil {
+					stats.SummaryError = err.Error()
+					continue
+				}
+				if err := e.store.SetLastSummary(chat, text); err != nil {
+					stats.SummaryError = err.Error()
+				}
+				stats.Summaries++
+				continue
+			}
 			if !changedChats[critical] {
 				continue
 			}
