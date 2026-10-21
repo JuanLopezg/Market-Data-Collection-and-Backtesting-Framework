@@ -427,6 +427,28 @@ PY
         cmp -s "$unit" "$installed" || echo "NOTE: $installed differs from this release's $unit; copy it and run systemctl daemon-reload"
     done
     echo "Release $version is running. Previous: $(cat "$releases/previous" 2>/dev/null || echo none) (algo rollback)"
+    prune_releases "$releases"
+}
+
+# Each release keeps a ~260 MB folder and its loaded images; without pruning the disk grows
+# by that much on every deploy. Keeps the newest KEEP_RELEASES folders (always including the
+# current and previous ones, so "algo rollback" works) and removes the other folders and
+# their "<name>:<version>" images. Backups in backups/ are not touched.
+KEEP_RELEASES=3
+prune_releases() {
+    local releases="$1" current previous version name kept=0
+    current="$(cat "$releases/current" 2>/dev/null || true)"
+    previous="$(cat "$releases/previous" 2>/dev/null || true)"
+    # Folder names start with the UTC time, so a reverse sort is newest first.
+    while IFS= read -r version; do
+        if [[ "$version" == "$current" || "$version" == "$previous" || $kept -lt $KEEP_RELEASES ]]; then
+            kept=$((kept + 1)); continue
+        fi
+        for name in "${CHAIN_IMAGES[@]}"; do docker image rm "$name:$version" >/dev/null 2>&1 || true; done
+        rm -rf "${releases:?}/$version"
+        echo "Removed old release $version and its images"
+    done < <(find "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | grep -E '^[0-9]{8}_[0-9]{6}-' | sort -r)
+    docker image prune -f >/dev/null 2>&1 || true   # untagged layers only
 }
 
 rollback_release() {
