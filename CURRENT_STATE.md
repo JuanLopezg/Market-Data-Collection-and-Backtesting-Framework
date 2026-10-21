@@ -2,6 +2,18 @@
 
 Last synchronized: 2026-10-16. Current source and test output take precedence.
 
+## Faster daily path after midnight (2026-10-21)
+
+Measured on the VPS (2026-10-21 cycle): market data published at 00:00:06.98, orders reached
+Kraken at 00:00:14.2. Every service's own work took milliseconds; about 6 s were idle 1 s
+loop sleeps at the three execution-state hops (account snapshot, decision, order plan) and in
+planner/risk. Now: planner and risk (which only loop while a day is pending) poll every
+100 ms; execution-state polls every 100 ms in the first 15 minutes of each UTC day and for 2
+minutes after any message, 1 s otherwise. Market data unchanged: its ~7 s is waiting for
+Binance to prove the day closed (24h ranking window past midnight, next-day candles).
+Tests: unit_execution_state_service, unit_risk, unit_execution, chain_paper, step59 PASS
+(fingerprint unchanged).
+
 ## Overview balance line and card (2026-10-21)
 
 User request: Balance next to Equity on the Overview, counting the BTC collateral (USD after

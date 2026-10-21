@@ -576,8 +576,10 @@ public:
             const auto cycleStart = std::chrono::steady_clock::now();
             bus_.poll(request_subscription_, 32, 1);
 
+            // Only a pending day reaches this loop (right after midnight): a short cadence
+            // passes the planning request on at once instead of up to a second later.
             const auto elapsed = std::chrono::steady_clock::now() - cycleStart;
-            const auto interval = std::chrono::seconds(1);
+            const auto interval = std::chrono::milliseconds(100);
             if (elapsed < interval)
                 interruptibleSleepFor(interval - elapsed);
         }

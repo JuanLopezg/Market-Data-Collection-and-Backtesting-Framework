@@ -951,8 +951,10 @@ public:
 
     void run()
     {
-        constexpr auto loopPeriod = std::chrono::milliseconds(1000);
-        constexpr std::int64_t fetchTimeoutMs = 100;
+        // The loop only runs while a day is pending (right after midnight): a short cadence
+        // passes the account snapshot and strategy intents on at once.
+        constexpr auto loopPeriod = std::chrono::milliseconds(100);
+        constexpr std::int64_t fetchTimeoutMs = 20;
 
         LG_INFO("Portfolio risk service ready (config {}, {} days of market history, time speed {})",
                 options_.portfolio_config, required_history_days_, time_config_.speed);

@@ -1790,6 +1790,10 @@ public:
         LG_DEBUG("Market data database {} (source {})", options_.market_data_db, options_.market_data_source);
         std::cout.flush();
 
+        // The daily cycle passes through this service three times (account snapshot, decision,
+        // order plan). A 1 s cadence added up to a second at each step; it is 100 ms for the
+        // first 15 minutes of each UTC day and for 2 minutes after any message, 1 s otherwise.
+        auto fastUntil = std::chrono::steady_clock::now();
         while (running.load()) {
             const auto cycleStart = std::chrono::steady_clock::now();
 
@@ -1797,16 +1801,25 @@ public:
             // gated by newestCompletedUtcDate(time_handler_) inside their handlers.
             // Exchange events before snapshots: the gateway publishes a venue cost (deposit,
             // fee) before the snapshot that already includes it in the USD balance.
-            bus_.poll(exchange_event_subscription_, 64, 1);
-            bus_.poll(exchange_snapshot_subscription_, 16, 1);
-            bus_.poll(market_update_account_subscription_, 32, 1);
-            bus_.poll(decision_subscription_, 32, 1);
-            bus_.poll(notional_plan_subscription_, 32, 1);
+            std::size_t handled = 0;
+            handled += bus_.poll(exchange_event_subscription_, 64, 1);
+            handled += bus_.poll(exchange_snapshot_subscription_, 16, 1);
+            handled += bus_.poll(market_update_account_subscription_, 32, 1);
+            handled += bus_.poll(decision_subscription_, 32, 1);
+            handled += bus_.poll(notional_plan_subscription_, 32, 1);
             maybeRequestPeriodicReconciliation();
             processManualRequest();
 
-            const auto elapsed = std::chrono::steady_clock::now() - cycleStart;
-            const auto interval = std::chrono::seconds(1);
+            const auto now = std::chrono::steady_clock::now();
+            if (handled > 0)
+                fastUntil = now + std::chrono::minutes(2);
+            const auto businessNow = time_handler_.getTime();
+            const bool afterMidnight =
+                businessNow - std::chrono::floor<std::chrono::days>(businessNow) < std::chrono::minutes(15);
+            const auto elapsed = now - cycleStart;
+            const auto interval = afterMidnight || now < fastUntil
+                ? std::chrono::steady_clock::duration(std::chrono::milliseconds(100))
+                : std::chrono::steady_clock::duration(std::chrono::seconds(1));
             if (elapsed < interval)
                 std::this_thread::sleep_for(interval - elapsed);
         }
