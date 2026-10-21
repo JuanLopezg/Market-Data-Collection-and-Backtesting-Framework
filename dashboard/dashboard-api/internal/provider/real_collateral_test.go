@@ -113,3 +113,36 @@ func TestOverviewShowsGrossAndNetExposure(t *testing.T) {
 		t.Fatalf("card order = %s", got)
 	}
 }
+
+func TestBalanceLineAndCardCountBTCCollateral(t *testing.T) {
+	openCost := 139.4
+	days := []pgstore.EquityDay{
+		{Date: 20261019, Cash: 102, Equity: 102, CollateralUSD: 120},                           // before open_cost existed
+		{Date: 20261020, Cash: -37.35, Equity: 110, CollateralUSD: 127.8, OpenCost: &openCost}, // 7 positions open
+	}
+	overview := realOverviewData{Stats: []realOverviewMetric{{Label: "Total Equity", Value: "Not available"}, {Label: "Cash", Value: "$0"}, {Label: "Leverage", Value: "-"}}}
+	addRuntimeEquity(&overview, days, nil)
+	if overview.EquityCurve[0].Balance != nil {
+		t.Fatalf("a row without open_cost has no balance: %+v", overview.EquityCurve[0])
+	}
+	if got := overview.EquityCurve[1].Balance; got == nil || *got < 102.049 || *got > 102.051 {
+		t.Fatalf("balance = cash + entry value of open positions: %+v", overview.EquityCurve[1])
+	}
+
+	live := &Real{cfg: RealConfig{RuntimeMode: "LIVE", ExecutionVenue: "KRAKEN"}}
+	live.addKrakenCollateral(&overview, realPositionsData{}, days)
+	if got := *overview.EquityCurve[1].Balance; got < 229.849 || got > 229.851 {
+		t.Fatalf("the day's BTC collateral counts as balance: %v", got)
+	}
+	if overview.EquityCurve[1].Equity != 110+127.8 {
+		t.Fatalf("equity with collateral: %v", overview.EquityCurve[1].Equity)
+	}
+
+	// Card: Total Equity without unrealized PnL.
+	positions := realPositionsData{ValuationState: "AVAILABLE", TotalEquity: formatUSD(240), equityValue: 240, grossValue: 140,
+		balanceValue: 230, balanceKnown: true}
+	addPositionValuation(&overview, positions)
+	if got := statValue(overview.Stats, "Balance"); got != formatUSD(230) {
+		t.Fatalf("Balance card = %q (%+v)", got, overview.Stats)
+	}
+}

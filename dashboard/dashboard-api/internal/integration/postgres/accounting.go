@@ -51,6 +51,9 @@ type EquityDay struct {
 	CapitalFlows  float64 `json:"capital_flows"`
 	Interest      float64 `json:"interest"`
 	CollateralUSD float64 `json:"collateral_usd"`
+	// Signed entry value of the positions open at that close: cash + OpenCost is the balance
+	// without unrealized PnL. nil on rows from before the column existed (2026-10-21).
+	OpenCost *float64 `json:"open_cost"`
 }
 
 const accountingPresentSQL = `SELECT json_build_object('present', to_regclass('trading_equity_daily') IS NOT NULL AND to_regclass('trading_closed_positions') IS NOT NULL AND to_regclass('trading_open_positions') IS NOT NULL);`

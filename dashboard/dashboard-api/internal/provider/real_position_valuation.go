@@ -223,6 +223,7 @@ func applyPositionValuation(data *realPositionsData, inputs positionValuationInp
 	data.collateralValue = inputs.collateral
 	if pnlComplete {
 		data.UnrealizedPnL = formatSignedUSDLabel(unrealized)
+		data.balanceValue, data.balanceKnown = equity-unrealized, true
 	}
 }
 

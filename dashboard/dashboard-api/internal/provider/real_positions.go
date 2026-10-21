@@ -35,6 +35,10 @@ type realPositionsData struct {
 	// Numeric valuation (set with ValuationState AVAILABLE) for other read models. In Kraken
 	// LIVE equityValue includes collateralValue (BTC collateral after haircut).
 	equityValue, grossValue, collateralValue float64
+	// Equity without unrealized PnL (cash + entry value + collateral); known when every
+	// position has an entry price.
+	balanceValue float64
+	balanceKnown bool
 }
 
 type realPosition struct {

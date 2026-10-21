@@ -307,6 +307,8 @@ struct PostgresStateStore::Impl {
             "ADD COLUMN IF NOT EXISTS capital_flows DOUBLE PRECISION NOT NULL DEFAULT 0,"
             "ADD COLUMN IF NOT EXISTS interest DOUBLE PRECISION NOT NULL DEFAULT 0,"
             "ADD COLUMN IF NOT EXISTS collateral_usd DOUBLE PRECISION NOT NULL DEFAULT 0;"
+            // Added 2026-10-21; NULL on older rows until the equity backfill fills it in.
+            "ALTER TABLE trading_equity_daily ADD COLUMN IF NOT EXISTS open_cost DOUBLE PRECISION;"
             // Venue collateral fixed for each day's sizing snapshot.
             "CREATE TABLE IF NOT EXISTS trading_daily_collateral ("
             "date BIGINT PRIMARY KEY,"
@@ -587,27 +589,50 @@ void PostgresStateStore::saveLedger(const PositionLedger& ledger, const std::vec
 
 bool PostgresStateStore::insertEquityDay(const EquityDay& day)
 {
-    const std::array<std::string, 11> parameters{
+    const std::array<std::string, 12> parameters{
         std::to_string(day.date), encodeDoubleForPostgres(day.cash),
         encodeDoubleForPostgres(day.positions_value), encodeDoubleForPostgres(day.equity),
         encodeDoubleForPostgres(day.realized_gross_pnl), encodeDoubleForPostgres(day.fees),
         encodeDoubleForPostgres(day.funding), std::to_string(day.open_positions),
         encodeDoubleForPostgres(day.capital_flows), encodeDoubleForPostgres(day.interest),
-        encodeDoubleForPostgres(day.collateral_usd)
+        encodeDoubleForPostgres(day.collateral_usd), encodeDoubleForPostgres(day.open_cost)
     };
-    std::array<const char*, 11> values{};
+    std::array<const char*, 12> values{};
     for (std::size_t i = 0; i < parameters.size(); ++i)
         values[i] = parameters[i].c_str();
     PGresult* result = execParams(
         impl_->connection,
         "INSERT INTO trading_equity_daily(date,cash,positions_value,equity,realized_gross_pnl,fees,funding,"
-        "open_positions,capital_flows,interest,collateral_usd,updated_at) "
-        "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW()) "
+        "open_positions,capital_flows,interest,collateral_usd,open_cost,updated_at) "
+        "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW()) "
         "ON CONFLICT(date) DO NOTHING;",
         static_cast<int>(values.size()), values.data());
     const bool inserted = std::string(PQcmdTuples(result)) == "1";
     clear(result);
     return inserted;
+}
+
+
+std::set<Timestamp> PostgresStateStore::equityDaysWithOpenCost() const
+{
+    PGresult* result = exec(impl_->connection, "SELECT date FROM trading_equity_daily WHERE open_cost IS NOT NULL;",
+                            PGRES_TUPLES_OK);
+    std::set<Timestamp> days;
+    for (int row = 0; row < PQntuples(result); ++row)
+        days.insert(static_cast<Timestamp>(std::strtoul(PQgetvalue(result, row, 0), nullptr, 10)));
+    clear(result);
+    return days;
+}
+
+
+void PostgresStateStore::fillMissingOpenCost(Timestamp day, double openCost)
+{
+    const std::string date = std::to_string(day);
+    const std::string value = encodeDoubleForPostgres(openCost);
+    const std::array<const char*, 2> values{date.c_str(), value.c_str()};
+    clear(execParams(impl_->connection,
+                     "UPDATE trading_equity_daily SET open_cost=$2 WHERE date=$1 AND open_cost IS NULL;",
+                     2, values.data()));
 }
 
 

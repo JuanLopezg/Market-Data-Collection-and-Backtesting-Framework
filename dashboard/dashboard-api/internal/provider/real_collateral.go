@@ -131,6 +131,10 @@ func (p *Real) addKrakenCollateral(overview *realOverviewData, positions realPos
 	if len(days) > 0 && len(overview.EquityCurve) == len(days) {
 		for index, day := range days {
 			overview.EquityCurve[index].Equity += day.CollateralUSD
+			// BTC collateral counts as balance too (its USD value after haircut, each day).
+			if balance := overview.EquityCurve[index].Balance; balance != nil {
+				*balance += day.CollateralUSD
+			}
 		}
 	}
 	total, detail := 0.0, ""

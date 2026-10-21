@@ -34,6 +34,8 @@ EquityDay markEquityDay(
     row.fees = ledger.fees();
     row.funding = ledger.funding();
     row.open_positions = ledger.openPositions().size();
+    for (const auto& [coin, lot] : ledger.openPositions())
+        row.open_cost += lot.quantity * lot.entry_price;
     for (const VenueCostEvent& movement : accountMovements) {
         if (tradingDayOf(movement.timestamp) > day)
             break;

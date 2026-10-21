@@ -140,6 +140,10 @@ TEST(EquityHistory, A3_RowCarriesLedgerTotals)
     EXPECT_NEAR(row.fees, 4.25, 1e-9);
     EXPECT_NEAR(row.funding, 0.0, 1e-12);
     EXPECT_EQ(row.open_positions, 1u);
+    // 0.05 BTC still open at the 60000 average entry: the balance without unrealized PnL is
+    // cash + 3000 = 10120.75 = initial cash + realized 125 - fees 4.25.
+    EXPECT_NEAR(row.open_cost, 3000.0, 1e-9);
+    EXPECT_NEAR(row.cash + row.open_cost, INITIAL_CASH + row.realized_gross_pnl - row.fees, 1e-6);
 }
 
 TEST(EquityHistory, A4_InterestAndCapitalFlowsTotalledUpToTheDayOnly)

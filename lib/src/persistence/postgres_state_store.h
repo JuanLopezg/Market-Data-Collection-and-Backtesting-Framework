@@ -25,6 +25,9 @@ struct EquityDay {
     double capital_flows = 0.0;      // net USD deposited (+) / withdrawn (-), not performance
     double interest = 0.0;           // venue interest, negative = paid
     double collateral_usd = 0.0;     // venue collateral (BTC) after haircut used that day; not in equity
+    // Signed entry value of the positions open at that close (quantity x average entry):
+    // cash + open_cost is the balance without unrealized PnL (a perpetual venue's USD balance).
+    double open_cost = 0.0;
 };
 
 
@@ -65,6 +68,10 @@ public:
     // fills) are ignored. Returns whether this call wrote the row.
     bool insertEquityDay(const EquityDay& day);
     std::set<Timestamp> equityDays() const;
+    // Rows written before open_cost existed (2026-10-21) have it NULL; the backfill fills in
+    // only that column, never another one of a written row.
+    std::set<Timestamp> equityDaysWithOpenCost() const;
+    void fillMissingOpenCost(Timestamp day, double openCost);
     std::vector<FundingPayment> loadFunding() const;
 
     // Venue cash movements (fees after the fill, funding). saveVenueCost commits the cost

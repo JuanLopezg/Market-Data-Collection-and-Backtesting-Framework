@@ -111,7 +111,7 @@ func (p *Real) overview(ctx context.Context) (realOverviewData, error) {
 }
 
 // overviewStatOrder is the card order the user chose; cards not listed keep their order after these.
-var overviewStatOrder = []string{"Total Equity", "Gross Exposure", "Net Exposure", "Collateral", "Cash", "Leverage"}
+var overviewStatOrder = []string{"Total Equity", "Balance", "Gross Exposure", "Net Exposure", "Collateral", "Cash", "Leverage"}
 
 func orderOverviewStats(overview *realOverviewData) {
 	rank := func(label string) int {
@@ -142,7 +142,13 @@ func addRuntimeEquity(overview *realOverviewData, days []pgstore.EquityDay, clos
 	}
 	curve := make([]realEquityPoint, 0, len(days))
 	for _, day := range days {
-		curve = append(curve, realEquityPoint{Label: formatTradingTimestamp(day.Date), Equity: day.Equity, CloseLoop: loopByDay[day.Date]})
+		point := realEquityPoint{Label: formatTradingTimestamp(day.Date), Equity: day.Equity, CloseLoop: loopByDay[day.Date]}
+		if day.OpenCost != nil {
+			// Balance: equity without the open positions' unrealized PnL.
+			balance := day.Cash + *day.OpenCost
+			point.Balance = &balance
+		}
+		curve = append(curve, point)
 	}
 	overview.EquityCurve, overview.EquityAvailable = curve, true
 	if overview.Stats[0].Value == "Not available" {
@@ -156,6 +162,10 @@ func addPositionValuation(overview *realOverviewData, positions realPositionsDat
 		return
 	}
 	overview.Stats[0] = realOverviewMetric{Label: "Total Equity", Value: positions.TotalEquity}
+	if positions.balanceKnown {
+		overview.Stats = append(overview.Stats, realOverviewMetric{Label: "Balance", Value: formatUSD(positions.balanceValue),
+			Detail: "Total Equity without the open positions' unrealized PnL"})
+	}
 	overview.Stats[2] = realOverviewMetric{Label: "Leverage", Value: fmt.Sprintf("%.2fx", positions.grossValue/positions.equityValue)}
 	// The same figures as the Positions page cards.
 	overview.Stats = append(overview.Stats,

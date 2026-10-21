@@ -2,6 +2,16 @@
 
 Last synchronized: 2026-10-16. Current source and test output take precedence.
 
+## Overview balance line and card (2026-10-21)
+
+User request: Balance next to Equity on the Overview, counting the BTC collateral (USD after
+haircut) as balance every day. `trading_equity_daily.open_cost` (new, nullable) = signed
+entry value of the open positions at that close; the equity backfill fills it in on earlier
+rows (only that column). Overview curve: Balance = cash + open_cost (+ the day's collateral in
+LIVE), Equity = cash + positions at close (+ collateral). New "Balance" card = Total Equity
+without unrealized PnL. Tests: equity_history open_cost, Go TestBalanceLineAndCardCountBTCCollateral,
+unit_persistence(_postgres), chain_paper, step59 PASS (fingerprint unchanged).
+
 ## Smooth strategy switch and deposits (2026-10-21, local)
 
 User request: switching LIVE to RSI 80/65 and adding much more collateral must not stop

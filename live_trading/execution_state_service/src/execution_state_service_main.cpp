@@ -467,16 +467,28 @@ private:
             return;
         }
 
+        // Days with a complete row are skipped; a row written before open_cost existed gets
+        // only that column from the replay (its other columns stay as first written).
         const std::vector<EquityDay> rows = equityDaysFromFills(
             fills, funding, movements, options_.initial_cash, newestCompletedUtcDate(time_handler_),
-            store_->equityDays(),
+            store_->equityDaysWithOpenCost(),
             [this](Timestamp day, const std::set<Coin>& coins) { return loadDayCloses(day, coins); },
             [this](Timestamp day) { return store_->dailyCollateral(day).value_or(0.0); });
-        std::size_t written = 0;
-        for (const EquityDay& row : rows)
-            written += store_->insertEquityDay(row) ? 1 : 0;
+        const std::set<Timestamp> existing = store_->equityDays();
+        std::size_t written = 0, completed = 0;
+        for (const EquityDay& row : rows) {
+            if (existing.contains(row.date)) {
+                store_->fillMissingOpenCost(row.date, row.open_cost);
+                ++completed;
+            }
+            else {
+                written += store_->insertEquityDay(row) ? 1 : 0;
+            }
+        }
         if (written > 0)
             LG_INFO("Backfilled {} days of equity history from the fills", written);
+        if (completed > 0)
+            LG_INFO("Added the open positions' entry value to {} earlier equity days", completed);
     }
 
     void rebuildAccounting()
