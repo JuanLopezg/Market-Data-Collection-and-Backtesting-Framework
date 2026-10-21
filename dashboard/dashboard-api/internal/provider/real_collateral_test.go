@@ -117,25 +117,29 @@ func TestOverviewShowsGrossAndNetExposure(t *testing.T) {
 func TestBalanceLineAndCardCountBTCCollateral(t *testing.T) {
 	openCost := 139.4
 	days := []pgstore.EquityDay{
-		{Date: 20261019, Cash: 102, Equity: 102, CollateralUSD: 120},                           // before open_cost existed
-		{Date: 20261020, Cash: -37.35, Equity: 110, CollateralUSD: 127.8, OpenCost: &openCost}, // 7 positions open
+		{Date: 20261018, Cash: 102, Equity: 102, CollateralUSD: 120},                  // before the first fill
+		{Date: 20261019, Cash: 41, Equity: 102, CollateralUSD: 120, OpenPositions: 3}, // open_cost not filled in
+		{Date: 20261020, Cash: -37.35, Equity: 110, CollateralUSD: 127.8, OpenPositions: 7, OpenCost: &openCost},
 	}
 	overview := realOverviewData{Stats: []realOverviewMetric{{Label: "Total Equity", Value: "Not available"}, {Label: "Cash", Value: "$0"}, {Label: "Leverage", Value: "-"}}}
 	addRuntimeEquity(&overview, days, nil)
-	if overview.EquityCurve[0].Balance != nil {
-		t.Fatalf("a row without open_cost has no balance: %+v", overview.EquityCurve[0])
+	if got := overview.EquityCurve[0].Balance; got == nil || *got != 102 {
+		t.Fatalf("no positions: balance = cash: %+v", overview.EquityCurve[0])
 	}
-	if got := overview.EquityCurve[1].Balance; got == nil || *got < 102.049 || *got > 102.051 {
-		t.Fatalf("balance = cash + entry value of open positions: %+v", overview.EquityCurve[1])
+	if overview.EquityCurve[1].Balance != nil {
+		t.Fatalf("open positions without open_cost have no balance: %+v", overview.EquityCurve[1])
+	}
+	if got := overview.EquityCurve[2].Balance; got == nil || *got < 102.049 || *got > 102.051 {
+		t.Fatalf("balance = cash + entry value of open positions: %+v", overview.EquityCurve[2])
 	}
 
 	live := &Real{cfg: RealConfig{RuntimeMode: "LIVE", ExecutionVenue: "KRAKEN"}}
 	live.addKrakenCollateral(&overview, realPositionsData{}, days)
-	if got := *overview.EquityCurve[1].Balance; got < 229.849 || got > 229.851 {
+	if got := *overview.EquityCurve[2].Balance; got < 229.849 || got > 229.851 {
 		t.Fatalf("the day's BTC collateral counts as balance: %v", got)
 	}
-	if overview.EquityCurve[1].Equity != 110+127.8 {
-		t.Fatalf("equity with collateral: %v", overview.EquityCurve[1].Equity)
+	if overview.EquityCurve[2].Equity != 110+127.8 {
+		t.Fatalf("equity with collateral: %v", overview.EquityCurve[2].Equity)
 	}
 
 	// Card: Total Equity without unrealized PnL.

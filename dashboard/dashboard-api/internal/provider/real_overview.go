@@ -143,9 +143,13 @@ func addRuntimeEquity(overview *realOverviewData, days []pgstore.EquityDay, clos
 	curve := make([]realEquityPoint, 0, len(days))
 	for _, day := range days {
 		point := realEquityPoint{Label: formatTradingTimestamp(day.Date), Equity: day.Equity, CloseLoop: loopByDay[day.Date]}
+		// Balance: equity without the open positions' unrealized PnL. A day before the first
+		// fill has no open_cost (the backfill starts there) and no positions: balance = cash.
 		if day.OpenCost != nil {
-			// Balance: equity without the open positions' unrealized PnL.
 			balance := day.Cash + *day.OpenCost
+			point.Balance = &balance
+		} else if day.OpenPositions == 0 {
+			balance := day.Cash
 			point.Balance = &balance
 		}
 		curve = append(curve, point)
