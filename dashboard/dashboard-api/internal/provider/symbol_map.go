@@ -78,8 +78,9 @@ type SymbolMapAlarm struct {
 }
 
 type SymbolMapStatus struct {
-	// OK, WARN (some strategy assets cannot be traded), BLOCKED (wrong scale or an active
-	// signal that cannot be traded) or UNAVAILABLE (table or prices could not be read).
+	// OK, WARN (some strategy assets cannot be traded, even with an active signal: only
+	// those orders are skipped), BLOCKED (wrong scale) or UNAVAILABLE (table or prices
+	// could not be read).
 	Status           string           `json:"status"`
 	Venue            string           `json:"venue"`
 	TableGeneratedAt string           `json:"tableGeneratedAt,omitempty"`
@@ -158,9 +159,9 @@ func buildSymbolMapStatus(in symbolMapInput, checkedAt time.Time) SymbolMapStatu
 	// INFO alarms (top-50 assets Kraken does not list) do not change the status.
 	for _, alarm := range result.Alarms {
 		switch alarm.Severity {
-		case "CRITICAL", "ALERT":
+		case "CRITICAL":
 			result.Status = "BLOCKED"
-		case "WARN":
+		case "ALERT", "WARN":
 			if result.Status == "OK" {
 				result.Status = "WARN"
 			}

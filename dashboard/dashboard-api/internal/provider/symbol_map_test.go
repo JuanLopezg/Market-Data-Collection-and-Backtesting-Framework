@@ -84,9 +84,9 @@ func TestSymbolMapCheckStates(t *testing.T) {
 	if !status.Rows[0].InStrategy || status.Rows[len(status.Rows)-1].InStrategy {
 		t.Errorf("strategy assets must come first: %+v", status.Rows)
 	}
-	// W has an active signal it cannot trade: critical, so the whole check is BLOCKED.
-	if status.Status != "BLOCKED" {
-		t.Errorf("status = %q, want BLOCKED", status.Status)
+	// W has an active signal it cannot trade: an ALERT, but only its orders are skipped, so WARN.
+	if status.Status != "WARN" {
+		t.Errorf("status = %q, want WARN", status.Status)
 	}
 }
 

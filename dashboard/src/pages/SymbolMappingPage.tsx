@@ -12,7 +12,7 @@ import type { SymbolMapData, SymbolMapRow, SymbolMapState } from '../types/dashb
 const STATUS_TEXT: Record<SymbolMapData['status'], string> = {
   OK: 'Every strategy asset can be traded on Kraken and every conversion agrees with prices.',
   WARN: 'Some strategy assets cannot be traded on Kraken; their signals would be skipped.',
-  BLOCKED: 'A conversion disagrees with prices, or an active signal cannot be traded on Kraken.',
+  BLOCKED: 'A conversion disagrees with prices.',
   UNAVAILABLE: 'The check could not run.',
 }
 
