@@ -5,9 +5,11 @@
 #include "logger.h"
 #include "relative_threshold_rebalance_policy.h"
 #include "research_strategy_definitions.h"
+#include "rsi_scaled_pure_rsi_strategy.h"
 #include "sample_covariance_estimator.h"
 #include "sensitivity_study.h"
 #include "threshold_rebalance_policy.h"
+#include "trim_winners_rebalance_policy.h"
 #include "validated/pure_rsi.h"
 #include "volatility_target_sizer.h"
 #include "xh_breakout_strategy.h"
@@ -53,6 +55,10 @@ std::vector<StrategyDefinition> makeHtmlStudyDefinitions(const std::string& benc
     //   RSI exit   : 25 to 80, step 2.5
     //
     // Invalid combinations where entry <= exit are rejected.
+    //
+    // rsiSizeFrom > 0 selects the research-only RSI-scaled variant: the same entries and
+    // exits, with a signal strength of 0.25/0.50/0.75/1.00 by RSI tier between rsiSizeFrom
+    // and rsiSizeTo (rsi_scaled_pure_rsi_strategy.h). It allows entry == exit.
     // ------------------------------------------------------------------
     definitions.push_back(StrategyDefinition{
         "PureRSI",
@@ -62,7 +68,9 @@ std::vector<StrategyDefinition> makeHtmlStudyDefinitions(const std::string& benc
             {"rsiExit", 70.0},
             {"quantityPercent", 10.0},
             {"maxPositionsOpen", 10.0},
-            {"maxRankingPosition", 1000000.0}
+            {"maxRankingPosition", 1000000.0},
+            {"rsiSizeFrom", 0.0},
+            {"rsiSizeTo", 80.0}
         },
         makeSensitivityParameters({
             {"rsiLength", "RSI length", 2.0, 20.0, 1.0, true},
@@ -82,13 +90,30 @@ std::vector<StrategyDefinition> makeHtmlStudyDefinitions(const std::string& benc
                 parameters, "maxRankingPosition", 1000000U
             );
 
+            const double rsiSizeFrom = parameterOr(parameters, "rsiSizeFrom", 0.0);
+            const double rsiSizeTo = parameterOr(parameters, "rsiSizeTo", 80.0);
+
             auto universeSelector = makeTopLiquidityUniverse();
             auto ranker = makeStudyRanker(
                 IndicatorSpec{IndicatorKind::RSI, PriceField::Close, rsiLength},
                 true
             );
 
-            return std::make_unique<StrategyPureRSI>(
+            if (rsiSizeFrom > 0.0) {
+                return std::unique_ptr<Strategy>(std::make_unique<StrategyRsiScaledPureRSI>(
+                    maxPositionsOpen,
+                    std::move(universeSelector),
+                    std::move(ranker),
+                    maxRankingPosition,
+                    rsiLength,
+                    rsiEntry,
+                    rsiExit,
+                    rsiSizeFrom,
+                    rsiSizeTo,
+                    makeBenchmarkTrendFilter(benchmarkSymbol, pureRsiBenchmarkFilterLength)
+                ));
+            }
+            return std::unique_ptr<Strategy>(std::make_unique<StrategyPureRSI>(
                 maxPositionsOpen,
                 std::move(universeSelector),
                 std::move(ranker),
@@ -97,11 +122,15 @@ std::vector<StrategyDefinition> makeHtmlStudyDefinitions(const std::string& benc
                 rsiEntry,
                 rsiExit,
                 makeBenchmarkTrendFilter(benchmarkSymbol, pureRsiBenchmarkFilterLength)
-            );
+            ));
         },
         [](const ParameterValues& parameters) {
-            return parameterOr(parameters, "rsiEntry", 0.0) >
-                   parameterOr(parameters, "rsiExit", 0.0);
+            const double rsiEntry = parameterOr(parameters, "rsiEntry", 0.0);
+            const double rsiExit = parameterOr(parameters, "rsiExit", 0.0);
+            const double rsiSizeFrom = parameterOr(parameters, "rsiSizeFrom", 0.0);
+            if (rsiSizeFrom > 0.0)
+                return rsiEntry >= rsiExit && parameterOr(parameters, "rsiSizeTo", 0.0) > rsiSizeFrom;
+            return rsiEntry > rsiExit;
         }
     });
 
@@ -322,7 +351,8 @@ std::vector<StrategyDefinition> makeHtmlStudyDefinitions(const std::string& benc
 // volatility-target: signal shape scaled to an annualized portfolio volatility from a
 // sample covariance. --rebalance chooses when a held position is resized to its target:
 // none (entries/exits only), absolute (weight drift beyond --rebalance-threshold points) or
-// relative (drift beyond that fraction of the current weight). Default: none for equal
+// relative (drift beyond that fraction of the current weight); relative-trim is relative
+// for winners only (losers are never topped up, research-only). Default: none for equal
 // weight, absolute for volatility target. The deployed config/portfolio/pure_rsi_vol_target.json
 // uses the volatility target with a 20% relative threshold since 2026-10-15.
 struct StudySizing {
@@ -340,6 +370,8 @@ std::unique_ptr<RebalancePolicy> makeStudyRebalancePolicy()
 {
     const std::string rule = studySizing.rebalance != "default" ? studySizing.rebalance
         : studySizing.sizer == "volatility-target" ? "absolute" : "none";
+    if (rule == "relative-trim")
+        return std::make_unique<TrimWinnersRebalancePolicy>(studySizing.rebalanceThreshold);
     if (rule == "relative")
         return std::make_unique<RelativeThresholdRebalancePolicy>(studySizing.rebalanceThreshold);
     if (rule == "absolute")
@@ -420,7 +452,7 @@ try
         ("target-volatility", options::value(&studySizing.targetVolatility)->default_value(0.20), "volatility-target: annualized target (0.20 = 20%)")
         ("covariance-lookback", options::value(&studySizing.covarianceLookback)->default_value(5), "volatility-target: returns in the sample covariance")
         ("rebalance-threshold", options::value(&studySizing.rebalanceThreshold)->default_value(0.02), "volatility-target: weight drift that triggers a resize")
-        ("rebalance", options::value(&studySizing.rebalance)->default_value("default"), "none, absolute (weight points) or relative (fraction of the current weight); default: none for equal-weight, absolute for volatility-target")
+        ("rebalance", options::value(&studySizing.rebalance)->default_value("default"), "none, absolute (weight points), relative (fraction of the current weight) or relative-trim (relative, winners only); default: none for equal-weight, absolute for volatility-target")
         ("btc-filter-length", options::value(&pureRsiBenchmarkFilterLength)->default_value(0), "PureRSI: new signals only while the benchmark closes above SMA(close, length); 0 = off");
     try {
         options::variables_map values;
@@ -449,8 +481,9 @@ try
         if (rankerChoice != "own" && rankerChoice != "volume")
             throw std::invalid_argument("Ranker must be own or volume");
         if (studySizing.rebalance != "default" && studySizing.rebalance != "none" &&
-            studySizing.rebalance != "absolute" && studySizing.rebalance != "relative")
-            throw std::invalid_argument("Rebalance must be none, absolute or relative");
+            studySizing.rebalance != "absolute" && studySizing.rebalance != "relative" &&
+            studySizing.rebalance != "relative-trim")
+            throw std::invalid_argument("Rebalance must be none, absolute, relative or relative-trim");
         if (!std::isfinite(studySizing.targetVolatility) || studySizing.targetVolatility <= 0.0 ||
             studySizing.covarianceLookback < 2U ||
             !std::isfinite(studySizing.rebalanceThreshold) || studySizing.rebalanceThreshold < 0.0)
