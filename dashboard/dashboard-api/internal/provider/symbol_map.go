@@ -33,6 +33,11 @@ import (
 // symbol is MISSING_FROM_TABLE: Kraken lists it but the table is out of date. This is only
 // a hint to rebuild the table with tools/kraken_symbol_map.py; the gateway still trades
 // nothing that is not in the reviewed table.
+//
+// Kraken listings outside the strategy and the ranking are checked too (venue inventory):
+// a Kraken PF_ perpetual that is neither mapped nor in the table's kraken_unmapped list was
+// listed after the table was built, and a mapped contract Kraken no longer lists was
+// delisted. Both are WARN, one alarm per contract, with the command to rebuild the table.
 const (
 	symbolMapVenue         = "kraken-futures"
 	symbolMapMaxPriceRatio = 5.0
@@ -160,6 +165,8 @@ func buildSymbolMapStatus(in symbolMapInput, checkedAt time.Time) SymbolMapStatu
 		}
 		return result.Rows[i].Source < result.Rows[j].Source
 	})
+	result.Alarms = append(result.Alarms, symbolMapInventoryAlarms(in, rows)...)
+
 	// INFO alarms (top-50 assets Kraken does not list) do not change the status.
 	for _, alarm := range result.Alarms {
 		switch alarm.Severity {
@@ -295,6 +302,48 @@ func symbolMapAlarm(row SymbolMapRow) (SymbolMapAlarm, bool) {
 	return SymbolMapAlarm{Severity: "WARN", EventType: "SYMBOL_MAP_STRATEGY_NOT_TRADEABLE", Asset: row.Source,
 		Title:  "Strategy asset not tradeable on Kraken",
 		Detail: row.Detail + " A signal on it would not be executed."}, true
+}
+
+// symbolMapInventoryAlarms compares every Kraken PF_ perpetual with the table. Rows already
+// shown (strategy and ranking assets) keep their own alarms and are not repeated here.
+func symbolMapInventoryAlarms(in symbolMapInput, rows map[string]*SymbolMapRow) []SymbolMapAlarm {
+	var alarms []SymbolMapAlarm
+	if in.table.VenueUnmapped != nil {
+		known := make(map[string]bool, len(in.table.VenueUnmapped))
+		for _, symbol := range in.table.VenueUnmapped {
+			known[symbol] = true
+		}
+		var listed []string
+		for symbol, ticker := range in.tickers {
+			if !strings.HasPrefix(symbol, "PF_") || ticker.Suspended || known[symbol] {
+				continue
+			}
+			if _, mapped := in.table.ByVenue(symbol); !mapped {
+				listed = append(listed, symbol)
+			}
+		}
+		sort.Strings(listed)
+		for _, symbol := range listed {
+			alarms = append(alarms, SymbolMapAlarm{Severity: "WARN", EventType: "SYMBOL_MAP_VENUE_NEW_CONTRACT", Asset: symbol,
+				Title: "New Kraken contract not in the symbol table",
+				Detail: fmt.Sprintf("Kraken lists %s, which the symbol table (built %s) has not reviewed. If Binance has the same "+
+					"perpetual it is not tradeable until the table is rebuilt with tools/kraken_symbol_map.py and deployed.",
+					symbol, in.table.GeneratedAt)})
+		}
+	}
+	for _, entry := range in.table.Symbols {
+		if _, shown := rows[entry.Source]; shown {
+			continue
+		}
+		if _, listed := in.tickers[entry.VenueSymbol]; listed {
+			continue
+		}
+		alarms = append(alarms, SymbolMapAlarm{Severity: "WARN", EventType: "SYMBOL_MAP_VENUE_DELISTED", Asset: entry.Source,
+			Title: "Mapped Kraken contract no longer listed",
+			Detail: fmt.Sprintf("%s is in the symbol table for %s but Kraken no longer lists it; rebuild the table with "+
+				"tools/kraken_symbol_map.py and deploy it.", entry.VenueSymbol, entry.Source)})
+	}
+	return alarms
 }
 
 func unavailableSymbolMapStatus(err error, checkedAt time.Time) SymbolMapStatus {

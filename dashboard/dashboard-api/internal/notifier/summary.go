@@ -143,6 +143,10 @@ func alertLabel(alert alertstore.Alert) string {
 		return with("not tradeable on Kraken")
 	case "SYMBOL_MAP_TABLE_OUT_OF_DATE":
 		return with("missing from the symbol map")
+	case "SYMBOL_MAP_VENUE_NEW_CONTRACT":
+		return with("new Kraken contract, refresh the symbol map")
+	case "SYMBOL_MAP_VENUE_DELISTED":
+		return with("delisted on Kraken, refresh the symbol map")
 	case "SYMBOL_MAP_RANKING_NOT_TRADEABLE":
 		return with("not listed on Kraken")
 	case "SYMBOL_MAP_UNAVAILABLE":

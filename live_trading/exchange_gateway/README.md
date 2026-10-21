@@ -221,7 +221,11 @@ the git diff before committing. Three checks keep it honest afterwards:
    and top-50 ranking every minute: a wrong scale is a CRITICAL alert, a strategy asset
    Kraken cannot trade a WARN (orange ALERT while its signal is active, delivered to the normal Telegram chat), a top-50 asset that
    Kraken lists but the table lacks a WARN (rebuild the table), and a top-50 asset Kraken
-   does not list an INFO;
+   does not list an INFO. Beyond those assets it compares every Kraken `PF_` contract with
+   the table: one that is neither mapped nor in the table's `kraken_unmapped` list (written
+   by the tool: contracts seen and deliberately left out) is a new listing, and a mapped
+   contract Kraken no longer lists is a delisting; both are WARN (`SYMBOL_MAP_VENUE_NEW_CONTRACT`,
+   `SYMBOL_MAP_VENUE_DELISTED`): rebuild the table, review, commit and deploy;
 3. at market reload the gateway logs mapped contracts Kraken no longer lists.
 
 Pending (docs/ROADMAP.md 7b): MOCK/replay quantities in their own units are exact only up

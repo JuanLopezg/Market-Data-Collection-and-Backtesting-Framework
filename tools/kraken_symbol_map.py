@@ -16,6 +16,11 @@ How an entry is accepted:
      Binance mark / Kraken mark must be within 5% of the scale. A same-named but different
      token, or a wrong scale, fails here and is reported instead of mapped.
 
+The table also lists every other Kraken PF_ contract seen (`kraken_unmapped`: no Binance
+perpetual, other quote, tradfi, rejected scale...). The dashboard compares Kraken's live
+contracts with both lists and warns about a contract that is in neither: Kraken listed
+something new since the table was built, so run this tool again.
+
 Review the printed rejections and the git diff of the output before committing it.
 Public endpoints only; no credentials.
 
@@ -58,10 +63,11 @@ def binance_perpetuals() -> dict[str, float]:
     return result
 
 
-def kraken_perpetuals() -> dict[str, dict]:
-    """Tradeable Kraken Multi-M perpetuals by asset name (XBT -> BTC)."""
+def kraken_perpetuals() -> tuple[dict[str, dict], list[str]]:
+    """Tradeable Kraken Multi-M perpetuals by asset name (XBT -> BTC), and every PF_ ticker."""
     instruments = get_json(KRAKEN_INSTRUMENTS_URL)
     tickers = {row["symbol"]: row for row in get_json(KRAKEN_TICKERS_URL)["tickers"]}
+    all_perpetuals = sorted(symbol for symbol in tickers if symbol.startswith("PF_"))
     result = {}
     for instrument in instruments["instruments"]:
         symbol = instrument.get("symbol", "")
@@ -76,7 +82,7 @@ def kraken_perpetuals() -> dict[str, dict]:
         asset = "BTC" if asset == "XBT" else asset
         result[asset] = {"symbol": symbol, "contract_size": float(instrument["contractSize"]),
                          "mark": float(ticker["markPrice"])}
-    return result
+    return result, all_perpetuals
 
 
 def candidates(base: str) -> list[tuple[str, int]]:
@@ -120,7 +126,7 @@ def main() -> int:
     args = parser.parse_args()
 
     binance = binance_perpetuals()
-    kraken = kraken_perpetuals()
+    kraken, kraken_all = kraken_perpetuals()
     entries, rejected = build(binance, kraken)
 
     venue_symbols = [entry["venue_symbol"] for entry in entries]
@@ -139,6 +145,8 @@ def main() -> int:
                  "tradeable on Kraken. venue_units_per_source_unit converts quantities "
                  "(venue = source x scale) and prices (venue = source / scale)."),
         "symbols": entries,
+        # Kraken PF_ contracts deliberately left out; a contract in neither list is new.
+        "kraken_unmapped": [symbol for symbol in kraken_all if symbol not in set(venue_symbols)],
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")

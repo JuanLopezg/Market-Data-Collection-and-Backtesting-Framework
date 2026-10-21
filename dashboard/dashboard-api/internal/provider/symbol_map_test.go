@@ -115,6 +115,8 @@ func TestSymbolMapAlarms(t *testing.T) {
 
 func TestSymbolMapFindsAssetsMissingFromAnOutOfDateTable(t *testing.T) {
 	in := testSymbolMapInput(t)
+	// Only the ranking rows below are under test: keep the table's other contracts listed.
+	in.tickers["PF_OLDUSD"] = krakenpublic.Ticker{Symbol: "PF_OLDUSD", MarkPrice: 1}
 	// New top-50 entries after the table was built: Kraken lists SOL and SHIB (in single
 	// SHIB) but the table does not; NEIRO exists on Kraken under the same name but is a
 	// different token (price far off), so it is not proposed; CT is not on Kraken at all.
@@ -160,6 +162,8 @@ func TestSymbolMapToleratesALargeMoveSinceTheClose(t *testing.T) {
 	// ARC on 2026-10-13: yesterday's Binance close 0.0595, Kraken mark 0.0330 after a ~45%
 	// fall. Same token and scale; this must not be a wrong-scale alarm.
 	in := testSymbolMapInput(t)
+	// Only the ranking rows below are under test: keep the table's other contracts listed.
+	in.tickers["PF_OLDUSD"] = krakenpublic.Ticker{Symbol: "PF_OLDUSD", MarkPrice: 1}
 	in.strategy, in.ranking = nil, []string{"BTCUSDT"}
 	in.closes["BTCUSDT"] = 0.0595
 	in.tickers["PF_XBTUSD"] = krakenpublic.Ticker{Symbol: "PF_XBTUSD", MarkPrice: 0.0330}
@@ -171,6 +175,8 @@ func TestSymbolMapToleratesALargeMoveSinceTheClose(t *testing.T) {
 
 func TestSymbolMapWrongScaleIsCritical(t *testing.T) {
 	in := testSymbolMapInput(t)
+	// Only the ranking rows below are under test: keep the table's other contracts listed.
+	in.tickers["PF_OLDUSD"] = krakenpublic.Ticker{Symbol: "PF_OLDUSD", MarkPrice: 1}
 	// A table that forgot the x1000: the Binance/Kraken ratio (~1000) disagrees with x1.
 	wrong := strings.Replace(testSymbolMapJSON, `"PF_PEPEUSD","venue_units_per_source_unit":1000`, `"PF_PEPEUSD","venue_units_per_source_unit":1`, 1)
 	table, err := symbolmap.Load(writeSymbolMap(t, wrong), "kraken-futures")
@@ -258,5 +264,55 @@ func TestMergeSymbolMapAlerts(t *testing.T) {
 	unavailable := mergeSymbolMapAlerts(realAlertsAuditData{}, unavailableSymbolMapStatus(os.ErrNotExist, time.Now()))
 	if unavailable.ActiveCritical != 0 || unavailable.ActiveWarnings != 1 {
 		t.Fatalf("an unreadable table or Kraken outage is a warning: %+v", unavailable)
+	}
+}
+
+func TestSymbolMapWarnsAboutNewAndDelistedKrakenContracts(t *testing.T) {
+	const table = `{"schema_version":1,"venue":"kraken-futures","generated_at":"2026-10-21T12:00:00Z","symbols":[
+ {"source":"BTCUSDT","asset":"BTC","venue_symbol":"PF_XBTUSD","venue_units_per_source_unit":1},
+ {"source":"GONEUSDT","asset":"GONE","venue_symbol":"PF_GONEUSD","venue_units_per_source_unit":1}],
+ "kraken_unmapped":["PF_AAPLXUSD"]}`
+	loaded, err := symbolmap.Load(writeSymbolMap(t, table), "kraken-futures")
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := symbolMapInput{
+		table: loaded, strategy: []string{"BTCUSDT"}, activeSignals: map[string]bool{},
+		closes: map[string]float64{"BTCUSDT": 62000},
+		tickers: map[string]krakenpublic.Ticker{
+			"PF_XBTUSD":   {Symbol: "PF_XBTUSD", MarkPrice: 61800},
+			"PF_AAPLXUSD": {Symbol: "PF_AAPLXUSD", MarkPrice: 230},               // known, deliberately unmapped
+			"PF_NEWUSD":   {Symbol: "PF_NEWUSD", MarkPrice: 1.5},                 // listed after the table
+			"PF_HOLDUSD":  {Symbol: "PF_HOLDUSD", MarkPrice: 2, Suspended: true}, // not tradeable yet
+			"FI_XBTUSD_1": {Symbol: "FI_XBTUSD_1", MarkPrice: 62000},             // not a perpetual
+		},
+	}
+	status := buildSymbolMapStatus(in, time.Now())
+	got := map[string]string{}
+	for _, alarm := range status.Alarms {
+		got[alarm.Asset] = alarm.EventType + " " + alarm.Severity
+	}
+	want := map[string]string{
+		"PF_NEWUSD": "SYMBOL_MAP_VENUE_NEW_CONTRACT WARN",
+		"GONEUSDT":  "SYMBOL_MAP_VENUE_DELISTED WARN",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("alarms = %v, want %v", got, want)
+	}
+	for asset, value := range want {
+		if got[asset] != value {
+			t.Errorf("alarm %s = %q, want %q", asset, got[asset], value)
+		}
+	}
+	if status.Status != "WARN" {
+		t.Errorf("status = %q, want WARN", status.Status)
+	}
+
+	// A table built before kraken_unmapped existed cannot tell new contracts apart.
+	in.table.VenueUnmapped = nil
+	for _, alarm := range buildSymbolMapStatus(in, time.Now()).Alarms {
+		if alarm.EventType == "SYMBOL_MAP_VENUE_NEW_CONTRACT" {
+			t.Errorf("unexpected new-contract alarm without an inventory: %+v", alarm)
+		}
 	}
 }

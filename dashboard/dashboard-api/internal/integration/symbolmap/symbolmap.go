@@ -29,7 +29,11 @@ type Table struct {
 	Venue         string  `json:"venue"`
 	GeneratedAt   string  `json:"generated_at"`
 	Symbols       []Entry `json:"symbols"`
+	// Venue contracts the tool saw and deliberately left out. nil when the table predates
+	// this list: new venue contracts cannot be told apart then.
+	VenueUnmapped []string `json:"kraken_unmapped"`
 	bySource      map[string]Entry
+	byVenue       map[string]Entry
 }
 
 // Load reads and validates the table: one entry per source and per venue symbol,
@@ -50,7 +54,7 @@ func Load(path, expectedVenue string) (Table, error) {
 		return table, fmt.Errorf("symbol map is for venue %q, expected %q", table.Venue, expectedVenue)
 	}
 	table.bySource = make(map[string]Entry, len(table.Symbols))
-	venueSymbols := make(map[string]struct{}, len(table.Symbols))
+	table.byVenue = make(map[string]Entry, len(table.Symbols))
 	for i, entry := range table.Symbols {
 		if strings.TrimSpace(entry.Source) == "" || strings.TrimSpace(entry.Asset) == "" || strings.TrimSpace(entry.VenueSymbol) == "" {
 			return table, fmt.Errorf("symbol map entry %d has an empty field", i)
@@ -61,11 +65,11 @@ func Load(path, expectedVenue string) (Table, error) {
 		if _, duplicate := table.bySource[entry.Source]; duplicate {
 			return table, fmt.Errorf("symbol map lists %s twice", entry.Source)
 		}
-		if _, duplicate := venueSymbols[entry.VenueSymbol]; duplicate {
+		if _, duplicate := table.byVenue[entry.VenueSymbol]; duplicate {
 			return table, fmt.Errorf("symbol map maps two source symbols to %s", entry.VenueSymbol)
 		}
 		table.bySource[entry.Source] = entry
-		venueSymbols[entry.VenueSymbol] = struct{}{}
+		table.byVenue[entry.VenueSymbol] = entry
 	}
 	return table, nil
 }
@@ -73,5 +77,11 @@ func Load(path, expectedVenue string) (Table, error) {
 // BySource returns the entry for a Binance symbol such as "1000PEPEUSDT".
 func (t Table) BySource(source string) (Entry, bool) {
 	entry, ok := t.bySource[source]
+	return entry, ok
+}
+
+// ByVenue returns the entry for a venue contract such as "PF_PEPEUSD".
+func (t Table) ByVenue(venueSymbol string) (Entry, bool) {
+	entry, ok := t.byVenue[venueSymbol]
 	return entry, ok
 }
