@@ -71,6 +71,10 @@ func (p *Real) risk(ctx context.Context) (realRiskData, error) {
 	}
 	data := buildRealRisk(checkpoint)
 	applyRiskEvaluations(&data, checkpoint.RiskDiagnostics)
+	if checkpoint.DecisionConfigChanged {
+		data.SourceNote = "The portfolio configuration was changed on purpose after this decision: it was sized with " +
+			"the previous configuration, the policies shown are the new one, and the next daily close uses them. " + data.SourceNote
+	}
 
 	// Page view: valued account positions, daily PAPER equity (drawdown only; gross is not
 	// kept per day) and the persisted risk evaluation. Missing inputs leave sections empty.

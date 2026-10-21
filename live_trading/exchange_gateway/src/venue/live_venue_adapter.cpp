@@ -371,6 +371,13 @@ void LiveVenueAdapter::cancelOrder(const CancelOrderCommand& command)
 
 void LiveVenueAdapter::requestSnapshot(const ExchangeSnapshotRequest& request)
 {
+    // Book the account history first: a USD deposit or withdrawal moves the venue balance
+    // at once, but reaches our cash only through its history entry (read every few
+    // minutes). Published before the snapshot, so reconciliation sees both sides of it.
+    next_account_log_ms_ = 0;
+    readAccountLogIfDue();
+    publishPending();
+
     const HttpResponse accounts = send(protocol_.accountsRequest(), Endpoint::Accounts);
     const HttpResponse positions = send(protocol_.positionsRequest(), Endpoint::Positions);
     const HttpResponse openOrders = send(protocol_.openOrdersRequest(), Endpoint::OpenOrders);

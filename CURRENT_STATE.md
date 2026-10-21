@@ -2,6 +2,35 @@
 
 Last synchronized: 2026-10-16. Current source and test output take precedence.
 
+## Smooth strategy switch and deposits (2026-10-21, local)
+
+User request: switching LIVE to RSI 80/65 and adding much more collateral must not stop
+services, raise reconciliation problems or break Expected vs Real. Found and fixed:
+- Strategy service stopped on a changed STRATEGY_FILE (checkpoint bound to the config
+  text). New `--adopt-strategy-config yes|no` (compose `STRATEGY_ADOPT_CONFIG`, default no),
+  as risk's: identity replaced once with an ALERT, checkpoints and active signals kept
+  (Codex). Checked against PostgreSQL/NATS containers: other config stops with the hint,
+  adoption logs the ALERT and runs, the next normal start runs.
+- New `algo switch <strategy.json> [portfolio.json]`: backup, chain.env settings, one start
+  with both adopt flags, checks strategy/risk run, restart without them, comparison restart;
+  refused 23:30-00:30 UTC. `algo install` (also run by `activate`) now adds new repository
+  strategy/portfolio files without overwriting existing ones. New
+  `config/strategies/pure_rsi_8_80_65_volume_rank.json` (RSI 8, 80/65, SMA quote volume 25).
+- USD deposit race: the venue balance moves at once but cash only through the account
+  history read every 5 min, so a reconciliation in between paused trading. The gateway now
+  reads and publishes the account history before every snapshot, and execution-state polls
+  exchange events before snapshots. Gateway test "snapshot books a fresh deposit first".
+- Dashboard rejected the latest risk decision after a portfolio adoption (diagnostics
+  identity != current identity) until the next close; now accepted, with a Risk page note.
+- comparison.py refused to restart the study when the account moved within the last
+  captured cycle (deposit, late fees, the switch restart); it now seeds from the current
+  account and only refuses an uncaptured daily cycle.
+- README "Changing the strategy or portfolio" and "Adding collateral or USD". Not changed:
+  Risk-page drawdown is not flow-adjusted (documented).
+Validation: step59 PASS (fingerprint f2759926...c4ca unchanged), venue adapter test 306/306,
+unit_exchange_gateway, unit_execution_state_service, unit_strategy,
+dashboard Go vet/tests, paper_comparison_test 16/16.
+
 ## Behaviour-test findings fixed (2026-10-20, branch test-suite, local only)
 
 All 52 findings in `tests/FINDINGS.md` are fixed in production code (lanes F1/F2 by Codex,

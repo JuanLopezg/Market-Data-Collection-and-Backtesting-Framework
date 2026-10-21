@@ -276,26 +276,39 @@ Chain units (`chain/systemd/`): `algotrading-chain.service` runs `algo up`/`algo
 runs the PAPER vs. fast-backtest study (only while `PAPER_COMPARISON_FILE` is set),
 `algotrading-kraken.service` runs the Kraken account monitor (below).
 
-## Changing the portfolio sizer of a running chain
+## Changing the strategy or portfolio of a running chain
 
-The risk checkpoint is bound to the portfolio file it was made with; a different file
-stops `risk` ("belongs to a different portfolio/config identity"). To switch on purpose
-(for example equal weight -> `pure_rsi_vol_target.json`), away from 00:00 UTC:
+The strategy and risk checkpoints are bound to the file they were made with; a different
+file stops `strategy` or `risk` ("belongs to a different ... configuration"). To switch on
+purpose, one command (refused between 23:30 and 00:30 UTC, the daily decision):
 
 ```bash
-sudo /algoTrading/chain/algo backup
-# chain.env: PORTFOLIO_FILE=pure_rsi_vol_target.json and RISK_ADOPT_PORTFOLIO_CONFIG=yes
-sudo /algoTrading/chain/algo up                      # risk logs one ALERT "Portfolio config changed on purpose"
-# chain.env: RISK_ADOPT_PORTFOLIO_CONFIG=no
-sudo /algoTrading/chain/algo up                      # risk restarts with the adopted configuration
-sudo systemctl restart algotrading-comparison
+sudo /algoTrading/chain/algo switch pure_rsi_8_80_65_volume_rank.json [pure_rsi_equal_weight_rel25.json]
 ```
 
-Earlier decisions keep their sizing; the next daily decision uses the new one. With
-`pure_rsi_vol_target.json` an open position is resized only when its target weight differs
+It backs up `data/`, sets `STRATEGY_FILE` (and `PORTFOLIO_FILE`, `RSI_ENTRY`/`RSI_EXIT` from
+the strategy file) in `chain.env`, starts the chain once with `STRATEGY_ADOPT_CONFIG=yes`
+and `RISK_ADOPT_PORTFOLIO_CONFIG=yes` (each service logs one ALERT "... config changed on
+purpose"), checks that both run, restarts them with adoption off and restarts the
+comparison. Files come from `<root>/config/strategies` and `<root>/config/portfolio`; a
+release adds the repository's new files there and never overwrites existing ones.
+
+What changes and what does not:
+- Open positions and active signals stay. From the next daily close (00:00 UTC) the new
+  rules decide: an active signal exits when the new exit rule says so (PureRSI: RSI below
+  the new exit level), new entries need the new entry rule.
+- Earlier decisions keep their sizing. Until the next close the dashboard Risk page notes
+  that the latest decision was sized with the previous portfolio configuration.
+- Expected vs Real archives the previous study and starts a new one from the account and
+  signals at the switch; the rows already shown stay.
+
+The manual form is still possible: `algo backup`, edit `chain.env` with the adopt flags at
+`yes`, `algo up`, flags back to `no`, `algo up`, `systemctl restart algotrading-comparison`.
+
+With `pure_rsi_vol_target.json` an open position is resized only when its target weight differs
 from its current weight by at least 20% of that weight (`relative_threshold` 0.20; 10% ->
 only below 8% or above 12%); entries, exits and side changes always happen. Editing that
-file in place is a portfolio change too: use the same procedure.
+file in place is a configuration change too: use `algo switch` with the same file name.
 `comparison.py` reads `STRATEGY_FILE`/`PORTFOLIO_FILE`, archives the previous study in
 `data/comparison/archive-<fingerprint>/` and seeds the fast baseline with the PAPER account
 and strategy state at the switch; the rows already shown remain in the chart.
@@ -336,6 +349,21 @@ it retains balances/collateral and separate monospace position tables for now an
 snapshot of yesterday. Missing history is unavailable, never invented. Explicit
 tests use `docker exec kraken-notifier /dashboard-alert-notifier --test-message
 --test-severity CRITICAL` (sends a real TEST-labelled message).
+
+## Adding collateral or USD to the Kraken account
+
+- **BTC (collateral):** counted at Kraken's post-haircut value in the sizing capital. The
+  value of each day is fixed at its first use, so a deposit is used from the next daily
+  close: positions are resized to their weights of the larger capital where the rebalance
+  rule allows it (equal weight with the 25% relative rule: every held position below 8%).
+  Reconciliation ignores collateral; Total Equity and the equity curve include it, so the
+  curve steps up on the deposit day. Expected vs Real gives the expected run the same daily
+  collateral.
+- **USD:** a capital flow, not performance (`Net Deposits` card; Expected vs Real gives the
+  expected run the same flow). The gateway books the account history before every
+  reconciliation snapshot, so a deposit never shows as a cash difference.
+- Drawdown on the Risk page is measured on the account equity without flow adjustment: a
+  deposit raises the running peak, a withdrawal shows as a drawdown.
 
 ## Telegram setup message
 

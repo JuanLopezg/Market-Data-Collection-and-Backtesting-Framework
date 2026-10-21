@@ -196,10 +196,14 @@ def baseline_start(seed):
                            for state in seed['live']['strategies']]}
 
 
-def restart_study(output, study, identity, live, intent):
-    """Archive the study of the previous configuration; seed a new one with the current state."""
+def restart_study(output, study, identity, live, intent, decision):
+    """Archive the study of the previous configuration; seed a new one with the current state.
+
+    Within the last captured cycle the account may still move (late fees, funding, a deposit,
+    the chain restart of the switch itself): the seed takes the account as it is now. Only a
+    daily cycle that was never captured stops the restart."""
     cycles = study['cycles']
-    if not cycles or normalized(cycles[-1]['live']) != live:
+    if not cycles or cycles[-1]['decision_date'] != decision:
         raise ValueError('Configuration changed after an uncaptured cycle; the new study needs the last captured state')
     last = cycles[-1]
     seed = {'decision_date': last['decision_date'], 'execution_date': last['execution_date'],
@@ -297,7 +301,7 @@ def collect(containers, output, shadow, binary, image=None):
         json.dumps([observed['initialCash'], observed['commissionRate'], 100]).encode()).hexdigest()
     study = json.loads(journal.read_text()) if journal.exists() else {'fingerprint': identity, 'cycles': []}
     if study['fingerprint'] != identity:
-        study = restart_study(output, study, identity, live, intent)
+        study = restart_study(output, study, identity, live, intent, decision)
     restore_seed_intent(output, study, postgres_container, intent)
     cycles = study['cycles']
     seed = study.get('seed')
@@ -455,7 +459,7 @@ def collect_live(containers, output, binary, image=None):
     study = json.loads(journal.read_text()) if journal.exists() else {'fingerprint': identity, 'cycles': []}
     if study['fingerprint'] != identity:
         # Before its first row a study has nothing to archive: start again.
-        study = (restart_study(output, study, identity, live, intent) if study['cycles']
+        study = (restart_study(output, study, identity, live, intent, decision) if study['cycles']
                  else {'fingerprint': identity, 'cycles': [], 'previousRows': study.get('previousRows', [])})
     cycles, seed = study['cycles'], study.get('seed')
     if seed is None:

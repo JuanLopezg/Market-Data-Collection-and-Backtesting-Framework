@@ -66,6 +66,7 @@ struct Options {
     unsigned int market_top_n = 50;
     std::string market_data_source = "binance";
     std::string postgres;
+    bool adopt_strategy_config = false; // Accept a deliberately changed strategy config once.
 };
 
 void printUsage()
@@ -80,6 +81,8 @@ void printUsage()
         << "  --market-top-n N            canonical entry candidate cap, default 50\n"
         << "  --market-data-source NAME   expected MarketDataUpdated source, default binance\n"
         << "  --postgres CONNECTION_STRING\n"
+        << "  --adopt-strategy-config yes|no    accept a changed strategy config for the existing\n"
+        << "                                    checkpoint (default no: a change stops the service)\n"
         << "  Business time is provided by TimeHandler (identity UTC by default)\n";
 }
 
@@ -115,6 +118,11 @@ Options parseOptions(int argc, char** argv)
             options.market_data_source = requireValue("--market-data-source");
         } else if (arg == "--postgres") {
             options.postgres = requireValue("--postgres");
+        } else if (arg == "--adopt-strategy-config") {
+            const std::string value = requireValue("--adopt-strategy-config");
+            if (value != "yes" && value != "no")
+                throw std::invalid_argument("--adopt-strategy-config must be yes or no");
+            options.adopt_strategy_config = value == "yes";
         } else {
             throw std::invalid_argument("Unknown option: " + arg);
         }
@@ -275,7 +283,9 @@ private:
         return result;
     }
 
-    void ensureSchema(const std::string& identity)
+    // Adoption replaces only the configuration identity. Stored intents and the active
+    // signals restored from the latest checkpoint remain unchanged for the next update.
+    void ensureSchema(const std::string& identity, bool adoptNewConfig)
     {
         exec(
             "CREATE TABLE IF NOT EXISTS strategy_service_metadata ("
@@ -315,9 +325,21 @@ private:
             throw std::runtime_error("Strategy checkpoint metadata row is missing");
 
         const std::string persistedIdentity = PQgetvalue(metadata.get(), 0, 0);
-        if (persistedIdentity != identity)
+        if (persistedIdentity == identity) {
+            if (adoptNewConfig)
+                LG_INFO("Strategy config adoption requested, but the checkpoint already uses this configuration");
+            return;
+        }
+        if (!adoptNewConfig)
             throw std::runtime_error(
-                "Persisted strategy checkpoint belongs to a different strategy/market-window configuration");
+                "Persisted strategy checkpoint belongs to a different strategy/market-window configuration "
+                "(to switch on purpose, start once with --adopt-strategy-config yes)");
+
+        execParams(
+            "UPDATE strategy_service_metadata SET strategy_config=$2 WHERE state_key=$1",
+            {STATE_KEY, identity}, PGRES_COMMAND_OK);
+        LG_ALERT("Strategy config changed on purpose: the strategy checkpoint now uses the new configuration; "
+                 "earlier days keep their stored signals");
     }
 
     static Timestamp parseTimestamp(const char* text)
@@ -331,7 +353,8 @@ private:
 public:
     StrategyCheckpointStore(
         const std::string& connectionString,
-        const std::string& identity
+        const std::string& identity,
+        bool adoptNewConfig
     )
     {
         connection_ = PQconnectdb(connectionString.c_str());
@@ -344,7 +367,7 @@ public:
             throw std::runtime_error("Cannot connect strategy checkpoint store to PostgreSQL: " + error);
         }
 
-        ensureSchema(identity);
+        ensureSchema(identity, adoptNewConfig);
     }
 
     ~StrategyCheckpointStore()
@@ -869,7 +892,8 @@ public:
 
         checkpoint_store_ = std::make_unique<StrategyCheckpointStore>(
             options_.postgres,
-            checkpointIdentity(options_)
+            checkpointIdentity(options_),
+            options_.adopt_strategy_config
         );
         recoverFromCheckpoint();
 

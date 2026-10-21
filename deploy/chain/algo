@@ -37,6 +37,10 @@ Usage: algo <command> [service...]
   logs <service> [-n N] follow today's log file of one service
   show [service]        resolved compose configuration with secrets masked
   backup                stop, archive data/ into backups/, start again if it was running
+  switch <strategy.json> [portfolio.json]
+                        change the strategy (and portfolio) file of a running chain: back up,
+                        adopt the new configuration once in strategy and risk, restart the
+                        dashboard and comparison with it (files under <root>/config/...)
   receiver start|stop   local log receiver (only where systemd does not run it)
   monitor start|stop    local host telemetry collector (only where systemd does not run it)
   releases              release folders in releases/, with the current and previous one
@@ -140,6 +144,8 @@ STRATEGY_FILE=pure_rsi_quote_volume.json
 PORTFOLIO_FILE=pure_rsi_equal_weight.json
 # yes only for the one start after changing PORTFOLIO_FILE on a running chain (README).
 RISK_ADOPT_PORTFOLIO_CONFIG=no
+# yes only for the one start after changing STRATEGY_FILE on a running chain.
+STRATEGY_ADOPT_CONFIG=no
 # Dashboard display of the RSI rules; keep equal to the strategy file.
 RSI_ENTRY=80
 RSI_EXIT=70
@@ -193,9 +199,16 @@ else:
 path.write_text(text)
 PYDEBUG
 
-    # Configuration defaults are copied once; later edits stay in <root>/config.
-    if [[ ! -d "$config/strategies" ]]; then cp -r "$repo/config/strategies" "$config/"; echo "Created $config/strategies"; fi
-    if [[ ! -d "$config/portfolio" ]]; then cp -r "$repo/config/portfolio" "$config/"; echo "Created $config/portfolio"; fi
+    # Strategy and portfolio files: new ones from the repository are added (for "algo switch");
+    # a file that already exists is never overwritten, so edits stay in <root>/config.
+    local kind file
+    for kind in strategies portfolio; do
+        mkdir -p "$config/$kind"
+        for file in "$repo/config/$kind"/*.json; do
+            [[ -e "$config/$kind/$(basename "$file")" ]] && continue
+            cp "$file" "$config/$kind/" && echo "Added $config/$kind/$(basename "$file")"
+        done
+    done
     # Kraken account warning thresholds. The monitor's journal is bound to them: after an
     # edit, move data/kraken_account aside (see README) so earlier observations are kept.
     if [[ ! -f "$config/kraken_account_policy.json" ]]; then
@@ -598,6 +611,57 @@ backup() {
     echo "Backup written: $archive"
 }
 
+# Deliberate configuration change of a running chain (README "Changing the strategy or
+# portfolio"). Strategy and risk checkpoints are bound to their config text; each adopts
+# the new one once (ALERT in its log) and keeps its state: open positions and active
+# signals stay, and the next daily close is evaluated with the new rules.
+switch_config() {
+    local strategy="${1:?Usage: algo switch <strategy.json> [portfolio.json]}" portfolio="${2:-}"
+    local now name restarts entry exit
+    [[ -f "$ALGO_CONFIG/strategies/$strategy" ]] || { echo "ERROR: $ALGO_CONFIG/strategies/$strategy not found" >&2; exit 1; }
+    if [[ -n "$portfolio" && ! -f "$ALGO_CONFIG/portfolio/$portfolio" ]]; then
+        echo "ERROR: $ALGO_CONFIG/portfolio/$portfolio not found" >&2; exit 1
+    fi
+    # The daily decision runs just after 00:00 UTC: never switch in the middle of it.
+    now="$(date -u +%H%M)"
+    if [[ "$now" > "2330" || "$now" < "0030" ]]; then
+        echo "ERROR: not between 23:30 and 00:30 UTC (daily decision); try again later" >&2; exit 1
+    fi
+    read -r entry exit < <(python3 -c 'import json,sys; p=json.load(open(sys.argv[1]))["strategies"][0]["parameters"]; print(p.get("rsi_entry",""), p.get("rsi_exit",""))' \
+        "$ALGO_CONFIG/strategies/$strategy")
+
+    backup
+    set_chain_setting STRATEGY_FILE "$strategy"
+    [[ -z "$portfolio" ]] || set_chain_setting PORTFOLIO_FILE "$portfolio"
+    # Dashboard fallback display of the RSI rules; the dashboard reads the strategy file itself.
+    [[ -z "$entry" ]] || set_chain_setting RSI_ENTRY "$entry"
+    [[ -z "$exit" ]] || set_chain_setting RSI_EXIT "$exit"
+
+    echo "Adopting $strategy${portfolio:+ and $portfolio} in strategy and risk"
+    STRATEGY_ADOPT_CONFIG=yes RISK_ADOPT_PORTFOLIO_CONFIG=yes compose up -d
+    sleep 20
+    for name in strategy risk; do
+        restarts="$(docker inspect -f '{{.RestartCount}} {{.State.Running}}' "$name" 2>/dev/null || echo "? false")"
+        if [[ "$restarts" != "0 true" ]]; then
+            echo "ERROR: $name did not start with the new configuration (restarts/running: $restarts)." \
+                 "See 'algo logs $name'; the backup above holds the previous data." >&2
+            exit 1
+        fi
+    done
+    # Back to the normal start: a later unintended config change must stop the services again.
+    compose up -d strategy risk
+    if systemd_unit_active algotrading-comparison.service; then
+        systemctl restart algotrading-comparison.service && echo "Comparison restarted (archives the previous study)"
+    fi
+    echo "Switched to $strategy${portfolio:+ / $portfolio}. The next daily close (00:00 UTC) uses it."
+}
+
+set_chain_setting() {
+    local name="$1" value="$2" file="$SCRIPT_DIR/chain.env"
+    if grep -q "^$name=" "$file"; then sed -i "s#^$name=.*#$name=$value#" "$file"
+    else echo "$name=$value" >> "$file"; fi
+}
+
 main() {
     local command="${1:-help}"; shift || true
     case "$command" in
@@ -638,6 +702,7 @@ main() {
                     tail -n "$lines" -F "$LOGS/$service/$(date -u +%Y%m%d).log" ;;
                 show) compose config "$@" | mask_secrets ;;
                 backup) backup ;;
+                switch) refuse_other_mode; switch_config "$@" ;;
                 receiver) case "${1:-}" in start) receiver_start ;; stop) receiver_stop ;; *) usage; exit 1 ;; esac ;;
                 monitor) case "${1:-}" in start) monitor_start ;; stop) monitor_stop ;; *) usage; exit 1 ;; esac ;;
                 *) usage; exit 1 ;;

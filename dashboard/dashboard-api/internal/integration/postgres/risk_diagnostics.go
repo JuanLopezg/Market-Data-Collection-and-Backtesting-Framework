@@ -49,11 +49,15 @@ type RiskAssetEvaluation struct {
 	Reductions        []string `json:"reductions"`
 }
 
-func decodeRiskDiagnostics(payload string, timestamp uint64, identity string) (*RiskDiagnostics, error) {
+// The report keeps the configuration identity it was evaluated with. It may differ from the
+// service's current identity after a deliberate portfolio change (--adopt-portfolio-config):
+// the latest decision then belongs to the previous configuration until the next close, which
+// the caller reports instead of rejecting the decision.
+func decodeRiskDiagnostics(payload string, timestamp uint64) (*RiskDiagnostics, error) {
 	var report RiskDiagnostics
 	if len(payload) > 1024*1024 || json.Unmarshal([]byte(payload), &report) != nil ||
 		report.SchemaVersion != 1 || report.Timestamp != timestamp || report.ConfigurationIdentity == "" ||
-		(identity != "" && report.ConfigurationIdentity != identity) || len(report.Strategies) == 0 || len(report.Strategies) > 128 {
+		len(report.Strategies) == 0 || len(report.Strategies) > 128 {
 		return nil, fmt.Errorf("risk diagnostics schema, configuration identity or cycle anchor invalid")
 	}
 	ids := map[uint64]bool{}

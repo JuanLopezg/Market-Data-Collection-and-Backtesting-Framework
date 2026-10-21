@@ -193,6 +193,8 @@ services:
       - ALGOTRADING_PAPER_RUNTIME
       - --strategy-config
       - /config/strategies/${STRATEGY_FILE:?set in chain.env}
+      - --adopt-strategy-config
+      - ${STRATEGY_ADOPT_CONFIG:-no}
       - --market-data-db
       - /data/market/database.db
       - --market-warmup-days

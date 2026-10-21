@@ -1783,8 +1783,10 @@ public:
 
             // Execution truth is always serviced. Daily economic inputs are separately
             // gated by newestCompletedUtcDate(time_handler_) inside their handlers.
-            bus_.poll(exchange_snapshot_subscription_, 16, 1);
+            // Exchange events before snapshots: the gateway publishes a venue cost (deposit,
+            // fee) before the snapshot that already includes it in the USD balance.
             bus_.poll(exchange_event_subscription_, 64, 1);
+            bus_.poll(exchange_snapshot_subscription_, 16, 1);
             bus_.poll(market_update_account_subscription_, 32, 1);
             bus_.poll(decision_subscription_, 32, 1);
             bus_.poll(notional_plan_subscription_, 32, 1);

@@ -135,12 +135,16 @@ class PaperBaselineTest(unittest.TestCase):
             comparison.write_json(output / 'comparison.json', {'rows': [{'date': '2026-10-13', 'liveEquity': 1}]})
             (output / 'market-20261012.sqlite').write_text('x')
             intent = {'timestamp': 20261012, 'strategies': [{'strategy_id': 1, 'signals': {'BTCUSDT': 1}}]}
-            with self.assertRaises(ValueError):  # the account moved on after the last capture
-                comparison.restart_study(output, old, 'b' * 64, {**live, 'account_cash': 999}, intent)
+            with self.assertRaises(ValueError):  # a daily cycle after the last capture was never captured
+                comparison.restart_study(output, old, 'b' * 64, live, intent, 20261013)
             with self.assertRaises(ValueError):
-                comparison.restart_study(output, old, 'b' * 64, live, {**intent, 'timestamp': 20261013})
+                comparison.restart_study(output, old, 'b' * 64, live, {**intent, 'timestamp': 20261013}, 20261012)
             self.assertFalse((output / ('archive-' + 'a' * 12)).exists())
-            study = comparison.restart_study(output, old, 'b' * 64, live, intent)
+            # Within the captured cycle the account may still move (a deposit, late fees, the
+            # restart of the switch): the new study is seeded with the account as it is now.
+            moved = {**live, 'account_cash': 1500}
+            study = comparison.restart_study(output, old, 'b' * 64, moved, intent, 20261012)
+            live = moved
             archive = output / ('archive-' + 'a' * 12)
             self.assertTrue((archive / 'study.json').exists() and (archive / 'market-20261012.sqlite').exists())
             self.assertFalse((output / 'comparison.json').exists())

@@ -130,12 +130,17 @@ struct Events {
     std::vector<FillEvent> fills;
     std::vector<ExchangeSnapshotEvent> snapshots;
     std::vector<VenueCostEvent> costs;
+    std::function<void()> onSnapshotSeen; // optional: observe publication order
 
     ExchangeGatewayHandlers handlers()
     {
         return {[this](const OrderUpdateEvent& e) { updates.push_back(e); },
                 [this](const FillEvent& e) { fills.push_back(e); },
-                [this](const ExchangeSnapshotEvent& e) { snapshots.push_back(e); },
+                [this](const ExchangeSnapshotEvent& e) {
+                    if (onSnapshotSeen)
+                        onSnapshotSeen();
+                    snapshots.push_back(e);
+                },
                 [this](const VenueCostEvent& e) { costs.push_back(e); }};
     }
 };
@@ -1076,6 +1081,31 @@ void testInterestAndCapitalFlowsFromAccountLog()
     CHECK(h.events.costs.size() == 4);
 }
 
+// A USD deposit moves the venue balance at once: a snapshot requested right after it must
+// book and publish the deposit first, not wait for the next scheduled history read.
+void testSnapshotBooksAFreshDepositFirst()
+{
+    Harness h("deposit-snapshot");
+    const std::string deposit = balanceRow(20, "cross-exchange transfer", "usd", "100", "600");
+    h.transport.responses["account-log"] = {ok(accountLog("")), ok(accountLog(deposit))};
+    h.transport.responses["accounts"] = {ok(R"({"result":"success","serverTime":"2026-10-12T00:00:01.000Z","accounts":{
+        "flex":{"type":"multiCollateralMarginAccount","currencies":{"USD":{"quantity":600,"value":600,"collateral":600,"available":600}}}}})")};
+    h.transport.responses["openpositions"] = {ok(R"({"result":"success","serverTime":"2026-10-12T00:00:01.000Z","openPositions":[]})")};
+    h.transport.responses["openorders"] = {ok(openOrders(""))};
+
+    h.poll();          // baseline history read; the next one is scheduled 5 minutes later
+    CHECK(h.events.costs.empty());
+
+    std::size_t costsBeforeSnapshot = 0;
+    h.events.onSnapshotSeen = [&] { costsBeforeSnapshot = h.events.costs.size(); };
+    ExchangeSnapshotRequest request;
+    request.metadata.message_id = "snapshot-after-deposit";
+    h.adapter->requestSnapshot(request);
+    CHECK(h.events.snapshots.size() == 1 && near(h.events.snapshots.back().snapshot.cash, 600.0));
+    CHECK(costsBeforeSnapshot == 1 && h.events.costs.size() == 1 &&
+          h.events.costs[0].kind == VenueCostKind::CapitalFlow && near(h.events.costs[0].amount_usd, 500.0));
+}
+
 // Shape of the real account history read on 2026-10-15 (read-only key): every row has all
 // fields, null when unused; each trade has a USD row (fee, realized PnL and funding change
 // the USD balance) and a row for the contract's position size; with no USD, Kraken converts
@@ -1230,6 +1260,7 @@ int main(int argc, char** argv)
         {"snapshot", testSnapshot},
         {"fees and funding from the account history", testFeesAndFundingFromAccountLog},
         {"interest and capital flows from the account history", testInterestAndCapitalFlowsFromAccountLog},
+        {"snapshot books a fresh deposit first", testSnapshotBooksAFreshDepositFirst},
         {"real account history shape (2026-10-15)", testRealAccountLogShape},
         {"permissions", testPermissions},
         {"position stop request, tick rounding and scaled units", testPositionStopBodyAndScale},

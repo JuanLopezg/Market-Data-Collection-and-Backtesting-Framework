@@ -161,8 +161,11 @@ type PipelineCheckpoint struct {
 	RiskDiagnostics *RiskDiagnostics
 	Timestamp       uint64
 	PortfolioConfig string
-	StrategyUpdate  *tradingwire.MarketDataUpdated
-	Signals         tradingwire.StrategyIntentBatch
+	// The latest decision was made under another portfolio configuration than the
+	// service's current one (changed on purpose since; the next close uses the new one).
+	DecisionConfigChanged bool
+	StrategyUpdate        *tradingwire.MarketDataUpdated
+	Signals               tradingwire.StrategyIntentBatch
 	// Signals of the previous decision checkpoint; nil on the first one.
 	PreviousSignals *tradingwire.StrategyIntentBatch
 	Account         tradingwire.AccountSnapshot
@@ -345,10 +348,12 @@ func (r *Reader) LatestPipelineCheckpoint(ctx context.Context) (PipelineCheckpoi
 	result.Account = account
 	result.Decision = decision
 	if envelope.RiskDiagnosticsPayload != nil && *envelope.RiskDiagnosticsPayload != "" {
-		result.RiskDiagnostics, err = decodeRiskDiagnostics(*envelope.RiskDiagnosticsPayload, envelope.Timestamp, envelope.PortfolioConfig)
+		result.RiskDiagnostics, err = decodeRiskDiagnostics(*envelope.RiskDiagnosticsPayload, envelope.Timestamp)
 		if err != nil {
 			return PipelineCheckpoint{}, err
 		}
+		result.DecisionConfigChanged = envelope.PortfolioConfig != "" &&
+			result.RiskDiagnostics.ConfigurationIdentity != envelope.PortfolioConfig
 		if len(result.RiskDiagnostics.Strategies) != len(signals.Strategies) {
 			return PipelineCheckpoint{}, fmt.Errorf("risk diagnostics strategy count does not match cycle inputs")
 		}
