@@ -34,10 +34,12 @@ import (
 // a hint to rebuild the table with tools/kraken_symbol_map.py; the gateway still trades
 // nothing that is not in the reviewed table.
 const (
-	symbolMapVenue          = "kraken-futures"
-	symbolMapMaxPriceRatio  = 5.0
-	symbolMapCacheTTL       = 60 * time.Second
-	symbolMapCacheJitter    = 30 * time.Second
+	symbolMapVenue         = "kraken-futures"
+	symbolMapMaxPriceRatio = 5.0
+	// Signals change once a day and Kraken listings rarely: a 4.5-5.5 min refresh is
+	// enough, and this check reads the whole market window and Kraken's prices.
+	symbolMapCacheTTL       = 5 * time.Minute
+	symbolMapCacheJitter    = time.Minute
 	symbolMapCheckTimeout   = 8 * time.Second
 	symbolMapStateOK        = "OK"
 	symbolMapStateNotMapped = "NOT_ON_VENUE"
@@ -300,7 +302,7 @@ func unavailableSymbolMapStatus(err error, checkedAt time.Time) SymbolMapStatus 
 		Error: err.Error(), Rows: []SymbolMapRow{}, Alarms: []SymbolMapAlarm{}}
 }
 
-// SymbolMapStatus refreshes about once a minute; Kraken is asked once per run.
+// SymbolMapStatus refreshes about every 5 minutes; Kraken is asked once per run.
 // Completion-relative jitter prevents multiple processes from retaining the
 // same refresh phase after starting together.
 func (p *Real) SymbolMapStatus(ctx context.Context) SymbolMapStatus {

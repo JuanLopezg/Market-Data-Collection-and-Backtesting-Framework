@@ -87,17 +87,30 @@ func main() {
 	}
 
 	sweep()
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
 	for {
+		timer := time.NewTimer(time.Until(nextSweepAt(time.Now(), interval)))
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			logger.Info("dashboard watchdog stopped")
 			return
-		case <-ticker.C:
+		case <-timer.C:
 			sweep()
 		}
 	}
+}
+
+// The VPS loses CPU to other virtual machines in the first seconds of each minute,
+// so sweeps run at a fixed phase 7 s into each interval (:07, :22, :37, :52 for 15 s)
+// instead of wherever the process happened to start.
+const sweepPhase = 7 * time.Second
+
+func nextSweepAt(now time.Time, interval time.Duration) time.Time {
+	next := now.Truncate(interval).Add(sweepPhase % interval)
+	for !next.After(now) {
+		next = next.Add(interval)
+	}
+	return next
 }
 
 func configuredRealProvider() (*provider.Real, error) {

@@ -142,9 +142,13 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?missing secrets/chain.env}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U algotrading -d algotrading_paper"]
-      interval: 2s
+      # Every 2 s while starting (the services wait for it), then every 10 s: each check
+      # is a new connection on a 2-vCPU VPS.
+      interval: 10s
+      start_period: 60s
+      start_interval: 2s
       timeout: 3s
-      retries: 30
+      retries: 6
     volumes:
       - ${ALGO_STATE}/postgres:/var/lib/postgresql/data
 
