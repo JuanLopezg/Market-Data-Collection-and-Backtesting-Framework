@@ -45,7 +45,7 @@ func main() {
 		logger.Error("invalid DASHBOARD_WATCHDOG_INTERVAL", "value", os.Getenv("DASHBOARD_WATCHDOG_INTERVAL"))
 		os.Exit(1)
 	}
-	timeout, err := time.ParseDuration(envOr("DASHBOARD_WATCHDOG_SWEEP_TIMEOUT", "8s"))
+	timeout, err := time.ParseDuration(envOr("DASHBOARD_WATCHDOG_SWEEP_TIMEOUT", "12s"))
 	if err != nil || timeout <= 0 || timeout > 30*time.Second {
 		logger.Error("invalid DASHBOARD_WATCHDOG_SWEEP_TIMEOUT", "value", os.Getenv("DASHBOARD_WATCHDOG_SWEEP_TIMEOUT"))
 		os.Exit(1)
@@ -54,6 +54,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	logger.Info("dashboard watchdog starting", "version", version, "interval", interval.String(), "store", storeDir)
+	debouncer := newSourceDebouncer(alertstore.ReadSnapshot(storeDir, 1).Active)
 
 	sweep := func() {
 		now := time.Now().UTC()
@@ -61,18 +62,23 @@ func main() {
 		defer cancel()
 		raw, err := real.Read(sweepCtx, provider.ResourceAlertsAudit)
 		if err != nil {
+			debouncer.interrupt()
 			_ = store.RecordFailure(now, err)
 			logger.Warn("watchdog sweep failed", "error", err)
 			return
 		}
 		var envelope alertsEnvelope
 		if err := json.Unmarshal(raw, &envelope); err != nil {
+			debouncer.interrupt()
 			_ = store.RecordFailure(now, err)
 			logger.Warn("watchdog decode failed", "error", err)
 			return
 		}
-		hb, err := store.Apply(now, envelope.Alerts)
+		previousStreaks := debouncer.streaks
+		hb, err := store.Apply(now, debouncer.filter(envelope.Alerts))
 		if err != nil {
+			debouncer.streaks = previousStreaks
+			debouncer.interrupt()
 			_ = store.RecordFailure(now, err)
 			logger.Error("watchdog persistence failed", "error", err)
 			return
@@ -95,6 +101,14 @@ func main() {
 }
 
 func configuredRealProvider() (*provider.Real, error) {
+	queryTimeout, err := time.ParseDuration(envOr("DASHBOARD_POSTGRES_QUERY_TIMEOUT", "8s"))
+	if err != nil || queryTimeout <= 0 {
+		return nil, fmt.Errorf("invalid DASHBOARD_POSTGRES_QUERY_TIMEOUT")
+	}
+	connectTimeout, err := time.ParseDuration(envOr("DASHBOARD_POSTGRES_CONNECT_TIMEOUT", "5s"))
+	if err != nil || connectTimeout <= 0 {
+		return nil, fmt.Errorf("invalid DASHBOARD_POSTGRES_CONNECT_TIMEOUT")
+	}
 	probeTimeout, err := time.ParseDuration(envOr("DASHBOARD_SOURCE_PROBE_TIMEOUT", "1s"))
 	if err != nil || probeTimeout <= 0 {
 		return nil, fmt.Errorf("invalid DASHBOARD_SOURCE_PROBE_TIMEOUT")
@@ -121,27 +135,29 @@ func configuredRealProvider() (*provider.Real, error) {
 	}
 
 	return provider.NewReal(provider.RealConfig{
-		HostMetricsFile:     strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_FILE")),
-		HostMetricsProject:  strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_PROJECT")),
-		PostgreSQLDSN:       strings.TrimSpace(os.Getenv("DASHBOARD_POSTGRES_DSN")),
-		NATSURL:             strings.TrimSpace(os.Getenv("DASHBOARD_NATS_URL")),
-		NATSMonitorURL:      strings.TrimSpace(os.Getenv("DASHBOARD_NATS_MONITOR_URL")),
-		NATSStream:          strings.TrimSpace(envOr("DASHBOARD_NATS_STREAM", "ALGOTRADING_RUNTIME")),
-		MarketDataDB:        strings.TrimSpace(os.Getenv("DASHBOARD_MARKET_DATA_DB")),
-		RuntimeMode:         strings.TrimSpace(envOr("DASHBOARD_RUNTIME_MODE", "LIVE")),
-		MarketTopN:          marketTopN,
-		MarketHistoryDays:   historyDays,
-		QuoteVolume:         os.Getenv("DASHBOARD_QUOTE_VOLUME") == "true",
-		QuoteVolumeFrom:     strings.TrimSpace(os.Getenv("DASHBOARD_QUOTE_VOLUME_FROM")),
-		PaperComparisonFile: strings.TrimSpace(os.Getenv("DASHBOARD_PAPER_COMPARISON_FILE")),
-		RSIEntry:            envFloat("DASHBOARD_RSI_ENTRY", 80),
-		RSIExit:             envFloat("DASHBOARD_RSI_EXIT", 70),
-		StrategyUniverseN:   universeN,
-		StrategyConfigFile:  strings.TrimSpace(os.Getenv("DASHBOARD_STRATEGY_CONFIG")),
-		ProbeTimeout:        probeTimeout,
-		ExecutionVenue:      venue,
-		SymbolMapFile:       strings.TrimSpace(os.Getenv("DASHBOARD_SYMBOL_MAP_FILE")),
-		KrakenTickersURL:    krakenpublic.TickersURL,
+		HostMetricsFile:          strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_FILE")),
+		HostMetricsProject:       strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_PROJECT")),
+		PostgreSQLDSN:            strings.TrimSpace(os.Getenv("DASHBOARD_POSTGRES_DSN")),
+		NATSURL:                  strings.TrimSpace(os.Getenv("DASHBOARD_NATS_URL")),
+		NATSMonitorURL:           strings.TrimSpace(os.Getenv("DASHBOARD_NATS_MONITOR_URL")),
+		NATSStream:               strings.TrimSpace(envOr("DASHBOARD_NATS_STREAM", "ALGOTRADING_RUNTIME")),
+		MarketDataDB:             strings.TrimSpace(os.Getenv("DASHBOARD_MARKET_DATA_DB")),
+		RuntimeMode:              strings.TrimSpace(envOr("DASHBOARD_RUNTIME_MODE", "LIVE")),
+		MarketTopN:               marketTopN,
+		MarketHistoryDays:        historyDays,
+		QuoteVolume:              os.Getenv("DASHBOARD_QUOTE_VOLUME") == "true",
+		QuoteVolumeFrom:          strings.TrimSpace(os.Getenv("DASHBOARD_QUOTE_VOLUME_FROM")),
+		PaperComparisonFile:      strings.TrimSpace(os.Getenv("DASHBOARD_PAPER_COMPARISON_FILE")),
+		RSIEntry:                 envFloat("DASHBOARD_RSI_ENTRY", 80),
+		RSIExit:                  envFloat("DASHBOARD_RSI_EXIT", 70),
+		StrategyUniverseN:        universeN,
+		StrategyConfigFile:       strings.TrimSpace(os.Getenv("DASHBOARD_STRATEGY_CONFIG")),
+		ProbeTimeout:             probeTimeout,
+		PostgreSQLQueryTimeout:   queryTimeout,
+		PostgreSQLConnectTimeout: connectTimeout,
+		ExecutionVenue:           venue,
+		SymbolMapFile:            strings.TrimSpace(os.Getenv("DASHBOARD_SYMBOL_MAP_FILE")),
+		KrakenTickersURL:         krakenpublic.TickersURL,
 		// Intentionally omit AlertStoreDir: the watchdog derives current alerts
 		// from canonical sources and must not feed its own durable history back
 		// into the sweep input.

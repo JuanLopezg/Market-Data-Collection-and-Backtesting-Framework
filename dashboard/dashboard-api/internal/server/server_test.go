@@ -79,6 +79,17 @@ func loginAs(t *testing.T, api *Server, username, password string) (*http.Cookie
 	return cookie, payload.CSRFToken
 }
 
+func TestHTTPWriteTimeoutAllowsResourceReadToFinish(t *testing.T) {
+	api := newTestServer(t)
+	if api.cfg.ResourceTimeout != 12*time.Second || api.HTTPServer().WriteTimeout <= api.cfg.ResourceTimeout {
+		t.Fatal("default HTTP budget cuts off a slow PostgreSQL resource read")
+	}
+	api.cfg.ResourceTimeout = 20 * time.Second
+	if api.HTTPServer().WriteTimeout <= api.cfg.ResourceTimeout {
+		t.Fatal("HTTP write timeout does not follow configured resource budget")
+	}
+}
+
 func TestHealthIsPublicAndIncludesProvider(t *testing.T) {
 	api := newTestServer(t)
 	request := httptest.NewRequest(http.MethodGet, "/api/health", nil)

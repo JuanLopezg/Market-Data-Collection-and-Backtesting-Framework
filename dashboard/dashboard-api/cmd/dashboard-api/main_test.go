@@ -7,9 +7,9 @@ import (
 func TestConfiguredRealProviderRequiresTheTradingChain(t *testing.T) {
 	t.Setenv("DASHBOARD_DATA_PROVIDER", "real")
 	for _, setup := range [][4]string{
-		{"", "", "", ""},                                     // nothing configured
+		{"", "", "", ""}, // nothing configured
 		{"LIVE", "HYPERLIQUID", "TESTNET", "hyperliquid-dry-run"}, // the retired testnet setup
-		{"LIVE", "BINANCE", "LIVE", "venue"},                   // a venue the chain does not trade
+		{"LIVE", "BINANCE", "LIVE", "venue"},                      // a venue the chain does not trade
 	} {
 		t.Setenv("DASHBOARD_RUNTIME_MODE", setup[0])
 		t.Setenv("DASHBOARD_EXECUTION_VENUE", setup[1])
@@ -18,6 +18,28 @@ func TestConfiguredRealProviderRequiresTheTradingChain(t *testing.T) {
 		if _, err := configuredProvider(); err == nil {
 			t.Fatalf("real provider accepted a setup outside the trading chain: %v", setup)
 		}
+	}
+}
+
+func TestConfiguredProviderValidatesPostgresTimeouts(t *testing.T) {
+	t.Setenv("DASHBOARD_DATA_PROVIDER", "real")
+	t.Setenv("DASHBOARD_RUNTIME_MODE", "PAPER")
+	t.Setenv("DASHBOARD_EXECUTION_VENUE", "SIMULATED")
+	t.Setenv("DASHBOARD_VENUE_TARGET_ENVIRONMENT", "PAPER")
+	t.Setenv("DASHBOARD_EXCHANGE_GATEWAY_MODE", "backend")
+	for _, name := range []string{"DASHBOARD_POSTGRES_QUERY_TIMEOUT", "DASHBOARD_POSTGRES_CONNECT_TIMEOUT"} {
+		t.Run(name, func(t *testing.T) {
+			for _, value := range []string{"invalid", "0s", "-1s"} {
+				t.Setenv(name, value)
+				if _, err := configuredProvider(); err == nil {
+					t.Fatalf("accepted %s=%s", name, value)
+				}
+			}
+			t.Setenv(name, "11s")
+			if _, err := configuredProvider(); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 

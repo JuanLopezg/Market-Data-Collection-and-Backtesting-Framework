@@ -23,10 +23,22 @@ type QueryRunner interface {
 	QueryJSON(ctx context.Context, dsn, query string) ([]byte, error)
 }
 
-type PSQLRunner struct{}
+const (
+	defaultQueryTimeout   = 8 * time.Second
+	defaultConnectTimeout = 5 * time.Second
+)
 
-func (PSQLRunner) QueryJSON(ctx context.Context, dsn, query string) ([]byte, error) {
-	env, err := postgresEnv(dsn)
+// All readers in this Go process share the limit, including independent HTTP
+// requests. Waiting for a slot consumes the caller's query deadline.
+var querySlots = make(chan struct{}, 3)
+
+type PSQLRunner struct {
+	ConnectTimeout   time.Duration
+	StatementTimeout time.Duration
+}
+
+func (r PSQLRunner) QueryJSON(ctx context.Context, dsn, query string) ([]byte, error) {
+	env, err := postgresEnv(dsn, r.ConnectTimeout, r.StatementTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -35,6 +47,9 @@ func (PSQLRunner) QueryJSON(ctx context.Context, dsn, query string) ([]byte, err
 	cmd.Env = append(os.Environ(), env...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		detail := strings.TrimSpace(string(output))
 		if detail == "" {
 			detail = err.Error()
@@ -55,10 +70,12 @@ func (PSQLRunner) QueryJSON(ctx context.Context, dsn, query string) ([]byte, err
 	return []byte(raw), nil
 }
 
+// Config.Timeout includes queueing, process startup, authentication and the query.
 type Config struct {
-	DSN     string
-	Timeout time.Duration
-	Runner  QueryRunner
+	DSN            string
+	Timeout        time.Duration
+	ConnectTimeout time.Duration
+	Runner         QueryRunner
 }
 
 type Reader struct {
@@ -164,10 +181,10 @@ type StrategyCheckpoint struct {
 
 func NewReader(cfg Config) *Reader {
 	if cfg.Timeout <= 0 {
-		cfg.Timeout = 2 * time.Second
+		cfg.Timeout = defaultQueryTimeout
 	}
 	if cfg.Runner == nil {
-		cfg.Runner = PSQLRunner{}
+		cfg.Runner = PSQLRunner{ConnectTimeout: cfg.ConnectTimeout, StatementTimeout: cfg.Timeout}
 	}
 	return &Reader{dsn: strings.TrimSpace(cfg.DSN), timeout: cfg.Timeout, runner: cfg.Runner}
 }
@@ -524,12 +541,32 @@ func (r *Reader) FillsForOrders(ctx context.Context, orderIDs []uint64, limit in
 }
 
 func (r *Reader) query(parent context.Context, query string) ([]byte, error) {
+	if cache, ok := parent.Value(queryCacheKey{}).(*queryCache); ok {
+		return cache.query(parent, r, query)
+	}
+	return r.runQuery(parent, query)
+}
+
+func (r *Reader) runQuery(parent context.Context, query string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(parent, r.timeout)
 	defer cancel()
+	select {
+	case querySlots <- struct{}{}:
+		defer func() { <-querySlots }()
+	case <-ctx.Done():
+		return nil, fmt.Errorf("PostgreSQL query wait cancelled: %w", ctx.Err())
+	}
+	// Do not fork if a slot became free at the same instant as cancellation.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	raw, err := r.runner.QueryJSON(ctx, r.dsn, query)
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return nil, fmt.Errorf("PostgreSQL query timed out after %s", r.timeout)
+			return nil, fmt.Errorf("PostgreSQL query timed out (limit %s): %w", r.timeout, ctx.Err())
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
 		return nil, err
 	}
@@ -718,7 +755,18 @@ const fillsForOrdersSQL = `SELECT json_build_object(
   ), '[]'::json)
 )::text;`
 
-func postgresEnv(dsn string) ([]string, error) {
+func postgresEnv(dsn string, connectTimeout, statementTimeout time.Duration) ([]string, error) {
+	if connectTimeout <= 0 {
+		connectTimeout = defaultConnectTimeout
+	}
+	if statementTimeout <= 0 {
+		statementTimeout = defaultQueryTimeout
+	}
+	// libpq expects whole seconds; zero would disable its connection timeout.
+	connectSeconds := connectTimeout / time.Second
+	if connectTimeout%time.Second != 0 {
+		connectSeconds++
+	}
 	values, err := parseDSN(dsn)
 	if err != nil {
 		return nil, err
@@ -748,9 +796,9 @@ func postgresEnv(dsn string) ([]string, error) {
 		"PGPORT=" + port,
 		"PGDATABASE=" + database,
 		"PGUSER=" + user,
-		"PGCONNECT_TIMEOUT=2",
+		"PGCONNECT_TIMEOUT=" + strconv.FormatInt(int64(connectSeconds), 10),
 		"PGAPPNAME=control-dashboard-readonly",
-		"PGOPTIONS=-c default_transaction_read_only=on -c statement_timeout=1500",
+		"PGOPTIONS=-c default_transaction_read_only=on -c statement_timeout=" + strconv.FormatInt(max(int64(1), statementTimeout.Milliseconds()), 10),
 	}
 	if password := values["password"]; password != "" {
 		env = append(env, "PGPASSWORD="+password)

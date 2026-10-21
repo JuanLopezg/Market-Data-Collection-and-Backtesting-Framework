@@ -45,7 +45,7 @@ func TestReaderSnapshotWithRuntime(t *testing.T) {
 }
 
 func TestPostgresEnvDoesNotPutPasswordInCommandArgs(t *testing.T) {
-	env, err := postgresEnv("host=postgres port=5432 dbname=algotrading user=juan password=secret")
+	env, err := postgresEnv("host=postgres port=5432 dbname=algotrading user=juan password=secret", 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -36,12 +36,14 @@ type RealConfig struct {
 	StrategyUniverseN   int
 	// The live strategy's --strategy-config file; its PureRSI parameters override the
 	// RSI/universe settings above (see applyStrategyConfigFile).
-	StrategyConfigFile string
-	StrategyConfigNote string
-	RSILength          int
-	MaxActiveSignals   int
-	LiquidityLength    int
-	ProbeTimeout       time.Duration
+	StrategyConfigFile       string
+	StrategyConfigNote       string
+	RSILength                int
+	MaxActiveSignals         int
+	LiquidityLength          int
+	ProbeTimeout             time.Duration
+	PostgreSQLQueryTimeout   time.Duration
+	PostgreSQLConnectTimeout time.Duration
 	// SIMULATED (PAPER chain) or KRAKEN (LIVE chain).
 	ExecutionVenue string
 	// Binance -> Kraken symbol table and the public Kraken tickers it is checked against.
@@ -141,8 +143,9 @@ func NewReal(cfg RealConfig) *Real {
 			Timeout:       cfg.ProbeTimeout,
 		}),
 		postgres: pgstore.NewReader(pgstore.Config{
-			DSN:     cfg.PostgreSQLDSN,
-			Timeout: maxDuration(cfg.ProbeTimeout, 2*time.Second),
+			DSN:            cfg.PostgreSQLDSN,
+			Timeout:        cfg.PostgreSQLQueryTimeout,
+			ConnectTimeout: cfg.PostgreSQLConnectTimeout,
 		}),
 		natsMonitor: natsdiag.NewMonitor(cfg.NATSMonitorURL, maxDuration(cfg.ProbeTimeout, 1500*time.Millisecond)),
 		jetstream:   natsdiag.NewJetStreamReader(cfg.NATSURL, cfg.NATSStream, maxDuration(cfg.ProbeTimeout, 1500*time.Millisecond)),

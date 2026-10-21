@@ -57,7 +57,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	resourceTimeout, err := time.ParseDuration(envOr("DASHBOARD_RESOURCE_TIMEOUT", "7s"))
+	resourceTimeout, err := time.ParseDuration(envOr("DASHBOARD_RESOURCE_TIMEOUT", "12s"))
 	if err != nil || resourceTimeout <= 0 {
 		logger.Error("invalid DASHBOARD_RESOURCE_TIMEOUT", "value", os.Getenv("DASHBOARD_RESOURCE_TIMEOUT"))
 		os.Exit(1)
@@ -178,6 +178,14 @@ func configuredProvider() (provider.Provider, error) {
 	case "real":
 		// Read-only view of the trading chain (PAPER or Kraken LIVE).
 		// The proof never creates trades; it only correlates already-durable Strategy/Risk/Planner/Execution/Fill/Reconciliation evidence.
+		queryTimeout, err := time.ParseDuration(envOr("DASHBOARD_POSTGRES_QUERY_TIMEOUT", "8s"))
+		if err != nil || queryTimeout <= 0 {
+			return nil, fmt.Errorf("invalid DASHBOARD_POSTGRES_QUERY_TIMEOUT")
+		}
+		connectTimeout, err := time.ParseDuration(envOr("DASHBOARD_POSTGRES_CONNECT_TIMEOUT", "5s"))
+		if err != nil || connectTimeout <= 0 {
+			return nil, fmt.Errorf("invalid DASHBOARD_POSTGRES_CONNECT_TIMEOUT")
+		}
 		probeTimeout, err := time.ParseDuration(envOr("DASHBOARD_SOURCE_PROBE_TIMEOUT", "1s"))
 		if err != nil || probeTimeout <= 0 {
 			return nil, fmt.Errorf("invalid DASHBOARD_SOURCE_PROBE_TIMEOUT")
@@ -205,33 +213,35 @@ func configuredProvider() (provider.Provider, error) {
 		}
 
 		return provider.NewReal(provider.RealConfig{
-			HostMetricsFile:     strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_FILE")),
-			HostMetricsProject:  strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_PROJECT")),
-			PostgreSQLDSN:       strings.TrimSpace(os.Getenv("DASHBOARD_POSTGRES_DSN")),
-			NATSURL:             strings.TrimSpace(os.Getenv("DASHBOARD_NATS_URL")),
-			NATSMonitorURL:      strings.TrimSpace(os.Getenv("DASHBOARD_NATS_MONITOR_URL")),
-			NATSStream:          strings.TrimSpace(envOr("DASHBOARD_NATS_STREAM", "ALGOTRADING_RUNTIME")),
-			MarketDataDB:        strings.TrimSpace(os.Getenv("DASHBOARD_MARKET_DATA_DB")),
-			RuntimeMode:         strings.TrimSpace(envOr("DASHBOARD_RUNTIME_MODE", "LIVE")),
-			MarketTopN:          marketTopN,
-			MarketHistoryDays:   marketHistoryDays,
-			QuoteVolume:         os.Getenv("DASHBOARD_QUOTE_VOLUME") == "true",
-			QuoteVolumeFrom:     strings.TrimSpace(os.Getenv("DASHBOARD_QUOTE_VOLUME_FROM")),
-			PaperComparisonFile: strings.TrimSpace(os.Getenv("DASHBOARD_PAPER_COMPARISON_FILE")),
-			RSIEntry:            envFloat("DASHBOARD_RSI_ENTRY", 80),
-			RSIExit:             envFloat("DASHBOARD_RSI_EXIT", 70),
-			StrategyUniverseN:   strategyUniverseN,
-			StrategyConfigFile:  strings.TrimSpace(os.Getenv("DASHBOARD_STRATEGY_CONFIG")),
-			ProbeTimeout:        probeTimeout,
-			ExecutionVenue:      executionVenue,
-			SymbolMapFile:       strings.TrimSpace(os.Getenv("DASHBOARD_SYMBOL_MAP_FILE")),
-			KrakenTickersURL:    krakenpublic.TickersURL,
-			AlertStoreDir:       strings.TrimSpace(envOr("DASHBOARD_ALERT_STORE_DIR", "/data/watchdog")),
-			ManualAuditDir:      strings.TrimSpace(os.Getenv("DASHBOARD_MANUAL_AUDIT_DIR")),
-			AlertAckDir:         strings.TrimSpace(os.Getenv("DASHBOARD_ALERT_ACK_DIR")),
-			ManualRequestDir:    strings.TrimSpace(os.Getenv("DASHBOARD_MANUAL_REQUEST_DIR")),
-			LiveOrderSubmission: strings.TrimSpace(os.Getenv("DASHBOARD_LIVE_ORDER_SUBMISSION")),
-			KrakenAccountFile:   strings.TrimSpace(os.Getenv("DASHBOARD_KRAKEN_ACCOUNT_FILE")),
+			HostMetricsFile:          strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_FILE")),
+			HostMetricsProject:       strings.TrimSpace(os.Getenv("DASHBOARD_HOST_METRICS_PROJECT")),
+			PostgreSQLDSN:            strings.TrimSpace(os.Getenv("DASHBOARD_POSTGRES_DSN")),
+			NATSURL:                  strings.TrimSpace(os.Getenv("DASHBOARD_NATS_URL")),
+			NATSMonitorURL:           strings.TrimSpace(os.Getenv("DASHBOARD_NATS_MONITOR_URL")),
+			NATSStream:               strings.TrimSpace(envOr("DASHBOARD_NATS_STREAM", "ALGOTRADING_RUNTIME")),
+			MarketDataDB:             strings.TrimSpace(os.Getenv("DASHBOARD_MARKET_DATA_DB")),
+			RuntimeMode:              strings.TrimSpace(envOr("DASHBOARD_RUNTIME_MODE", "LIVE")),
+			MarketTopN:               marketTopN,
+			MarketHistoryDays:        marketHistoryDays,
+			QuoteVolume:              os.Getenv("DASHBOARD_QUOTE_VOLUME") == "true",
+			QuoteVolumeFrom:          strings.TrimSpace(os.Getenv("DASHBOARD_QUOTE_VOLUME_FROM")),
+			PaperComparisonFile:      strings.TrimSpace(os.Getenv("DASHBOARD_PAPER_COMPARISON_FILE")),
+			RSIEntry:                 envFloat("DASHBOARD_RSI_ENTRY", 80),
+			RSIExit:                  envFloat("DASHBOARD_RSI_EXIT", 70),
+			StrategyUniverseN:        strategyUniverseN,
+			StrategyConfigFile:       strings.TrimSpace(os.Getenv("DASHBOARD_STRATEGY_CONFIG")),
+			ProbeTimeout:             probeTimeout,
+			PostgreSQLQueryTimeout:   queryTimeout,
+			PostgreSQLConnectTimeout: connectTimeout,
+			ExecutionVenue:           executionVenue,
+			SymbolMapFile:            strings.TrimSpace(os.Getenv("DASHBOARD_SYMBOL_MAP_FILE")),
+			KrakenTickersURL:         krakenpublic.TickersURL,
+			AlertStoreDir:            strings.TrimSpace(envOr("DASHBOARD_ALERT_STORE_DIR", "/data/watchdog")),
+			ManualAuditDir:           strings.TrimSpace(os.Getenv("DASHBOARD_MANUAL_AUDIT_DIR")),
+			AlertAckDir:              strings.TrimSpace(os.Getenv("DASHBOARD_ALERT_ACK_DIR")),
+			ManualRequestDir:         strings.TrimSpace(os.Getenv("DASHBOARD_MANUAL_REQUEST_DIR")),
+			LiveOrderSubmission:      strings.TrimSpace(os.Getenv("DASHBOARD_LIVE_ORDER_SUBMISSION")),
+			KrakenAccountFile:        strings.TrimSpace(os.Getenv("DASHBOARD_KRAKEN_ACCOUNT_FILE")),
 		}), nil
 	default:
 		return nil, fmt.Errorf("unsupported DASHBOARD_DATA_PROVIDER %q; expected mock, simulation or real", mode)

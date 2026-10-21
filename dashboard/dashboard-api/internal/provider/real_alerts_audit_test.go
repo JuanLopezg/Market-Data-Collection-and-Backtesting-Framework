@@ -1,15 +1,49 @@
 package provider
 
 import (
-	"control-dashboard-api/internal/alertack"
+	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"control-dashboard-api/internal/alertack"
 	"control-dashboard-api/internal/alertstore"
+	pgstore "control-dashboard-api/internal/integration/postgres"
 	"control-dashboard-api/internal/manualaudit"
 )
+
+type failingAlertSweepRunner struct {
+	mu    sync.Mutex
+	calls map[string]int
+}
+
+func (r *failingAlertSweepRunner) QueryJSON(_ context.Context, _, sql string) ([]byte, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls[sql]++
+	return nil, errors.New("read-only PostgreSQL query failed: fixture source unavailable")
+}
+
+func TestAlertSweepCoalescesPostgresReadsAndRetriesNextSweep(t *testing.T) {
+	p := NewReal(RealConfig{RuntimeMode: "LIVE", ExecutionVenue: "KRAKEN"})
+	runner := &failingAlertSweepRunner{calls: make(map[string]int)}
+	p.postgres = pgstore.NewReader(pgstore.Config{DSN: "host=fixture user=reader", Runner: runner})
+	for sweep := 1; sweep <= 2; sweep++ {
+		p.loadAlertsAudit(context.Background())
+		// RuntimeState is requested by Execution, Reconciliation and stop
+		// monitoring. Risk and the ledger add two different bounded queries.
+		if len(runner.calls) != 3 {
+			t.Fatalf("expected three distinct queries, got %d", len(runner.calls))
+		}
+		for sql, count := range runner.calls {
+			if count != sweep {
+				t.Fatalf("query ran %d times after %d sweeps: %s", count, sweep, sql)
+			}
+		}
+	}
+}
 
 func TestOperationalAlertsUseFreshProcessClockAndDailyProgressEvidence(t *testing.T) {
 	infra := realInfrastructure{LastUpdated: "12:00:00 UTC", TelemetryObservedAt: "2026-10-08T12:00:00Z",
@@ -213,6 +247,21 @@ func TestStep46AOldLifecycleAcknowledgementDoesNotApplyToUpdatedAlert(t *testing
 	got := mergeAlertAcknowledgements(result, ackDir)
 	if got.Acknowledged != 0 || got.Alerts[0].Status != "ACTIVE" {
 		t.Fatalf("stale lifecycle acknowledgement leaked into updated alert: %+v", got)
+	}
+}
+
+func TestLedgerReadCancellationRemainsASourceFailure(t *testing.T) {
+	for _, detail := range []string{
+		"PostgreSQL query wait cancelled: context deadline exceeded",
+		"PostgreSQL query timed out (limit 8s): context deadline exceeded",
+		"read ledger: context canceled",
+	} {
+		result := mergeLedgerAlerts(realAlertsAuditData{}, LedgerStatus{
+			Status: "BLOCKED", OrderRouting: "DISABLED", Error: detail,
+		})
+		if len(result.Alerts) != 1 || result.Alerts[0].EventType != "LEDGER_READ_UNAVAILABLE" {
+			t.Fatalf("read cancellation became an integrity failure: %+v", result.Alerts)
+		}
 	}
 }
 

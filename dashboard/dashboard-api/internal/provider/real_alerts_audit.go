@@ -10,6 +10,7 @@ import (
 
 	"control-dashboard-api/internal/alertack"
 	"control-dashboard-api/internal/alertstore"
+	pgstore "control-dashboard-api/internal/integration/postgres"
 	"control-dashboard-api/internal/manualaudit"
 )
 
@@ -111,6 +112,7 @@ func (p *Real) alertsAudit(ctx context.Context) realAlertsAuditData {
 }
 
 func (p *Real) loadAlertsAudit(ctx context.Context) realAlertsAuditData {
+	ctx = pgstore.WithQueryCache(ctx)
 	var (
 		infra      realInfrastructure
 		recon      realReconciliationData
@@ -473,6 +475,9 @@ func mergeSymbolMapAlerts(result realAlertsAuditData, status SymbolMapStatus) re
 func isLedgerDependencyReadFailure(detail string) bool {
 	detail = strings.ToLower(strings.TrimSpace(detail))
 	return strings.Contains(detail, "postgresql query timed out") ||
+		strings.Contains(detail, "postgresql query wait cancelled") ||
+		strings.Contains(detail, "context canceled") ||
+		strings.Contains(detail, "context deadline exceeded") ||
 		strings.Contains(detail, "connection") ||
 		strings.Contains(detail, "dial") ||
 		strings.Contains(detail, "psql") ||

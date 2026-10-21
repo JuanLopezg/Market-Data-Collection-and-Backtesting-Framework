@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"sort"
 	"strings"
 	"sync"
@@ -36,6 +37,7 @@ const (
 	symbolMapVenue          = "kraken-futures"
 	symbolMapMaxPriceRatio  = 5.0
 	symbolMapCacheTTL       = 60 * time.Second
+	symbolMapCacheJitter    = 30 * time.Second
 	symbolMapCheckTimeout   = 8 * time.Second
 	symbolMapStateOK        = "OK"
 	symbolMapStateNotMapped = "NOT_ON_VENUE"
@@ -94,9 +96,9 @@ type SymbolMapStatus struct {
 }
 
 type symbolMapCache struct {
-	mu       sync.Mutex
-	value    SymbolMapStatus
-	finished time.Time
+	mu        sync.Mutex
+	value     SymbolMapStatus
+	expiresAt time.Time
 }
 
 // symbolMapInput is what the check needs, gathered from the table, market data and Kraken.
@@ -298,17 +300,19 @@ func unavailableSymbolMapStatus(err error, checkedAt time.Time) SymbolMapStatus 
 		Error: err.Error(), Rows: []SymbolMapRow{}, Alarms: []SymbolMapAlarm{}}
 }
 
-// SymbolMapStatus runs the check at most once a minute; Kraken is asked once per run.
+// SymbolMapStatus refreshes about once a minute; Kraken is asked once per run.
+// Completion-relative jitter prevents multiple processes from retaining the
+// same refresh phase after starting together.
 func (p *Real) SymbolMapStatus(ctx context.Context) SymbolMapStatus {
 	p.symbolCache.mu.Lock()
 	defer p.symbolCache.mu.Unlock()
-	if !p.symbolCache.finished.IsZero() && time.Since(p.symbolCache.finished) < symbolMapCacheTTL {
+	if time.Now().Before(p.symbolCache.expiresAt) {
 		return p.symbolCache.value
 	}
 	ctx, cancel := context.WithTimeout(ctx, symbolMapCheckTimeout)
 	defer cancel()
 	p.symbolCache.value = p.checkSymbolMap(ctx)
-	p.symbolCache.finished = time.Now()
+	p.symbolCache.expiresAt = time.Now().Add(symbolMapCacheTTL - symbolMapCacheJitter/2 + time.Duration(rand.Int64N(int64(symbolMapCacheJitter))))
 	return p.symbolCache.value
 }
 

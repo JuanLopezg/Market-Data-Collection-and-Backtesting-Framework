@@ -69,7 +69,7 @@ func New(cfg Config) (*Server, error) {
 		cfg.SessionTTL = 8 * time.Hour
 	}
 	if cfg.ResourceTimeout <= 0 {
-		cfg.ResourceTimeout = 7 * time.Second
+		cfg.ResourceTimeout = 12 * time.Second
 	}
 	if cfg.SSEMaxClients <= 0 {
 		cfg.SSEMaxClients = 16
@@ -119,7 +119,7 @@ func (s *Server) HTTPServer() *http.Server {
 		Handler:           s.handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
+		WriteTimeout:      max(10*time.Second, s.cfg.ResourceTimeout+3*time.Second),
 		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    16 << 10,
 	}
