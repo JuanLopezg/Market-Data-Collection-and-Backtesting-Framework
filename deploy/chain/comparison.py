@@ -48,7 +48,8 @@ NOTE =('Live means PAPER with virtual USD and simulated fills, not private Krake
 MODE = os.environ.get('MODE', 'paper')
 LIVE_NOTE = ('Live means the Kraken account (real fills, fees, funding and interest). Expected is '
              'CURRENT PureRSI on the same frozen market data and decisions, filled at the Binance '
-             'open of the execution day with LIVE_COMMISSION_RATE, sized with the same BTC collateral and '
+             'open of the execution day with LIVE_COMMISSION_RATE, sized with the same BTC collateral (included '
+             'in both equities at its post-haircut value of that day) and '
              'given the same USD deposits/withdrawals. Each row splits the difference into real fees '
              'versus expected, funding, interest, fill prices against the Binance open (slippage, '
              'Kraken versus Binance) and markets Kraken skipped; the rest is quantity rounding and '
@@ -430,7 +431,13 @@ def compare_live(cycles, baseline, seed, fills, costs):
                 if fill['order_id'] in planned and fill['coin'] in previous['open_prices']:
                     direction = 1 if fill['side'] == 0 else -1
                     slippage += direction * (fill['price'] - previous['open_prices'][fill['coin']]) * fill['quantity']
-        row.update({'liveFees': fee_from_fills - totals['FEE'], 'expectedFees': expected['fees'],
+        # Both equities include the day's BTC collateral after haircut (the sizing capital of
+        # that day, the same for both), so they show the whole Kraken account.
+        collateral = float(cycle.get('collateral_usd', 0.0))
+        row['liveEquity'] += collateral
+        row['expectedEquity'] += collateral
+        row.update({'collateralUsd': collateral,
+                    'liveFees': fee_from_fills - totals['FEE'], 'expectedFees': expected['fees'],
                     'liveFunding': totals['FUNDING'], 'liveInterest': totals['INTEREST'],
                     'capitalFlows': totals['CAPITAL_FLOW'], 'slippage': slippage,
                     'skipped': cycle.get('skipped', [])})

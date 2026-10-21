@@ -225,6 +225,15 @@ class KrakenLiveComparisonTest(unittest.TestCase):
         self.assertAlmostEqual(row['capitalFlows'], 50)
         self.assertAlmostEqual(row['slippage'], 0.5)
         self.assertEqual(row['skipped'], ['PEPEUSDT'])
+        # Without collateral both equities are cash + positions at the open.
+        self.assertAlmostEqual(row['liveEquity'], 980)
+        self.assertAlmostEqual(row['expectedEquity'], 999.9)
+        # The day's BTC collateral is in both equities; their difference is unchanged.
+        cycles[0]['collateral_usd'] = 126.68
+        row = comparison.compare_live(cycles, baseline, seed, fills, costs)[0][0]
+        self.assertAlmostEqual(row['liveEquity'], 980 + 126.68)
+        self.assertAlmostEqual(row['expectedEquity'], 999.9 + 126.68)
+        self.assertAlmostEqual(row['collateralUsd'], 126.68)
 
     def test_binance_open_of_the_execution_day(self):
         requested = []
