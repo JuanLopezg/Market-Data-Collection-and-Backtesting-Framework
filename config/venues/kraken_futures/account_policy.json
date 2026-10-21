@@ -1,5 +1,5 @@
 {
   "minimum_account_equity_usd": "50",
-  "minimum_usd_reserve_fraction": "0.10",
+  "minimum_usd_reserve_fraction": "0.075",
   "assumed_future_cash_debits_usd": "0"
 }
