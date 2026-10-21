@@ -3,6 +3,7 @@ package provider
 import (
 	"math"
 	"testing"
+	"time"
 
 	natsdiag "control-dashboard-api/internal/integration/nats"
 	pgstore "control-dashboard-api/internal/integration/postgres"
@@ -77,7 +78,7 @@ func TestBuildRealReconciliationMarksStaleEvidencePending(t *testing.T) {
 	}
 	message := natsdiag.JetStreamMessage{Time: "2026-09-24T18:00:00Z", Sequence: 12}
 	event := tradingwire.ExchangeSnapshotEvent{Snapshot: tradingwire.ExchangeSnapshot{Timestamp: 20260924, Cash: 99, Positions: map[string]float64{}}}
-	data := buildRealReconciliation(state, message, event, reconciliationTolerance{reconciliationCashTolerance, reconciliationToleranceLabel})
+	data := buildRealReconciliation(state, message, event, reconciliationTolerance{reconciliationCashTolerance, reconciliationToleranceLabel}, testNow)
 	if data.Status != "PENDING" || data.EvidenceFresh {
 		t.Fatalf("expected stale evidence to be pending: %+v", data)
 	}
@@ -93,8 +94,28 @@ func TestBuildRealReconciliationFreshMismatchBlocks(t *testing.T) {
 	}
 	message := natsdiag.JetStreamMessage{Time: "2026-09-24T18:00:01Z", Sequence: 13}
 	event := tradingwire.ExchangeSnapshotEvent{Snapshot: tradingwire.ExchangeSnapshot{Timestamp: 20260924, Cash: 100, Positions: map[string]float64{"BTC": .5}}}
-	data := buildRealReconciliation(state, message, event, reconciliationTolerance{reconciliationCashTolerance, reconciliationToleranceLabel})
+	data := buildRealReconciliation(state, message, event, reconciliationTolerance{reconciliationCashTolerance, reconciliationToleranceLabel}, testNow)
 	if data.Status != "BLOCKED" || !data.EvidenceFresh || len(data.Issues) != 1 || data.Rows[0].Status != "BLOCKED" {
 		t.Fatalf("expected fresh mismatch to block: %+v", data)
+	}
+}
+
+var testNow = time.Date(2026, 9, 24, 18, 30, 0, 0, time.UTC)
+
+func TestBuildRealReconciliationRecentAgreeingEvidenceIsClean(t *testing.T) {
+	// A funding entry updated the local state a minute after the hourly exchange check.
+	state := pgstore.RuntimeState{
+		UpdatedAt: "2026-09-24T18:00:54Z",
+		Snapshot:  tradingwire.TradingStateSnapshot{SchemaVersion: 1, AccountCash: 100, AccountPositions: map[string]float64{"BTC": 1}},
+	}
+	message := natsdiag.JetStreamMessage{Time: "2026-09-24T18:00:01Z", Sequence: 14}
+	event := tradingwire.ExchangeSnapshotEvent{Snapshot: tradingwire.ExchangeSnapshot{Timestamp: 20260924, Cash: 100, Positions: map[string]float64{"BTC": 1}}}
+	tolerance := reconciliationTolerance{reconciliationCashTolerance, reconciliationToleranceLabel}
+	data := buildRealReconciliation(state, message, event, tolerance, testNow)
+	if data.Status != "CLEAN" || data.EvidenceFresh || data.Rows[0].Status != "ALIGNED" {
+		t.Fatalf("expected recent agreeing evidence to be clean: %+v", data)
+	}
+	if old := buildRealReconciliation(state, message, event, tolerance, testNow.Add(3*time.Hour)); old.Status != "PENDING" || old.Rows[0].Status != "PENDING" {
+		t.Fatalf("expected evidence older than 3 hours to be pending: %+v", old)
 	}
 }

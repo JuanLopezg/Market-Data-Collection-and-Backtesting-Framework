@@ -550,14 +550,15 @@ private:
         // A terminal Filled OrderUpdate may be delivered by its own durable consumer
         // before the corresponding Fill consumer has applied cash/position state.
         // Therefore "no open orders" alone is not a safe barrier: every Filled order
-        // must also have its complete fill quantity recorded locally.
+        // must also have its fills recorded locally. A live venue reports Filled for its
+        // lot-rounded quantity (Kraken: 89 of 89.42 requested), so a Filled order with
+        // a remainder counts once at least one of its fills is applied.
         for (const auto& [orderId, order] : engine_.orderManager().orders()) {
             (void)orderId;
             // A resting position stop stays open across days; it is not part of the cycle.
             if (order.isOpen() && !order.request.isPositionStop())
                 return;
-            if (order.status == ExecutionOrderStatus::Filled &&
-                order.remainingQuantity() > 1e-12)
+            if (order.status == ExecutionOrderStatus::Filled && order.filled_quantity <= 1e-12)
                 return;
         }
 

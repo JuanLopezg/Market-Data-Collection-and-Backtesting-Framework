@@ -155,7 +155,7 @@ export function PipelinePage() {
 
     <Panel title="Decision Matrix" right={<label className="search-box"><Search size={14}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Filter asset"/></label>}>
       <div className="table-wrap"><table className="wide-table pipeline-table"><thead><tr>
-        <th>Asset</th><th>Liq. Rank</th><th>Signal</th><th>Sized W.</th><th>Approved W.</th><th>Decision</th><th>Target</th><th>Current</th><th>Delta</th><th>Order</th><th>Execution</th><th></th>
+        <th>Asset</th><th>Liq. Rank</th><th>Signal</th><th>Sized W.</th><th>Approved W.</th><th>Decision</th><th>Target</th><th title="Position held when the planner sized this cycle, before its orders">Before Plan</th><th>Delta</th><th>Order</th><th>Execution</th><th></th>
       </tr></thead>
       <tbody>
         {rows.length === 0 && <tr><td colSpan={12} className="empty-cell">{query ? 'No assets match the filter' : data.emptyReason ?? 'No decision yet'}</td></tr>}

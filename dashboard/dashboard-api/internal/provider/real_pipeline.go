@@ -383,9 +383,14 @@ func pipelineFactsForAsset(coin string, checkpoint pgstore.PipelineCheckpoint, s
 
 func pipelineRow(checkpoint pgstore.PipelineCheckpoint, facts pipelineAssetFacts, cycleID string) realPipelineAssetRow {
 	plannerReady := checkpoint.Plan != nil && checkpoint.PlanningRequest != nil
-	currentLabel := signedQuantity(facts.currentQty)
-	if facts.referenceClose > 0 {
-		currentLabel += " · " + formatUSD(facts.currentNotional)
+	// The position held when the planner sized the cycle, before its orders: a new
+	// entry was flat then (its fill shows under Execution).
+	currentLabel := "Flat (before plan)"
+	if math.Abs(facts.currentQty) > 1e-12 {
+		currentLabel = signedQuantity(facts.currentQty)
+		if facts.referenceClose > 0 {
+			currentLabel += " · " + formatUSD(facts.currentNotional)
+		}
 	}
 	deltaLabel := "No submit delta"
 	if len(facts.plannedOrders) > 0 {

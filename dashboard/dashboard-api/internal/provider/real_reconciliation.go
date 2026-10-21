@@ -26,6 +26,10 @@ const (
 	// Kraken LIVE: execution-state runs with --cash-tolerance-usd 0.5 (venue rounding).
 	reconciliationLiveCashTolerance  = 0.5
 	reconciliationLiveToleranceLabel = "cash 0.50 USD / quantity max(1e-10, 1e-12 x size) (runtime Reconciler, Kraken LIVE)"
+	// ExecutionState re-checks the exchange hourly (01:00-23:00 and 23:50 UTC), but funding
+	// and fee events update the local state minutes later. An exchange snapshot this recent
+	// that still agrees with the current local state is current evidence.
+	reconciliationEvidenceMaxAge = 3 * time.Hour
 )
 
 type realReconciliationData struct {
@@ -113,11 +117,11 @@ func (p *Real) reconciliation(ctx context.Context) (realReconciliationData, erro
 	if err != nil {
 		return buildReconciliationWithoutExchange(state, "The latest retained exchange snapshot could not be decoded safely: "+err.Error(), tolerance), nil
 	}
-	return buildRealReconciliation(state, message, exchangeEvent, tolerance), nil
+	return buildRealReconciliation(state, message, exchangeEvent, tolerance, time.Now()), nil
 }
 
 func buildReconciliationWithoutExchange(state pgstore.RuntimeState, reason string, tolerance reconciliationTolerance) realReconciliationData {
-	rows := buildReconciliationRows(state.Snapshot, nil, false, false)
+	rows := buildReconciliationRows(state.Snapshot, nil, false, false, false)
 	return realReconciliationData{
 		Status:                 "PENDING",
 		LastChecked:            "Awaiting exchange evidence",
@@ -136,19 +140,23 @@ func buildReconciliationWithoutExchange(state pgstore.RuntimeState, reason strin
 	}
 }
 
-func buildRealReconciliation(state pgstore.RuntimeState, message natsdiag.JetStreamMessage, event tradingwire.ExchangeSnapshotEvent, tolerance reconciliationTolerance) realReconciliationData {
+func buildRealReconciliation(state pgstore.RuntimeState, message natsdiag.JetStreamMessage, event tradingwire.ExchangeSnapshotEvent, tolerance reconciliationTolerance, now time.Time) realReconciliationData {
 	fresh := exchangeEvidenceFresh(state.UpdatedAt, message.Time)
+	recent := exchangeEvidenceRecent(message.Time, now)
 	comparison := compareRuntimeAndExchange(state.Snapshot, event.Snapshot, tolerance.cash)
 	status := "CLEAN"
-	if !fresh {
-		status = "PENDING"
-	} else if len(comparison.Issues) > 0 {
+	switch {
+	case fresh && len(comparison.Issues) > 0:
 		status = "BLOCKED"
+	case !fresh && (len(comparison.Issues) > 0 || !recent):
+		status = "PENDING"
 	}
 
 	note := "Local truth comes from trading_runtime_state.snapshot. Exchange truth comes from the latest retained execution.exchange.snapshot.v1 event in JetStream; the dashboard performs the same cash, position and open-order comparisons as the C++ Reconciler defaults without publishing any trading command."
-	if !fresh {
-		note += " The retained exchange event predates the latest PostgreSQL runtime snapshot, so differences are shown as PENDING rather than treated as a current blocking verdict."
+	if !fresh && status == "CLEAN" {
+		note += " The retained exchange event predates the latest PostgreSQL runtime snapshot (e.g. a later funding entry) but is less than 3 hours old and still agrees with it."
+	} else if !fresh {
+		note += " The retained exchange event predates the latest PostgreSQL runtime snapshot and is older than 3 hours or differs from it, so differences are shown as PENDING rather than treated as a current blocking verdict."
 	}
 
 	lastChecked := message.Time
@@ -163,7 +171,7 @@ func buildRealReconciliation(state pgstore.RuntimeState, message natsdiag.JetStr
 		TargetPortfolioValue:      "Not available",
 		LocalPortfolioValue:       "Cash " + formatUSD(state.Snapshot.AccountCash) + " + positions unvalued",
 		ExchangePortfolioValue:    "Cash " + formatUSD(event.Snapshot.Cash) + " + positions unvalued",
-		Rows:                      buildReconciliationRows(state.Snapshot, &event.Snapshot, true, fresh),
+		Rows:                      buildReconciliationRows(state.Snapshot, &event.Snapshot, true, fresh, recent),
 		OpenOrders:                reconciliationOpenOrders(state.Snapshot.Orders),
 		SourceMode:                "REAL",
 		SourceUpdatedAt:           state.UpdatedAt,
@@ -190,7 +198,14 @@ func exchangeEvidenceFresh(runtimeUpdatedAt, exchangeMessageTime string) bool {
 	return !exchangeTime.Add(2 * time.Second).Before(runtimeTime)
 }
 
-func buildReconciliationRows(local tradingwire.TradingStateSnapshot, exchange *tradingwire.ExchangeSnapshot, exchangeAvailable, evidenceFresh bool) []realReconciliationRow {
+func exchangeEvidenceRecent(exchangeMessageTime string, now time.Time) bool {
+	exchangeTime, err := time.Parse(time.RFC3339Nano, exchangeMessageTime)
+	return err == nil && !exchangeTime.After(now.Add(time.Minute)) && now.Sub(exchangeTime) <= reconciliationEvidenceMaxAge
+}
+
+// A stale but recent snapshot still proves the assets it agrees on; a difference
+// against it is only PENDING.
+func buildReconciliationRows(local tradingwire.TradingStateSnapshot, exchange *tradingwire.ExchangeSnapshot, exchangeAvailable, evidenceFresh, evidenceRecent bool) []realReconciliationRow {
 	pending := pendingSignedQuantities(local.Orders)
 	coins := map[string]struct{}{}
 	for coin := range local.AccountPositions {
@@ -237,12 +252,13 @@ func buildReconciliationRows(local tradingwire.TradingStateSnapshot, exchange *t
 			row.ExchangeAvailable = true
 			row.DeltaQty = delta
 			row.DeltaQtyLabel = signedQuantity(delta)
-			if !evidenceFresh {
-				row.Status = "PENDING"
-				row.Explanation = "Exchange evidence predates the latest durable local state; current alignment cannot be proven from this retained snapshot."
-			} else if sameReconciliationQuantity(localQty, exchangeQty) {
+			same := sameReconciliationQuantity(localQty, exchangeQty)
+			if same && (evidenceFresh || evidenceRecent) {
 				row.Status = "ALIGNED"
 				row.Explanation = "Durable local filled position matches the retained exchange position within the runtime quantity tolerance."
+			} else if !evidenceFresh {
+				row.Status = "PENDING"
+				row.Explanation = "Exchange evidence predates the latest durable local state; current alignment cannot be proven from this retained snapshot."
 			} else {
 				row.Status = "BLOCKED"
 				row.Explanation = "Local filled position differs from current exchange evidence beyond the runtime quantity tolerance."
