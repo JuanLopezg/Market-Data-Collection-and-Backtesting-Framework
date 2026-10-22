@@ -43,7 +43,7 @@ def campaign_module(root):
 
 
 def install_dashboard(sandbox, campaign, replay_dir, runner, replay_command):
-    """Derive current dashboard deployments, replacing shared state and venue settings."""
+    """Derive local UI and PAPER test services with isolated state and venue settings."""
     root = campaign.ROOT
     for context in (root / "dashboard", root / "dashboard/dashboard-api"):
         exclusions = set((context / ".dockerignore").read_text().splitlines())
@@ -59,7 +59,7 @@ def install_dashboard(sandbox, campaign, replay_dir, runner, replay_command):
         images[name] = campaign.command(["docker", "image", "inspect", tag, "--format", "{{.Id}}"], sandbox.path).strip()
     topology = yaml.safe_load((sandbox.path / "compose.yml").read_text())
     base = yaml.safe_load((root / "dashboard/docker-compose.yml").read_text())
-    real = yaml.safe_load((root / "dashboard/docker-compose.real.yml").read_text())
+    paper = yaml.safe_load((root / "validation/fixtures/paper/compose.yml").read_text())
     simulation = replay_dir / "simulation"
     simulation.mkdir(mode=0o755, exist_ok=True)
     dsn = "host=postgres port=5432 dbname=algotrading_historical_replay user=algotrading password=${SANDBOX_PASSWORD}"
@@ -68,7 +68,7 @@ def install_dashboard(sandbox, campaign, replay_dir, runner, replay_command):
         topology["volumes"][store] = {"name": sandbox.project + "-" + store}
     topology["networks"]["profile-web"] = {"name": sandbox.project + "-web"}
     for name in ("dashboard-api", "dashboard-web", "dashboard-watchdog", "dashboard-alert-notifier"):
-        service = copy.deepcopy(base["services"].get(name, real["services"].get(name)))
+        service = copy.deepcopy(base["services"].get(name, paper["services"].get(name)))
         service.pop("build", None)
         service.pop("container_name", None)
         service["image"] = images["web" if name == "dashboard-web" else "api"]

@@ -1,12 +1,74 @@
 """Resource evidence must not invent zeros or double-count overlapping scopes."""
 import importlib.util
+import json
 from pathlib import Path
+import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest import mock
+
+import yaml
 
 spec = importlib.util.spec_from_file_location("report", Path(__file__).resolve().parents[1] / "research/resource_report.py")
 report = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(report)
+
+spec = importlib.util.spec_from_file_location("profile", Path(__file__).resolve().parents[1] / "research/resource_profile.py")
+profile = importlib.util.module_from_spec(spec)
+with mock.patch.dict(sys.modules, {"resource_report": report}):
+    spec.loader.exec_module(profile)
+
+
+class ResourceTopologyTest(unittest.TestCase):
+    def test_dashboard_uses_isolated_retained_fixtures_without_docker(self):
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            replay_dir = path / "replay"
+            replay_dir.mkdir()
+            runner = path / "runner"
+            compose = path / "compose.yml"
+            compose.write_text(yaml.safe_dump({"services": {}, "volumes": {"market-data-db": {}},
+                                               "networks": {"historical-replay": {"internal": True}}}))
+            sandbox = SimpleNamespace(path=path, project="profile-test", manifest={"image": "fixture", "files": {}})
+            campaign = SimpleNamespace(ROOT=root, command=mock.Mock(return_value="fixture-image"),
+                                       digest=lambda _: "fixture-digest", Sandbox=lambda _: sandbox)
+            result = profile.install_dashboard(sandbox, campaign, replay_dir, runner,
+                                               [str(runner), "--output", str(replay_dir / "summary.json")])
+            self.assertIs(result, sandbox)
+            topology = yaml.safe_load(compose.read_text())
+            services = topology["services"]
+            self.assertEqual(set(services), {"dashboard-api", "dashboard-web", "dashboard-watchdog",
+                                             "dashboard-alert-notifier", "profile-replay"})
+            api = services["dashboard-api"]
+            self.assertEqual(api["environment"]["DASHBOARD_DATA_PROVIDER"], "simulation")
+            self.assertEqual(api["volumes"], [str(replay_dir / "simulation") + ":/data/simulation:ro"])
+            self.assertEqual(api["environment"]["DASHBOARD_AUTH_ALLOW_DEMO"], "true")
+            self.assertEqual(services["dashboard-web"]["ports"], ["127.0.0.1::80"])
+            watchdog = services["dashboard-watchdog"]
+            self.assertEqual(watchdog["entrypoint"], ["/dashboard-watchdog"])
+            self.assertEqual(watchdog["environment"]["DASHBOARD_RUNTIME_MODE"], "PAPER")
+            self.assertEqual(watchdog["environment"]["DASHBOARD_EXECUTION_VENUE"], "SIMULATED")
+            notifier = services["dashboard-alert-notifier"]
+            self.assertEqual(notifier["entrypoint"], ["/dashboard-alert-notifier"])
+            self.assertEqual(notifier["environment"]["DASHBOARD_NOTIFIER_SINK"], "TEST_FILE")
+            self.assertEqual(notifier["volumes"], ["dashboard-watchdog-data:/data/watchdog:ro",
+                                                    "dashboard-alert-notifier-data:/data/notifier"])
+            self.assertNotIn("TELEGRAM", json.dumps(notifier["environment"]))
+            for name, service in services.items():
+                self.assertNotIn("container_name", service)
+                self.assertNotIn("build", service)
+                self.assertNotIn("network_mode", service)
+                self.assertTrue(set(service["networks"]).issubset(topology["networks"]))
+                for volume in service.get("volumes", []):
+                    source = volume.split(":")[0]
+                    self.assertTrue(source in topology["volumes"] or source.startswith(str(path))
+                                    or source.startswith(str(root / "deploy/historical_replay/run"))
+                                    or source.startswith(str(root / "config/historical_replay")), (name, source))
+            for volume in topology["volumes"].values():
+                if volume:
+                    self.assertTrue(volume["name"].startswith(sandbox.project + "-"))
 
 
 class ResourceEvidenceTest(unittest.TestCase):

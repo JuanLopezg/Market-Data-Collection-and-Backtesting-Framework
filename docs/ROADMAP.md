@@ -39,10 +39,10 @@ Besides the authorized release with the equity fix and the repair of the two VPS
    `deploy/historical_replay/.runtime_bundle/lib`, whose libalgolib (2026-10-11) predates
    `TradingEngine::onBarClose(..., extraCapital)`. Refresh that bundle or stop prepending
    it when the build library exists.
-3. Proposals awaiting the user: retire the standalone dashboard deployment track
-   (`dashboard/docker-compose.real*.yml`, `dashboard/docs/AWS_DEPLOYMENT.md`,
-   production preflight and the step43..46c checks of those files) in favour of
-   deploy/chain; remove the empty `Backtester::closeTrades()` stub from lib/; split the
+3. Standalone dashboard deployment retirement is user-approved and implemented
+   locally: deploy/chain is the deployment entrypoint; shared dashboard behavior
+   remains covered by the Go suite and source audit. Remaining proposals awaiting
+   the user: remove the empty `Backtester::closeTrades()` stub from lib/; split the
    dashboard-state export out of `research/src/canonical/canonical_replay.cpp` (Step58A
    greps its source text, so adjust that gate in the same change).
 4. Kraken: the user deposits more than USD 200; then step (c), the first small real

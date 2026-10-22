@@ -28,11 +28,7 @@ echo "private TESTNET, trading and LIVE remain independently fail-closed."
 echo "NO wallet, private auth, signing, submit/cancel or capital movement."
 echo
 
-echo "[1/8] Step 43 durable watchdog precondition"
-"$ROOT/scripts/step43-alert-watchdog.sh" >/dev/null || fail "Step 43 durable Alerts / Watchdog gate failed"
-pass "Step 43 remains valid; private Steps 37-41 stay deferred"
-
-echo "[2/8] Go regression + Step 44 readiness unit tests"
+echo "[1/7] Go regression, durable watchdog and readiness unit tests"
 if command -v go >/dev/null 2>&1; then
   (
     cd "$ROOT/dashboard-api"
@@ -49,7 +45,7 @@ else
 fi
 pass "readiness builder fail-closed tests and full Go regression pass"
 
-echo "[3/8] Authenticated global readiness contract"
+echo "[2/7] Authenticated global readiness contract"
 LOGIN_JSON=$(json_login_body)
 CODE=$(curl -sS -o "$BODY" -w '%{http_code}' -c "$COOKIE_JAR" -H 'Content-Type: application/json' --data "$LOGIN_JSON" "$BASE_URL/api/auth/login" 2>/dev/null || true)
 [ "$CODE" = "200" ] || { cat "$BODY" >&2 2>/dev/null || true; fail "dashboard login failed with HTTP $CODE"; }
@@ -144,7 +140,7 @@ if 'MockExchangeAdapter' not in d.get('futureReplayBoundary',''):
 print(f"STEP44: PASS: contract={d.get('contractVersion')} requirements={len(rows)} warnings={d.get('warningCount')} deferred={d.get('deferredCount')} blockers={d.get('blockingCount')}")
 PY
 
-echo "[4/8] Readiness semantics distinguish development from trading authorization"
+echo "[3/7] Readiness semantics distinguish development from trading authorization"
 grep -q 'VALIDATED_FAIL_CLOSED' "$ROOT/dashboard-api/internal/server/global_readiness.go" || fail "fail-closed contract status missing"
 grep -q 'PrivateTestnetReady' "$ROOT/dashboard-api/internal/server/global_readiness.go" || fail "private-testnet readiness dimension missing"
 grep -q 'TradingReady' "$ROOT/dashboard-api/internal/server/global_readiness.go" || fail "trading readiness dimension missing"
@@ -152,20 +148,20 @@ grep -q 'LiveReady' "$ROOT/dashboard-api/internal/server/global_readiness.go" ||
 grep -q 'mock-exchange' "$ROOT/dashboard-api/internal/server/global_readiness.go" || fail "future mock exchange boundary missing from readiness contract"
 pass "dashboard continuation, private-testnet, trading, LIVE and future replay are explicit independent readiness dimensions"
 
-echo "[5/8] Global readiness endpoint is authenticated GET-only"
+echo "[4/7] Global readiness endpoint is authenticated GET-only"
 UNAUTH_CODE=$(curl -sS -o "$BODY" -w '%{http_code}' "$BASE_URL/api/global-readiness" 2>/dev/null || true)
 [ "$UNAUTH_CODE" = "401" ] || fail "unauthenticated GET /api/global-readiness returned HTTP $UNAUTH_CODE; expected 401"
 POST_CODE=$(curl -sS -o "$BODY" -w '%{http_code}' -b "$COOKIE_JAR" -X POST "$BASE_URL/api/global-readiness" 2>/dev/null || true)
 [ "$POST_CODE" = "405" ] || fail "POST /api/global-readiness returned HTTP $POST_CODE; expected 405"
 pass "global readiness is authenticated and read-only"
 
-echo "[6/8] Infrastructure UI exposes the Step 44 contract"
+echo "[5/7] Infrastructure UI exposes the Step 44 contract"
 grep -q "getGlobalReadiness" "$ROOT/src/data/dashboardDataSource.ts" || fail "frontend data-source contract missing getGlobalReadiness"
 grep -q "Step 44 · Full Global Readiness Contract" "$ROOT/src/pages/InfrastructurePage.tsx" || fail "Infrastructure Step 44 panel missing"
 grep -q "futureReplayBoundary" "$ROOT/src/pages/InfrastructurePage.tsx" || fail "future mock/replay boundary is not visible in Infrastructure"
 pass "Infrastructure exposes phase-scoped readiness and future replay boundary"
 
-echo "[7/8] No private wallet/signing/order command surface introduced"
+echo "[6/7] No private wallet/signing/order command surface introduced"
 SERVER_GO="$ROOT/dashboard-api/internal/server/server.go"
 [ -f "$SERVER_GO" ] || fail "server route registry is missing"
 
@@ -205,7 +201,7 @@ fi
 
 pass "Step 44 route registry remains read/observability/admission-only; no capital-moving path or secret loader exists"
 
-echo "[8/8] Manual routing remains fail-closed"
+echo "[7/7] Manual routing remains fail-closed"
 MANUAL=$(curl -fsS -b "$COOKIE_JAR" "$BASE_URL/api/manual-control") || fail "manual-control read model unavailable"
 printf '%s' "$MANUAL" >"$BODY"
 python3 - "$BODY" <<'PY' || exit 1

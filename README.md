@@ -64,11 +64,11 @@ restart and pacing invariance. Full-history and broker acceptance are separate.
 
 ## Deployment and handoff
 
-[Live deployment](deploy/live/README.md) and
-[distributed historical deployment](deploy/historical_replay/README.md) describe
-their respective Compose stacks. Dashboard deployment has its own
-[guide](dashboard/docs/AWS_DEPLOYMENT.md). None of these guides constitute
-approval to route live capital.
+[Chain operations](deploy/chain/README.md) describes the deployment in use:
+`deploy/chain/compose.yml` and the `algo` launcher include trading and the dashboard.
+The [live service stack](deploy/live/README.md) and
+[distributed historical stack](deploy/historical_replay/README.md) remain reference
+and isolated validation workflows. These guides do not authorize live capital routing.
 
 `./handoff.sh` packages source and current documentation. Generated datasets,
 replay output and frozen evidence are not substitutes for current source checks.

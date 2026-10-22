@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import re
 import sys
 
 CHECKS = {
@@ -60,7 +61,71 @@ CHECKS = {
         "exchange-gateway:",
         'profiles: ["exchange-edge"]',
     ],
+    "dashboard/dashboard-api/Dockerfile": [
+        "-o /out/dashboard-watchdog ./cmd/dashboard-watchdog",
+        "-o /out/dashboard-alert-notifier ./cmd/dashboard-alert-notifier",
+    ],
+    "dashboard/dashboard-api/internal/provider/real_alerts_audit.go": [
+        "mergeSymbolMapAlerts", "mergeLedgerAlerts",
+        "LEDGER_INTEGRITY_BLOCKED", "SYMBOL_MAP_UNAVAILABLE",
+    ],
+    "dashboard/dashboard-api/internal/server/server.go": [
+        "POST /api/manual-control/route", "POST /api/alerts-audit/acknowledge",
+    ],
+    "dashboard/dashboard-api/internal/notifier/telegram.go": [
+        'telegramAPIBaseURL      = "https://api.telegram.org"',
+        "TelegramReceiptVersion",
+    ],
+    "dashboard/dashboard-api/internal/notifier/engine.go": ['"notify:"'],
+    "dashboard/dashboard-api/cmd/dashboard-alert-notifier/main.go": ['"/data/notifier/telegram"'],
 }
+
+# Retain the shared source boundaries from the retired standalone deployment gates.
+# Manual requests may reach execution-state through its folder; notification and
+# acknowledgement code must remain independent of trading commands/credentials.
+API = "dashboard/dashboard-api"
+FORBIDDEN = [
+    ([f"{API}/cmd/dashboard-watchdog", f"{API}/internal/alertstore"],
+     r"PRIVATE_KEY|mnemonic|seed phrase|/exchange|submit.*order|cancel.*order"),
+    ([f"{API}/internal/notifier", f"{API}/cmd/dashboard-alert-notifier", f"{API}/internal/alertack"],
+     r"Publish\(|/exchange|submit.*order|cancel.*order|modify.*order|PRIVATE_KEY|MNEMONIC|SEED_PHRASE|DASHBOARD_POSTGRES_DSN|DASHBOARD_NATS_URL"),
+    ([f"{API}/internal/manualaudit", f"{API}/internal/provider/manual_control.go", f"{API}/internal/server/server.go"],
+     r"Publish\("),
+    ([f"{API}/cmd", f"{API}/internal"],
+     r"PRIVATE_KEY|MNEMONIC|SEED_PHRASE|HYPERLIQUID_[A-Z0-9_]*SECRET|API_WALLET_[A-Z0-9_]*KEY|DASHBOARD_TELEGRAM_API_BASE_URL"),
+]
+
+
+def check_observability_boundaries(root: Path) -> list[str]:
+    failures = []
+    for paths, pattern in FORBIDDEN:
+        for relative in paths:
+            path = root / relative
+            if not path.exists():
+                failures.append(f"missing source boundary: {relative}")
+                continue
+            sources = sorted(path.rglob("*.go")) if path.is_dir() else [path]
+            for source in sources:
+                if re.search(pattern, source.read_text(encoding="utf-8")):
+                    failures.append(f"{source.relative_to(root)}: forbidden observability dependency ({pattern})")
+
+    postgres = root / API / "internal/integration/postgres"
+    for source in sorted(postgres.glob("*.go")):
+        if source.name.endswith("_test.go"):
+            continue
+        if re.search(r"\b(INSERT|UPDATE|DELETE|ALTER|DROP|TRUNCATE|CREATE\s+TABLE)\b", source.read_text(encoding="utf-8")):
+            failures.append(f"{source.relative_to(root)}: mutating SQL in trading read adapter")
+
+    for relative in ("dashboard/.env.example", "dashboard/.env.production.example"):
+        path = root / relative
+        if not path.is_file():
+            failures.append(f"missing credential example: {relative}")
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            name, separator, value = line.partition("=")
+            if separator and name.strip() in ("DASHBOARD_TELEGRAM_BOT_TOKEN", "DASHBOARD_TELEGRAM_CHAT_ID") and value.strip():
+                failures.append(f"{relative}: Telegram example credential must be empty")
+    return failures
 
 
 def main() -> int:
@@ -82,6 +147,8 @@ def main() -> int:
             checked += 1
             if marker not in text:
                 failures.append(f"{relative}: missing audited marker {marker!r}")
+
+    failures.extend(check_observability_boundaries(root))
 
     if failures:
         print("DASHBOARD SOURCE AUDIT: FAIL")

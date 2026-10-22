@@ -32,7 +32,7 @@ its rolling comparison after that boundary. See the PAPER guide for state migrat
 | `live_trading/` | Service entrypoints, adapters and service-owned lifecycle. Real venues: `exchange_gateway/src/venue/` (LiveVenueAdapter + one VenueProtocol per exchange). |
 | `research/` | Public replay CLI, canonical runner and research executables. |
 | `standby/` | Local standby: the deployed profile's next orders from Binance data and the real account (plan only). |
-| `dashboard/` | React UI, Go read-model API, observability stores and deployment. |
+| `dashboard/` | React UI, Go read-model API, observability stores and local test fixtures. Deployment is in `deploy/chain/`. |
 | `validation/` | Current release gate, component tests and focused source audits. |
 | `deploy/` | `chain/` (runtime root layout, single compose.yml, `algo` launcher, log receiver, host monitor), plus LIVE and isolated historical Compose deployments. PAPER test fixtures live in validation/fixtures/paper/. |
 | `config/` | Runtime configuration, source-symbol maps and venue registries. |
@@ -468,8 +468,9 @@ and durably audits an intent with `submitted=false`; no private exchange order i
 sent. Public venue metadata/symbol/rule checks do not establish private execution readiness.
 Fill-derived ledger projections are not durable cost-basis/PnL accounting.
 
-See [dashboard/README.md](../../dashboard/README.md) and its five detailed guides in
-`dashboard/docs/`. Dashboard loss must not stop trading.
+See [dashboard/README.md](../../dashboard/README.md), its detailed guides in
+`dashboard/docs/` and [chain operations](../../deploy/chain/README.md).
+Dashboard loss must not stop trading.
 
 ## Validation and retained history
 

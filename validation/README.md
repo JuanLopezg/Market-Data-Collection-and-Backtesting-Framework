@@ -558,8 +558,9 @@ chaos tests remain. Generated run evidence and frozen venue contracts were not d
 
 ## Dashboard and analysis checks
 
-Dashboard contracts/deployment have their own scripts under `dashboard/scripts/`.
-See [dashboard/README.md](../dashboard/README.md) and its current API/source guides.
+Dashboard contracts have their own scripts under `dashboard/scripts/`.
+Deployment uses [chain operations](../deploy/chain/README.md); see
+[dashboard/README.md](../dashboard/README.md) and its current API/source guides.
 
 ```bash
 python3 dashboard/scripts/verify-project-contracts.py --project-root .
@@ -569,3 +570,29 @@ python3 tools/verify_tool.py
 The second command verifies the retained sensitivity-report program/configuration;
 it does not run studies or produce a report. See
 [tools/README_sensitivity_report.md](../tools/README_sensitivity_report.md).
+
+The dashboard source audit retains the shared watchdog/alert derivation,
+notification/acknowledgement command isolation, read-only trading SQL and fixed
+Telegram endpoint/empty-example-credential checks from the retired standalone gates.
+It does not inspect a running deployment.
+
+Shared behavior remains in the existing Go tests, also run by
+`bash dashboard/scripts/step14a-verify.sh` (requires local Go, no Docker):
+
+| Go package under `dashboard/dashboard-api/` | Retained coverage |
+| --- | --- |
+| `internal/alertstore`, `cmd/dashboard-watchdog` | Open/update/resolve persistence, heartbeat, failed sweep and restart deduplication. |
+| `internal/manualaudit`, `internal/provider`, `internal/server` | Manual preview, target hash/stale reference, operator/CSRF/confirmation, blocked admission/audit, chain request format and read-only authenticated routes. |
+| `internal/alertack`, `internal/server` | Lifecycle binding, stale-key rejection, append-only acknowledgement, idempotency and no alert resolution/trading mutation. |
+| `internal/notifier`, `cmd/dashboard-alert-notifier` | Bootstrap, severity/cooldown/escalation, TEST_FILE/receipt deduplication and restart, fresh source gating, Telegram HTTP mocks, timeout and redaction. |
+
+Run `CGO_ENABLED=0 go test ./...`, `CGO_ENABLED=0 go vet ./...` and
+`CGO_ENABLED=0 go build ./...` from `dashboard/dashboard-api/`.
+The removed runtime checks assumed standalone container names, named volumes,
+network layout or always-disabled manual routing. Chain host acceptance uses its
+actual configuration; Go/source checks do not replace it. The retained numbered
+integration scripts may still require historical fixtures; inspect prerequisites.
+
+`python3 validation/resource_profile_test.py` also renders the profiling topology
+without Docker, checking isolated simulation state, PAPER background workers,
+TEST_FILE delivery and local-only networking/mounts from retained fixtures.

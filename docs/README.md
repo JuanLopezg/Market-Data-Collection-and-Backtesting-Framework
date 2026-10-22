@@ -32,7 +32,6 @@ Neither is a cumulative development diary.
 | Dashboard HTTP boundary | [API contract](../dashboard/docs/API_CONTRACT.md) |
 | Dashboard source ownership | [Source map](../dashboard/docs/REAL_DATA_SOURCE_MAP.md) |
 | Dashboard access controls | [Authentication](../dashboard/docs/AUTH_SECURITY.md) |
-| Dashboard standalone deployment (superseded by deploy/chain) | [Deployment](../dashboard/docs/AWS_DEPLOYMENT.md) |
 | Dashboard production review | [Checklist](../dashboard/docs/PRODUCTION_CHECKLIST.md) |
 | Runtime layout, single Compose file and `algo` launcher | [Chain](../deploy/chain/README.md) |
 | Live Compose stack | [Live deploy](../deploy/live/README.md) |

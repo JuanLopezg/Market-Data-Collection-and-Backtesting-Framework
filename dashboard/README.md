@@ -146,35 +146,20 @@ host snapshot for CPU/RAM/disk and project container measurements, without a Doc
 socket mount. Stale readings become unavailable. Container health is separate from
 trading readiness. Trading executable observations, daily PAPER decision/plan-date
 freshness and host systemd NTP status are now exposed separately. Missing NTP support
-remains UNKNOWN; clock offset is not measured. The normal real overlay below
-does not configure this optional snapshot by default.
+remains UNKNOWN; clock offset is not measured.
 
-Start the trading stack described in [deploy/live/README.md](../deploy/live/README.md).
-Then, from the repository root:
+Operate the installed dashboard through `<root>/chain/algo` with
+`deploy/chain/compose.yml`; the [chain guide](../deploy/chain/README.md) owns setup,
+startup, private access, credentials and rollback. The standalone real-source
+deployment has been retired. Local mock UI and canonical simulation Compose files
+remain development/validation fixtures.
 
-```bash
-docker compose --env-file deploy/live/.env \
-  -f dashboard/docker-compose.yml \
-  -f dashboard/docker-compose.real.yml up --build -d
-```
-
-The real overlay expects the existing `algotrading-live_live` network and
-`storage/databases/database.db`. It obtains PostgreSQL settings from the live
-environment file. Keep credentials out of commands/logs and use a SELECT-only database
-role where available.
-
-The canonical SQLite file is over-mounted read-only. Its directory remains writable
-for SQLite WAL locking/sidecar bookkeeping; API queries use `-readonly` and
-`PRAGMA query_only=ON`. This is not permission to modify market history.
-The watchdog has its own durable store, and API manual-audit/acknowledgement stores
-are separate from trading data.
-
-This standalone overlay predates deploy/chain and is superseded by it. Since 2026-10-15 the
-real provider (dashboard-api and watchdog) reads the trading chain only: PAPER (SIMULATED venue,
-PAPER environment, backend gateway) or Kraken LIVE (KRAKEN, LIVE, venue gateway), values that
-deploy/chain/algo sets. The former Hyperliquid TESTNET boundary of this overlay (the
-`/api/venue-*` endpoints, public Hyperliquid client and Step 33-37 scripts) was retired, so the
-overlay no longer starts as it is. Changing provider mode does not enable private orders.
+The real provider and watchdog accept the trading-chain boundary only: PAPER
+(SIMULATED venue, PAPER environment, backend gateway) or Kraken LIVE (KRAKEN, LIVE,
+venue gateway), set by `algo`. Market-data mounts are read-only. The watchdog,
+manual-audit, acknowledgement and notifier stores remain separate from trading
+data. Keep credentials out of commands/logs and use a SELECT-only database role
+where available. Changing provider mode does not enable private orders.
 
 ## Local Telegram setup
 
@@ -345,13 +330,14 @@ venue; the earlier Hyperliquid TESTNET integration was retired on 2026-10-15.
 | [API_CONTRACT.md](docs/API_CONTRACT.md) | Current routes, response/auth rules and capability limits. |
 | [REAL_DATA_SOURCE_MAP.md](docs/REAL_DATA_SOURCE_MAP.md) | Actual source ownership, schemas, joins and accounting gaps. |
 | [AUTH_SECURITY.md](docs/AUTH_SECURITY.md) | Sessions, roles, CSRF and credential boundary. |
-| [AWS_DEPLOYMENT.md](docs/AWS_DEPLOYMENT.md) | VPS/production network, configuration and startup. |
+| [Chain operations](../deploy/chain/README.md) | VPS configuration, startup, private access and releases. |
 | [PRODUCTION_CHECKLIST.md](docs/PRODUCTION_CHECKLIST.md) | Concrete deployment checks. |
 
 Start in `dashboard-api/internal/server/server.go` for routes/auth/actions,
 `dashboard-api/internal/provider/` for resource builders and
 `dashboard-api/internal/integration/` for bounded source reads.
-The frontend lives in `src/`. Deployments and scripts remain at the dashboard root.
+The frontend lives in `src/`. Development fixtures and checks remain at the dashboard
+root; installed deployment is owned by `deploy/chain/`.
 
 ## Validation
 
@@ -371,10 +357,18 @@ bash validation/step59_canonical_replay_release_gate.sh
 Backend tests, from `dashboard/dashboard-api/`:
 
 ```bash
-go test ./...
+CGO_ENABLED=0 go test ./...
+CGO_ENABLED=0 go vet ./...
+CGO_ENABLED=0 go build ./...
 ```
 
 `scripts/step*.sh` retain focused integration/security/observability gates and
 accepted step identities. Many require a running dashboard and specific real fixtures;
 read their prerequisites before running them. They are not all replaced by the source
-marker audit. Production preflight/smoke commands are in the deployment guide.
+marker audit. The retired standalone deployment gates' shared behavior is covered
+by the Go suite: watchdog lifecycle/restart, manual preview/admission authorization
+and audit, lifecycle-bound acknowledgements, notifier bootstrap/cooldown/restart
+deduplication and Telegram HTTP mocks/receipts/redaction. The source audit retains
+their applicable read-only and notification safety checks. See the
+[validation guide](../validation/README.md#dashboard-and-analysis-checks) for coverage
+and the [chain guide](../deploy/chain/README.md) for destination-host acceptance.

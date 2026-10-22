@@ -1,5 +1,10 @@
 # Deployment coordination — 2026-10-18
 
+Deployment entrypoint: `deploy/chain/compose.yml` and the installed `chain/algo`
+launcher; see [chain operations](../../deploy/chain/README.md). Standalone dashboard
+deployment is retired. The completed release notes below are retained evidence;
+this cleanup does not deploy or activate a release.
+
 Owner: Codex, current user-authorized Telegram formatting / Kraken daily table task.
 Status: COMPLETE — color/name-only summary release activated and verified; deployment slot free.
 Latest release: `20261018_130842-9bed096-dirty`, previous `20261018_121047-9bed096-dirty`.
