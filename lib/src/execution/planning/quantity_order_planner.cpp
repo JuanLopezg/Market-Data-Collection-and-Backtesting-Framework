@@ -175,6 +175,7 @@ QuantityOrderPlannerResult QuantityOrderPlanner::createPlan(
             if (executionTimestamp <= intent->second->decision_timestamp)
                 throw std::invalid_argument("Stop entry must activate after its decision close");
             order.entry_stop_price = decision->second.entry_stop_price;
+            order.entry_is_limit = decision->second.entry_is_limit;
             order.protective_stop_price = decision->second.protective_stop_price;
             order.created_at = intent->second->decision_timestamp;
         }

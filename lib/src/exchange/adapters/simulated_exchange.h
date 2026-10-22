@@ -221,6 +221,19 @@ public:
             if (!std::isfinite(bar->second.open) || bar->second.open <= 0.0 ||
                 !std::isfinite(bar->second.high) || bar->second.high < bar->second.open)
                 throw std::runtime_error("Invalid bar for simulated stop matching");
+            if (order.entry_is_limit) {
+                // Long limit: fills when the bar trades at or below it, at min(open, limit),
+                // for the quantity sized at the limit (a lower fill costs less, never more).
+                if (!std::isfinite(bar->second.low) || bar->second.low <= 0.0 || bar->second.low > bar->second.open)
+                    throw std::runtime_error("Invalid low for simulated limit matching");
+                if (bar->second.low > order.entry_stop_price) {
+                    cancelOrderAt(id, ts);
+                    continue;
+                }
+                emitFill(order, ts, std::min(order.entry_stop_price, bar->second.open), order.quantity);
+                active_orders_.erase(it);
+                continue;
+            }
             const bool shortEntry = order.side == OrderSide::Sell;
             if (shortEntry && (!std::isfinite(bar->second.low) || bar->second.low <= 0.0 ||
                               bar->second.low > bar->second.open))

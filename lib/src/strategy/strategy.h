@@ -30,6 +30,8 @@ public:
     virtual bool requiresTradeObservations() const { return requiresStopEntries(); }
     virtual void observeTrades(const std::vector<TradeRecord>&) const {}
     virtual double entryStopPrice(const Coin&) const { return 0.0; }
+    // Research only: entryStopPrice is a long limit price instead of a stop trigger.
+    virtual bool entryIsLimit() const { return false; }
     virtual double protectiveStopPrice(const Coin&) const { return 0.0; }
 
     // Update this strategy's current signals for one timestamp

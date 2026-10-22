@@ -34,6 +34,8 @@ struct ExecutionOrder {
     // Long entry quantity is capped at the trigger and shrinks on an upward gap.
     // Short entry quantity is sized at min(trigger, execution open) by the planner.
     double entry_stop_price = 0.0;
+    // Research only: entry_stop_price is a long limit (see RebalanceDecision::entry_is_limit).
+    bool entry_is_limit = false;
     // Research short-entry bracket. The child covers only the actual filled units.
     double protective_stop_price = 0.0;
     OrderID parent_order_id = 0;
@@ -95,6 +97,8 @@ struct ExecutionOrder {
             throw std::invalid_argument("Conditional prices must be finite and non-negative");
         if (entry_stop_price != 0.0 && active_from <= created_at)
             throw std::invalid_argument("Stop entry must activate after its decision close");
+        if (entry_is_limit && (entry_stop_price == 0.0 || side != OrderSide::Buy || protective_stop_price != 0.0))
+            throw std::invalid_argument("A limit entry is a long BUY with a positive limit and no bracket");
         if (parent_order_id != 0 && (side != OrderSide::Buy || entry_stop_price != 0.0 ||
             protective_stop_price == 0.0 || active_from < created_at))
             throw std::invalid_argument("Invalid protective short cover");

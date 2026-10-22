@@ -32,6 +32,9 @@ struct RebalanceDecision {
     // Optional one-following-bar stop entry. Zero keeps market execution.
     double entry_stop_price = 0.0;
     double protective_stop_price = 0.0;
+    // Research only: entry_stop_price is a long LIMIT (fills when the next bar trades at or
+    // below it, at min(open, limit)) instead of a stop. False everywhere else.
+    bool entry_is_limit = false;
 
     static RebalanceDecision hold()
     {
@@ -60,6 +63,15 @@ struct RebalanceDecision {
             !std::isfinite(triggerPrice) || triggerPrice <= 0.0)
             throw std::invalid_argument("Stop entry requires nonzero weight and positive trigger price");
         return {RebalanceAction::TargetWeight, weight, triggerPrice};
+    }
+
+    static RebalanceDecision limitEntry(double weight, double limitPrice)
+    {
+        if (!std::isfinite(weight) || weight <= 0.0 || !std::isfinite(limitPrice) || limitPrice <= 0.0)
+            throw std::invalid_argument("Limit entry requires a positive (long) weight and limit price");
+        RebalanceDecision decision{RebalanceAction::TargetWeight, weight, limitPrice};
+        decision.entry_is_limit = true;
+        return decision;
     }
 };
 

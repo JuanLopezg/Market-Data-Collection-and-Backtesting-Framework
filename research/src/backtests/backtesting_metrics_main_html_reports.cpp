@@ -1,4 +1,5 @@
 #include "backtester.h"
+#include "catalog_definitions.h"
 #include "database_utils.h"
 #include "donchian_signal_strategy.h"
 #include "entry_exit_only_rebalance_policy.h"
@@ -379,6 +380,19 @@ std::unique_ptr<RebalancePolicy> makeStudyRebalancePolicy()
     return std::make_unique<EntryExitOnlyRebalancePolicy>();
 }
 
+// --combined: every catalog strategy in one system, each with 1/N of the capital and its
+// own sizer (equal weight on its share, or the volatility target on its share).
+std::vector<StrategyDefinition> combinedMembers;
+
+std::unique_ptr<PortfolioSizer> makeStudySizer(const ParameterValues& parameters)
+{
+    if (studySizing.sizer == "volatility-target")
+        return std::make_unique<VolatilityTargetSizer>(
+            std::make_unique<SampleCovarianceEstimator>(studySizing.covarianceLookback, studySizing.periodsPerYear),
+            studySizing.targetVolatility);
+    return std::make_unique<EqualWeightSizer>(parameterOr(parameters, "quantityPercent", 10.0) / 100.0);
+}
+
 StrategyPortfolio makeSizedStudyPortfolio(
     const StrategyDefinition& definition,
     const ParameterValues& parameters
@@ -387,6 +401,15 @@ StrategyPortfolio makeSizedStudyPortfolio(
     // The study allocates all capital to one strategy. Signal strength and
     // fixed asset weight are separate; execution quantities resolve at next open.
     StrategyPortfolio portfolio;
+    if (definition.name == "Combined") {
+        const double share = 1.0 / static_cast<double>(combinedMembers.size());
+        StrategyID id = 0;
+        for (const auto& member : combinedMembers)
+            portfolio.emplace_back(++id, member.create(member.currentParameters), share,
+                                   makeStudySizer(member.currentParameters), RiskConstraints(1.5, 1.5),
+                                   makeStudyRebalancePolicy());
+        return portfolio;
+    }
     if (studySizing.sizer == "volatility-target") {
         portfolio.emplace_back(
             1,
@@ -429,6 +452,8 @@ try
     std::string grid;
     std::string selectedStrategy;
     std::vector<std::string> parameterOverrides;
+    bool catalog = false;
+    bool combined = false;
     std::string rankerChoice;
     Timestamp startDate;
     Timestamp endDate;
@@ -444,6 +469,8 @@ try
         ("study-id", options::value(&studyId)->default_value(""), "New study directory name (default UTC timestamp)")
         ("output-root", options::value(&outputRoot)->default_value("storage/backtests/sensitivity_results"), "Study parent directory")
         ("strategy", options::value(&selectedStrategy)->default_value("PureRSI"), "Strategy name or all")
+        ("catalog", options::bool_switch(&catalog), "Use the user's RealTest catalog (13 strategies, plain variant each)")
+        ("combined", options::bool_switch(&combined), "With --catalog: all its strategies in one system, 1/N of capital each")
         ("ranker", options::value(&rankerChoice)->default_value("own"), "own (each strategy's ranker) or volume (SMA(volume, 25), highest first; PureMom keeps momentum)")
         ("set", options::value(&parameterOverrides)->composing(), "Baseline parameter name=value (repeatable, e.g. --set rsiExit=65)")
         ("grid", options::value(&grid)->default_value("none"), "none, compact or full sensitivity grid")
@@ -579,7 +606,19 @@ try
     rankByVolumeAverage() = rankerChoice == "volume";
     if (rankByVolumeAverage())
         LG_INFO("Ranking: SMA(volume, 25), highest first (PureMom keeps its momentum ranking)");
-    std::vector<StrategyDefinition> strategyDefinitions = makeHtmlStudyDefinitions(benchmarkSymbol);
+    std::vector<StrategyDefinition> strategyDefinitions = catalog ? makeCatalogDefinitions(benchmarkSymbol)
+                                                                  : makeHtmlStudyDefinitions(benchmarkSymbol);
+    if (combined) {
+        if (!catalog) {
+            LG_ERROR("--combined needs --catalog");
+            return 1;
+        }
+        combinedMembers = std::move(strategyDefinitions);
+        strategyDefinitions = {StrategyDefinition{"Combined", {}, {}, nullptr, [](const ParameterValues&) { return true; }}};
+        selectedStrategy = "Combined";
+        LG_INFO("Combined system: {} strategies, {:.2f}% of capital each", combinedMembers.size(),
+                100.0 / static_cast<double>(combinedMembers.size()));
+    }
     // Timed research strategies, only when named explicitly (keeps "all" to the four HTML
     // definitions), with the values of the multi-strategy study where the shared
     // definitions differ (ATRBreakout also matches the parameters frozen in August 2026).
@@ -590,7 +629,7 @@ try
         {"ATRBreakout", {{"heldBars", 3.0}, {"atrMultiple", 0.875}, {"atrLength", 10.0}}},
         {"MRShort", {{"rsiEntry", 65.0}, {"entryAtrLength", 10.0}, {"heldBars", 7.0}}},
     };
-    if (const auto values = multiStrategyValues.find(selectedStrategy); values != multiStrategyValues.end()) {
+    if (const auto values = multiStrategyValues.find(selectedStrategy); !catalog && values != multiStrategyValues.end()) {
         for (auto& definition : makeStrategyDefinitions(benchmarkSymbol)) {
             if (definition.name != selectedStrategy)
                 continue;

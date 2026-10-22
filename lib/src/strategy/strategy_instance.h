@@ -200,9 +200,9 @@ public:
 
             if (strategy_->requiresStopEntries() && currentQuantity == 0.0 &&
                 decision.action == RebalanceAction::TargetWeight) {
-                decision = RebalanceDecision::stopEntry(
-                    decision.target_weight, strategy_->entryStopPrice(coin)
-                );
+                decision = strategy_->entryIsLimit()
+                    ? RebalanceDecision::limitEntry(decision.target_weight, strategy_->entryStopPrice(coin))
+                    : RebalanceDecision::stopEntry(decision.target_weight, strategy_->entryStopPrice(coin));
                 decision.protective_stop_price = strategy_->protectiveStopPrice(coin);
             }
 
