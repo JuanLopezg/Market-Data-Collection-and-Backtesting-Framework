@@ -1,143 +1,45 @@
 # Remaining implementation and acceptance roadmap
 
-## Next steps (2026-10-15, in this order)
+## Current state (2026-10-22)
 
-**Stop-loss live (2026-10-17, authorized):** release 20261017_190518 with a reduce-only Kraken
-stop 30% below each long's last daily close, moved at every close (`LIVE_LONG_STOP_FRACTION=0.30`,
-README "Stop-loss"). LIVE state restarted at 23:14 UTC as kraken3 after the positions were closed
-manually in Kraken at 15:13 UTC; NEAR/STRK/WLD re-bought with stops accepted.
+**VPS:** Kraken LIVE (namespace kraken3 since 2026-10-17 23:14 UTC), real orders enabled,
+strategy `pure_rsi_8_50_40_volume_rank.json` (RSI 8, entry > 50 / exit < 40, test thresholds),
+portfolio `pure_rsi_equal_weight_rel25.json` (10% per signal, 25% relative resize), 30% venue
+stop-loss on every long. Release 20261022_071649-8f22500. Details and evidence: CURRENT_STATE.md.
 
-**Previous VPS release (2026-10-17 14:31 UTC, authorized): 20261017_142931-9bed096-dirty** (Kraken
-marks, funding, total equity with BTC share, alert summaries, monitor in LIVE; old releases and
-images removed, disk 15%).
+Done 2026-10-21/22 (all deployed): nearest-lot-step quantities at Kraken (execution-state
+accepts the lot overfill in LIVE only); 100 ms hops after midnight (orders at Kraken ~8 s
+after 00:00, 7 s of it Binance's own REST delay); `algo switch` + strategy/risk config
+adoption for a deliberate strategy change (80/65 file ready, not active); deposits never show
+as a reconciliation difference; Overview balance line/card with BTC collateral; Live vs
+Expected includes BTC collateral; Telegram sends only changed alert lists, daily portfolio at
+01:00 UTC; MAX ACTIVE SIGNALS is INFO; symbol-map check retries after 30 s and warns about
+new/delisted Kraken contracts; release pruning (VPS keeps 3, local keeps 5); USD reserve
+warning at 7.5% of equity on the VPS. Kraken account history reconciled with the system on
+2026-10-22: 9 fills, fees 0.0570 and funding -0.0518 USD identical, USD balance within 0.0006.
+Local standby re-synced and validated against the VPS decision of 2026-10-21 (same orders to
+the cent); it now shows each order's Kraken step. Roadmap items finished: replay fast library
+(old item 2), standalone dashboard track retired, `Backtester::closeTrades()` removed,
+dashboard-state export split out of canonical_replay.cpp, cleanup of storage "PREGUNTAR"
+(storage/cleanup_notes/B.md).
 
-**Kraken LIVE running since 2026-10-17 12:59 UTC** with real order submission (namespace
-kraken2), test thresholds RSI(8) > 50 / < 40 (`pure_rsi_8_50_40_volume_rank.json`) and the
-portfolio file `pure_rsi_equal_weight_rel25.json`; first orders NEAR/STRK/WLD (~20 USD each).
-Switch to entry 80 / exit 65 when the user asks (new strategy file + adoption on a running
-chain). PAPER data removed from the VPS (archive in storage/vps_paper_archive/).
+## Next steps (2026-10-22)
 
-**LIVE strategy decided by the user (2026-10-17):** PureRSI with RSI length 8, entry RSI > 80,
-exit RSI < 65; universe top 20 by SMA(quote volume, 25); candidates ranked by SMA(quote
-volume, 25), highest first; max 10 signals; equal weight 10% of equity per signal; a held
-position goes back to 10% when |10% - current weight| >= 25% of its current weight (below
-8% or above 13.3%); entries and exits always; max 1.5x gross / asset. No volatility target,
-no BTC filter. Backtest evidence: CURRENT_STATE.md "PureRSI 8/80/65, 10% equal weight:
-relative rebalance thresholds" (Binance perps 2020-2026: 63.0% CAGR, max DD 30.5%, Sharpe
-1.53). The chain already supports every part (`equal_weight` sizer, `relative_threshold`
-rebalance, `indicator` ranker on SMA QuoteVolume 25): it needs a new strategy file and a new
-portfolio file (do not edit the 80/70, 50/40 or vol-target files in place), then
-STRATEGY_FILE/PORTFOLIO_FILE and RSI_ENTRY=80 / RSI_EXIT=65 in chain.env at the LIVE switch.
+1. Check the first daily cycles after the 2026-10-22 changes: nearest-step top-ups (BTC
+   0.0001, ZEC 0.01), timing, daily portfolio at 01:00 UTC, Telegram lists only on change.
+2. Closed-position / tax CSV against Kraken: no position has closed in kraken3 yet; compare
+   the first closes (net PnL, fees, funding) with the Kraken account history and export.
+3. Standby phase 2 (sending orders from the local machine when the VPS is down): only with
+   a trading key, the VPS-down check and a confirmation per run; needs explicit user
+   authorization. Refresh `standby.py sync` after every release.
+4. Strategy switch to 80/65 when the user decides (`algo switch pure_rsi_8_80_65_volume_rank.json`,
+   deploy/chain/README.md).
+5. Optional: flow-adjusted drawdown on the Risk page; a discretionary "manual" sleeve
+   (designed 2026-10-21, not wanted for now); retiring the historical T16..T24 runner family
+   (validation/README.md audits still use it).
 
-Besides the authorized release with the equity fix and the repair of the two VPS rows
-(see the paragraph below and CURRENT_STATE.md):
-
-1. Cleanup task A open questions: the user decides on the "PREGUNTAR" group of
-   `storage/cleanup_notes/A-inventory.md` (Parquet files, VPS backups/snapshot, tax
-   scripts, the historical runner/audit family). Nothing in it is deleted until then.
-2. `research/replay.py fast` fails locally: it prepends
-   `deploy/historical_replay/.runtime_bundle/lib`, whose libalgolib (2026-10-11) predates
-   `TradingEngine::onBarClose(..., extraCapital)`. Refresh that bundle or stop prepending
-   it when the build library exists.
-3. Standalone dashboard deployment retirement is user-approved and implemented
-   locally: deploy/chain is the deployment entrypoint; shared dashboard behavior
-   remains covered by the Go suite and source audit. Remaining proposals awaiting
-   the user: remove the empty `Backtester::closeTrades()` stub from lib/; split the
-   dashboard-state export out of `research/src/canonical/canonical_replay.cpp` (Step58A
-   greps its source text, so adjust that gate in the same change).
-4. Kraken: the user deposits more than USD 200; then step (c), the first small real
-   orders, each one explicitly authorized (funding sign, average entry price, immediate
-   USD settlement of realized PnL, scaled-asset units such as PEPE), and step (d), checking
-   fees, funding, net PnL and the tax CSV against the Kraken export, SKIPPED markets and
-   the Live vs Expected explanations.
-5. Local standby of the deployed version (user request 2026-10-15): every time a release
-   is activated on the VPS, keep locally, in its own folder (not live_trading/), what is
-   needed to reproduce what the VPS does with the fast backtest (same source/release,
-   strategy and portfolio configuration, seed account/positions), so that if the VPS goes
-   down the user can compute locally the decisions/targets the VPS would have taken.
-   Agreed design (2026-10-15): stateless. Each run downloads the last 100 daily bars of
-   every current Binance USDT perpetual, runs the deployed strategy/portfolio configuration
-   over them, reads the Kraken account at that moment (positions, equity, BTC collateral)
-   and derives the orders as target minus holdings, with the same 20% relative resize rule;
-   the only VPS-owned input is the Binance -> Kraken symbol map (already in the repo). It
-   may then send the orders to Kraken from the local machine: never while the VPS is alive,
-   only after the user confirms the listed orders (real-order rule), and only once Kraken
-   LIVE is the deployed mode. Plan-only mode first; validate its targets against the VPS on
-   the same day before any order is sent from local.
-   Phase 1 done locally 2026-10-15/16 (`standby/`, README there): `sync` copies the deployed
-   profile from the VPS read-only; `plan` downloads the data and prints the orders, never
-   sends. Its plans for closes 20261013-15 equal the VPS PAPER decisions and order amounts to
-   the cent. Remaining: phase 2 (sending from local, with a trading key, the VPS-down check
-   and per-run confirmation) once the chain trades Kraken LIVE; refresh `sync` after each
-   release.
-6. Resize rule (user decision 2026-10-15, done locally, pending release): with the vol-target
-   portfolio a held position is resized only when its target weight differs from its current
-   weight (at the current price) by at least 20% of that weight (`relative_threshold` 0.20 in
-   `config/portfolio/pure_rsi_vol_target.json`; was an absolute 2-point threshold). Entries,
-   exits and side changes always happen. On the VPS the portfolio file must be edited and
-   adopted with the README "Changing the portfolio sizer" procedure after the release.
-7. Telegram for the general watchdog alerts (user decision 2026-10-16, instead of a second
-   healthchecks.io check): every watchdog alert goes to Telegram, CRITICAL to the critical
-   group and the rest to the normal chat, and a CRITICAL one only after it has lasted 5
-   minutes (restarts stay silent). Done locally: `DASHBOARD_NOTIFIER_CRITICAL_DELAY` 5m
-   for the general notifier. On the VPS, after the release: `NOTIFIER_SINK=TELEGRAM` in
-   chain/chain.env and restart only the notifier (needs authorization).
-
-Latest VPS release (2026-10-16, authorized): 20261016_095921-9bed096-dirty with everything
-listed below as local, then the equity-row repair, the 20% rule adopted in the VPS
-portfolio file and the general watchdog notifier on TELEGRAM with the 5-minute critical
-delay (steps 6 and 7 done; CURRENT_STATE.md has the evidence). One WARN "Risk decision
-checkpoint unavailable" stays active until the 00:00 UTC decision after the adoption.
-
-Previous release (2026-10-15, authorized): 20261015_090303-d11699d-dirty with the
-Binance `/fapi/v1/time` day-close guard, the Kraken monitor KRAKEN_UNREADABLE warning and
-account-history summary, and the notifier "Alert source stopped" warning. Ledger unchanged;
-CURRENT_STATE.md has the evidence and a pre-existing equity-row overwrite found on restart.
-
-Local since that release (2026-10-15/16, not deployed): the equity-row fix (first row of a day
-wins; step 11), removal of the Hyperliquid TESTNET gateway mode/dashboard path, the
-repo cleanup (storage/cleanup_notes/), the 20% resize rule, the heartbeat files, the standby
-the comparison-baseline fix for a held coin outside the top 50 and the 5-minute critical
-delay of the general notifier (CURRENT_STATE.md). Next release must carry the fix; afterwards repair
-the VPS rows 20261013/20261014 with the procedure in CURRENT_STATE.md (needs authorization).
-
-Full deployment update (2026-10-14): explicitly authorized and completed as
-20261014_201725-d11699d-dirty. Runtime root is now `/algoTrading`; all eight folders,
-active comparison paths, host units/logging/AppArmor and current images are updated.
-Fourteen containers healthy, authenticated dashboard/private HTTPS pass, economic
-ledger unchanged after restarts. Five retained comparison rows have zero signal
-differences. Critical-only Telegram routing and colored/silent policy are active
-for Kraken; the general watchdog sink remains TEST_FILE. Actual running former
-images are preserved as rollback target pre-root-20261014_201026 (not exercised).
-Daily cycles, scheduled summary/reconciliation, faults and private trading still
-need their own acceptance. CURRENT_STATE.md owns exact validation evidence.
-
-Updated: 2026-10-14. This guide owns the ordered remaining work and user requirements.
-Latest user authorization advances the forward PAPER/shadow study and fast baseline
-comparison to the VPS, with a separate PureRSI(7) entry > 50 / exit < 40 profile and
-dashboard comparison. Earlier blanket VPS deferral does not block this requested
-study deployment. Preserve original profiles/state and keep private orders disabled.
-The study is deployed and its first day/API/browser/collector-restart checks pass.
-Next observe several UTC daily cycles and investigate retained signal/execution
-differences; multi-day acceptance and private integration remain pending.
-[CURRENT_STATE.md](../CURRENT_STATE.md) owns validation evidence; component guides
-and actual source describe implemented behavior. Entries below are pending work,
-not claims that a capability is implemented, broken or ready for live capital.
-
-Research runtime migration and generated `.ai/` navigation are complete. Preserve
-the accepted Step59 fingerprint and CURRENT economics during future changes.
-
-PAPER liquidity now uses actual completed daily quote turnover in USDT, averaged
-over 25 rows, rather than base-unit volume. Its separate profile preserves the
-historical reference. Observe the configured future-candle cutover and accumulate
-enough new-metric observations before accepting rolling comparisons.
-
-The controlled local campaign and bounded resource report are already prepared;
-see [local acceptance](../validation/LOCAL_SERVICE_CAMPAIGN.md). Local success does
-not complete VPS-specific or private-venue acceptance. The VPS study deployment
-was explicitly authorized and is running. This roadmap update authorizes no further
-remote deployment, restart, configuration change or private orders. Implement future
-changes locally, preserve the running study, and obtain authorization for rollout.
+The list below is the longer history of the remaining-steps plan (2026-10-10..17); the
+items above supersede it where they differ.
 
 ## Ordered remaining steps
 

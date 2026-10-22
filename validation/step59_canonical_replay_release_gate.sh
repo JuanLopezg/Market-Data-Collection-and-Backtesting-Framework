@@ -29,6 +29,8 @@ printf '\n'
 for f in \
   "$ROOT/research/replay.py" \
   "$ROOT/research/src/canonical/canonical_replay.cpp" \
+  "$ROOT/research/src/canonical/dashboard_state_export.cpp" \
+  "$ROOT/research/src/canonical/dashboard_state_export.h" \
   "$ROOT/storage/backtests/final_tests/pureRSI.csv" \
   "$ROOT/deploy/historical_replay/run/1d_cmc_by_date.csv" \
   "$ROOT/config/historical_replay/step56a_source_symbol_map_v1.csv"; do

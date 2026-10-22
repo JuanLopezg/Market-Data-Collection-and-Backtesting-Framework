@@ -103,7 +103,8 @@ flowchart LR
 - `system` invokes `research/src/canonical/canonical_replay.cpp` and
   `lib/src/runtime/replay_runtime.*`: modern strategy, risk, planning and MOCK.
 - `dashboard` uses the same system economics and publishes replay state for
-  the simulation provider. UI observation and pacing do not change fills.
+  the simulation provider through `research/src/canonical/dashboard_state_export.*`.
+  UI observation and pacing do not change fills.
 
 ### Timing and economics
 

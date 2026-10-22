@@ -2,6 +2,11 @@
 set -euo pipefail
 
 ROOT="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+CANONICAL_SOURCES=(
+  "$ROOT/research/src/canonical/canonical_replay.cpp"
+  "$ROOT/research/src/canonical/dashboard_state_export.cpp"
+  "$ROOT/research/src/canonical/dashboard_state_export.h"
+)
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -22,7 +27,7 @@ printf '%s\n' '[1/8] Frozen source checksums: retired (see validation/README.md)
 printf '%s\n' '[2/8] One canonical public CLI exposes three modes plus partial-day controls'
 for f in \
  "$ROOT/research/replay.py" \
- "$ROOT/research/src/canonical/canonical_replay.cpp" \
+ "${CANONICAL_SOURCES[@]}" \
  "$ROOT/research/src/backtests/backtesting_main.cpp" \
  "$ROOT/research/REPLAY.md"; do
   [[ -f "$f" ]] || fail "missing ${f#$ROOT/}"
@@ -144,7 +149,7 @@ grep -Fq 'accounting.fee_ppm = 0U;' \
 grep -Fq 'RealTest parity order remained active after execution open' \
   "$ROOT/research/src/canonical/canonical_replay.cpp" \
   || fail 'RealTest parity does not fail closed on an unfilled open order'
-if grep -Eq '100000000000|0\.1\*v|10000000000' "$ROOT/research/src/canonical/canonical_replay.cpp"; then
+if grep -Eq '100000000000|0\.1\*v|10000000000' "${CANONICAL_SOURCES[@]}"; then
   fail 'synthetic RealTest liquidity/volume transform is still present'
 fi
 python3 - "$SYS/summary.json" <<'PY58A5B'
@@ -250,7 +255,7 @@ if grep -Eq 'T19_REFERENCE_FILLS|REALTEST_BASELINE|known_exception_policy|KNOWN_
   fail 'frozen T19 exception/prefix acceptance still exists in canonical replay.py'
 fi
 if grep -Ein 'PRIVATE_KEY|MNEMONIC|SEED_PHRASE|API_WALLET|HYPERLIQUID.*(SIGN|PRIVATE|ORDER)' \
- "$ROOT/research/replay.py" "$ROOT/research/src/canonical/canonical_replay.cpp" >"$TMP/private"; then
+ "$ROOT/research/replay.py" "${CANONICAL_SOURCES[@]}" >"$TMP/private"; then
   cat "$TMP/private" >&2
   fail 'private real-venue concern leaked into canonical replay suite'
 fi

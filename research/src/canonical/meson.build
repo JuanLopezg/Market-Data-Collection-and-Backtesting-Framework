@@ -2,7 +2,7 @@ canonical_inc = include_directories('.')
 
 executable(
     'algotrading_canonical_replay',
-    ['canonical_replay.cpp'],
+    ['canonical_replay.cpp', 'dashboard_state_export.cpp'],
     include_directories: [
         canonical_inc,
         research_src_inc,

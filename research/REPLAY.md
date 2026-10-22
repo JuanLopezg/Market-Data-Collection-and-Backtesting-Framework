@@ -291,6 +291,9 @@ Every research executable links `libalgolib` (CURRENT `lib/`); there is no separ
 research runtime. The fast replay executable is built from
 `src/backtests/backtesting_main.cpp` on `lib/backtest/Backtester`. System/dashboard use
 `src/canonical/canonical_replay.cpp` and `lib/src/runtime/replay_runtime.*`.
+The canonical runner's dashboard JSON, equity observations and atomic state publication
+live in `src/canonical/dashboard_state_export.{h,cpp}`; replay decisions and manual
+request execution remain in the runner.
 Regression checks keep explicit report contracts and verify fills, accounting, fees,
 causal prefixes and determinism.
 

@@ -2,6 +2,52 @@
 
 Last synchronized: 2026-10-16. Current source and test output take precedence.
 
+## Kraken history reconciliation, standby re-sync, USD reserve 7.5%, cleanup (2026-10-22)
+
+- USD reserve warning 10% -> 7.5% of equity on the VPS: monitor stopped, journal and policy
+  backed up in /algoTrading/backups/, the existing journal re-bound to the new policy (its
+  identity is the policy; a new journal would reuse alert event ids the notifier already
+  processed), monitor restarted, reading without errors. Repo policy file updated too.
+- Kraken account history (read-only, account-log-summary.json covers 2026-10-07..now) vs the
+  system for kraken3 (since 2026-10-17 23:14): 9 trades = 9 fills, each fill equal to the
+  gateway journal's raw Kraken fill; fees 0.0570 and funding -0.0518 USD identical (fee per
+  trade identical); USD balance change -0.1082 vs -fees+funding -0.1088; our cash + entry value
+  102.0443 vs Kraken USD 102.0449. No closed position yet, so the tax CSV has nothing to compare.
+  22 unattributed venue fills are the manual trades of 2026-10-07 and 2026-10-17 15:13.
+- Standby: `sync` (via Windows OpenSSH) took release 20261022_071649-8f22500; `plan --date
+  2026-10-21` with the risk checkpoint's account equals the VPS decision (capital 237.78, 10
+  signals, BTC +6.97 / XRP +23.78 / ZEC +10.63, BTW and Q skipped).
+- Cleanup: storage/cleanup_notes/B.md (PREGUNTAR group; removed items archived first);
+  local storage/releases pruned to 3 (7.1 GB -> 0.7 GB), `algo release` keeps 5 from now on.
+
+## Canonical dashboard-state export split (2026-10-22, local)
+
+Dashboard view types, JSON serialization, equity observations and atomic state
+publication now live in `research/src/canonical/dashboard_state_export.{h,cpp}`.
+The runner retains strategy/risk configuration, pipeline observation, manual execution
+and replay orchestration. Meson and the CLI's direct source list include the new `.cpp`;
+the CLI also tracks its header for rebuilds. Step58A's broad source scans cover both
+translation units and the header; its positive economic checks still inspect the runner.
+The compatibility scan and Step59's required-file list include the extracted files.
+
+WSL validation: original and extracted runners compile through the CLI build command
+with C++20, `-Wall -Wextra -Werror -pedantic`. Before/after comparison passes byte for
+byte for all 666 dashboard publications across 107-day parity, 10-day zero-trade,
+107-day mock-default, checkpoint at day 50 and resume campaigns; summary JSON, fills
+and checkpoint text also match wherever produced. Continuous and resumed parity keep
+50 fills and the accepted fingerprint
+`f27599267e09ca538edf05e1890c90d435bdf18c208e567c6d73081fde48c4ca`.
+All 17 extracted function bodies match after the explicit parameter substitutions.
+Step58A source/compatibility checks, shell syntax and Python compilation pass.
+
+Limits: Meson setup with `--wrap-mode=nodownload` cannot complete because local
+`gtest_main` is missing, so the Meson target is unverified. Step58A passes its build
+and 10-day runtime check, then stops at the RealTest comparison; Step59 stops at its
+required-file check. Both lack `storage/backtests/final_tests/pureRSI.csv` in this
+worktree, so neither full gate passes here. No Docker or full-history/browser run.
+Evidence: ignored `storage/validation/canonical_dashboard_export_20261022/`
+(`verification.json`, per-publication hashes, before/after exports and gate/setup logs).
+
 ## Kraken quantities rounded to the nearest lot step (2026-10-22)
 
 User decision: the gateway rounded every order down to the venue step, so a small account

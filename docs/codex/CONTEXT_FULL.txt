@@ -18,6 +18,9 @@ repair of the VPS rows 20261013/20261014 (procedure in CURRENT_STATE.md).
 Local replay library selection fixed (2026-10-22): fast/expected-equity build binaries
 use their own rpath; the stale historical bundle is no longer prepended. The 20-day
 fast check and Python compilation pass; see CURRENT_STATE.md for evidence and limits.
+Canonical dashboard-state export now lives in research/src/canonical/dashboard_state_export.*;
+the runner retains decisions/manual execution. CLI/Meson builds and source-text gates
+include the extracted files; CURRENT_STATE.md owns validation evidence and limits.
 
 READING AND DOCUMENT OWNERSHIP
 =============================

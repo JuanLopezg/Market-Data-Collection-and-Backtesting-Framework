@@ -59,6 +59,7 @@ INCLUDE_DIRS = [
 
 FULL_RUN_SOURCES = [
     "research/src/canonical/canonical_replay.cpp",
+    "research/src/canonical/dashboard_state_export.cpp",
     "lib/src/exchange/mock/reconciliation.cpp",
     "lib/src/exchange/mock/recovery.cpp",
     "lib/src/exchange/mock/faults.cpp",
@@ -197,7 +198,8 @@ def sources_newer(binary: Path, sources: Iterable[str | Path]) -> bool:
 
 
 def build_full_runner(force: bool = False) -> Path:
-    if not force and not sources_newer(CANONICAL_RUNNER_BIN, FULL_RUN_SOURCES):
+    source_paths = [*FULL_RUN_SOURCES, "research/src/canonical/dashboard_state_export.h"]
+    if not force and not sources_newer(CANONICAL_RUNNER_BIN, source_paths):
         return CANONICAL_RUNNER_BIN
 
     CANONICAL_RUNNER_BIN.parent.mkdir(parents=True, exist_ok=True)
