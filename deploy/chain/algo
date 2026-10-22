@@ -304,6 +304,12 @@ PY
     fi
     (cd "$folder" && sha256sum images.tar source.tar.gz release.json algo > SHA256SUMS)
     echo "Release written: $folder"
+    # Local release folders (~260 MB each) are only the copies sent to the VPS and can be
+    # rebuilt from their commit: keep the newest five.
+    local old
+    while IFS= read -r old; do
+        rm -rf -- "${out:?}/$old" && echo "Removed old local release $old"
+    done < <(find "$out" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | grep -E '^[0-9]{8}_[0-9]{6}-' | sort -r | tail -n +6)
 }
 
 # ------------------------------------------------------------------- releases
