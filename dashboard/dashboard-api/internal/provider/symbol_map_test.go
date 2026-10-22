@@ -316,3 +316,13 @@ func TestSymbolMapWarnsAboutNewAndDelistedKrakenContracts(t *testing.T) {
 		}
 	}
 }
+
+func TestSymbolMapFailureIsRetriedSoon(t *testing.T) {
+	p := &Real{cfg: RealConfig{}} // no table configured: the check is UNAVAILABLE
+	if status := p.SymbolMapStatus(context.Background()); status.Status != "UNAVAILABLE" {
+		t.Fatalf("status = %q", status.Status)
+	}
+	if wait := time.Until(p.symbolCache.expiresAt); wait > symbolMapRetryAfterFailure || wait <= 0 {
+		t.Fatalf("a failed check must be retried within %s, got %s", symbolMapRetryAfterFailure, wait)
+	}
+}

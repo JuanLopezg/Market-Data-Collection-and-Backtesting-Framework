@@ -43,16 +43,19 @@ const (
 	symbolMapMaxPriceRatio = 5.0
 	// Signals change once a day and Kraken listings rarely: a 4.5-5.5 min refresh is
 	// enough, and this check reads the whole market window and Kraken's prices.
-	symbolMapCacheTTL       = 5 * time.Minute
-	symbolMapCacheJitter    = time.Minute
-	symbolMapCheckTimeout   = 8 * time.Second
-	symbolMapStateOK        = "OK"
-	symbolMapStateNotMapped = "NOT_ON_VENUE"
-	symbolMapStateMissing   = "MISSING_FROM_TABLE"
-	symbolMapStateNotListed = "NOT_LISTED"
-	symbolMapStateSuspended = "SUSPENDED"
-	symbolMapStateNoPrice   = "NO_PRICE"
-	symbolMapStateMismatch  = "SCALE_MISMATCH"
+	symbolMapCacheTTL    = 5 * time.Minute
+	symbolMapCacheJitter = time.Minute
+	// A failed check (typically right after a deploy, before the market database is ready)
+	// is retried soon instead of staying UNAVAILABLE for the whole refresh interval.
+	symbolMapRetryAfterFailure = 30 * time.Second
+	symbolMapCheckTimeout      = 8 * time.Second
+	symbolMapStateOK           = "OK"
+	symbolMapStateNotMapped    = "NOT_ON_VENUE"
+	symbolMapStateMissing      = "MISSING_FROM_TABLE"
+	symbolMapStateNotListed    = "NOT_LISTED"
+	symbolMapStateSuspended    = "SUSPENDED"
+	symbolMapStateNoPrice      = "NO_PRICE"
+	symbolMapStateMismatch     = "SCALE_MISMATCH"
 )
 
 // Same name rules as tools/kraken_symbol_map.py: only an explicit scale prefix followed by
@@ -363,7 +366,11 @@ func (p *Real) SymbolMapStatus(ctx context.Context) SymbolMapStatus {
 	ctx, cancel := context.WithTimeout(ctx, symbolMapCheckTimeout)
 	defer cancel()
 	p.symbolCache.value = p.checkSymbolMap(ctx)
-	p.symbolCache.expiresAt = time.Now().Add(symbolMapCacheTTL - symbolMapCacheJitter/2 + time.Duration(rand.Int64N(int64(symbolMapCacheJitter))))
+	if p.symbolCache.value.Status == "UNAVAILABLE" {
+		p.symbolCache.expiresAt = time.Now().Add(symbolMapRetryAfterFailure)
+	} else {
+		p.symbolCache.expiresAt = time.Now().Add(symbolMapCacheTTL - symbolMapCacheJitter/2 + time.Duration(rand.Int64N(int64(symbolMapCacheJitter))))
+	}
 	return p.symbolCache.value
 }
 
