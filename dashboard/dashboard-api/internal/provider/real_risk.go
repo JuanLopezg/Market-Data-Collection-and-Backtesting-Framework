@@ -76,10 +76,14 @@ func (p *Real) risk(ctx context.Context) (realRiskData, error) {
 			"the previous configuration, the policies shown are the new one, and the next daily close uses them. " + data.SourceNote
 	}
 
-	// Page view: valued account positions, daily PAPER equity (drawdown only; gross is not
-	// kept per day) and the persisted risk evaluation. Missing inputs leave sections empty.
+	// Page view: valued account positions, daily equity (drawdown only; gross is not kept
+	// per day) and the persisted risk evaluation. Missing inputs leave sections empty. The
+	// drawdown prefers ExecutionState's daily equity, adjusted for deposits (see
+	// flowAdjustedEquity); the comparison rows are the fallback.
 	var history []riskEquityPoint
-	if p.cfg.PaperComparisonFile != "" {
+	if accounting, err := p.postgres.Accounting(ctx); err == nil && accounting.Available && len(accounting.Equity) > 1 {
+		history = flowAdjustedEquity(accounting.Equity)
+	} else if p.cfg.PaperComparisonFile != "" {
 		for _, row := range readPaperComparison(p.cfg.PaperComparisonFile).Rows {
 			history = append(history, riskEquityPoint{label: row.Date, equity: row.LiveEquity})
 		}

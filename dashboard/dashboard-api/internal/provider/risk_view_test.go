@@ -3,6 +3,8 @@ package provider
 import (
 	"math"
 	"testing"
+
+	pgstore "control-dashboard-api/internal/integration/postgres"
 )
 
 func TestRiskHistoryDrawdownAndLeverage(t *testing.T) {
@@ -59,5 +61,32 @@ func TestSimulationRiskViewUsesDecisionLimits(t *testing.T) {
 	}
 	if len(data.History) != 1 || *data.History[0].Leverage != 0.5 || data.Exposures[0].Cap != "50.0%" || data.Exposures[0].Utilization != 100 {
 		t.Fatalf("view = %+v", data)
+	}
+}
+
+func TestFlowAdjustedDrawdownIgnoresDepositsAndCollateral(t *testing.T) {
+	days := []pgstore.EquityDay{
+		{Date: 20261020, Equity: 100, CollateralUSD: 100},                       // capital 200
+		{Date: 20261021, Equity: 90, CollateralUSD: 100},                        // -10 USD: -5%
+		{Date: 20261022, Equity: 1090, CollateralUSD: 100, CapitalFlows: 1000},  // USD deposit: 0%
+		{Date: 20261023, Equity: 1090, CollateralUSD: 2100, CapitalFlows: 1000}, // BTC deposit: 0%
+	}
+	history, worst := riskHistory(flowAdjustedEquity(days))
+	if len(history) != 4 {
+		t.Fatalf("history = %+v", history)
+	}
+	for i, want := range []float64{0, -5, -5, -5} {
+		if math.Abs(history[i].Drawdown-want) > 1e-9 {
+			t.Fatalf("day %d drawdown = %v, want %v (%+v)", i, history[i].Drawdown, want, history)
+		}
+	}
+	if math.Abs(worst+5) > 1e-9 {
+		t.Fatalf("max drawdown = %v", worst)
+	}
+	// A withdrawal is not a loss either.
+	days = append(days, pgstore.EquityDay{Date: 20261024, Equity: 590, CollateralUSD: 2100, CapitalFlows: 500})
+	history, _ = riskHistory(flowAdjustedEquity(days))
+	if math.Abs(history[4].Drawdown+5) > 1e-9 {
+		t.Fatalf("withdrawal changed the drawdown: %+v", history[4])
 	}
 }

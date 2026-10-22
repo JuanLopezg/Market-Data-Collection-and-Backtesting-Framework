@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"sort"
+
+	pgstore "control-dashboard-api/internal/integration/postgres"
 )
 
 // Risk page read model shared by the replay and PAPER providers: headline cards, leverage
@@ -162,4 +164,28 @@ func riskBinding(scale float64, assetCapReduced bool) string {
 		return "Asset cap"
 	}
 	return "None"
+}
+
+// flowAdjustedEquity turns the daily account rows into a performance index for the drawdown,
+// so deposits and withdrawals are not gains or losses (user request 2026-10-22). Each day's
+// return is the change of cash + positions minus that day's USD capital flows, over the
+// previous day's whole capital (cash + positions + BTC collateral after haircut). The BTC
+// collateral is capital, not strategy performance: a BTC deposit or a BTC price move changes
+// the base, never the return. The index starts at the first day's whole capital.
+func flowAdjustedEquity(days []pgstore.EquityDay) []riskEquityPoint {
+	if len(days) == 0 {
+		return nil
+	}
+	index := days[0].Equity + days[0].CollateralUSD
+	points := []riskEquityPoint{{label: formatTradingTimestamp(days[0].Date), equity: index}}
+	for i := 1; i < len(days); i++ {
+		previous, day := days[i-1], days[i]
+		base := previous.Equity + previous.CollateralUSD
+		pnl := (day.Equity - previous.Equity) - (day.CapitalFlows - previous.CapitalFlows)
+		if base > 0 && index > 0 {
+			index *= 1 + pnl/base
+		}
+		points = append(points, riskEquityPoint{label: formatTradingTimestamp(day.Date), equity: index})
+	}
+	return points
 }

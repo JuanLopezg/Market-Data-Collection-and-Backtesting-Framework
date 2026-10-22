@@ -365,8 +365,10 @@ tests use `docker exec kraken-notifier /dashboard-alert-notifier --test-message
 - **USD:** a capital flow, not performance (`Net Deposits` card; Expected vs Real gives the
   expected run the same flow). The gateway books the account history before every
   reconciliation snapshot, so a deposit never shows as a cash difference.
-- Drawdown on the Risk page is measured on the account equity without flow adjustment: a
-  deposit raises the running peak, a withdrawal shows as a drawdown.
+- Drawdown on the Risk page is measured on a performance index (since 2026-10-22): each day's
+  change of cash + positions minus that day's USD deposits/withdrawals, over the previous
+  day's whole capital including BTC collateral. Deposits, withdrawals, BTC transfers and BTC
+  price moves of the collateral are not gains or losses there.
 
 ## Telegram setup message
 
