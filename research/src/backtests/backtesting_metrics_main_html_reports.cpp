@@ -471,6 +471,7 @@ try
         ("strategy", options::value(&selectedStrategy)->default_value("PureRSI"), "Strategy name or all")
         ("catalog", options::bool_switch(&catalog), "Use the user's RealTest catalog (13 strategies, plain variant each)")
         ("combined", options::bool_switch(&combined), "With --catalog: all its strategies in one system, 1/N of capital each")
+        ("own-trend-filter", options::value(&catalogOwnTrendLength())->default_value(0), "With --catalog: longs enter only above their own SMA(close, N), shorts only below; 0 = off")
         ("ranker", options::value(&rankerChoice)->default_value("own"), "own (each strategy's ranker) or volume (SMA(volume, 25), highest first; PureMom keeps momentum)")
         ("set", options::value(&parameterOverrides)->composing(), "Baseline parameter name=value (repeatable, e.g. --set rsiExit=65)")
         ("grid", options::value(&grid)->default_value("none"), "none, compact or full sensitivity grid")
