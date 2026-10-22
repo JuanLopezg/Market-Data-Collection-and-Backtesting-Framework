@@ -21,6 +21,11 @@ START, END = date(2022, 1, 1), date(2026, 10, 21)
 ENTER, EXIT, MAX_PAIRS, SIZE = 0.20, 0.05, 10, 0.10
 COST_PER_SIDE = 0.0005 + 0.0010
 OUT = sys.argv[1]
+# Mode "threshold" (default): enter > ENTER, exit < EXIT. Mode "top10": every REBALANCE days hold
+# the MAX_PAIRS coins of the universe with the highest positive funding (always invested).
+# Mode "sticky": keep a pair while its funding is positive, fill free slots with the highest.
+MODE = sys.argv[2] if len(sys.argv) > 2 else 'threshold'
+REBALANCE = int(sys.argv[3]) if len(sys.argv) > 3 else 1
 
 volume = defaultdict(dict)
 for r in csv.DictReader(open(DATA, encoding='utf-8')):
@@ -74,9 +79,23 @@ while day <= END:
     equity *= 1 + pnl
     # End of day: exits, then entries ranked by funding.
     rates = {s: annualized(s, day) for s in set(universe.get(day, [])) | held}
-    leaving = {s for s in held if rates.get(s) is None or rates[s] < EXIT or s not in universe.get(day, [])}
-    candidates = sorted((r, s) for s in universe.get(day, []) if s not in held and (r := rates.get(s)) is not None and r > ENTER)
-    entering = [s for _, s in reversed(candidates)][:max(0, MAX_PAIRS - (len(held) - len(leaving)))]
+    if MODE == 'top10':
+        if (day - START).days % REBALANCE == 0:
+            ranked = sorted(((r, s) for s in universe.get(day, []) if (r := rates.get(s)) is not None and r > 0), reverse=True)
+            target = {s for _, s in ranked[:MAX_PAIRS]}
+        else:
+            target = held
+        leaving, entering = held - target, sorted(target - held)
+    elif MODE == 'sticky':
+        # Keep a pair while its funding stays positive and it stays in the universe; fill the
+        # free slots with the highest positive funding (low turnover).
+        leaving = {s for s in held if rates.get(s) is None or rates[s] <= 0 or s not in universe.get(day, [])}
+        ranked = sorted(((r, s) for s in universe.get(day, []) if s not in held and (r := rates.get(s)) is not None and r > 0), reverse=True)
+        entering = [s for _, s in ranked][:max(0, MAX_PAIRS - (len(held) - len(leaving)))]
+    else:
+        leaving = {s for s in held if rates.get(s) is None or rates[s] < EXIT or s not in universe.get(day, [])}
+        candidates = sorted((r, s) for s in universe.get(day, []) if s not in held and (r := rates.get(s)) is not None and r > ENTER)
+        entering = [s for _, s in reversed(candidates)][:max(0, MAX_PAIRS - (len(held) - len(leaving)))]
     equity *= 1 - 2 * COST_PER_SIDE * SIZE * (len(leaving) + len(entering))
     held = (held - leaving) | set(entering)
     curve.append((day.isoformat(), equity, len(held)))
@@ -100,7 +119,7 @@ x = json.dumps([d for d, _, _ in curve]); y = json.dumps([round(v * 100000, 2) f
 n = json.dumps([k for *_, k in curve])
 Path(OUT).write_text(f'''<!doctype html><meta charset="utf-8"><title>Funding carry</title>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-<h3 style="font-family:sans-serif">P5 Funding carry: short perp + long spot, top 20, enter funding &gt; 20%/y, exit &lt; 5%/y, max 10 x 10%</h3>
+<h3 style="font-family:sans-serif">P5 Funding carry ({"top 10 positive funding of the top 20, rebalanced every " + str(REBALANCE) + " day(s)" if MODE == "top10" else "keep while funding &gt; 0, fill with the highest" if MODE == "sticky" else "enter funding &gt; 20%/y, exit &lt; 5%/y"}): short perp + long spot, max 10 x 10%</h3>
 <p style="font-family:sans-serif">Total {summary["total"]*100:+.1f}% · CAGR {summary["cagr"]*100:.1f}% · Max DD {dd*100:.1f}% · Sharpe {summary["sharpe"]:.2f} · average pairs {avg_pairs:.1f} · {" · ".join(f"{a} {b*100:+.1f}%" for a, b in years)}<br>Basis changes, borrow and margin calls are not modelled.</p>
 <div id="c" style="height:480px"></div><div id="n" style="height:220px"></div>
 <script>Plotly.newPlot('c',[{{x:{x},y:{y},type:'scatter',name:'Equity'}}],{{title:'Equity (start 100,000)'}});
