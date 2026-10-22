@@ -10,13 +10,14 @@ RISK="$ROOT/live_trading/portfolio_risk_service/src/portfolio_risk_service_main.
 EXECUTION="$ROOT/live_trading/execution_state_service/src/execution_state_service_main.cpp"
 PLANNER="$ROOT/live_trading/order_planner_service/src/order_planner_service_main.cpp"
 GATEWAY="$ROOT/live_trading/exchange_gateway/src/exchange_gateway_main.cpp"
+VENUE_ADAPTER="$ROOT/live_trading/exchange_gateway/src/venue/live_venue_adapter.cpp"
 SIM="$ROOT/live_trading/simulated_exchange_service/src/simulated_exchange_service_main.cpp"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 need() { grep -Fq -- "$2" "$1" || fail "$3"; }
 
-for f in "$FEEDER" "$SOURCE" "$READER" "$STRATEGY" "$RISK" "$EXECUTION" "$PLANNER" "$GATEWAY" "$SIM"; do
+for f in "$FEEDER" "$SOURCE" "$READER" "$STRATEGY" "$RISK" "$EXECUTION" "$PLANNER" "$GATEWAY" "$VENUE_ADAPTER" "$SIM"; do
   [[ -f "$f" ]] || fail "missing $f"
 done
 
@@ -74,7 +75,9 @@ pass "ExecutionState and OrderPlanner cannot plan from future daily economics"
 
 # 6) Gateway / simulated exchange: edge events are checked against local business time.
 need "$GATEWAY" 'if (eventTime > businessToday || producedAt > businessToday)' 'Gateway backend-event future guard missing'
-need "$GATEWAY" 'plan.decision_timestamp > newestCompleted' 'Gateway future plan guard missing'
+# The gateway receives single orders, not plans (since the venue adapter); the adapter holds
+# each order until its business day: an order is never sent before active_from.
+need "$VENUE_ADAPTER" 'if (order.active_from > today)' 'Venue adapter future-order hold missing'
 need "$SIM" 'if (timestamp <= businessNow)' 'SimulatedExchange business-time readiness check missing'
 need "$SIM" 'businessTimeReady(prices.timestamp, "execution_prices_market_time")' 'SimulatedExchange does not gate execution-price market time'
 need "$SIM" 'businessTimeReady(command.order.created_at, "backend_submit_order_created_at")' 'SimulatedExchange does not gate submit event time'
