@@ -629,8 +629,7 @@ int main(int argc, char** argv)
     tester.loop();
     LG_INFO("Finished loop");
 
-    tester.closeTrades();
-
+    // Trades still open at the cutoff are reported mark-to-market, never force-closed.
     tester.storeTradesCSV(tradesCsvPath);
 
     if (!volatilityDiagnosticsCsvPath.empty()) {

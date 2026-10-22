@@ -138,13 +138,11 @@ TEST(Backtester, R18_OpposingStrategiesNetAccountExposureButRetainUnitsAndFees)
     EXPECT_TRUE(context.GetTradeRecorder().closedTrades().empty());
 }
 
-TEST(Backtester, R19_CutoffAndCloseTradesDoNotManufactureExitFillsOrFees)
+TEST(Backtester, R19_CutoffDoesNotManufactureExitFillsOrFees)
 {
     BacktestContext context(market(2), oneStrategy(), 1000.0, 0.01);
     Backtester backtester(context);
     backtester.loop();
-    backtester.closeTrades();
-    backtester.closeTrades();
     ASSERT_EQ(context.GetAccountHistory().size(), 2U);
     expectSnapshot(context.GetAccountHistory().back(), kD2, 495.0, 1000.0, 1095.0);
     EXPECT_DOUBLE_EQ(context.GetAccount().positions().get("BTC"), 4.0);

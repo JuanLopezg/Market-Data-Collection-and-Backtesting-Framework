@@ -65,7 +65,6 @@ try
             initialBalance, feeTaker);
         Backtester tester(context);
         tester.loop();
-        tester.closeTrades();
         auto metrics = calculateBacktestMetrics(definition.name, context.GetTradesHistory(),
             context.GetBalanceEquityHistoric(), context.GetMarketData(), initialBalance, settings);
         logBacktestMetrics(metrics);

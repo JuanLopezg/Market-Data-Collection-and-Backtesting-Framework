@@ -213,8 +213,8 @@ cash/equity 990, attribution remains +4/−4, and two campaigns remain open.
 ### R19 — Cutoff does not force fills and future changes cannot alter past economics
 
 Truncate R17 after D2 with 1% fees: position +4, cash 495, balance 1,000, equity
-1,095, open campaign PnL 95. `closeTrades()` is a compatibility no-op: no exit fee,
-forced close or additional snapshot. Extending the data by D3 must not alter D1/D2
+1,095, open campaign PnL 95. The end of the data adds no exit fee, forced close or
+additional snapshot (the former no-op `closeTrades()` was removed on 2026-10-22). Extending the data by D3 must not alter D1/D2
 snapshots. Perturbing D3's open/close/high/low cannot change earlier history.
 A Backtester may hold the full data container; the deterministic strategy indexes
 only the current date and these tests do not assume the container itself is truncated.

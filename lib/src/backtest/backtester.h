@@ -29,10 +29,6 @@ public:
         double periodsPerYear
     );
 
-    // Kept for caller compatibility. Open trades are reported mark-to-market and are not
-    // force-filled/closed merely because historical data ended.
-    void closeTrades() {}
-
 private:
     BacktestContext& backtest_context_;
     SimulatedExchange simulated_exchange_;
