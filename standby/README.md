@@ -31,6 +31,12 @@ Stateless: nothing from the VPS is needed at plan time except the profile copied
      open, so the quantities shown are estimates at close(T).
 4. Each order gets its Kraken symbol and contracts (`venue_units_per_source_unit`); an
    asset without a Kraken contract is `SKIPPED: not on Kraken`, as the gateway skips it.
+   One public Kraken instruments request supplies `venue_step` from
+   `contractValueTradePrecision`. `venue_quantity` rounds the estimated contracts to the
+   nearest step, with the gateway's half-up rule and tolerance. A zero result is
+   `BELOW_MINIMUM_QUANTITY`. The original USD amounts and quantity estimates are kept.
+   If metadata is unavailable, both venue fields are `null` with status
+   `VENUE_STEP_UNAVAILABLE`; the plan is still written. The table shows these fields too.
 
 The account is read like the gateway reads it (live_venue_adapter.cpp): cash = USD balance
 minus the entry value of open positions (execution-state's spot convention), positions in
@@ -67,4 +73,6 @@ target weights, and the same order amounts to the cent (for example 20261014: se
   differently on old days; the decision day itself is the same data.
 - The local build must be the deployed source. `sync` records the release id
   (`<stamp>-<commit>[-dirty]`); build the standby from that commit.
-- Kraken contract step and minimum size are applied by the gateway at the open, not here.
+- Venue quantities use close(T) estimates and current public lot steps; the gateway
+  recalculates quantities at the open, so the rounded quantity and minimum-size status
+  can change. This plan does not check venue admission or confirm execution.

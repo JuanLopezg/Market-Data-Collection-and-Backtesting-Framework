@@ -45,7 +45,6 @@ DATASET = ROOT / "deploy/historical_replay/run/1d_cmc_by_date.csv"
 MAPPING = ROOT / "config/historical_replay/step56a_source_symbol_map_v1.csv"
 REALTEST_CSV = ROOT / "storage/backtests/final_tests/pureRSI.csv"
 HISTORICAL_DATA = ROOT / "storage/databases/1d_cmc.csv"
-RUNTIME_BUNDLE_LIB = ROOT / "deploy/historical_replay/.runtime_bundle/lib"
 
 CANONICAL_RUNNER_SOURCE = ROOT / "research/src/canonical/canonical_replay.cpp"
 CANONICAL_RUNNER_BIN = RUN_ROOT / "bin/algotrading_replay_full"
@@ -123,18 +122,6 @@ def run(
             print(log.read_text(encoding="utf-8", errors="replace"), file=sys.stderr)
         raise SystemExit(f"ERROR: command failed ({proc.returncode}): {q(cmd)}")
     return proc
-
-
-def bundle_env() -> dict[str, str]:
-    env = os.environ.copy()
-    if RUNTIME_BUNDLE_LIB.is_dir():
-        existing = env.get("LD_LIBRARY_PATH", "")
-        env["LD_LIBRARY_PATH"] = (
-            str(RUNTIME_BUNDLE_LIB)
-            if not existing
-            else str(RUNTIME_BUNDLE_LIB) + os.pathsep + existing
-        )
-    return env
 
 
 def ensure_required_files() -> None:
@@ -866,7 +853,8 @@ def execute_fast(args: argparse.Namespace) -> dict:
     trades_path = run_dir / "trades.csv"
     log = run_dir / "research.log"
 
-    env = bundle_env()
+    # Use the build binary's rpath instead of the deployment bundle.
+    env = os.environ.copy()
     env.update(
         {
             "ALGOTRADING_REPLAY_DATABASE_PATH": str(HISTORICAL_DATA),
@@ -905,7 +893,8 @@ def execute_fast(args: argparse.Namespace) -> dict:
 def write_expected_equity(args: argparse.Namespace, start: str, end: str, run_dir: Path, state_dir: Path) -> None:
     """Fast backtest of the same window; its daily equity is the dashboard's "Expected" line."""
     binary = build_fast_runner(args.rebuild)
-    env = bundle_env()
+    # Use the build binary's rpath instead of the deployment bundle.
+    env = os.environ.copy()
     env.update(
         {
             "ALGOTRADING_REPLAY_DATABASE_PATH": str(HISTORICAL_DATA),

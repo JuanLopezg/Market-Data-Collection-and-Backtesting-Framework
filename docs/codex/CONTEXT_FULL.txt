@@ -15,8 +15,9 @@ Kraken monitor and chain Python. B2 merged the duplicated research study code in
 research/src/common/{parameter_sweep,sensitivity_study,plotly_chart_html}.* with
 byte-identical reports. Pending: an authorized release with the equity fix, then the
 repair of the VPS rows 20261013/20261014 (procedure in CURRENT_STATE.md).
-research/replay.py fast currently fails locally because it prepends the stale
-deploy/historical_replay/.runtime_bundle/lib (2026-10-11 libalgolib); see CURRENT_STATE.md.
+Local replay library selection fixed (2026-10-22): fast/expected-equity build binaries
+use their own rpath; the stale historical bundle is no longer prepended. The 20-day
+fast check and Python compilation pass; see CURRENT_STATE.md for evidence and limits.
 
 READING AND DOCUMENT OWNERSHIP
 =============================

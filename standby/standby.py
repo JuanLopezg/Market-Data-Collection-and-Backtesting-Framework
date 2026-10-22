@@ -27,6 +27,7 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import math
 import sqlite3
 import subprocess
 import sys
@@ -41,6 +42,7 @@ PLANNER = ROOT / 'build/standby/algotrading_standby_plan'
 sys.path.insert(0, str(ROOT / 'tools'))
 sys.path.insert(0, str(ROOT / 'live_trading'))
 import binance_perp_daily as binance  # noqa: E402  (public klines/exchangeInfo helpers)
+from kraken_shadow import KrakenPublicReader  # noqa: E402  (public GET-only reader)
 
 # Same windows as the chain: market-data ranks the top 100 and the strategy sees the top 50
 # with 100 days of history (config/market_data, strategy --market-top-n, comparison.py).
@@ -49,6 +51,7 @@ TOP_N = 50
 WARMUP_DAYS = 100
 VPS_ROOT = '/algoTrading'
 CHAIN_ENV_KEYS = ('MODE', 'STRATEGY_FILE', 'PORTFOLIO_FILE', 'LIVE_COMMISSION_RATE')
+QUANTITY_EPSILON = 1e-9  # Same step-count tolerance as LiveVenueAdapter.
 
 
 def day_key(day):
@@ -184,6 +187,51 @@ def kraken_account(args, by_source):
 
 
 # ---------------------------------------------------------------- plan
+def round_to_nearest_step(quantity, step):
+    """Match the gateway's half-up rounding, including its floating-point tolerance."""
+    return math.floor(quantity / step + 0.5 + QUANTITY_EPSILON) * step
+
+
+def kraken_quantity_steps(directory):
+    """Read the public instruments once; never read an account or submit an order."""
+    document = KrakenPublicReader('live', directory).read('instruments')
+    if not isinstance(document, dict) or document.get('result') != 'success':
+        raise ValueError('Kraken instruments request did not succeed')
+    instruments = document.get('instruments')
+    if not isinstance(instruments, list) or not instruments:
+        raise ValueError('Kraken instruments are unavailable')
+    steps = {}
+    for instrument in instruments:
+        if not isinstance(instrument, dict):
+            continue
+        symbol = instrument.get('symbol')
+        precision = instrument.get('contractValueTradePrecision')
+        # The gateway accepts integer precision from -12 to 12 (negative for PEPE).
+        if (isinstance(symbol, str) and type(precision) is int and -12 <= precision <= 12):
+            steps[symbol] = math.pow(10.0, -precision)
+    return steps
+
+
+def add_venue_quantities(orders, directory):
+    try:
+        steps = kraken_quantity_steps(directory)
+    except (OSError, ValueError):
+        steps = {}
+        print('WARNING: Kraken public instruments unavailable; venue steps could not be estimated.')
+    for order in orders:
+        if not order['kraken_symbol']:
+            continue
+        step = steps.get(order['kraken_symbol'])
+        order.update(venue_step=step, venue_quantity=None)
+        if step is None:
+            order['status'] = 'VENUE_STEP_UNAVAILABLE'
+            continue
+        quantity = round_to_nearest_step(order['kraken_quantity'], step)
+        order['venue_quantity'] = quantity
+        if quantity == 0:
+            order['status'] = 'BELOW_MINIMUM_QUANTITY'
+
+
 def plan(args):
     profile, by_source = load_profile()
     if not PLANNER.exists():
@@ -242,6 +290,7 @@ def plan(args):
                        kraken_quantity=order['quantity_at_close'] * float(mapping['venue_units_per_source_unit']),
                        status='PLANNED')
         orders.append(row)
+    add_venue_quantities(orders, run)
     output = {'contractVersion': 'standby-plan-v2', 'release': profile['release'], 'mode': profile['mode'],
               'strategy_file': profile['strategy_file'], 'portfolio_file': profile['portfolio_file'],
               'decision_date': raw['decisionDate'], 'execution_date': raw['executionDate'],
@@ -269,11 +318,16 @@ def print_plan(output):
     if not output['orders']:
         print('Orders: none')
         return
-    print(f"\n{'Binance':16} {'Side':5} {'USD':>12} {'Close(T)':>14} {'Qty at close':>16}  {'Kraken':14} {'Contracts':>16}  Status")
+    print(f"\n{'Binance':16} {'Side':5} {'USD':>12} {'Close(T)':>14} {'Qty at close':>16}  {'Kraken':14} {'Contracts':>16} {'Venue step':>12} {'Venue quantity':>16}  Status")
     for order in sorted(output['orders'], key=lambda row: row['coin']):
         kraken_quantity = '' if order['kraken_quantity'] is None else f"{order['kraken_quantity']:.6g}"
+        venue_step = 'unavailable' if order.get('venue_step') is None else f"{order['venue_step']:.6g}"
+        venue_quantity = 'unavailable' if order.get('venue_quantity') is None else f"{order['venue_quantity']:.6g}"
+        if not order['kraken_symbol']:
+            venue_step = venue_quantity = '-'
         print(f"{order['coin']:16} {order['side']:5} {order['notional_usd']:12,.2f} {order['reference_close']:14.6g} "
-              f"{order['quantity_at_close']:16.6g}  {order['kraken_symbol'] or '-':14} {kraken_quantity:>16}  {order['status']}")
+              f"{order['quantity_at_close']:16.6g}  {order['kraken_symbol'] or '-':14} {kraken_quantity:>16} "
+              f"{venue_step:>12} {venue_quantity:>16}  {order['status']}")
     print('Quantities are estimated at close(T); the chain resolves them at the next open from the USD amounts.')
 
 
