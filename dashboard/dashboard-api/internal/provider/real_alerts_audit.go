@@ -322,12 +322,19 @@ func buildRealAlertsAudit(
 				Detail: fmt.Sprintf("%d missing candle(s) across %d gap run(s) in the bounded strategy window.", market.Integrity.MissingCandles, market.Integrity.Gaps), LinkedContext: "Open Market Data",
 			})
 		}
-		for i, rejection := range market.CandidateRejections {
-			if i >= 10 || rejection.Severity == "INFO" {
+		// INFO rejections (a full signal cap) stay on Market Data only. The id follows the
+		// asset and reason, so an alert keeps its history when other candidates change.
+		listed := 0
+		for _, rejection := range market.CandidateRejections {
+			if rejection.Severity == "INFO" {
+				continue
+			}
+			if listed >= 10 {
 				break
 			}
+			listed++
 			alerts = append(alerts, realOperationalAlert{
-				ID: fmt.Sprintf("derived-candidate-%d-%s", i, strings.ToLower(rejection.Asset)), Timestamp: market.SourceUpdatedAt,
+				ID: "derived-candidate-" + strings.ToLower(strings.ReplaceAll(rejection.Reason, " ", "-")) + "-" + strings.ToLower(rejection.Asset), Timestamp: market.SourceUpdatedAt,
 				Severity: "WARN", Status: "ACTIVE", Service: "Strategy", Asset: rejection.Asset, EventType: "CANDIDATE_DIAGNOSTIC",
 				Title: rejection.Reason, Detail: rejection.Detail, LinkedContext: "Open Market Data",
 			})

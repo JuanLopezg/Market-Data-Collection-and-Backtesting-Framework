@@ -306,9 +306,11 @@ func buildRealMarketData(
 
 		if aligned && signalValue <= 1e-12 && isFinite(candidate.rsi) && candidate.rsi > entry {
 			if activeSignals >= cfg.maxActiveSignals() {
+				// Expected strategy behaviour (the signal cap is full), not a problem: INFO,
+				// shown on Market Data but not an alert (user decision 2026-10-22).
 				rejections = append(rejections, realCandidateRejection{
 					Asset: candidate.asset, Reason: "MAX ACTIVE SIGNALS",
-					Detail: "RSI entry condition is met, but the durable final signal is flat while the " + fmt.Sprint(cfg.maxActiveSignals()) + "-signal cap is occupied.", Severity: "WARN",
+					Detail: "RSI entry condition is met, but the durable final signal is flat while the " + fmt.Sprint(cfg.maxActiveSignals()) + "-signal cap is occupied.", Severity: "INFO",
 				})
 			} else {
 				rejections = append(rejections, realCandidateRejection{
