@@ -2,6 +2,114 @@
 
 Last synchronized: 2026-10-16. Current source and test output take precedence.
 
+## Historical T16..T24 runner retirement (2026-10-22, local, uncommitted)
+
+Removed the frozen runner family in favor of `research/replay.py` and step58A/step59.
+Each candidate basename was searched with `git grep -n -F` before deletion, then
+consumers were classified as retired family, current gate/build/test, or frozen
+history/evidence. No active Meson target used these sources. The only deleted
+`meson.build` is the unreferenced T23 replacement payload; active build definitions
+are unchanged. The generated-index directory exclusion remains appropriate for the
+retained time generator.
+
+Removed 30 files (removed 2026-10-22; see Git history):
+
+```text
+tools/historical_replay/check_t19_realtest_baseline.py
+tools/historical_replay/normalize_historical_csv.py
+tools/historical_replay/realtest_known_baseline_snapshot.json
+tools/historical_replay/regrade_t19_full_history.py
+tools/historical_replay/regrade_t21_gap_catchup.py
+tools/historical_replay/run_acceptance_scenario.py
+tools/historical_replay/run_exploratory_1500x.py
+tools/historical_replay/run_t17_execution_replay.py
+tools/historical_replay/run_t17_t24.py
+tools/historical_replay/run_t19_realtest_gate.py
+tools/historical_replay/run_t20_t24_resume.py
+tools/historical_replay/run_t21_t24_resume.py
+tools/historical_replay/run_t22_t24_resume.py
+tools/historical_replay/step56a_full_system_replay_acceptance.cpp
+tools/historical_replay/t19_realtest_compare.cpp
+tools/historical_replay/t23_cleanup.py
+tools/historical_replay/t23_payload/lib/src/transport/contract_json_codec.cpp
+tools/historical_replay/t23_payload/lib/src/transport/contract_json_codec.h
+tools/historical_replay/t23_payload/lib/src/transport/transport_subjects.h
+tools/historical_replay/t23_payload/live_trading/meson.build
+validation/t16_anti_lookahead_all.sh
+validation/t17_t24_preflight.sh
+validation/t18_bounded_fingerprint_audit.sh
+validation/t18_noop_plan_fingerprint_audit.sh
+validation/t19_capacity_steady_state_audit.sh
+validation/t19_realtest_csv_newline_audit.sh
+validation/t19_realtest_gate_audit.sh
+validation/t19_structural_realtest_gate_audit.sh
+validation/t21_gap_observability_audit.sh
+validation/t21_monotonic_fault_trigger_audit.sh
+```
+
+Kept `tools/historical_replay/create_time_env.py`: current historical deployment,
+example configuration, `historical_replay_time_env_test.py` and
+`historical_replay_no_shared_clock_audit.sh` consume it. The removed normalizer and
+baseline JSON had only retired-family consumers.
+
+Kept all ten audits listed with individual reasons in
+[validation/README.md](validation/README.md#retained-historical-service-regressions).
+Three mixed audits lost only runner-specific checks; service bootstrap/WAL ownership,
+execution-price wiring, the compiled poisoned-OHLCV open parser and PostgreSQL
+precision coverage remain. The T21 canonical-frontier audit failed before edits on
+outdated source/log markers; it now checks the current bootstrap exception,
+canonical-frontier retry branch and catch-up message. No trading source changed.
+The removed T16 aggregate wrapper added no assertions beyond the three retained
+anti-lookahead checks it invoked. This retirement does not claim replacement of
+the old distributed capacity/chaos campaigns by canonical replay.
+
+`docs/venue/` (including SHA256SUMS), every existing entry below, and all tracked
+`deploy/historical_replay/run/` datasets/reference/evidence files are unchanged.
+Active consumers still read `run/1d_cmc_by_date.csv` and
+`run/step56a_full_system_replay_summary.json`; both are retained.
+The Go NATS subject-list comment now points to CURRENT `message_subjects.h` rather
+than the retired payload's obsolete header name; executable Go code is unchanged.
+
+Guides updated: `validation/README.md`, `research/REPLAY.md`, `docs/README.md`,
+`docs/ROADMAP.md`, `docs/codex/CONTEXT_FULL.txt`,
+`docs/codex/ARCHITECTURE_FULL.md`, `docs/codex/AI_INDEX.md` and
+`deploy/historical_replay/README.md`. This entry owns validation evidence.
+
+WSL verification:
+
+- All ten retained numbered audits PASS. Historical visibility, canonical reader
+  no-lookahead, historical topology, no-shared-clock, time-env generation and
+  historical CSV source tests PASS (16 successful checks total).
+- `distributed_anti_lookahead_audit.sh` remains and FAILS at "Gateway future plan
+  guard missing". Its source marker assumes an older gateway plan route. The audit
+  and every source it scans are byte-identical to HEAD: this is a pre-existing
+  limitation, not a new acceptance result. No coverage was silently removed.
+- `bash -n` PASS for all four edited shell scripts. No Python source was edited;
+  `py_compile` PASS for retained `create_time_env.py`, `generate_ai_index.py` and
+  `research/replay.py`. AI index fixture tests PASS (4 tests).
+- No configured Meson build exists in this worktree. A fresh offline setup at
+  `/tmp/histretire-meson-build` fails because `gtest_main` is unavailable. No full
+  Meson build is claimed. Docker was unavailable and was not used.
+- Step58A compiles the CURRENT canonical runner directly, passes CLI/window checks
+  and its 10-day no-trade replay, then stops at the direct RealTest comparison
+  because `storage/backtests/final_tests/pureRSI.csv` is absent. Step59 fails its
+  prerequisite check for the same file. Neither complete gate passed here.
+- Separately ran the directly compiled CURRENT runner for 107 days with
+  `realtest-parity`: PASS, 50 fills, clean reconciliation and accepted compact
+  fingerprint `f27599267e09ca538edf05e1890c90d435bdf18c208e567c6d73081fde48c4ca`.
+  This confirms the runtime fingerprint, not the unavailable RealTest comparison,
+  restart/dashboard or pacing proof from Step59.
+- Separately ran step58A's 107-day `mock-default` case and its reference assertions:
+  PASS, submits/fills/accounting/open orders/positions match the preserved Step56A
+  summary and final equity is `106407.26746549` (absolute tolerance `1e-8`). These
+  local summaries/fills/logs are in `/tmp/histretire-canonical-7n4xcctx/`.
+- Final removed-basename/path scans have only this retirement record or frozen
+  evidence/history matches. The common basename `meson.build` also matches current
+  unrelated build files; the full T23 payload path has no active consumer.
+  `git diff --check` and regenerated AI index freshness PASS. Frozen evidence,
+  tracked run inputs and all prior CURRENT_STATE history remain unchanged.
+
+
 ## Kraken history reconciliation, standby re-sync, USD reserve 7.5%, cleanup (2026-10-22)
 
 - USD reserve warning 10% -> 7.5% of equity on the VPS: monitor stopped, journal and policy

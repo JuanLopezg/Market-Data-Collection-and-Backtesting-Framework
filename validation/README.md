@@ -537,24 +537,44 @@ old paths/hashes differ from current source. Such drift must be reported and int
 regenerating the manifest merely to turn a historical gate green is not validation.
 Step59 tests current executable behavior independently of those historical hashes.
 
-## Historical regression audits
+## Retained historical service regressions
 
-Retained `t16_*` through `t21_*` audits document targeted issues such as
-immutable bootstrap frontiers, event-time ordering, exact flattening, bounded fingerprints,
-capacity, CSV comparisons and strategy catch-up/restart. Read each script before choosing
-it: some expect historical run artifacts or a particular diagnostic runner. They are
-not one aggregate current release suite.
+The frozen T16..T24 campaign runners, regraders, comparator/baseline snapshot, T23
+replacement payload and old Step56A runner were removed on 2026-10-22; see Git
+history. Their single-purpose fingerprint, capacity, CSV bridge, regrading,
+fault-trigger and cumulative-preflight audits were removed with them. Replay uses
+`research/replay.py`, step58A and step59. No active Meson target used the removed
+sources; the payload's unused build file was removed with the payload.
 
-`t17_t24_preflight.sh` is a historical distributed campaign preflight.
-The duplicate old `t23_no_legacy_clock_audit.sh` was consolidated into
-`no_legacy_clock_audit.sh`. Retained historical runner/preflight references now
-use the current audit, which does not require a one-time cleanup-summary file.
+These numbered audits remain because they check CURRENT services rather than a
+retired runner. They require no Docker or historical campaign output:
 
-Removed checks required the deleted shared Clock interfaces, replay-controller,
-`deploy/distributed_replay/` or `tools/distributed_compare/` harness.
-The obsolete combined restart/chaos/logging suites and their migration diaries were
-removed with those dependencies. Current TimeHandler, canonical restart and component
-chaos tests remain. Generated run evidence and frozen venue contracts were not deleted.
+| Retained audit | Current invariant / reason kept |
+| --- | --- |
+| `t16_5_1500x_replay_audit.sh` | Historical feeder init-only path, consumer DB-init dependencies, writable WAL sidecars and read-only/query-only SQLite connections. Runner-only checks removed. |
+| `t17_execution_replay_audit.sh` | Historical execution-price bridge and compiled open-only CSV parser with poisoned future OHLCV fields. Runner-only checks removed. |
+| `t17_fill_precision_hotfix_audit.sh` | PostgreSQL fill serialization uses `max_digits10`, avoiding lossy six-decimal quantity/price/commission persistence. Runner-only checks removed. |
+| `t18_execution_account_snapshot_barrier_audit.sh` | Replay account snapshots wait for the execution plan/cycle, with only the bootstrap exception. |
+| `t18_immutable_bootstrap_frontier_audit.sh` | Bootstrap remains anchored to immutable simulated reference settings while the canonical frontier moves. |
+| `t18_replay_event_time_semantics_audit.sh` | Replay-only event-time/checkpoint semantics, explicit LIVE stale-day gates and exact next-open execution prices. |
+| `t19_exact_flatten_quantity_audit.sh` | FLAT uses actual filled quantity and direction, avoiding floating-point round-trip dust. |
+| `t21_strategy_canonical_frontier_audit.sh` | Canonical availability capped by business time, immutable bootstrap exception, future guard and bounded catch-up. Source markers updated to current conditions/logs. |
+| `t21_strategy_fast_catchup_audit.sh` | Bounded backlog batches without one-message polling or a per-message sleep. |
+| `t21_strategy_restore_timehandler_frontier_audit.sh` | Configured source identity, TimeHandler factory, canonical frontier and internal catch-up without publishing past intents. |
+
+The removed T16 aggregate wrapper only invoked three retained checks:
+`historical_visibility_no_lookahead_test.sh`,
+`canonical_market_data_no_lookahead_test.sh` and
+`distributed_anti_lookahead_audit.sh`. Run these directly for that coverage.
+Canonical restart/Step59 does not replace the distributed service bootstrap/frontier
+checks above or establish broker/container failure acceptance.
+
+`tools/historical_replay/create_time_env.py` remains because the historical deployment,
+its example configuration and current time-environment/no-shared-clock tests consume
+it. The canonical dataset `deploy/historical_replay/run/1d_cmc_by_date.csv` and frozen
+`step56a_full_system_replay_summary.json` remain active gate inputs. Generated run
+evidence, `docs/venue/` and its SHA-256 manifests remain untouched; historical path
+references describe the accepted snapshot, not current executable files.
 
 ## Dashboard and analysis checks
 

@@ -1,7 +1,7 @@
 package nats
 
 // Canonical trading-runtime subjects verified against
-// lib/src/transport/transport_subjects.h in the uploaded project snapshot.
+// lib/src/transport/message_subjects.h.
 // Keep this list synchronized with the C++ transport contract; Step 14 ships a
 // source-audit script that fails if those contract strings drift.
 const (

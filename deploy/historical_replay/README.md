@@ -26,6 +26,11 @@ Important: `--start` starts the simulation cold at that date. To keep prior warm
 
 See [CURRENT_STATE.md](../../CURRENT_STATE.md) and [research/REPLAY.md](../../research/REPLAY.md) for evidence and the active contract.
 The default compact release check is `bash validation/step59_canonical_replay_release_gate.sh`.
+The frozen T16..T24 campaign runners, T23 source-replacement payload and old Step56A
+runner were removed on 2026-10-22; see Git history. Keep `run/1d_cmc_by_date.csv`
+and `run/step56a_full_system_replay_summary.json`: step58A/step59 still read these
+inputs. The service time generator used below and focused CURRENT service audits
+remain; see [validation](../../validation/README.md#retained-historical-service-regressions).
 Full-history evidence above still has manually reviewed RealTest differences; it is not a claim of zero discrepancies.
 
 ---

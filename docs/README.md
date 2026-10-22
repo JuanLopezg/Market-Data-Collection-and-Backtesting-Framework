@@ -63,7 +63,13 @@ profiles/images, old campaigns and finished logs from `storage/` (list in
 `storage/cleanup_notes/A-deletion-result.json`); datasets, backtests, Kraken shadow
 evidence and the current/previous releases were kept. Older `CURRENT_STATE.md` entries
 still cite some removed logs; their accepted results stand, the files are gone.
-Historical tools under `tools/historical_replay/` may still depend on retained captures.
+The frozen T16..T24 runners, old Step56A runner, T23 replacement payload and their
+single-purpose audits were removed on 2026-10-22; see Git history. Current replay
+uses `research/replay.py` and step58A/step59. The retained
+`tools/historical_replay/create_time_env.py` prepares shared service time settings;
+[validation](../validation/README.md#retained-historical-service-regressions) lists
+the CURRENT service invariants kept from the old audits. Active gates still read the
+canonical dataset and Step56A reference summary under `deploy/historical_replay/run/`.
 
 ## Cleanup policy
 

@@ -14,10 +14,18 @@ Replay/backtest work has **one public entry point**:
 python3 research/replay.py <mode> ...
 ```
 
-Old `tools/historical_replay/run_t*.py` and `step56a_*` runners remain frozen historical
-evidence. The `step58_*`/`step58a_*` runners (hand-listed builds that no longer linked
-against the current `lib/`, replaced by this front door) were removed on 2026-10-14; they
-stay in Git history and `docs/venue/step58*/SHA256SUMS` keeps their recorded checksums.
+The frozen T16..T24 runner family, its single-purpose audits and the old Step56A
+runner were removed on 2026-10-22; see Git history. Current replay uses this CLI and
+the step58A/step59 gates. Service bootstrap, open-only parsing, fill precision,
+event-time and Strategy restart/frontier audits remain because they check CURRENT
+code; [validation/README.md](../validation/README.md) lists their coverage.
+`tools/historical_replay/create_time_env.py` still prepares the isolated historical
+service topology. The canonical dataset and Step56A reference summary remain in
+`deploy/historical_replay/run/` because active gates read them.
+
+The `step58_*`/`step58a_*` runners (hand-listed builds that no longer linked against
+the current `lib/`, replaced by this front door) were removed on 2026-10-14; see Git
+history. Frozen `docs/venue/` evidence and checksum manifests remain unchanged.
 **No new replay engine should be added** for another speed, date window or UI mode;
 add an option to `research/replay.py` instead.
 
@@ -571,5 +579,5 @@ bash validation/step59_canonical_replay_release_gate.sh
 
 See [CURRENT_STATE.md](../CURRENT_STATE.md) for validated fingerprints and outstanding
 full-history/browser acceptance, and [validation/README.md](../validation/README.md)
-for focused checks. Frozen step runners remain diagnostic history; new replay options
+for focused checks. Retired runners are available in Git history; new replay options
 belong in the public CLI.

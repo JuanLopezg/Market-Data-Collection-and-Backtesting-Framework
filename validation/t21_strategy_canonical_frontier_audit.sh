@@ -12,10 +12,11 @@ done
 grep -q 'latestRankingDateAtOrBefore(Timestamp maxDate)' "$H"
 grep -q 'SELECT MAX(date) FROM market_volume_rank_daily WHERE date <= ?' "$C"
 grep -q 'latestRankingDateAtOrBefore(newestCompleted)' "$S"
-grep -q 'if (target < canonicalFrontier)' "$S"
-grep -q 'reason=canonical_frontier_not_visible' "$S"
+grep -Fq 'if (target < canonicalFrontier && !anchoredBootstrapTarget)' "$S"
+grep -Fq 'if (target > canonicalFrontier)' "$S"
+grep -Fq 'waits for market data (available through' "$S"
 grep -q 'if (target > newestCompleted)' "$S"
-grep -q 'signal_state_catchup_processed' "$S"
+grep -Fq 'Caught up signal state for' "$S"
 
 if grep -q 'if (target < newestCompleted)' "$S"; then
   echo 'FAIL: Strategy still ACKs stale notifications from simulated-time frontier' >&2

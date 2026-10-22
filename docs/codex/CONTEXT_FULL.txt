@@ -190,6 +190,12 @@ Shared ClockState/replay-controller infrastructure has been removed.
 CANONICAL REPLAY AND VALIDATION
 ==============================
 Public CLI: python3 research/replay.py {fast|system|dashboard}.
+Frozen T16..T24 runners, T23 payload, old Step56A runner and single-purpose audits
+were removed on 2026-10-22; see Git history. create_time_env.py remains for the
+isolated historical service topology. CURRENT bootstrap, open-only parsing, fill
+precision, event-time and Strategy restart/frontier audits remain; validation/README.md
+lists them. Keep the canonical CSV and Step56A reference summary: active gates read
+both. CURRENT_STATE.md records this worktree's checks and missing prerequisites.
 fast uses CURRENT lib Backtester via research/src/backtests/backtesting_main.cpp.
 system uses canonical_replay.cpp and ReplayRuntime with the canonical MOCK venue.
 dashboard shares system economics and adds observational state publication.

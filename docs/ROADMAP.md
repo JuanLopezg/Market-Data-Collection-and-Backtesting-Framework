@@ -35,8 +35,11 @@ dashboard-state export split out of canonical_replay.cpp, cleanup of storage "PR
 4. Strategy switch to 80/65 when the user decides (`algo switch pure_rsi_8_80_65_volume_rank.json`,
    deploy/chain/README.md).
 5. Optional: flow-adjusted drawdown on the Risk page; a discretionary "manual" sleeve
-   (designed 2026-10-21, not wanted for now); retiring the historical T16..T24 runner family
-   (validation/README.md audits still use it).
+   (designed 2026-10-21, not wanted for now).
+
+The historical T16..T24 runner retirement is complete locally (2026-10-22).
+CURRENT service-invariant audits remain; validation/README.md lists them and
+CURRENT_STATE.md records local verification and unavailable build/gate prerequisites.
 
 The list below is the longer history of the remaining-steps plan (2026-10-10..17); the
 items above supersede it where they differ.

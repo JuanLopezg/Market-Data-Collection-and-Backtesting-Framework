@@ -4,16 +4,12 @@ ROOT="${1:-.}"
 cd "$ROOT"
 
 echo "============================================================"
-echo "T16.5 — 1500x EXPLORATORY REPLAY HARNESS AUDIT (WAL READER HOTFIX)"
+echo "HISTORICAL SERVICE BOOTSTRAP / WAL READER AUDIT"
 echo "============================================================"
-
-python3 tools/historical_replay/run_exploratory_1500x.py --root . --dry-run
 
 grep -q -- '--init-only' live_trading/historical_market_data_service/src/historical_market_data_service_main.cpp
 grep -q 'Initialized market database' live_trading/historical_market_data_service/src/historical_market_data_service_main.cpp
 grep -q '^  market-data-db-init:' deploy/historical_replay/docker-compose.yml
-grep -q '"market-data-db-init"' tools/historical_replay/run_exploratory_1500x.py
-grep -q '"restarting"' tools/historical_replay/run_exploratory_1500x.py
 
 # Canonical consumers must remain logically read-only at SQLite API level.
 grep -q 'SQLITE_OPEN_READONLY' lib/src/market/canonical_market_data_reader.cpp
@@ -43,19 +39,4 @@ PY
 echo "PASS: canonical consumers use SQLite READONLY + query_only"
 echo "PASS: filesystem mount permits SQLite WAL/SHM auxiliary files"
 echo "PASS: DB init dependencies are structurally present"
-echo "PASS: restart detection remains enabled"
-echo "PASS: T16.5 WAL reader hotfix audit"
-
-python3 - "$ROOT/tools/historical_replay/run_exploratory_1500x.py" <<'PY'
-from pathlib import Path
-import sys
-s = Path(sys.argv[1]).read_text(encoding="utf-8")
-assert 'EXPECTED_ONE_SHOT_SERVICES' in s, 'runner missing one-shot service allowlist'
-assert '"market-data-volume-init"' in s, 'volume init not allowlisted'
-assert '"market-data-db-init"' in s, 'db init not allowlisted'
-assert 'if "exited (0)" in low:' in s, 'runner does not permit successful one-shot exits'
-assert '"restarting" in low' in s and '"unhealthy" in low' in s, 'runtime failure detection weakened'
-print('PASS: successful init-only jobs are ignored while runtime failure detection remains strict')
-PY
-
-echo "PASS: T16.5 init-job detector hotfix audit"
+echo "PASS: historical service bootstrap and WAL reader audit"

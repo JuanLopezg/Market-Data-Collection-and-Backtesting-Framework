@@ -57,8 +57,10 @@ Ignored files are excluded even if tracked. Deleted files, all environment files
 (including example templates), credential/key filenames, symlinks, build output,
 datasets, logs, dependency caches, on-hold strategies and the retired runtime are
 excluded. Frozen `docs/venue/` documents, captured replay output and historical
-diagnostic tools are also excluded from current navigation. Their maintained
-guides still describe where to find retained evidence.
+preparation tools under `tools/historical_replay/` are also excluded from current
+navigation. The frozen T16..T24 runners were removed on 2026-10-22; see Git history.
+The directory exclusion remains for the retained service time generator. Maintained
+guides describe where to find retained evidence and CURRENT regression audits.
 
 Source/configuration bodies are not copied into output. C++ includes resolve to
 a same-directory file or a unique matching repository path suffix. Ambiguous

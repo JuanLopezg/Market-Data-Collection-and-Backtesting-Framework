@@ -38,7 +38,7 @@ its rolling comparison after that boundary. See the PAPER guide for state migrat
 | `config/` | Runtime configuration, source-symbol maps and venue registries. |
 | `docs/` | Documentation index, agent handoff and frozen venue specifications. |
 | `storage/` | Historical inputs, reports and accepted run evidence. |
-| `tools/` | Analysis utilities and historical diagnostic runners. |
+| `tools/` | Analysis utilities, generated navigation and historical service time preparation. |
 | `.ai/` | Ignored generated file/component navigation, refreshed from the current working tree. |
 
 Generated replay state and outputs live under `deploy/historical_replay/run/`.
@@ -312,6 +312,12 @@ There is no shared logical-clock service, replay controller, ClockState control 
 or `deploy/distributed_replay/`. The isolated historical Compose workflow creates
 one `time.env` per run and shares its immutable reference settings among services.
 It is a separate integration workflow, not the canonical RealTest release entrypoint.
+The frozen T16..T24 runners, T23 replacement payload and old Step56A runner were
+removed on 2026-10-22; see Git history. Current replay uses `research/replay.py`
+and step58A/step59. The service time generator and focused CURRENT bootstrap,
+open-only parsing, fill precision, event-time and restart/frontier audits remain;
+[validation/README.md](../../validation/README.md#retained-historical-service-regressions)
+lists them. Canonical inputs and the Step56A reference summary remain gate inputs.
 
 ## Research migration
 
