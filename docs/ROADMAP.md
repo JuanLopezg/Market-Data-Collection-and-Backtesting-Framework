@@ -34,12 +34,15 @@ dashboard-state export split out of canonical_replay.cpp, cleanup of storage "PR
    authorization. Refresh `standby.py sync` after every release.
 4. Strategy switch to 80/65 when the user decides (`algo switch pure_rsi_8_80_65_volume_rank.json`,
    deploy/chain/README.md).
-5. Optional: flow-adjusted drawdown on the Risk page; a discretionary "manual" sleeve
-   (designed 2026-10-21, not wanted for now).
+5. `validation/distributed_anti_lookahead_audit.sh` fails at "Gateway future plan guard
+   missing": a stale source marker for an older gateway route (pre-existing, found during the
+   runner retirement). Update the marker to the current guard or retire the audit.
+6. Not wanted for now: a discretionary "manual" sleeve (designed 2026-10-21).
 
-The historical T16..T24 runner retirement is complete locally (2026-10-22).
-CURRENT service-invariant audits remain; validation/README.md lists them and
-CURRENT_STATE.md records local verification and unavailable build/gate prerequisites.
+Done 2026-10-22 and deployed (release 20261022_093209-88150a9): flow-adjusted Risk drawdown;
+the historical T16..T24 runner family retired (the ten audits that still check current code
+remain; validation/README.md lists them). Step58A gates PASS; step59 PASS with the accepted
+fingerprint.
 
 The list below is the longer history of the remaining-steps plan (2026-10-10..17); the
 items above supersede it where they differ.
