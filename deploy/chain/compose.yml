@@ -302,6 +302,9 @@ services:
       # LIVE stop-loss: resting reduce-only venue stop below each long's last close (./algo).
       - --long-stop-fraction
       - ${LONG_STOP_FRACTION:-0}
+      # LIVE: the gateway rounds to the nearest lot step, so a fill may exceed the order (./algo).
+      - --venue-lot-overfill
+      - ${VENUE_LOT_OVERFILL:-no}
     volumes:
       - ${ALGO_STATE}/market:/data/market
       - ${ALGO_STATE}/manual:/data/manual

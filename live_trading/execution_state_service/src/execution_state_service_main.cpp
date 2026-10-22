@@ -136,6 +136,9 @@ struct Options {
     // LIVE long stop-loss (position_stops.h): a resting venue stop at (1 - fraction) x the
     // latest daily close for every long; 0 = off (PAPER and tests by default).
     double long_stop_fraction = 0.0;
+    // Real venue rounding quantities to the nearest lot step (Kraken gateway): a fill may
+    // exceed the requested quantity, up to twice it. Off in PAPER, replays and tests.
+    bool venue_lot_overfill = false;
 };
 
 
@@ -215,6 +218,12 @@ Options parseOptions(int argc, char** argv)
             options.cash_tolerance_usd = std::stod(requireValue("--cash-tolerance-usd"));
         else if (arg == "--long-stop-fraction")
             options.long_stop_fraction = std::stod(requireValue("--long-stop-fraction"));
+        else if (arg == "--venue-lot-overfill") {
+            const std::string value = requireValue("--venue-lot-overfill");
+            if (value != "yes" && value != "no")
+                throw std::invalid_argument("--venue-lot-overfill must be yes or no");
+            options.venue_lot_overfill = value == "yes";
+        }
         else if (arg == "--help") {
             std::cout
                 << "Usage: algotrading_execution_state_service [options]\n"
@@ -231,7 +240,8 @@ Options parseOptions(int argc, char** argv)
                 << "  --portfolio-config PATH     risk limits/allocations for Manual Control\n"
                 << "  --price-url URL             Binance futures API for current prices\n"
                 << "  --cash-tolerance-usd VALUE  cash difference accepted by reconciliation, default 1e-6\n"
-                << "  --long-stop-fraction VALUE  venue stop-loss this fraction below the last daily close, 0 = off\n";
+                << "  --long-stop-fraction VALUE  venue stop-loss this fraction below the last daily close, 0 = off\n"
+                << "  --venue-lot-overfill yes|no accept fills up to 2x the order (venue lot rounding), default no\n";
             std::exit(0);
         }
         else
@@ -1726,6 +1736,8 @@ public:
 
         store_ = std::make_unique<PostgresStateStore>(options_.postgres_connection);
 
+        if (options_.venue_lot_overfill)
+            engine_.orderManager().allowVenueLotOverfill(2.0);
         if (const auto stored = store_->load()) {
             LG_INFO("Found saved state; restoring it");
             restore(*stored);

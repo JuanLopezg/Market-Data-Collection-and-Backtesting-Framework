@@ -2,6 +2,18 @@
 
 Last synchronized: 2026-10-16. Current source and test output take precedence.
 
+## Kraken quantities rounded to the nearest lot step (2026-10-22)
+
+User decision: the gateway rounded every order down to the venue step, so a small account
+stayed below its targets (BTC 0.00028 -> 0.0002 = 7.1% instead of 10%; top-ups below one
+step were never sent). Orders now go to the nearest step (less than half a step is not
+sent); position stops still round down. A fill can then exceed its order: OrderManager
+accepts up to 2x the request only after `allowVenueLotOverfill` (execution-state
+`--venue-lot-overfill yes`, set by `algo` in MODE=live); simulators, replays and tests keep
+the R6 no-overfill rule. Spec A7 updated. Tests: venue adapter 309/309, unit suite 17/17
+(new R6_VenueLotOverfillAcceptedOnlyWhenAllowed, A7 nearest), step59 PASS (fingerprint
+unchanged).
+
 ## Faster daily path after midnight (2026-10-21)
 
 Measured on the VPS (2026-10-21 cycle): market data published at 00:00:06.98, orders reached

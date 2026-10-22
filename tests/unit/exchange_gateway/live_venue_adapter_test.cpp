@@ -297,15 +297,18 @@ TEST_F(VenueAdapter, A6_MissingPricesAreRejected)
 
 // ---------------------------------------------------------------- A7 / A8
 
-TEST_F(VenueAdapter, A7_QuantityIsRoundedDownToTheStep)
+TEST_F(VenueAdapter, A7_QuantityIsRoundedToTheNearestStep)
 {
     start(true);
-    transport.script("sendorder", {ok(placed())});
+    transport.script("sendorder", {ok(placed()), ok(placed())});
     adapter->submitOrder(orderCommand(7, "BTCUSDT", OrderSide::Buy, 0.12349, 62000.0));
+    adapter->submitOrder(orderCommand(8, "BTCUSDT", OrderSide::Buy, 0.12344, 62000.0));
     pollAfter(1000);
-    ASSERT_EQ(transport.count("sendorder"), 1);
-    EXPECT_EQ(formValue(transport.requestsTo("sendorder").front().body, "size"), "0.1234");
-    EXPECT_NEAR(stored(7).venue_quantity, 0.1234, 1e-12);
+    ASSERT_EQ(transport.count("sendorder"), 2);
+    EXPECT_EQ(formValue(transport.requestsTo("sendorder")[0].body, "size"), "0.1235");
+    EXPECT_NEAR(stored(7).venue_quantity, 0.1235, 1e-12);
+    EXPECT_EQ(formValue(transport.requestsTo("sendorder")[1].body, "size"), "0.1234");
+    EXPECT_NEAR(stored(8).venue_quantity, 0.1234, 1e-12);
 }
 
 TEST_F(VenueAdapter, A8_UnitsAreConvertedToTheVenueAndBack)

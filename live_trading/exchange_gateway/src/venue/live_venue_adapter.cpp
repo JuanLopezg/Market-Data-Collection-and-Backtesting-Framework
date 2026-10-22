@@ -37,6 +37,17 @@ std::optional<ExecutionOrderStatus> reportedStatus(OrderState state)
     }
 }
 
+// Nearest lot step (user decision 2026-10-22): rounding down kept small accounts
+// systematically below their targets (0.00028 BTC -> 0.0002 at a 0.0001 step). The error is
+// now at most half a step either way. A position is always a whole number of steps, so a
+// sell of at most the position never rounds above it. Execution-state accepts the
+// resulting overfill with --venue-lot-overfill yes.
+double roundToNearestStep(double quantity, double step)
+{
+    return std::floor(quantity / step + 0.5 + QUANTITY_EPSILON) * step;
+}
+
+// A position stop covers the position and never more: rounded down.
 double roundDownToStep(double quantity, double step)
 {
     return std::floor(quantity / step + QUANTITY_EPSILON) * step;
@@ -272,9 +283,11 @@ void LiveVenueAdapter::submitOrder(const SubmitOrderCommand& command)
         return;
     }
 
-    // Venue units, rounded down to the venue step: never more than requested.
+    // Venue units, rounded to the nearest venue step (less than half a step is not sent);
+    // a position stop is rounded down so it never covers more than the position.
     const double venueUnits = request.quantity * mapping->venue_units_per_source_unit;
-    const double rounded = roundDownToStep(venueUnits, market.quantity_step);
+    const double rounded = request.isPositionStop() ? roundDownToStep(venueUnits, market.quantity_step)
+                                                    : roundToNearestStep(venueUnits, market.quantity_step);
     order.symbol = market.symbol;
     order.unit_scale = mapping->venue_units_per_source_unit;
     order.venue_quantity = rounded;

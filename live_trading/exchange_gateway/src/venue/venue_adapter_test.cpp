@@ -806,6 +806,28 @@ void testScaledSourceCoin()
         CHECK(near(h.events.fills[0].fill.quantity, 5.0) && near(h.events.fills[0].fill.price, 0.01));
 }
 
+// User decision 2026-10-22: quantities go to the nearest venue step, not down. 0.00028 BTC
+// at a 0.0001 step is 0.0003 (rounding down kept a small account at 7% instead of 10%);
+// 0.000083 is 0.0001; less than half a step (0.00004) is not sent.
+void testQuantityRoundsToNearestStep()
+{
+    Harness h("nearest-step");
+    h.transport.responses["sendorder"] = {ok(PLACED), ok(PLACED)};
+    h.transport.responses["fills"] = {ok(fills(""))};
+    h.transport.responses["openorders"] = {ok(openOrders(""))};
+    h.submit(12, "BTCUSDT", OrderSide::Buy, 0.00028);
+    h.submit(13, "BTCUSDT", OrderSide::Buy, 0.000083);
+    h.submit(14, "BTCUSDT", OrderSide::Buy, 0.00004);
+    h.poll();
+    CHECK(h.journal->order(12) && near(h.journal->order(12)->venue_quantity, 0.0003));
+    CHECK(h.journal->order(13) && near(h.journal->order(13)->venue_quantity, 0.0001));
+    bool belowHalfStepRejected = false;
+    for (const auto& event : h.events.updates)
+        belowHalfStepRejected |= event.update.order_id == 14 && event.update.status == ExecutionOrderStatus::Rejected &&
+                                 event.update.message.rfind("BELOW_MINIMUM_QUANTITY", 0) == 0;
+    CHECK(belowHalfStepRejected);
+}
+
 void testLocalRejectionsDoNotReachVenue()
 {
     Harness h("local-rejections");
@@ -1261,6 +1283,7 @@ int main(int argc, char** argv)
         {"fees and funding from the account history", testFeesAndFundingFromAccountLog},
         {"interest and capital flows from the account history", testInterestAndCapitalFlowsFromAccountLog},
         {"snapshot books a fresh deposit first", testSnapshotBooksAFreshDepositFirst},
+        {"quantity rounds to the nearest venue step", testQuantityRoundsToNearestStep},
         {"real account history shape (2026-10-15)", testRealAccountLogShape},
         {"permissions", testPermissions},
         {"position stop request, tick rounding and scaled units", testPositionStopBodyAndScale},

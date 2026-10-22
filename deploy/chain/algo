@@ -526,6 +526,8 @@ select_mode() {
             export INITIAL_CASH="$live_cash" CASH_TOLERANCE_USD=0.5
             # Venue stop-loss below each long's last daily close (README "Stop-loss"); 0 = off.
             export LONG_STOP_FRACTION="$(setting LIVE_LONG_STOP_FRACTION)"
+            # Kraken quantities are rounded to the nearest lot step; fills may exceed the order.
+            export VENUE_LOT_OVERFILL=yes
             mkdir -p "$ALGO_STATE" ;;
         *) echo "ERROR: MODE must be paper or live, got '$MODE'" >&2; exit 1 ;;
     esac

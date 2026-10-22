@@ -21,6 +21,15 @@ private:
     std::unordered_map<OrderID, TrackedOrder> orders_;
     std::unordered_set<FillID> processed_fill_ids_;
     double quantity_epsilon_ = 1e-12;
+    // A fill above the requested quantity is a bug, except at a real venue that rounds the
+    // quantity to its lot step (nearest step, live gateway): then up to this factor of the
+    // request is accepted. 1 = no overfill (simulators, replays, tests).
+    double max_fill_factor_ = 1.0;
+
+    double fillLimit(const TrackedOrder& order) const
+    {
+        return order.request.quantity * max_fill_factor_ + quantity_epsilon_;
+    }
 
     // Terminal statuses cannot reopen through status updates. Fill handling is separate:
     // a late fill may still arrive after a cancellation acknowledgement.
@@ -86,6 +95,14 @@ public:
             throw std::invalid_argument("Quantity epsilon must be finite and non-negative");
     }
 
+    // Live venues only: accept fills up to `factor` x the requested quantity (lot rounding).
+    void allowVenueLotOverfill(double factor)
+    {
+        if (!std::isfinite(factor) || factor < 1.0 || factor > 2.0)
+            throw std::invalid_argument("Venue lot overfill factor must be in [1, 2]");
+        max_fill_factor_ = factor;
+    }
+
     void track(const ExecutionOrder& request)
     {
         if (request.order_id == 0)
@@ -107,7 +124,7 @@ public:
             if (order.request.order_id == 0)
                 throw std::invalid_argument("Restored order id must be non-zero");
             if (!std::isfinite(order.filled_quantity) || order.filled_quantity < 0.0 ||
-                order.filled_quantity > order.request.quantity + quantity_epsilon_)
+                order.filled_quantity > fillLimit(order))
                 throw std::invalid_argument("Invalid restored filled order quantity");
             if (!restoredOrders.emplace(order.request.order_id, order).second)
                 throw std::invalid_argument("Duplicate restored order id");
@@ -186,14 +203,16 @@ public:
             throw std::logic_error("Fill does not match tracked order");
 
         const double newFilledQuantity = order.filled_quantity + fill.quantity;
-        if (newFilledQuantity > order.request.quantity + quantity_epsilon_)
+        if (newFilledQuantity > fillLimit(order))
             throw std::logic_error("Order filled quantity exceeds requested quantity");
 
         // Only an accepted fill consumes its ID: a rejected delivery must not hide the
         // correct delivery of the same fill.
         if (fill.fill_id != 0)
             processed_fill_ids_.insert(fill.fill_id);
-        order.filled_quantity = std::min(newFilledQuantity, order.request.quantity);
+        // The venue's lot rounding may fill a little more than requested (live only).
+        order.filled_quantity = max_fill_factor_ > 1.0 ? newFilledQuantity
+                                                       : std::min(newFilledQuantity, order.request.quantity);
         order.updated_at = fill.timestamp;
 
         if (order.remainingQuantity() <= quantity_epsilon_)

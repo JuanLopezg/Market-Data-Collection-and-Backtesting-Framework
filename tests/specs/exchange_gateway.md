@@ -185,9 +185,13 @@ planned at 40,000 (ratio 1.55 > 1.5) -> `NOTIONAL_MISMATCH`; planned at 95,000 (
 (5 PEPE worth 0.00005 USD vs 0.05 planned) -> `NOTIONAL_MISMATCH`. No reference price ->
 `NO_REFERENCE_PRICE`; no mark for the contract -> `NO_VENUE_PRICE`.
 
-### A7 Quantities rounded down to the venue step
+### A7 Quantities rounded to the nearest venue step
 
-0.12349 BTC -> `size=0.1234` (never more than requested).
+0.12349 BTC -> `size=0.1235`, 0.12344 -> `size=0.1234` (user decision 2026-10-22: rounding
+down kept small accounts below their targets). Less than half a step is not sent
+(`BELOW_MINIMUM_QUANTITY`). A position stop is still rounded down: it never covers more than
+the position. Execution-state accepts the resulting overfill (up to 2x the order) only with
+`--venue-lot-overfill yes` (LIVE).
 
 ### A8 Units converted both ways
 

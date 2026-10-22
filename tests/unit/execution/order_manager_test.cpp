@@ -189,6 +189,30 @@ TEST(OrderManager, R6_OverfillAndFillOnRejectedOrderDoNotChangeQuantity)
     EXPECT_DOUBLE_EQ(manager.find(11)->filled_quantity, 0.0);
 }
 
+// LIVE (execution-state --venue-lot-overfill yes): the venue rounds to its nearest lot, so a
+// fill may exceed the order, up to twice it. Default managers keep R6.
+TEST(OrderManager, R6_VenueLotOverfillAcceptedOnlyWhenAllowed)
+{
+    OrderManager manager;
+    manager.allowVenueLotOverfill(2.0);
+    submit(manager, order());                                    // 5 requested
+    ASSERT_TRUE(manager.onFill(fill(order(), 6.0, 100.0, 6.0, 101)));
+    EXPECT_DOUBLE_EQ(manager.find(10)->filled_quantity, 6.0);
+    EXPECT_EQ(manager.find(10)->status, ExecutionOrderStatus::Filled);
+    EXPECT_DOUBLE_EQ(manager.pendingSignedQuantity(kAlpha, "BTC"), 0.0);
+
+    submit(manager, order(11));
+    EXPECT_THROW(manager.onFill(fill(order(11), 10.5, 100.0, 10.5, 102)), std::logic_error); // > 2x
+    EXPECT_THROW(manager.allowVenueLotOverfill(2.5), std::invalid_argument);
+
+    // Restored state keeps the same limit.
+    OrderManager restored;
+    restored.allowVenueLotOverfill(2.0);
+    restored.restore({*manager.find(10)}, {101});
+    EXPECT_DOUBLE_EQ(restored.find(10)->filled_quantity, 6.0);
+    EXPECT_THROW(OrderManager().restore({*manager.find(10)}, {101}), std::invalid_argument);
+}
+
 TEST(OrderManager, R7_DuplicateFillIdDoesNotConsumeRemainingQuantity)
 {
     OrderManager manager;
