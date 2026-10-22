@@ -42,10 +42,35 @@ The account is read like the gateway reads it (live_venue_adapter.cpp): cash = U
 minus the entry value of open positions (execution-state's spot convention), positions in
 Binance source units, collateral = the other currencies' value after Kraken's haircut.
 
+## If the VPS is down
+
+Nothing here sends orders (phase 2 is not built). The steps keep a VPS outage from becoming
+a second problem when it comes back.
+
+1. **Check it really is down:** `python3 standby/standby.py check` (from WSL with the
+   Windows key: `--ssh-command /mnt/c/Windows/System32/OpenSSH/ssh.exe --ssh-key
+   'C:\Users\Juan\.ssh\algotrading-spain.pem'`). ALIVE means the VPS trades by itself:
+   never place its orders elsewhere. UNREACHABLE: look at the Lightsail console; a reboot
+   from there usually brings the chain back (the units start it) and nothing else is needed.
+2. **While it is down, the account is still protected:** the 30% stop-loss orders rest at
+   Kraken and work without the VPS. Missing one daily cycle only delays entries/exits.
+3. **See what it would have done:** `python3 standby/standby.py plan` (yesterday's close, the
+   Kraken account through the read-only key). It prints each order with its Kraken symbol and
+   the venue quantity rounded like the gateway. The profile is the one of the last `sync`,
+   so run `sync` after every release while the VPS is alive.
+4. **Placing those orders by hand in Kraken is possible but has a cost:** when the VPS comes
+   back, its state does not know them, so the next reconciliation finds different positions
+   and pauses trading. Before starting the chain again, either undo the manual orders (back
+   to the positions the VPS last knew, `algo ps`/Positions page before the outage), or ask
+   for help to adopt them. Positions opened by hand have no stop-loss until the VPS sets one.
+5. **When it is back:** `standby.py check` must say ALIVE with a clean reconciliation; the
+   market data catches up the missed day by itself.
+
 ## Commands (WSL, repository root)
 
 ```bash
 meson compile -C build algotrading_standby_plan
+python3 standby/standby.py check           # is the VPS alive? (read-only)
 python3 standby/standby.py sync            # needs SSH to the VPS (also works from Windows)
 python3 standby/standby.py plan            # yesterday's close, Kraken account (read-only key)
 python3 standby/standby.py plan --date 2026-10-14 --account-file account.json

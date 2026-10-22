@@ -58,13 +58,56 @@ def day_key(day):
     return int(day.strftime('%Y%m%d'))
 
 
-def ssh(args, command):
-    result = subprocess.run(['ssh', '-i', str(Path(args.ssh_key).expanduser()), '-o', 'BatchMode=yes',
+def ssh(args, command, check=True):
+    result = subprocess.run([args.ssh_command, '-i', str(Path(args.ssh_key).expanduser()), '-o', 'BatchMode=yes',
                              '-o', 'ConnectTimeout=20', args.host, command],
                             capture_output=True, text=True, timeout=120)
     if result.returncode != 0:
+        if not check:
+            return None
         raise SystemExit(f'ERROR: VPS command failed: {result.stderr.strip()[:300]}')
     return result.stdout
+
+
+# ---------------------------------------------------------------- check
+def check(args):
+    """Is the VPS chain alive? Read-only: SSH, containers, today's cycle, reconciliation.
+
+    Run it before acting on a plan: while the VPS is alive it trades by itself, and orders
+    placed from elsewhere would be duplicates (README "If the VPS is down")."""
+    try:
+        reachable = ssh(args, 'true', check=False) is not None
+    except subprocess.TimeoutExpired:
+        reachable = False
+    if not reachable:
+        print('VPS: UNREACHABLE over SSH. Check the Lightsail console before treating it as down; '
+              'then follow README "If the VPS is down".')
+        return 1
+    today = dt.datetime.now(dt.timezone.utc).strftime('%Y%m%d')
+    logs = f'{VPS_ROOT}/logs'
+    report = ssh(args, ' ; '.join([
+        f'cat {VPS_ROOT}/releases/current',
+        "sudo docker ps --format '{{.Names}} {{.Status}}'",
+        f"sudo grep -h 'Execution cycle complete' {logs}/execution/{today}.log | tail -n 1",
+        f"sudo grep -h 'Reconciliation' {logs}/execution/{today}.log | tail -n 1",
+    ]), check=False)
+    if report is None:
+        print('VPS: reachable but the status commands failed (sudo/docker). Check it by hand.')
+        return 1
+    lines = report.splitlines()
+    release, rest = (lines[0] if lines else '?'), lines[1:]
+    containers = [line for line in rest if line.split(' ', 1)[0].replace('-', '').isalnum() and ' Up ' in f' {line} ']
+    unhealthy = [line for line in containers if 'healthy' not in line or 'unhealthy' in line]
+    cycle = next((line for line in rest if 'Execution cycle complete' in line), '')
+    reconciliation = next((line for line in rest if 'Reconciliation' in line), '')
+    print(f'VPS: reachable, release {release}, {len(containers)} containers up'
+          + (f', not healthy: {", ".join(line.split()[0] for line in unhealthy)}' if unhealthy else ', all healthy'))
+    print('Today\'s cycle: ' + (cycle[:19] + ' complete' if cycle else 'NOT complete yet (normal before ~00:01 UTC)'))
+    print('Reconciliation: ' + (reconciliation[24:].split(': ', 1)[-1][:120] if reconciliation else 'none logged today'))
+    alive = len(containers) > 0 and not unhealthy
+    print('Verdict: ' + ('ALIVE: the VPS trades by itself; do not place its orders elsewhere.' if alive
+                         else 'DEGRADED: investigate on the VPS first (algo ps, algo logs).'))
+    return 0 if alive else 1
 
 
 # ---------------------------------------------------------------- sync
@@ -335,10 +378,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest='command', required=True)
     sync_parser = commands.add_parser('sync', help='copy the deployed profile from the VPS (read-only)')
+    check_parser = commands.add_parser('check', help='is the VPS chain alive? (read-only)')
     plan_parser = commands.add_parser('plan', help='orders the chain would send at the next open (never sent)')
-    for command in (sync_parser,):
+    for command in (sync_parser, check_parser):
         command.add_argument('--host', default='ubuntu@15.237.145.179')
         command.add_argument('--ssh-key', default='~/.ssh/algotrading-spain.pem')
+        command.add_argument('--ssh-command', default='ssh',
+                             help='SSH client; from WSL with a Windows key: /mnt/c/Windows/System32/OpenSSH/ssh.exe')
     plan_parser.add_argument('--date', help='decision day YYYY-MM-DD (default: yesterday, the last completed day)')
     plan_parser.add_argument('--days', type=int, default=130,
                              help='daily bars to download: 100 of window plus days to settle the signals (default 130)')
@@ -353,6 +399,8 @@ def main():
     args = parser.parse_args()
     if args.command == 'sync':
         sync(args)
+    elif args.command == 'check':
+        return check(args)
     else:
         plan(args)
     return 0
