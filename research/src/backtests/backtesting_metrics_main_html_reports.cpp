@@ -1,5 +1,6 @@
 #include "backtester.h"
 #include "catalog_definitions.h"
+#include "proposal_definitions.h"
 #include "database_utils.h"
 #include "donchian_signal_strategy.h"
 #include "entry_exit_only_rebalance_policy.h"
@@ -454,6 +455,7 @@ try
     std::vector<std::string> parameterOverrides;
     bool catalog = false;
     bool combined = false;
+    bool proposals = false;
     std::string rankerChoice;
     Timestamp startDate;
     Timestamp endDate;
@@ -470,6 +472,7 @@ try
         ("output-root", options::value(&outputRoot)->default_value("storage/backtests/sensitivity_results"), "Study parent directory")
         ("strategy", options::value(&selectedStrategy)->default_value("PureRSI"), "Strategy name or all")
         ("catalog", options::bool_switch(&catalog), "Use the user's RealTest catalog (13 strategies, plain variant each)")
+        ("proposals", options::bool_switch(&proposals), "Use the 2026-10-22 proposals (P1..P4)")
         ("combined", options::bool_switch(&combined), "With --catalog: all its strategies in one system, 1/N of capital each")
         ("own-trend-filter", options::value(&catalogOwnTrendLength())->default_value(0), "With --catalog: longs enter only above their own SMA(close, N), shorts only below; 0 = off")
         ("ranker", options::value(&rankerChoice)->default_value("own"), "own (each strategy's ranker) or volume (SMA(volume, 25), highest first; PureMom keeps momentum)")
@@ -607,8 +610,8 @@ try
     rankByVolumeAverage() = rankerChoice == "volume";
     if (rankByVolumeAverage())
         LG_INFO("Ranking: SMA(volume, 25), highest first (PureMom keeps its momentum ranking)");
-    std::vector<StrategyDefinition> strategyDefinitions = catalog ? makeCatalogDefinitions(benchmarkSymbol)
-                                                                  : makeHtmlStudyDefinitions(benchmarkSymbol);
+    std::vector<StrategyDefinition> strategyDefinitions = proposals ? makeProposalDefinitions(benchmarkSymbol)
+        : catalog ? makeCatalogDefinitions(benchmarkSymbol) : makeHtmlStudyDefinitions(benchmarkSymbol);
     if (combined) {
         if (!catalog) {
             LG_ERROR("--combined needs --catalog");
@@ -630,7 +633,7 @@ try
         {"ATRBreakout", {{"heldBars", 3.0}, {"atrMultiple", 0.875}, {"atrLength", 10.0}}},
         {"MRShort", {{"rsiEntry", 65.0}, {"entryAtrLength", 10.0}, {"heldBars", 7.0}}},
     };
-    if (const auto values = multiStrategyValues.find(selectedStrategy); !catalog && values != multiStrategyValues.end()) {
+    if (const auto values = multiStrategyValues.find(selectedStrategy); !catalog && !proposals && values != multiStrategyValues.end()) {
         for (auto& definition : makeStrategyDefinitions(benchmarkSymbol)) {
             if (definition.name != selectedStrategy)
                 continue;
