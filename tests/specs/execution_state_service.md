@@ -330,8 +330,10 @@ Run 2026-10-19: 80 tests, 74 pass, 6 disabled as findings (code disagrees with t
 
 - A12: within a business day, `equityDaysFromFills` applies the day's fills (at its open)
   before the day's funding, and `PositionLedger::applyFunding` gives funding that finds no open
-  position to that coin's most recently closed position. `PositionLedger::rebuild`, which has
-  exact timestamps, keeps funding at the same instant as a fill before it (accounting R12).
+  position to that coin's most recently closed position. `PositionLedger::rebuild` applies
+  same-time funding before the fills when the asset already has a position, and after them
+  when it has none yet (2026-10-23: live timestamps are whole days, so XRP's opening-day funding
+  was missing from its closed-position row; accounting R12).
 - A13: `equityDaysFromFills` applies a repeated fill ID once to the account too.
 - A14: `fillsReachAccount` fails when the live account holds a position the fills never had.
 - C4: any unparsable or out-of-range weight is an `invalid_argument` ("invalid weight").

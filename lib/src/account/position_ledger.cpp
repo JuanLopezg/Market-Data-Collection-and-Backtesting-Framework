@@ -110,12 +110,31 @@ PositionLedger PositionLedger::rebuild(std::vector<Fill> fills, std::vector<Fund
         return a.timestamp < b.timestamp;
     });
 
+    // Funding at a fill's timestamp belongs to the position held up to it, so it goes first.
+    // Live timestamps are whole days (fills at the 00:00 open, funding hourly after them):
+    // same-day funding for an asset with no position yet belongs to the one the day's fills
+    // open, so it waits until those fills are applied (found 2026-10-23: XRP's opening-day
+    // funding was missing from its closed-position row).
     PositionLedger ledger;
     std::size_t next = 0;
-    for (const Fill& fill : fills) {
-        while (next < funding.size() && funding[next].timestamp <= fill.timestamp)
+    std::vector<FundingPayment> afterFills;
+    for (std::size_t index = 0; index < fills.size(); ++index) {
+        const Fill& fill = fills[index];
+        while (next < funding.size() && funding[next].timestamp < fill.timestamp)
             ledger.applyFunding(funding[next++]);
+        while (next < funding.size() && funding[next].timestamp == fill.timestamp) {
+            if (ledger.open_.contains(funding[next].coin))
+                ledger.applyFunding(funding[next]);
+            else
+                afterFills.push_back(funding[next]);
+            ++next;
+        }
         ledger.applyFill(fill);
+        if (index + 1 == fills.size() || fills[index + 1].timestamp != fill.timestamp) {
+            for (const FundingPayment& payment : afterFills)
+                ledger.applyFunding(payment);
+            afterFills.clear();
+        }
     }
     while (next < funding.size())
         ledger.applyFunding(funding[next++]);

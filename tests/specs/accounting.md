@@ -131,11 +131,13 @@ retry guarantee; tests use named payments.
 ### R12 — Rebuild follows timestamp/fill-ID order and funding precedes same-time fills
 
 Audit example: BUY 2 at 100 fee 2 (D1, ID 101), SELL 2 at 120 fee 2.40
-(D2, ID 102), SELL 1 at 120 fee 1.20 (D2, ID 103). Funding D1 +9 is before the
-opening and ignored; D2 +3 belongs to the long held into D2; D3 −1 belongs to the
+(D2, ID 102), SELL 1 at 120 fee 1.20 (D2, ID 103). Funding D0 +9 (the day before)
+is before the opening and ignored; D2 +3 belongs to the long held into D2; D3 −1 belongs to the
 new short. Closed long gross 40/fees 4.40/funding 3/net 38.60; open short −1 has
 fee 1.20/funding −1/net −2.20 before unrealized PnL; total funding 2 and fees 5.60.
 Any input permutation yields these same lots, including ties sorted by fill ID.
+Same-time funding for an asset with no open position belongs to the position the fills at
+that time open (live timestamps are whole days: fills at the open, funding hourly after).
 Rebuilding the same trail or duplicate identical audit rows must not duplicate
 money. Rebuilt state remains live: applying a new unique fill continues the lot.
 Covering the remaining short 1 at 100 fee 1 on D4 realizes gross 20; its total

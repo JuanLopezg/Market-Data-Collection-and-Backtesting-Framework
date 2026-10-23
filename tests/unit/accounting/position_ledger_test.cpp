@@ -19,7 +19,8 @@ std::vector<Fill> audit()
 
 std::vector<FundingPayment> payments()
 {
-    return {{"before-open", kD1, "BTC", 9.0},
+    // The day before the opening fill (kD1): funding while flat is ignored.
+    return {{"before-open", kD1 - 1, "BTC", 9.0},
             {"held-long", kD2, "BTC", 3.0},
             {"held-short", kD3, "BTC", -1.0}};
 }
@@ -284,6 +285,17 @@ TEST(PositionLedger, R12_RebuildSortsAuditAndAppliesFundingBeforeSameTimeFills)
     auto funding = payments();
     std::reverse(funding.begin(), funding.end());
     expectAuditEconomics(PositionLedger::rebuild(fills, funding));
+}
+
+// Live timestamps are whole days: funding dated on the day a position opens (fills at the
+// 00:00 open, funding hourly after) belongs to that new position (2026-10-23, XRP).
+TEST(PositionLedger, R12_SameDayFundingWithoutAPositionJoinsTheOneOpenedThatDay)
+{
+    const auto ledger = PositionLedger::rebuild(
+        {fill(101, OrderSide::Buy, 17.0, 1.3651, 0.0159, kD2)},
+        {{"xrp-1", kD2, "BTC", -0.003}, {"xrp-2", kD2, "BTC", -0.0017}});
+    EXPECT_NEAR(ledger.openPositions().at("BTC").funding, -0.0047, 1e-12);
+    EXPECT_NEAR(ledger.funding(), -0.0047, 1e-12);
 }
 
 TEST(PositionLedger, R12_SameTimestampClosingAndOpeningFillsFollowFillId)
