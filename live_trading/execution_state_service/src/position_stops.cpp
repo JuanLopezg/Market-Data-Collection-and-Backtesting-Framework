@@ -46,10 +46,14 @@ PositionStopChanges planPositionStops(
         }
     }
     std::map<std::pair<StrategyID, Coin>, std::vector<const TrackedOrder*>> stops;
+    // Sells still working that are not stops (the daily plan's exits and trims).
+    std::map<std::pair<StrategyID, Coin>, double> pendingSells;
     for (const auto& [orderId, order] : orders) {
         (void)orderId;
         if (order.request.isPositionStop())
             stops[{order.request.strategy_id, order.request.coin}].push_back(&order);
+        else if (order.isOpen() && order.request.side == OrderSide::Sell)
+            pendingSells[{order.request.strategy_id, order.request.coin}] += order.remainingQuantity();
     }
     for (auto& [key, list] : stops) {
         (void)key;
@@ -75,6 +79,13 @@ PositionStopChanges planPositionStops(
                 changes.cancels.push_back(order->request.order_id);
             continue;
         }
+
+        // A position this cycle is selling entirely keeps the stop it has until the sale
+        // fills (then it is flat and the stop is cancelled): no new stop for a position
+        // that is about to close (2026-10-23: STRK and XRP got a new stop while sold).
+        if (const auto selling = pendingSells.find(key);
+            selling != pendingSells.end() && selling->second >= quantity - QUANTITY_EPSILON)
+            continue;
 
         const auto close = latestCloses.find(coin);
         if (close == latestCloses.end() || !std::isfinite(close->second) || close->second <= 0.0) {

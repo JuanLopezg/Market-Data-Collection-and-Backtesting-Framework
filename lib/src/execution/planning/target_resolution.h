@@ -42,7 +42,7 @@ public:
         // Start from current filled quantities so missing decisions naturally mean HOLD.
         for (const auto& [coin, quantity] : currentPositions.values()) {
             if (!prices.contains(coin))
-                throw std::runtime_error("Missing execution reference price for held asset");
+                throw std::runtime_error("Missing execution reference price for held asset " + coin);
 
             target.set(coin, quantity * prices.get(coin));
         }
@@ -97,7 +97,7 @@ public:
 
         for (const auto& [coin, exposure] : accountTarget.values()) {
             if (!prices.contains(coin))
-                throw std::runtime_error("Missing execution reference price for target asset");
+                throw std::runtime_error("Missing execution reference price for target asset " + coin);
 
             targetPositions.set(coin, exposure / prices.get(coin));
         }

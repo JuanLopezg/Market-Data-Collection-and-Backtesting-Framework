@@ -394,6 +394,26 @@ def binance_opens(execution_date, symbols):
     return prices
 
 
+def candidate_opens(execution_date, frozen, known):
+    """Best-effort opens of the day's entry candidates (top 50 of the frozen ranking): the
+    expected run can choose a coin the account did not (e.g. a contested last slot), and a
+    target without a price stops the whole baseline. A candidate Binance cannot price is left out."""
+    try:
+        with sqlite3.connect(Path(frozen).as_uri() + '?mode=ro', uri=True) as db:
+            day = max((row[0] for row in db.execute('SELECT date FROM market_volume_rank_daily')), default=None)
+            candidates = {row[0] for row in db.execute(
+                'SELECT pair FROM market_volume_rank_daily WHERE date = ? ORDER BY rank LIMIT 50', (day,))}
+    except sqlite3.Error:
+        return {}
+    prices = {}
+    for symbol in sorted(candidates - set(known)):
+        try:
+            prices.update(binance_opens(execution_date, {symbol}))
+        except (ValueError, OSError):
+            continue
+    return prices
+
+
 def priced_assets(live, plan, intent, previous_cycle, fast_output):
     """Every asset the account or the expected run may hold or trade at this open."""
     assets = {asset for asset, quantity in live['account_positions'].items() if abs(quantity) > 1e-12}
@@ -483,6 +503,7 @@ def collect_live(containers, output, binary, image=None):
             raise ValueError('Account changed during capture; retry')
         prices = binance_opens(execution, priced_assets(live, plan, intent, cycles[-1] if cycles else None,
                                                         output / 'fast.json'))
+        prices.update(candidate_opens(execution, frozen, prices))
         flows = sum(cost['amount'] for cost in observed['costs']
                     if cost['kind'] == 'CAPITAL_FLOW' and last['execution_date'] < cost['timestamp'] <= execution)
         signals = next(row['signals'] for row in intent['strategies'] if row['strategy_id'] == 1)

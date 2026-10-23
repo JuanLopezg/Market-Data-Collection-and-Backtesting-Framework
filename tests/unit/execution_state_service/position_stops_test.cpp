@@ -274,3 +274,21 @@ TEST(PositionStops, B12_InvalidInputsAreRefused)
     EXPECT_THROW(planPositionStops(positions, {}, closes, FRACTION, 0, NEXT_ID), std::invalid_argument);
     EXPECT_THROW(planPositionStops(positions, {}, closes, FRACTION, AT, 0), std::invalid_argument);
 }
+
+
+TEST(PositionStops, B1_PositionBeingSoldEntirelyGetsNoNewStop)
+{
+    std::unordered_map<OrderID, TrackedOrder> orders;
+    add(orders, stopOrder(10, 1, BTC, 0.5, 40000.0, ExecutionOrderStatus::Accepted)); // yesterday's stop
+    ExecutionOrder exit(11, 1, 20261014, AT, BTC, OrderSide::Sell, 0.5);              // today's exit
+    add(orders, TrackedOrder(exit));
+    const auto changes = planPositionStops(holding(1, BTC, 0.5), orders, {{BTC, 60000.0}}, FRACTION, AT, NEXT_ID);
+    EXPECT_TRUE(changes.submits.empty());
+    EXPECT_TRUE(changes.cancels.empty()); // the old stop protects it until the sale fills
+
+    // A partial sale (a trim) still gets the stop moved to the new close.
+    orders.erase(11);
+    ExecutionOrder trim(11, 1, 20261014, AT, BTC, OrderSide::Sell, 0.2);
+    add(orders, TrackedOrder(trim));
+    EXPECT_EQ(planPositionStops(holding(1, BTC, 0.5), orders, {{BTC, 60000.0}}, FRACTION, AT, NEXT_ID).submits.size(), 1u);
+}

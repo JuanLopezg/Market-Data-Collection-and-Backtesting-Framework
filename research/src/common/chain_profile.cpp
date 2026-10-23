@@ -101,10 +101,15 @@ json readJson(const std::string& path)
 
 StrategyPortfolio makeStrategyPortfolio(const json& strategy, const json& portfolio)
 {
-    if (strategy.at("type") != "PureRSI" ||
-        strategy.at("universe").at("indicator").at("source") != "QuoteVolume")
-        throw std::runtime_error("Unsupported chain profile: only PureRSI over the QuoteVolume universe");
+    const json& universe = strategy.at("universe");
+    const json& ranker = strategy.at("ranker");
+    if (strategy.at("type") != "PureRSI" || universe.at("type") != "top_n_liquidity" || ranker.at("type") != "indicator")
+        throw std::runtime_error("Unsupported chain profile: only PureRSI with a top-N liquidity universe and an indicator ranker");
 
+    // Universe and ranker exactly as the strategy service builds them (makeSignalPortfolio):
+    // the ranker used to be hard-coded to RSI here, so with the LIVE file (ranked by
+    // SMA(quote volume, 25)) the expected run filled a contested last slot with another
+    // coin (PUMP instead of XRP on 2026-10-21).
     const auto& parameters = strategy.at("parameters");
     const unsigned rsiLength = parameters.at("rsi_length");
     StrategyPortfolio strategies;
@@ -113,10 +118,10 @@ StrategyPortfolio makeStrategyPortfolio(const json& strategy, const json& portfo
         std::make_unique<StrategyPureRSI>(
             strategy.at("max_active_signals"),
             std::make_unique<TopNLiquidityUniverse>(
-                IndicatorSpec{IndicatorKind::SMA, PriceField::QuoteVolume, 25},
-                strategy.at("universe").at("count"), true),
+                parseIndicatorSpec(universe.at("indicator")), universe.at("count").get<unsigned int>(),
+                universe.value("descending", true), true),
             std::make_unique<IndicatorRanker>(
-                IndicatorSpec{IndicatorKind::RSI, PriceField::Close, rsiLength}, true),
+                parseIndicatorSpec(ranker.at("indicator")), ranker.value("descending", true), true),
             strategy.at("max_ranking_position"), rsiLength,
             parameters.at("rsi_entry"), parameters.at("rsi_exit")),
         portfolio.at("allocation_weight"),
